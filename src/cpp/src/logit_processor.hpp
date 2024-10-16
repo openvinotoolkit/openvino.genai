@@ -312,7 +312,6 @@ protected:
 
     // speculative decoding parameters
     float m_assistant_confidence_threshold = 0.f;
-    bool m_is_dynamic_speculative_decoding = false;
 
 
 public:
@@ -360,14 +359,9 @@ public:
                 }
             }
             if (sampling_params.assistant_confidence_threshold > 0) {
-                m_is_dynamic_speculative_decoding = true;
                 m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
             }
         }
-    }
-
-    bool is_dynamic_speculative_decoding() {
-        return m_is_dynamic_speculative_decoding;
     }
 
     float get_assistant_confidence_threshold() {

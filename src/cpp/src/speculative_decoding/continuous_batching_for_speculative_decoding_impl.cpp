@@ -308,6 +308,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt) {
                 request->pause_generation(true);
+            } else if (request->get_num_processed_tokens() - request->get_prompt_len() + 1 >= sampling_params.max_new_tokens - 1) {
+                request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();
         }

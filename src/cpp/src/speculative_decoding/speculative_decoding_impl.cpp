@@ -181,8 +181,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
-        draft_sampling_params.max_new_tokens = SIZE_MAX - 1;
-        draft_sampling_params.min_new_tokens = SIZE_MAX - 1;
+        draft_sampling_params.max_new_tokens = draft_sampling_params.max_new_tokens + 1;
+        draft_sampling_params.min_new_tokens = draft_sampling_params.min_new_tokens + 1;
         draft_sampling_params.ignore_eos = true;
         draft_generations.push_back(m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params));
         // decrease generation len to generate last token by main model
