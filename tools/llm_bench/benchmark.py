@@ -15,7 +15,6 @@ import llm_bench_utils.output_json
 import llm_bench_utils.bench_text as bench_text
 import llm_bench_utils.bench_image as bench_image
 import llm_bench_utils.bench_ldm_sr as bench_ldm_sr
-import llm_bench_utils.bench_classification as bench_classification
 import llm_bench_utils.bench_speech as bench_speech
 
 
@@ -145,7 +144,6 @@ def get_argprser():
 CASE_TO_BENCH = {
     'text_gen': bench_text.run_text_generation_benchmark,
     'image_gen': bench_image.run_image_generation_benchmark,
-    'image_cls': bench_classification.run_image_classification,
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2txt_benchmark,
