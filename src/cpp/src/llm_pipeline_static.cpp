@@ -213,12 +213,13 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
 
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE", "YES"},
-        { "NPUW_WEIGHTS_BANK", "shared" }
+        { "NPUW_WEIGHTS_BANK", "shared" },
+        { "NPUW_PMM", "NO" }
     };
     return config;
 }
