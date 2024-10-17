@@ -2,10 +2,10 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import openvino_genai
 import argparse
-import sys
+
 import openvino as ov
+import openvino_genai
 
 
 def image_write(path: str, image_tensor: ov.Tensor, convert_bgr2rgb: bool = False):
@@ -16,6 +16,7 @@ def image_write(path: str, image_tensor: ov.Tensor, convert_bgr2rgb: bool = Fals
         image = Image.merge("RGB", (r, g, b))
     image.save(path)
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('models_path')
@@ -24,12 +25,12 @@ def main():
 
     prompt = args.prompt
 
-    device = "CPU" # GPU, NPU can be used as well
+    device = "CPU"  # GPU, NPU can be used as well
     adapter_config = openvino_genai.AdapterConfig()
 
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     for i in range(int(len(adapters) / 2)):
-        adapter = openvino_genai.Adapter(adapters[2*i])
+        adapter = openvino_genai.Adapter(adapters[2 * i])
         alpha = float(adapters[2 * i + 1])
         adapter_config.add(adapter, alpha)
 
@@ -37,19 +38,20 @@ def main():
     pipe = openvino_genai.Text2ImagePipeline(args.models_path, device, adapters=adapter_config)
     print("Generating image with LoRA adapters applied, resulting image will be in lora.bmp")
     image = pipe.generate(prompt,
-          random_generator=openvino_genai.CppStdGenerator(42),
-          width=512,
-          height=896,
-          num_inference_steps= 20)
+                          random_generator=openvino_genai.CppStdGenerator(42),
+                          width=512,
+                          height=896,
+                          num_inference_steps=20)
 
     image_write("lora.bmp", image, True)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
     image = pipe.generate(prompt,
-         adapters=openvino_genai.AdapterConfig(),  # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
-         random_generator=openvino_genai.CppStdGenerator(42),
-         width=512,
-         height=896,
-         num_inference_steps=20)
+                          adapters=openvino_genai.AdapterConfig(),
+                          # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
+                          random_generator=openvino_genai.CppStdGenerator(42),
+                          width=512,
+                          height=896,
+                          num_inference_steps=20)
     image_write("baseline.bmp", image, True)
 
 

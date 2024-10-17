@@ -18,7 +18,7 @@ void init_lora_adapter(py::module_& m) {
         .def(py::init([](
             const std::string& path
         ) {
-            return std::make_unique<ov::genai::Adapter>(path);
+            return ov::genai::Adapter(path);
         }),
         py::arg("path"), "path", 
         R"(
