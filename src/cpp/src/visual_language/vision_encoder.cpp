@@ -340,7 +340,6 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     }
     ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, tgt_sizes, patch_size, ctx_clip.image_size / patch_size);
     encoder.set_tensor("position_ids", position_ids);
-
     encoder.infer();
     const ov::Tensor& output_tensor = encoder.get_output_tensor();
 
