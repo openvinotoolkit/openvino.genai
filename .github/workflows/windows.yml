@@ -436,6 +436,8 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
 
       - name: Install samples
         run: |
@@ -465,6 +467,12 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
+
+      - name: Test python samples (speculative_decoding_lm)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python ${{ env.OV_INSTALL_DIR }}\samples\python\speculative_decoding_lm\speculative_decoding_lm.py dolly-v2-7b dolly-v2-3b \"What is OpenVINO?\"
 
   Overall_Status:
     name: ci/gha_overall_status_windows
