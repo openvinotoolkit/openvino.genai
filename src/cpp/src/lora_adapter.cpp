@@ -29,7 +29,8 @@
 #include "openvino/pass/manager.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "openvino/genai/text2image/txt2img_core.hpp"
+
+#include "utils.hpp"
 
 extern "C" {
     #include "safetensors.h"
@@ -561,7 +562,7 @@ public:
     }
 
     void insert (const Signature& signature, std::shared_ptr<ov::Model> model) {
-        ov::Core core = ov::genai::txt2img_core::singleton_core();
+        ov::Core core = ov::genai::utils::singleton_core();
         requests[signature] = core.compile_model(model, device).create_infer_request();
     }
 
