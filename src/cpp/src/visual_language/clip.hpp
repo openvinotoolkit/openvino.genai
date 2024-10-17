@@ -6,25 +6,9 @@
 #include <vector>
 #include <numeric>
 
-//#define CLIP_DEBUG_FUNCTIONS
-enum projector_type {
-    PROJECTOR_TYPE_RESAMPLER,
-    PROJECTOR_TYPE_UNKNOWN,
-};
-
 struct clip_ctx {
-    bool has_text_encoder = false;
-    bool has_vision_encoder = false;
-    bool has_minicpmv_projector = false;
-
-    float image_mean[3];
-    float image_std[3];
-    int32_t ftype = 1;
-
-    std::vector<uint8_t> buf_compute_meta;
-
-    projector_type proj_type = PROJECTOR_TYPE_RESAMPLER;
-    size_t patch_size = 0;
+    float image_mean[3] = {0.0f, 0.0f, 0.0f};
+    float image_std[3] = {1.0f, 1.0f, 1.0f};
     size_t image_size = 0;
 };
 
@@ -52,3 +36,12 @@ bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_wid
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overriden to false depending on model configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
+
+std::vector<clip_image_u8> get_image_patches(
+    const clip_image_u8& image, 
+    const std::vector<std::pair<int, int>>& image_grid_pinpoints,
+    const std::pair<int, int>& size,
+    int patch_size
+);
+
+std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
