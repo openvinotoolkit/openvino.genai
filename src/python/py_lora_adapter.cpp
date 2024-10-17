@@ -23,11 +23,11 @@ void init_lora_adapter(py::module_& m) {
         py::arg("path"), "path", 
         R"(
             Inmutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
-            path (str): Path.
+            path (str): Path to adapter file in safetensors format.
         )"); 
         // TODO: operator bool() const 
 
-    auto adapter_config = py::class_<ov::genai::AdapterConfig>(m, "AdapterConfig", "Adapter config.");
+    auto adapter_config = py::class_<ov::genai::AdapterConfig>(m, "AdapterConfig", "Adapter config that defines a combination of LoRA adapters with blending parameters.");
     py::enum_<ov::genai::AdapterConfig::Mode>(adapter_config, "Mode")
         .value("MODE_AUTO", ov::genai::AdapterConfig::Mode::MODE_AUTO)
         .value("MODE_DYNAMIC", ov::genai::AdapterConfig::Mode::MODE_DYNAMIC)
