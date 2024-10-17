@@ -58,10 +58,10 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) = 0;
-    virtual std::vector<GenerationResult>
+    std::vector<GenerationResult>
     generate(const std::vector<std::string>& prompts,
              std::vector<ov::genai::GenerationConfig> sampling_params,
-             const StreamerVariant& streamer) = 0;
+             const StreamerVariant& streamer);
 
     void start_chat(const std::string& system_message);
     void finish_chat();
