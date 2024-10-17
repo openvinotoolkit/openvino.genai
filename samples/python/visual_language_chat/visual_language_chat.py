@@ -34,7 +34,7 @@ def read_image(path: str) -> Tensor:
     Returns: the ov.Tensor containing the image.
 
     '''
-    pic = Image.open(path)
+    pic = Image.open(path).convert("RGB")
     image_data = np.array(pic.getdata()).reshape(1, 3, pic.size[1], pic.size[0]).astype(np.byte)
     return Tensor(image_data)
 
