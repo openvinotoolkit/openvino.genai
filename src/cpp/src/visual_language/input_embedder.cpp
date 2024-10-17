@@ -129,7 +129,7 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) {
         m_resampler = ov::Core{}.compile_model(
-            model_dir / "resampler.xml", device, device_config
+            model_dir / "openvino_resampler_model.xml", device, device_config
         ).create_infer_request();
 
         m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
