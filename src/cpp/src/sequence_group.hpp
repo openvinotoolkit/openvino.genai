@@ -126,12 +126,22 @@ public:
         }
     }
 
-    GenerationOutput get_last_generation_output() {
+    GenerationOutput get_last_generation_output(size_t token_cnt = 1) {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        output.generated_ids = std::vector<int64_t> {m_generated_ids.back()};
-        output.generated_log_probs = std::vector<float> {m_generated_log_probs.back()};
+
+        auto generated_token_id = get_generated_ids();
+        auto generated_log_probs = get_generated_log_probs();
+
+        OPENVINO_ASSERT(get_generated_len() >= token_cnt);
+        auto offset = get_generated_len() - token_cnt;
+
+        std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
+        std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
+
+        output.generated_ids = token_id;
+        output.generated_log_probs = log_probs;
         output.finish_reason = get_finish_reason();
         return output;
     }
@@ -205,7 +215,9 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
     // max validation length within a group to check generated tokens
-    size_t m_num_validated_tokens = 0;
+    size_t m_num_validation_tokens = 0;
+    // flag to enable/disable token generation, e.g. in speculative decoding scenario
+    bool m_is_gen_paused = false;
 
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
@@ -248,9 +260,13 @@ public:
         return m_prompt_ids.size();
     }
 
+    void pause_generation(bool status) {
+        m_is_gen_paused = status;
+    }
+
     // a sequence group can generate new tokens if it already proccessed m_max_content_len before
     bool can_generate_tokens() const {
-        return m_max_content_len >= get_prompt_len();
+        return m_max_content_len + m_num_validation_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
 
     Sequence::Ptr operator[] (size_t index) {
@@ -420,7 +436,7 @@ public:
 
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
-        m_num_validated_tokens = 0;
+        m_num_validation_tokens = 0;
     }
 
     bool is_scheduled() const {
@@ -429,12 +445,12 @@ public:
 
     void set_num_validated_tokens(size_t k) {
         // in case of non-prompt we need to take prev tokens + token to validate
-        // m_num_validated_tokens = get_num_processed_tokens() ? k + 1 : k;
-        m_num_validated_tokens = k;
+        // m_num_validation_tokens = get_num_processed_tokens() ? k + 1 : k;
+        m_num_validation_tokens = k;
     }
 
     size_t get_num_tokens_to_validate() {
-        return m_num_validated_tokens;
+        return m_num_validation_tokens;
     }
 
     size_t get_num_available_tokens_for_batching() const {
@@ -442,7 +458,7 @@ public:
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
         size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validated_tokens;
+        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
     }
 
     // mark current schedule phase as finished and updates internal counters
@@ -529,7 +545,7 @@ public:
                 return true;
             }
         }
-        return false;
+        return m_is_gen_paused;
     }
 
     void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
@@ -567,13 +583,15 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void push_partial_outputs() {
+    void push_partial_outputs(size_t token_cnt = 1) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
-            const auto last_gen_token = sequence->get_last_generation_output();
-            outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+            for (size_t i = 0; i < token_cnt; ++i) {
+                auto last_gen_token = sequence->get_last_generation_output(token_cnt);
+                outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+            }
         }
         m_generation_stream->push(std::move(outputs));
     }
@@ -592,8 +610,14 @@ public:
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
-            if (num_total_seqs() == 1&& (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
-                push_partial_outputs();
+            if (num_total_seqs() == 1 &&
+                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
+                auto previous_step_gen_len = get_num_processed_tokens() > 0 ? get_num_processed_tokens() - get_prompt_len() + 1 : 0;
+                auto generation_len = m_sequences.front()->get_generated_len();
+                if (previous_step_gen_len < generation_len) {
+                    auto token_to_print = generation_len - previous_step_gen_len;
+                    push_partial_outputs(token_to_print);
+                }
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }

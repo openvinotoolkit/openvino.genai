@@ -908,6 +908,26 @@ public:
     }
 
     /**
+     * Clean up not busy physical KV cache blocks in a sequence group.
+     * @param seq_group Pointer to a sequence group.
+     */
+    void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
+        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        if (num_logical_blocks == 0) {
+            return;
+        }
+        for (const auto& sequence : seq_group->get_running_sequences()) {
+            auto seq_id = sequence->get_id();
+            auto& block_table = m_block_table[seq_id];
+            size_t num_physical_blocks = block_table[0].size();
+            if (num_physical_blocks > num_logical_blocks) {
+                free_sequence_partially(seq_id, num_physical_blocks - num_logical_blocks);
+            }
+        }
+    }
+
+
+    /**
      * Allocates just enough physical KV cache blocks to a sequence group to be enough for the sequences in it. If the sequences
      * in the group were forked before and their last block is a copy-on-write, then the block contents will have to be copied separately
      * into the freshly allocated block copies as reported in the returned map.

@@ -101,3 +101,43 @@ TEST(GenerationConfigTest, valid_frequency_penalty) {
     config.frequency_penalty = -2.0;
     EXPECT_NO_THROW(config.validate());
 }
+
+ov::genai::GenerationConfig speculative_decoding_multinomial() {
+    auto speculative_decoding_multinomial_config = ov::genai::multinomial();
+    speculative_decoding_multinomial_config.num_assistant_tokens = 5;
+    return speculative_decoding_multinomial_config;
+}
+
+ov::genai::GenerationConfig speculative_decoding_greedy() {
+    auto speculative_decoding_greedy_config = ov::genai::greedy();
+    speculative_decoding_greedy_config.assistant_confidence_threshold = 0.4f;
+    return speculative_decoding_greedy_config;
+}
+
+TEST(GenerationConfigTest, invalid_static_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0.2;
+    EXPECT_THROW(config.validate(), ov::Exception);
+}
+
+TEST(GenerationConfigTest, valid_static_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0;
+    EXPECT_NO_THROW(config.validate());
+}
+
+TEST(GenerationConfigTest, invalid_dynamic_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0.5;
+    EXPECT_THROW(config.validate(), ov::Exception);
+}
+
+TEST(GenerationConfigTest, valid_dynamic_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.assistant_confidence_threshold = 0.5;
+    config.num_assistant_tokens = 0;
+    EXPECT_NO_THROW(config.validate());
+}
