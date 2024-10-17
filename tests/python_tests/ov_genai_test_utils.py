@@ -57,12 +57,17 @@ def get_models_list():
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
 
-def get_whisper_models_list(tiny_only=False):
+def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
     precommit_models = [
         "openai/whisper-tiny",
         "openai/whisper-small.en",
+        "distil-whisper/distil-small.en",
         "openai/whisper-base",
     ]
+    if multilingual:
+        precommit_models = ["openai/whisper-tiny", "openai/whisper-base"]
+    if en_only:
+        precommit_models = ["openai/whisper-small.en", "distil-whisper/distil-small.en"]
     if tiny_only:
         precommit_models = ["openai/whisper-tiny"]
 
@@ -75,7 +80,7 @@ def get_whisper_models_list(tiny_only=False):
 
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
-    # pytest.set_trace()
+
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
