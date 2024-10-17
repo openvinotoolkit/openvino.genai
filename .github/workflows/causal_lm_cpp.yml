@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - 'releases/**'
+
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -709,7 +710,8 @@ jobs:
           python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
+          mkdir cat_img
+          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat_img/cat.jpg
       - name: Generate reference
         shell: python
         run: |
@@ -740,6 +742,11 @@ jobs:
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ lines.png
           <<< $'What is unusual on this image?' | tee cpp.txt
       - run: diff cpp.txt ref.txt
+      - name: Run visual_language_chat C++ sample with dir - MiniCPM-V-2_6
+        run: >
+          source ./ov/setupvars.sh
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ cat_img
+          <<< $'What is unusual on this image?'
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
@@ -767,7 +774,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
