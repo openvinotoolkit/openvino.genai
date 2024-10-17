@@ -206,6 +206,9 @@ public:
 
     void finish_chat() {
         m_is_chat_conversation = false;
+        // Resetting state may be slow.
+        m_language.reset_state();
+        // clear all chat history
         m_inputs_embedder->finish_chat();
     }
 
