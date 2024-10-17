@@ -28,18 +28,17 @@ void init_clip_text_model(py::module_& m) {
         .def(py::init([](
             const std::string& root_dir,
             const std::string& device,
-            const std::map<std::string, py::object>& properties
+            const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device,  utils::properties_to_any_map(properties));
+            return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
-        py::arg("properties") = ov::AnyMap{}, "Properties",
         R"(
             CLIPTextModel class
             root_dir (str): Model root directory.
             device (str): Device on which inference will be done.
-            properties (openvino.properties map): Properties.
+            kwargs: Device properties.
         )") 
         .def(py::init([](
             const ov::genai::CLIPTextModel& model
@@ -71,15 +70,15 @@ void init_clip_text_model(py::module_& m) {
             "compile", 
             [](ov::genai::CLIPTextModel& self, 
                 const std::string& device,
-                const std::map<std::string, py::object>& properties
+                const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::properties_to_any_map(properties));
+                self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
-            py::arg("properties") = ov::AnyMap({}), "openvino.properties map",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
             )");
 }
 
@@ -98,18 +97,17 @@ void init_unet2d_condition_model(py::module_& m) {
         .def(py::init([](
             const std::string& root_dir,
             const std::string& device,
-            const std::map<std::string, py::object>& properties
+            const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir, device,  utils::properties_to_any_map(properties));
+            return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
-        py::arg("properties") = ov::AnyMap{}, "Properties",
         R"(
             UNet2DConditionModel class
             root_dir (str): Model root directory.
             device (str): Device on which inference will be done.
-            properties (openvino.properties map): Properties.
+            kwargs: Device properties.
         )") 
         .def(py::init([](
             const ov::genai::UNet2DConditionModel& model
@@ -143,15 +141,15 @@ void init_unet2d_condition_model(py::module_& m) {
             "compile", 
             [](ov::genai::UNet2DConditionModel& self, 
                 const std::string& device,
-                const std::map<std::string, py::object>& properties
+                const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::properties_to_any_map(properties));
+                self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
-            py::arg("properties") = ov::AnyMap({}), "openvino.properties map",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
             )");
 }
 
@@ -170,18 +168,17 @@ void init_autoencoder_kl(py::module_& m) {
         .def(py::init([](
             const std::string& root_dir,
             const std::string& device,
-            const std::map<std::string, py::object>& properties
+            const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  utils::properties_to_any_map(properties));
+            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Root directory", 
         py::arg("device"), "Device on which inference will be done",
-        py::arg("properties") = ov::AnyMap{}, "Properties",
         R"(
             AutoencoderKL class
             root_dir (str): Root directory.
             device (str): Device on which inference will be done.
-            properties (openvino.properties map): Properties.
+            kwargs: Device properties.
         )") 
         .def(py::init([](
             const ov::genai::AutoencoderKL& model
@@ -212,15 +209,15 @@ void init_autoencoder_kl(py::module_& m) {
             "compile", 
             [](ov::genai::AutoencoderKL& self, 
                 const std::string& device,
-                const std::map<std::string, py::object>& properties
+                const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::properties_to_any_map(properties));
+                self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
-            py::arg("properties") = ov::AnyMap({}), "openvino.properties map",
+            py::arg("device") = "CPU", "device on which inference will be done"
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
             )");
 }
 
@@ -239,18 +236,17 @@ void init_clip_text_model_with_projection(py::module_& m) {
         .def(py::init([](
             const std::string& root_dir,
             const std::string& device,
-            const std::map<std::string, py::object>& properties
+            const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  utils::properties_to_any_map(properties));
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
-        py::arg("properties") = ov::AnyMap{}, "Properties",
         R"(
             CLIPTextModelWithProjection class
             root_dir (str): Model root directory.
             device (str): Device on which inference will be done.
-            properties (openvino.properties map): Properties.
+            kwargs: Device properties.
         )") 
         .def(py::init([](
             const ov::genai::CLIPTextModelWithProjection& model
@@ -281,15 +277,15 @@ void init_clip_text_model_with_projection(py::module_& m) {
             "compile", 
             [](ov::genai::CLIPTextModelWithProjection& self, 
                 const std::string& device,
-                const std::map<std::string, py::object>& properties
+                const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::properties_to_any_map(properties));
+                self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
-            py::arg("properties") = ov::AnyMap({}), "openvino.properties map",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
             )");
 }
 

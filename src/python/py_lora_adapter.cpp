@@ -15,6 +15,7 @@ namespace utils = ov::genai::pybind::utils;
 
 void init_lora_adapter(py::module_& m) {
     py::class_<ov::genai::Adapter>(m, "Adapter", "Inmutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.")
+        .def(py::init<>())
         .def(py::init([](
             const std::string& path
         ) {
@@ -24,8 +25,13 @@ void init_lora_adapter(py::module_& m) {
         R"(
             Inmutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
             path (str): Path to adapter file in safetensors format.
-        )"); 
-        // TODO: operator bool() const 
+        )")
+        .def(
+            "__bool__", 
+            [](ov::genai::Adapter& self
+            ) {
+                return bool(self);
+            });
 
     auto adapter_config = py::class_<ov::genai::AdapterConfig>(m, "AdapterConfig", "Adapter config that defines a combination of LoRA adapters with blending parameters.");
     py::enum_<ov::genai::AdapterConfig::Mode>(adapter_config, "Mode")
@@ -74,13 +80,12 @@ void init_lora_adapter(py::module_& m) {
         }),
         py::arg("adapters"),
         py::arg("mode") = ov::genai::AdapterConfig::Mode::MODE_AUTO);
-
-    //  TODO: Need bindings for following methods
-
-    // template <typename AT, typename std::enable_if<std::is_constructible<Adapter, AT>::value, bool>::type = true>
-    // AdapterConfig (const std::initializer_list<AT>& adapters, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>(adapters), mode) {}
-    // AdapterConfig (const std::initializer_list<std::pair<Adapter, float>>& adapters, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>(adapters), mode) {}
-    // operator bool() const 
+    adapter_config.def(
+        "__bool__", 
+        [](ov::genai::AdapterConfig& self
+        ) {
+            return bool(self);
+        });
 
     adapter_config.def("set_alpha", &ov::genai::AdapterConfig::set_alpha);
     adapter_config.def("get_alpha", &ov::genai::AdapterConfig::get_alpha);

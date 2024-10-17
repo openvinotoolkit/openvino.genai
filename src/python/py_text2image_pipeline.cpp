@@ -91,7 +91,7 @@ void update_text2image_config_from_kwargs(
     }
 }
 
-ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs) {
+ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
     ov::AnyMap params = {};
 
     for (const auto& item : kwargs) {
@@ -121,11 +121,26 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert({ov::genai::random_generator(std::move(py_generator))});
         } else if (key == "adapters") {
             params.insert({ov::genai::adapters(std::move(py::cast<ov::genai::AdapterConfig>(value)))});
-
-        } else {
-            throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                        "Use help(openvino_genai.Text2ImagePipeline.generate) to get list of acceptable parameters."));
         }
+        else {
+            if (allow_compile_properties) {
+                // convert arbitrary objects to ov::Any
+                // not supported properties are not checked, as these properties are passed to compile(), which will throw exception in case of unsupported property
+                if (utils::py_object_is_any_map(value)) {
+                    auto map = utils::py_object_to_any_map(value);
+                    params.insert(map.begin(), map.end());
+                } else {
+                    params[key] = utils::py_object_to_any(value);
+                }
+            }
+            else {
+                // generate doesn't run compile(), so only Text2ImagePipeline specific properties are allowed
+                throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
+                                            "Use help(openvino_genai.Text2ImagePipeline.generate) to get list of acceptable parameters."));
+            }
+        }
+        
+        
     }
     return params;
 }
@@ -155,30 +170,13 @@ void init_text2image_pipeline(py::module_& m) {
             Text2ImagePipeline class constructor.
             model_path (str): Path to the folder with exported model files.
         )")
-        
-        .def(py::init([](
-            const std::string& model_path, 
-            const std::string& device,
-            const std::map<std::string, py::object>& config
-        ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, utils::properties_to_any_map(config));
-        }),
-        py::arg("model_path"), "folder with exported model files.", 
-        py::arg("device") = "CPU", "device on which inference will be done",
-        py::arg("config") = ov::AnyMap({}), "Device config",
-        R"(
-            Text2ImagePipeline class constructor.
-            model_path (str): Path with exported model files.
-            device (str): Device to run the model on (e.g., CPU, GPU).
-            config (ov::AnyMap): Device config.
-        )")
 
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, text2image_kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, text2image_kwargs_to_any_map(kwargs, true));
         }),
         py::arg("model_path"), "folder with exported model files.", 
         py::arg("device") = "CPU", "device on which inference will be done",
@@ -199,16 +197,15 @@ void init_text2image_pipeline(py::module_& m) {
             "compile", 
             [](ov::genai::Text2ImagePipeline& pipe, 
                 const std::string& device,
-                const std::map<std::string, py::object>& config
+                const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  utils::properties_to_any_map(config));
+                pipe.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
-            py::arg("config") = ov::AnyMap({}), "Device config",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
-                config (ov.AnyMap): Device config.
+                kwargs: Device properties.
             )")
         .def(
             "generate", 
@@ -216,7 +213,7 @@ void init_text2image_pipeline(py::module_& m) {
                 const std::string& prompt,
                 const py::kwargs& kwargs
             ) {
-                ov::AnyMap params = text2image_kwargs_to_any_map(kwargs);
+                ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
                 return py::cast(pipe.generate(prompt, params));
             },
             py::arg("prompt"), "Input string",

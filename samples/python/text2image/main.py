@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import random
 
 import openvino_genai
 from PIL import Image
