@@ -944,7 +944,6 @@ public:
         }
         images_prompt += prompt;
         ov::Tensor encoded_input;
-        ov::Tensor new_chat_tokens;
         if (m_is_chat_conversation) {
             // KV cache in model already contains prompts and answers from previous iterations.
             // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
@@ -957,7 +956,7 @@ public:
             m_history.push_back({{"role", "user"}, {"content", images_prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
             if (0 == m_language.get_tensor("attention_mask").get_shape().at(1)) {
                 encoded_input = new_chat_tokens;
             } else {

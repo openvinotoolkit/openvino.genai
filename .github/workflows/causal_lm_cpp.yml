@@ -740,12 +740,12 @@ jobs:
           source ./ov/setupvars.sh
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ lines.png
           <<< $'What is unusual on this image?' | tee cpp.txt
+      - run: diff cpp.txt ref.txt
       - name: Run visual_language_chat C++ sample with dir - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ cat_img
-          <<< $'What is unusual on this image?' | tee cpp.txt
-      - run: diff cpp.txt ref.txt
+          <<< $'What is unusual on this image?'
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
@@ -773,7 +773,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat_img/cat.jpg < input.txt > ./pred.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
