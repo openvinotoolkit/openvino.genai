@@ -557,6 +557,13 @@ ov::Tensor pack_image_features_llava_next(
         return result;
     }
 }
+
+// It's not possible to pass a GPU tensor from one model to another GPU
+// model on a different ov::Core instance.
+ov::Core singleton_core() {
+    static ov::Core core;
+    return core;
+}
 }
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
@@ -604,21 +611,22 @@ public:
             )
         },
         m_tokenizer{Tokenizer(model_dir.string(), device_config)},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, singleton_core()),
         m_is_chat_conversation{false},
         m_image_id{0} {
+            ov::Core core = singleton_core();
             if (m_vlm_config.model_type == VLMModelType::MINICPM) {
-                m_resampler = ov::Core{}.compile_model(
+                m_resampler = core.compile_model(
                     model_dir / "openvino_resampler_model.xml", device, device_config
                 ).create_infer_request();
 
                 m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
             }
-            m_embedding = ov::Core{}.compile_model(
+            m_embedding = core.compile_model(
                 model_dir / "openvino_text_embeddings_model.xml", device, device_config
             ).create_infer_request();
 
-            m_language = ov::Core{}.compile_model(
+            m_language = core.compile_model(
                 model_dir / "openvino_language_model.xml", device, device_config
             ).create_infer_request();
 

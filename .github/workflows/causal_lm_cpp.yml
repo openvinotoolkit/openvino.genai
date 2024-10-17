@@ -702,7 +702,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
           python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
@@ -710,11 +710,36 @@ jobs:
           source ./ov/setupvars.sh
           optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
+      - name: Generate reference
+        shell: python
+        run: |
+          from optimum.intel.openvino import OVModelForVisualCausalLM
+          from transformers import AutoProcessor
+          from PIL import Image
+          import cv2
+          import numpy as np
+          res = 448, 448
+          lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
+          lines = lines.reshape([*res, 3])
+          cv2.imwrite("lines.png", lines)
+          lines = Image.open("lines.png").convert('RGB')
+          model_id = "openbmb/MiniCPM-V-2_6"
+          processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+          prompt = processor.tokenizer.apply_chat_template([{"role": "user", "content": "(<image>./</image>)\nWhat is unusual on this image?"}], tokenize=False, add_generation_prompt=True)
+          inputs = processor([prompt], [lines], return_tensors="pt")
+          model = OVModelForVisualCausalLM.from_pretrained("MiniCPM-V-2_6", device="CPU", trust_remote_code=True)
+          result = model.generate(**inputs, max_new_tokens=200)
+          decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
+          print(decoded)
+          with open("ref.txt", "w") as f:
+              f.write(f"question:\n{decoded}\n----------\nquestion:\n")
+
       - name: Run visual_language_chat C++ sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ cat.jpg
-          <<< $'What is on the image?\nWhat is special on the image?'
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ lines.png
+          <<< $'What is unusual on this image?' | tee cpp.txt
+      - run: diff cpp.txt ref.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
