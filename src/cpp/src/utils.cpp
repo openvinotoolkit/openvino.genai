@@ -259,6 +259,12 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
         matmul->input(0).replace_source_output(slice);
     }
 }
+
+ov::Core singleton_core() {
+    static ov::Core core;
+    return core;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

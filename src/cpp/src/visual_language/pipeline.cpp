@@ -24,6 +24,7 @@ template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr size_t BATCH_SIZE = 1;
+
 } // namespace
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
@@ -66,7 +67,7 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        m_language = ov::Core{}.compile_model(
+        m_language = utils::singleton_core().compile_model(
             model_dir / "openvino_language_model.xml", device, device_config
         ).create_infer_request();
 

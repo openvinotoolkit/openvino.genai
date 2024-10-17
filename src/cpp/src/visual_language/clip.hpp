@@ -6,25 +6,9 @@
 #include <vector>
 #include <numeric>
 
-//#define CLIP_DEBUG_FUNCTIONS
-enum projector_type {
-    PROJECTOR_TYPE_RESAMPLER,
-    PROJECTOR_TYPE_UNKNOWN,
-};
-
 struct clip_ctx {
-    bool has_text_encoder = false;
-    bool has_vision_encoder = false;
-    bool has_minicpmv_projector = false;
-
-    float image_mean[3];
-    float image_std[3];
-    int32_t ftype = 1;
-
-    std::vector<uint8_t> buf_compute_meta;
-
-    projector_type proj_type = PROJECTOR_TYPE_RESAMPLER;
-    size_t patch_size = 0;
+    float image_mean[3] = {0.0f, 0.0f, 0.0f};
+    float image_std[3] = {1.0f, 1.0f, 1.0f};
     size_t image_size = 0;
 };
 

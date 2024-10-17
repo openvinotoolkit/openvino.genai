@@ -85,9 +85,9 @@ protected:
         const std::string& device,
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, utils::singleton_core()),
         m_tokenizer{model_dir.string(), device_config} {
-        m_embedding = ov::Core{}.compile_model(
+        m_embedding = utils::singleton_core().compile_model(
             model_dir / "openvino_text_embeddings_model.xml", device, device_config
         ).create_infer_request();
     }
@@ -128,7 +128,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-        m_resampler = ov::Core{}.compile_model(
+        m_resampler = utils::singleton_core().compile_model(
             model_dir / "openvino_resampler_model.xml", device, device_config
         ).create_infer_request();
 
