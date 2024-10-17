@@ -34,10 +34,9 @@ protected:
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
     void _register_step_cache_usage(float step_cache_usage);
-
     float _get_current_running_average_cache_usage() const;
-
     void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+    void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
 public:
     ContinuousBatchingImpl(const std::string& models_path,
                            const Tokenizer& tokenizer,
