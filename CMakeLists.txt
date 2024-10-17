@@ -31,13 +31,24 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
 
+# Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
+if(NOT CMAKE_CROSSCOMPILING)
+    find_package(Python3 REQUIRED)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
+        OUTPUT_VARIABLE OpenVINO_DIR_PY
+        ERROR_QUIET
+    )
+endif()
+
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
              COMPONENTS Runtime
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
     find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
-                 COMPONENTS Runtime)
+                 COMPONENTS Runtime
+                 PATHS "${OpenVINO_DIR_PY}")
 endif()
 
 include(cmake/features.cmake)
