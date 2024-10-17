@@ -730,7 +730,6 @@ public:
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
         auto weights_input = node->input_value(1);
         auto weights_input_type = weights_input.get_element_type();
-        //DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
         NodePtr add_term = nullptr;
         NodePtr replacement = nullptr;
 
@@ -1234,7 +1233,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
     if (config.get_mode() == AdapterConfig::MODE_AUTO) {
         static const std::map<std::string, AdapterConfig::Mode> default_modes {
             {"CPU", AdapterConfig::MODE_DYNAMIC},
-            {"GPU", AdapterConfig::MODE_STATIC_RANK},
+            {"GPU", AdapterConfig::MODE_DYNAMIC},
             {"NPU", AdapterConfig::MODE_STATIC},
         };
         if(device.find("GPU") != std::string::npos) {  // to handle GPU device variants which doesn't matter for adapter mode
