@@ -46,10 +46,6 @@ public:
     // True if chat mode is activated to save conversation
     // history between generate() calls.
     bool m_is_chat_conversation;
-    // Chat history
-    ChatHistory m_history;
-    // Templated chat history
-    std::string m_templated_chat_history;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
@@ -160,14 +156,9 @@ public:
 
         std::string decoded_results = m_tokenizer.decode(generated);
         if (m_is_chat_conversation) {
-            // Tail of chat template is missing in KV cache.
-            // Find the tail to concatenate it with the next input prompt.
-            m_templated_chat_history.append(decoded_results);
-            m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+            m_inputs_embedder->update_chat_history(decoded_results);
         } else {
-            for (auto& variable : m_language.query_state()) {
-                variable.reset();
-            }
+            m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
         return {{std::move(decoded_results)}};
@@ -205,29 +196,24 @@ public:
         bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
         if (have_state) {
             // Resetting state may be slow.
-            for (ov::VariableState& variable : m_language.query_state()) {
-                variable.reset();
-            }
+            m_language.reset_state();
             // Since if is already introduced, move all resetting here.
             m_language.get_tensor("attention_mask").set_shape({1, 0});
-            m_history.clear();
-            m_templated_chat_history.clear();
         }
-        if (system_message.empty()) {
-            return;
-        }
-        m_history = {{{"role", "system"}, {"content", system_message}}};
-        constexpr bool add_generation_prompt = false;
-        m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        m_inputs_embedder->start_chat(system_message);
     }
 
-    void finish_chat() {m_is_chat_conversation = false;}
+    void finish_chat() {
+        m_is_chat_conversation = false;
+        m_inputs_embedder->finish_chat();
+    }
 
     Tokenizer get_tokenizer() const {
         return m_tokenizer;
     }
 
     void set_chat_template(const std::string& new_template) {
+        OPENVINO_ASSERT(!m_is_chat_conversation, "Chat template cannot be changed once start_chat() is called. Please, finish current chat via finish_chat()");
         m_tokenizer.set_chat_template(new_template);
     }
 

@@ -35,6 +35,8 @@ protected:
     ChatHistory m_history;
     // Templated chat history
     std::string m_templated_chat_history;
+    // Whether we have computed some inputs already
+    bool m_have_state = false;
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
@@ -45,6 +47,35 @@ public:
 
     Tokenizer get_tokenizer() const {
         return m_tokenizer;
+    }
+
+    void start_chat(const std::string& system_message) {
+        m_is_chat_conversation = true;
+        if (m_have_state) {
+            m_history.clear();
+            m_templated_chat_history.clear();
+        }
+        if (system_message.empty()) {
+            return;
+        }
+        m_history = {{{"role", "system"}, {"content", system_message}}};
+        constexpr bool add_generation_prompt = false;
+        m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    }
+
+    void update_chat_history(const std::string& decoded_results) {
+        // Tail of chat template is missing in KV cache.
+        // Find the tail to concatenate it with the next input prompt.
+        m_templated_chat_history.append(decoded_results);
+        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+    }
+
+    void finish_chat() {
+        m_is_chat_conversation = false;
+        m_have_state = false;
+
+        m_history.clear();
+        m_templated_chat_history.clear();
     }
 
 protected:
@@ -95,15 +126,8 @@ public:
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap device_config,
-        ov::InferRequest embedding,
-        Tokenizer tokenizer,
-        bool& is_chat_conversation,
-        ChatHistory& history,
-        std::string& templated_chat_history) :
-        IInputsEmbedder(vlm_config, model_dir, device, device_config,
-                       embedding, tokenizer,
-                       is_chat_conversation, history, templated_chat_history) {
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, model_dir, device, device_config) {
         m_resampler = ov::Core{}.compile_model(
             model_dir / "resampler.xml", device, device_config
         ).create_infer_request();
@@ -172,13 +196,13 @@ public:
             m_history.push_back({{"role", "user"}, {"content", images_prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
-            if (0 == 1 /* ilavreno: m_language.get_tensor("attention_mask").get_shape().at(1) */) {
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
+            if (!m_have_state) {
                 encoded_input = new_chat_tokens;
+                // we imply that after this method is called, LLM has processed inputs embeddings and we have some state within LLM
+                m_have_state = true;
             } else {
-                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
-                    m_templated_chat_history
-                );
+                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
                 encoded_input = utils::subtract_chat_tokenized_inputs(
                     {new_chat_tokens}, prev_chat_tokens
                 ).input_ids;
@@ -452,15 +476,8 @@ public:
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap device_config,
-        ov::InferRequest embedding,
-        Tokenizer tokenizer,
-        bool& is_chat_conversation,
-        ChatHistory& history,
-        std::string& templated_chat_history) :
-        IInputsEmbedder(vlm_config, model_dir, device, device_config,
-                       embedding, tokenizer,
-                       is_chat_conversation, history, templated_chat_history) { }
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
@@ -539,15 +556,8 @@ public:
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap device_config,
-        ov::InferRequest embedding,
-        Tokenizer tokenizer,
-        bool& is_chat_conversation,
-        ChatHistory& history,
-        std::string& templated_chat_history) :
-        InputsEmbedderLLaVA(vlm_config, model_dir, device, device_config,
-                            embedding, tokenizer,
-                            is_chat_conversation, history, templated_chat_history) { }
+        const ov::AnyMap device_config) :
+        InputsEmbedderLLaVA(vlm_config, model_dir, device, device_config) { }
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
@@ -853,21 +863,13 @@ private:
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
                                const std::filesystem::path& model_dir,
                                const std::string& device,
-                               const ov::AnyMap device_config,
-                               ov::InferRequest embedding,
-                               Tokenizer tokenizer,
-                               bool& is_chat_conversation,
-                               ChatHistory& history,
-                               std::string& templated_chat_history) {
+                               const ov::AnyMap device_config) {
     if (vlm_config.model_type == VLMModelType::MINICPM) {
-        m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, device, device_config,
-                                                         embedding, tokenizer, is_chat_conversation, history, templated_chat_history);
+        m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
-        m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, device, device_config,
-                                                       embedding, tokenizer, is_chat_conversation, history, templated_chat_history);
+        m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
-        m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config,
-                                                           embedding, tokenizer, is_chat_conversation, history, templated_chat_history);
+        m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
     }
 }
 
@@ -881,6 +883,18 @@ ov::InferRequest InputsEmbedder::get_embedding_model() const {
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
     return m_impl->get_tokenizer();
+}
+
+void InputsEmbedder::start_chat(const std::string& system_message) {
+    return m_impl->start_chat(system_message);
+}
+
+void InputsEmbedder::update_chat_history(const std::string& decoded_results) {
+    return m_impl->update_chat_history(decoded_results);
+}
+
+void InputsEmbedder::finish_chat() {
+    return m_impl->finish_chat();
 }
 
 } // namespace ov::genai

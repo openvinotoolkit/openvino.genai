@@ -19,20 +19,23 @@ public:
     InputsEmbedder(const VLMConfig& vlm_config,
                    const std::filesystem::path& model_dir,
                    const std::string& device,
-                   const ov::AnyMap device_config,
-                   ov::InferRequest embedding,
-                   // looks like dirty parameters
-                   Tokenizer tokenizer,
-                   bool& is_chat_conversation,
-                   ChatHistory& history,
-                   std::string& templated_chat_history);
+                   const ov::AnyMap device_config);
 
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images);
 
+    // returns embedding model which converts token_id(s) to embedding vectors
     ov::InferRequest get_embedding_model() const;
 
+    // returns tokenizer
     Tokenizer get_tokenizer() const;
+
+    // starts chat and adds optional system_message to chat history
+    void start_chat(const std::string& system_message);
+    // adds currently generated text to chat history
+    void update_chat_history(const std::string& decoded_results);
+    // finishes chat and clears a chat history 
+    void finish_chat();
 
 private:
     class IInputsEmbedder;
