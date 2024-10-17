@@ -8,8 +8,7 @@
 #include "text2image/schedulers/ischeduler.hpp"
 #include "openvino/genai/text2image/pipeline.hpp"
 
-#include "utils.hpp"
-
+#include "json_utils.hpp"
 namespace {
 
 void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1) {

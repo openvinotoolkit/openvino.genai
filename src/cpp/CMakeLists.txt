@@ -15,8 +15,8 @@ endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/ilya-lavrenov/Jinja2Cpp/archive/04073b62ec950eab6cdcb2c563c1c9bb7698f1ea.tar.gz
-        URL_HASH SHA256=9f2a346eec91a6a381fe8fd631e9c952fe7087882bbca7f0e4e42e75e680fc1b)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/86dfb939b5c2beb7fabddae2df386be4e7fb9507.tar.gz
+        URL_HASH SHA256=c222e2407316a573561bd74dfd1cd7b34b359f5481ac59529b3de355162ef9f7)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -42,6 +42,8 @@ function(ov_genai_build_jinja2cpp)
         if(SUGGEST_OVERRIDE_SUPPORTED)
             target_compile_options(jinja2cpp PRIVATE -Wno-suggest-override)
         endif()
+
+        target_compile_definitions(jinja2cpp PUBLIC JINJA2CPP_LINK_AS_SHARED=0)
     endif()
 endfunction()
 

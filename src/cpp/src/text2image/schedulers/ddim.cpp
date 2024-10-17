@@ -7,7 +7,6 @@
 #include <iterator>
 
 #include "text2image/schedulers/ddim.hpp"
-#include "utils.hpp"
 #include "text2image/numpy_utils.hpp"
 
 namespace ov {

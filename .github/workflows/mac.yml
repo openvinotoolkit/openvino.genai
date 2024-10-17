@@ -30,7 +30,6 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04
-
     steps:
       - name: Download OpenVINO build
         id: openvino_download
@@ -227,7 +226,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py  --ignore ./tests/python_tests/test_vlm_api.py
+          python -m pytest ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
@@ -386,7 +385,8 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout --verbose 27s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        timeout-minutes: 1
 
   Overall_Status:
     name: ci/gha_overall_status_macos

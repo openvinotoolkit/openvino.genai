@@ -350,28 +350,18 @@ public:
         m_image_id{0} {
             if (m_vlm_config.model_type == VLMModelType::MINICPM) {
                 m_resampler = ov::Core{}.compile_model(
-                    model_dir / "resampler.xml", device, device_config
-                ).create_infer_request();
-
-                m_embedding = ov::Core{}.compile_model(
-                    model_dir / "embed_tokens.xml", device, device_config
-                ).create_infer_request();
-
-                m_language = ov::Core{}.compile_model(
-                    model_dir / "language_model.xml", device, device_config
+                    model_dir / "openvino_resampler_model.xml", device, device_config
                 ).create_infer_request();
 
                 m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
-            } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
-                m_language = ov::Core{}.compile_model(
-                    model_dir / "openvino_language_model.xml", device, device_config
-                ).create_infer_request();
-
-                // Reusing the same m_embedding for llava text_embeddings model
-                m_embedding = ov::Core{}.compile_model(
-                    model_dir / "openvino_text_embeddings_model.xml", device, device_config
-                ).create_infer_request();
             }
+            m_embedding = ov::Core{}.compile_model(
+                model_dir / "openvino_text_embeddings_model.xml", device, device_config
+            ).create_infer_request();
+
+            m_language = ov::Core{}.compile_model(
+                model_dir / "openvino_language_model.xml", device, device_config
+            ).create_infer_request();
 
             m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
@@ -526,6 +516,10 @@ public:
     }
 
     void finish_chat() {m_is_chat_conversation = false;}
+
+    Tokenizer get_tokenizer() const {
+        return m_tokenizer;
+    }
 
     void set_chat_template(const std::string& new_template) {
         m_tokenizer.set_chat_template(new_template);
@@ -703,8 +697,8 @@ public:
             pipe.m_pos_embed_cache
         );
         size_t max_patch_len = *std::max_element(patch_len.begin(), patch_len.end());
-        ov::Tensor key_padding_mask(ov::element::boolean, {bs, max_patch_len});
-        bool* mask_data = key_padding_mask.data<bool>();
+        ov::Tensor key_padding_mask(ov::element::f32, {bs, max_patch_len});
+        float* mask_data = key_padding_mask.data<float>();
         size_t embed_len = pipe.m_pos_embed_cache.get_shape().at(2);
         ov::Tensor pos_embed(ov::element::f32, {max_patch_len, bs, embed_len});  // BLD => L * B * D
         float* pos_embed_data = pos_embed.data<float>();
@@ -726,10 +720,10 @@ public:
             for (size_t flat = target_h * target_w; flat < max_patch_len; ++flat) {
                 std::fill_n(pos_embed_data + flat * bs * embed_len + i * embed_len, embed_len, 0.0f);
             }
-            std::fill_n(mask_data + i * max_patch_len, patch_len[i], false);
-            std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], true);
+            std::fill_n(mask_data + i * max_patch_len, patch_len[i], 0.0f);
+            std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], 1.0f);
         }
-        pipe.m_resampler.set_tensor("x", encoded_image);  // [N, H*W, old_hidden_size]
+        pipe.m_resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
         pipe.m_resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
         pipe.m_resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
         pipe.m_resampler.infer();
@@ -771,6 +765,10 @@ void VLMPipeline::finish_chat() {
 
 void VLMPipeline::set_chat_template(const std::string& new_template) {
     m_pimpl->set_chat_template(new_template);
+}
+
+Tokenizer VLMPipeline::get_tokenizer() const {
+    return m_pimpl->get_tokenizer();
 }
 
 GenerationConfig VLMPipeline::get_generation_config() const {

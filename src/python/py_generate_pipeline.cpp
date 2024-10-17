@@ -9,9 +9,9 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
-#include "../cpp/src/tokenizers_path.hpp"
+#include "tokenizers_path.hpp"
 
-#include "./utils.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 namespace utils = ov::genai::pybind::utils;
@@ -643,8 +643,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
         .def("get_ttft", &PerfMetrics::get_ttft)
         .def("get_tpot", &PerfMetrics::get_tpot)
+        .def("get_ipot", &PerfMetrics::get_ipot)
         .def("get_throughput", &PerfMetrics::get_throughput)
         .def("get_generate_duration", &PerfMetrics::get_generate_duration)
+        .def("get_inference_duration", &PerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
         .def("__add__", &PerfMetrics::operator+)
