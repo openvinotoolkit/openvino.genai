@@ -227,7 +227,12 @@ ov::AnyMap get_baseline_common_config() {
 
 ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_baseline_common_config();
-    config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
+    const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
+    if (npu_l0 && std::atoi(npu_l0) == 1) {
+        config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
+    } else {
+        config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
+    }
     enable_npuw_dq_if_allowed(config, model);
     return config;
 }
