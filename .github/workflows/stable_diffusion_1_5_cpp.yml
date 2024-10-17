@@ -24,7 +24,6 @@ concurrency:
 jobs:
   stable_diffusion_1_5_cpp-linux:
     runs-on: ubuntu-20.04-8-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash -l {0}
@@ -78,7 +77,6 @@ jobs:
 
   stable_diffusion_1_5_cpp-windows:
     runs-on: windows-latest
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: pwsh
