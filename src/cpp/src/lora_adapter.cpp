@@ -301,23 +301,19 @@ struct LoRAWeightGetterDefault {
     }
 
     ~LoRAWeightGetterDefault() {
-        try {
-            if(!active || !lora_tensors) {
-                return;
-            }
+        if(!active || !lora_tensors) {
+            return;
+        }
 
-            auto unused = get_unused_tensors();
-            if(unused.empty()) {
-                return;
-            }
+        auto unused = get_unused_tensors();
+        if(unused.empty()) {
+            return;
+        }
 
-            std::cerr << "[ WARNING ] There unused LoRA tensors. The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
+        std::cerr << "[ WARNING ] There unused LoRA tensors. The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
 
-            for(const auto& unused_name: unused) {
-                std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
-            }
-        }catch(...) {
-            std::cerr << "[ UNKNOWN EXEPTION IN DTOR ]\n";
+        for(const auto& unused_name: unused) {
+            std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
         }
     }
 
