@@ -178,6 +178,8 @@ class TextEvaluator(BaseEvaluator):
         self.last_cmp["prompts"] = predictions["prompts"].values
         self.last_cmp["source_model"] = self.gt_data["answers"].values
         self.last_cmp["optimized_model"] = predictions["answers"].values
+        self.last_cmp["bm_tokens"] = self.gt_data["tokenized"].values
+        self.last_cmp["om_tokens"] = predictions["tokenized"].values
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
@@ -263,6 +265,13 @@ class TextEvaluator(BaseEvaluator):
 
         res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
+        if getattr(model, "is_genai", False):
+            df["tokenized"] = df["prompts"].apply(
+                lambda prompt: str(model.get_tokenizer().encode(prompt).input_ids.data[0].tolist())
+            )
+        else:
+            df["tokenized"] = df["prompts"].apply(lambda prompt: self.tokenizer(prompt)["input_ids"])
+
         df["language"] = self.language
 
         return df

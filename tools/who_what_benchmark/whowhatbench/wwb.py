@@ -38,6 +38,7 @@ class GenAIModelWrapper:
     def __init__(self, model, model_dir):
         self.model = model
         self.config = AutoConfig.from_pretrained(model_dir)
+        self.is_genai = True
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
