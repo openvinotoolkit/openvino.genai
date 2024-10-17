@@ -7,13 +7,13 @@
 #include <string>
 #include <memory>
 
-#include "openvino/genai/visibility.hpp"
-
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
+
+#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
