@@ -705,13 +705,15 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
+          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
+          python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
-          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+          optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
       - name: Run visual_language_chat C++ sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ cat.jpg
           <<< $'What is on the image?\nWhat is special on the image?'
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
@@ -740,7 +742,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores

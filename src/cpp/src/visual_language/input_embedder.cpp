@@ -56,12 +56,8 @@ protected:
         m_vlm_config{vlm_config},
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
         m_tokenizer{model_dir.string(), device_config} {
-        auto get_embedding_model_path = [] (ov::genai::VLMModelType model_type) -> std::filesystem::path {
-            return model_type == ov::genai::VLMModelType::MINICPM ? "embed_tokens.xml" : "openvino_text_embeddings_model.xml";
-        };
-
         m_embedding = ov::Core{}.compile_model(
-            model_dir / get_embedding_model_path(m_vlm_config.model_type), device, device_config
+            model_dir / "openvino_text_embeddings_model.xml", device, device_config
         ).create_infer_request();
     }
 
@@ -261,8 +257,8 @@ private:
             m_pos_embed_cache
         );
         size_t max_patch_len = *std::max_element(patch_len.begin(), patch_len.end());
-        ov::Tensor key_padding_mask(ov::element::boolean, {bs, max_patch_len});
-        bool* mask_data = key_padding_mask.data<bool>();
+        ov::Tensor key_padding_mask(ov::element::f32, {bs, max_patch_len});
+        float* mask_data = key_padding_mask.data<float>();
         size_t embed_len = m_pos_embed_cache.get_shape().at(2);
         ov::Tensor pos_embed(ov::element::f32, {max_patch_len, bs, embed_len});  // BLD => L * B * D
         float* pos_embed_data = pos_embed.data<float>();
@@ -284,10 +280,10 @@ private:
             for (size_t flat = target_h * target_w; flat < max_patch_len; ++flat) {
                 std::fill_n(pos_embed_data + flat * bs * embed_len + i * embed_len, embed_len, 0.0f);
             }
-            std::fill_n(mask_data + i * max_patch_len, patch_len[i], false);
-            std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], true);
+            std::fill_n(mask_data + i * max_patch_len, patch_len[i], 0.0f);
+            std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], 1.0f);
         }
-        m_resampler.set_tensor("x", encoded_image);  // [N, H*W, old_hidden_size]
+        m_resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
         m_resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
         m_resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
         m_resampler.infer();

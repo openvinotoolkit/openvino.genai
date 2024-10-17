@@ -64,10 +64,6 @@ public:
             )
         },
         m_is_chat_conversation{false} {
-        auto get_language_model_path = [] (ov::genai::VLMModelType model_type) -> std::filesystem::path {
-            return model_type == ov::genai::VLMModelType::MINICPM ? "language_model.xml" : "openvino_language_model.xml";
-        };
-
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
             m_vlm_config, model_dir, device, device_config);
 
@@ -75,7 +71,7 @@ public:
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         m_language = ov::Core{}.compile_model(
-            model_dir / get_language_model_path(m_vlm_config.model_type), device, device_config
+            model_dir / "openvino_language_model.xml", device, device_config
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});

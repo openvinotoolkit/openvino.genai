@@ -300,8 +300,8 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     ov::Tensor input_tensor{ov::element::f32, {1, 3, size_t(resized_preprocessed.ny), size_t(resized_preprocessed.nx)}, (void*)(resized_preprocessed.buf.data())};
     ov::Tensor pixel_values = preprocess_for_encoder(input_tensor, patch_size);
     encoder.set_tensor("pixel_values", pixel_values);
-    ov::Tensor patch_attention_mask{ov::element::boolean, {pixel_values.get_shape().at(0), 1, resized_source_size.height * resized_source_size.width}};
-    std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
+    ov::Tensor patch_attention_mask{ov::element::f32, {pixel_values.get_shape().at(0), 1, resized_source_size.height * resized_source_size.width}};
+    std::fill_n(patch_attention_mask.data<float>(), patch_attention_mask.get_size(), 1.0f);
     encoder.set_tensor("patch_attention_mask", patch_attention_mask);
     ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, {resized_source_size}, ctx_clip.patch_size, ctx_clip.image_size / ctx_clip.patch_size);
     encoder.set_tensor("position_ids", position_ids);
@@ -333,8 +333,8 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
                 patch_size
             );
             encoder.set_tensor("pixel_values", pixel_values);
-            ov::Tensor patch_attention_mask{ov::element::boolean, {1, 1, slices_size.height * slices_size.width}};
-            std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
+            ov::Tensor patch_attention_mask{ov::element::f32, {1, 1, slices_size.height * slices_size.width}};
+            std::fill_n(patch_attention_mask.data<float>(), patch_attention_mask.get_size(), 1.0f);
             encoder.set_tensor("patch_attention_mask", patch_attention_mask);
             ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, {slices_size}, ctx_clip.patch_size, ctx_clip.image_size / ctx_clip.patch_size);
             encoder.set_tensor("position_ids", position_ids);
@@ -480,12 +480,7 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     model_type(model_type) {
-        if (model_type == VLMModelType::MINICPM) {
-            m_vision_encoder = core.compile_model(model_dir / "image_encoder.xml", device, device_config).create_infer_request();
-        } else if (model_type == VLMModelType::LLAVA || model_type == VLMModelType::LLAVA_NEXT) {
-            // Vision embeddings model is merged with multi modal projector at model export stage by optimum-intel
-            m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
-        }
+        m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
         m_processor_config = ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
             model_dir, "preprocessor_config.json"
         );

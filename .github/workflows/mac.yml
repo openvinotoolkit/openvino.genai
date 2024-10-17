@@ -30,7 +30,6 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04
-
     steps:
       - name: Download OpenVINO build
         id: openvino_download
