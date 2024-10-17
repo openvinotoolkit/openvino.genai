@@ -196,13 +196,13 @@ public:
             m_history.push_back({{"role", "user"}, {"content", images_prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
             if (!m_have_state) {
                 encoded_input = new_chat_tokens;
                 // we imply that after this method is called, LLM has processed inputs embeddings and we have some state within LLM
                 m_have_state = true;
             } else {
-                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
                 encoded_input = utils::subtract_chat_tokenized_inputs(
                     {new_chat_tokens}, prev_chat_tokens
                 ).input_ids;
@@ -751,7 +751,6 @@ private:
 
         return flatten_feature;
     }
-
     ov::Tensor reshape_and_rearrange_image_feature(const ov::Tensor& image_feature, 
                                                 int num_patch_height, 
                                                 int num_patch_width, 
