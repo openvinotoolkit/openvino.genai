@@ -63,23 +63,16 @@ public:
                 model_dir, "config.json"
             )
         },
-        m_tokenizer{model_dir.string(), device_config},
         m_is_chat_conversation{false} {
-        auto get_embedding_model_path = [] (ov::genai::VLMModelType model_type) -> std::filesystem::path {
-            return model_type == ov::genai::VLMModelType::MINICPM ? "embed_tokens.xml" : "openvino_text_embeddings_model.xml";
-        };
         auto get_language_model_path = [] (ov::genai::VLMModelType model_type) -> std::filesystem::path {
             return model_type == ov::genai::VLMModelType::MINICPM ? "language_model.xml" : "openvino_language_model.xml";
         };
 
-        m_embedding = ov::Core{}.compile_model(
-            model_dir / get_embedding_model_path(m_vlm_config.model_type), device, device_config
-        ).create_infer_request();
-
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
-            m_vlm_config, model_dir, device, device_config,
-            m_embedding, m_tokenizer,
-            m_is_chat_conversation, m_history, m_templated_chat_history);
+            m_vlm_config, model_dir, device, device_config);
+
+        m_tokenizer = m_inputs_embedder->get_tokenizer();
+        m_embedding = m_inputs_embedder->get_embedding_model();
 
         m_language = ov::Core{}.compile_model(
             model_dir / get_language_model_path(m_vlm_config.model_type), device, device_config

@@ -30,6 +30,10 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images);
 
+    ov::InferRequest get_embedding_model() const;
+
+    Tokenizer get_tokenizer() const;
+
 private:
     class IInputsEmbedder;
     std::shared_ptr<IInputsEmbedder> m_impl;

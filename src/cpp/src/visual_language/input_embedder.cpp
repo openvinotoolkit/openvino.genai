@@ -30,33 +30,40 @@ protected:
     Tokenizer m_tokenizer;
     // True if chat mode is activated to save conversation
     // history between generate() calls.
-    bool& m_is_chat_conversation;
+    bool m_is_chat_conversation = false;
     // Chat history
-    ChatHistory& m_history;
+    ChatHistory m_history;
     // Templated chat history
-    std::string& m_templated_chat_history;
+    std::string m_templated_chat_history;
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
+
+    ov::InferRequest get_embedding_model() const {
+        return m_embedding;
+    }
+
+    Tokenizer get_tokenizer() const {
+        return m_tokenizer;
+    }
 
 protected:
     IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap device_config,
-        ov::InferRequest embedding,
-        Tokenizer tokenizer,
-        bool& is_chat_conversation,
-        ChatHistory& history,
-        std::string& templated_chat_history) :
+        const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
-        m_embedding(embedding),
-        m_tokenizer(tokenizer),
-        m_is_chat_conversation(is_chat_conversation),
-        m_history(history),
-        m_templated_chat_history(templated_chat_history) { }
+        m_tokenizer{model_dir.string(), device_config} {
+        auto get_embedding_model_path = [] (ov::genai::VLMModelType model_type) -> std::filesystem::path {
+            return model_type == ov::genai::VLMModelType::MINICPM ? "embed_tokens.xml" : "openvino_text_embeddings_model.xml";
+        };
+
+        m_embedding = ov::Core{}.compile_model(
+            model_dir / get_embedding_model_path(m_vlm_config.model_type), device, device_config
+        ).create_infer_request();
+    }
 
     ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
         embedding.set_input_tensor(prompt);
@@ -559,7 +566,7 @@ public:
             // TODO Consider using template syntax instead of concatenating
             new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, "USER: " + content + " ASSISTANT:");
         }
-         
+
         ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
@@ -870,6 +877,14 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) {
     return m_impl->get_inputs_embeds(prompt, images);
+}
+
+ov::InferRequest InputsEmbedder::get_embedding_model() const {
+    return m_impl->get_embedding_model();
+}
+
+Tokenizer InputsEmbedder::get_tokenizer() const {
+    return m_impl->get_tokenizer();
 }
 
 } // namespace ov::genai
