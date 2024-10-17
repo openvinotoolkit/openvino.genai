@@ -18,7 +18,7 @@ def main():
 
     raw_speech = read_wav(args.wav_file_path)
 
-    device = "CPU" # to GPU
+    device = "CPU" # can switch between CPU/GPU
     pipe = openvino_genai.WhisperPipeline(args.model_dir, device=device) 
 
     def streamer(word: str) -> bool:
