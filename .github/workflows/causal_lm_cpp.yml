@@ -422,8 +422,16 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5
-          ./build/samples/cpp/speculative_decoding_lm/continuous_batching_speculative_decoding -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_speculative.txt', 'r') as f:
+              predicted_speculative = f.readline()
+          assert predicted_greedy == predicted_speculative
+          "
+          echo "Alan Turing was a" passed
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
