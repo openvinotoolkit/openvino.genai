@@ -132,6 +132,11 @@ def analyze_args(args):
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
+
+    has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
+    if model_args["torch_compile_backend"] is None and has_torch_compile_options:
+        log.warning("torch.compile configuration options provided, but backend is not selected, openvino backend will be used")
+        model_args["torch_compile_backend"] = "openvino"
     model_args['convert_tokenizer'] = args.convert_tokenizer
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
