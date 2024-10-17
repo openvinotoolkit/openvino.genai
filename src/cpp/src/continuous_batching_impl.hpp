@@ -27,6 +27,15 @@ protected:
     static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
     std::deque<float> m_previous_step_cache_usages;
 
+    // Pre-allocated per-layer storages for the per-token cache re-rotation coefficients used in cache eviction case
+    std::vector<ov::Tensor> m_rotation_coefficient_stores;
+
+    // Per-layer ROI tensors, reusing storage from the pre-allocated tensors above, that actually represent the
+    // re-rotation coefficients to be sent to the proper model inputs at the *next* pipeline step.
+    std::vector<ov::Tensor> m_next_step_rotation_coefficients;
+
+    std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
+
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif

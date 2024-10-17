@@ -74,6 +74,10 @@ public:
         return m_block_manager.get_block_tables(seq.get_id());
     }
 
+    const std::vector<BlocksPerLayer>& get_block_tables(size_t seq_id) const {
+        return m_block_manager.get_block_tables(seq_id);
+    }
+
     const bool has_block_table(uint64_t seq_id) {
         return m_block_manager.has_block_table(seq_id);
     }
