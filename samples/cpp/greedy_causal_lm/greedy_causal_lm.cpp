@@ -11,7 +11,29 @@ int main(int argc, char* argv[]) try {
     std::string prompt = argv[2];
     std::string device = "CPU";  // GPU can be used as well
 
-    ov::genai::LLMPipeline pipe(model_path, device);
+    // Perform the inference
+    auto get_default_block_size = [](const std::string& device) {
+        const size_t cpu_block_size = 32;
+        const size_t gpu_block_size = 16;
+
+        bool is_gpu = device.find("GPU") != std::string::npos;
+
+        return is_gpu ? gpu_block_size : cpu_block_size;
+    };
+
+    ov::genai::SchedulerConfig scheduler_config;
+    scheduler_config.cache_size = 5;
+    scheduler_config.block_size = get_default_block_size(device);
+
+    // It's possible to construct a Tokenizer from a different path.
+    // If the Tokenizer isn't specified, it's loaded from the same folder.
+    // User can run main and draft model on different devices.
+    // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
+    // Example to run main_model on GPU and draft_model on CPU:
+    // ov::genai::LLMPipeline pipe(main_model_path, "GPU", ov::genai::draft_model(draft_model_path, "CPU"), ov::genai::scheduler_config(scheduler_config));
+    ov::genai::LLMPipeline pipe(model_path, device, ov::genai::scheduler_config(scheduler_config));
+
+    // ov::genai::LLMPipeline pipe(model_path, device);
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     std::string result = pipe.generate(prompt, config);

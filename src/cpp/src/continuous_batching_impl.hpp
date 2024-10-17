@@ -26,10 +26,16 @@ protected:
 
     static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
     std::deque<float> m_previous_step_cache_usages;
+    
+    // flag to enable validation mode for sampler
+    bool m_is_validation_mode_enabled = false;
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif
+
+    // used by tests only
+    ContinuousBatchingImpl() = default;
 
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
@@ -38,6 +44,15 @@ protected:
     float _get_current_running_average_cache_usage() const;
 
     void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+
+    void init(std::shared_ptr<ov::Model> model,
+              const SchedulerConfig& scheduler_config,
+              const ov::AnyMap& plugin_config,
+              const DeviceConfig& device_config,
+              ov::Core& core);
+
+    void _pull_awaiting_requests();
+
 public:
     ContinuousBatchingImpl(const std::string& models_path,
                            const Tokenizer& tokenizer,
@@ -71,10 +86,6 @@ public:
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override;
-    std::vector<GenerationResult>
-    generate(const std::vector<std::string>& prompts,
-             std::vector<ov::genai::GenerationConfig> sampling_params,
              const StreamerVariant& streamer) override;
 };
 }
