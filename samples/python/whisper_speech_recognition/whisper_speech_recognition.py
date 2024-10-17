@@ -6,11 +6,9 @@ import argparse
 import openvino_genai
 import librosa
 
-
 def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -20,7 +18,8 @@ def main():
 
     raw_speech = read_wav(args.wav_file_path)
 
-    pipe = openvino_genai.WhisperPipeline(args.model_dir)
+    device = "CPU" # to GPU
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, device=device) 
 
     def streamer(word: str) -> bool:
         print(word, end="")
@@ -28,19 +27,17 @@ def main():
 
     result = pipe.generate(
         raw_speech,
-        max_new_tokens=100,
+        max_new_tokens=1000, #increase this based on your speech length
         # 'task' and 'language' parameters are supported for multilingual models only
-        language="<|en|>",
+        language="<|en|>", #can switch to <|zh|> for Chinese language 
         task="transcribe",
         return_timestamps=True,
         streamer=streamer,
     )
-
     print()
 
     for chunk in result.chunks:
         print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
-
 
 if "__main__" == __name__:
     main()
