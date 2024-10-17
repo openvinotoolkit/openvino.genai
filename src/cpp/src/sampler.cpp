@@ -230,6 +230,22 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
     }
 }
 
+
+std::vector<int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
+    std::vector<int32_t> next_beams;
+
+    for (Group& group : m_groups) {
+        if (!group.done) {
+            for (Beam& beam : group.ongoing) {
+                next_beams.push_back(beam.m_global_beam_idx);
+            }
+        }
+    }
+
+    return next_beams;
+}
+
+
 void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
@@ -576,6 +592,15 @@ void register_new_token(const Token& sampled_token_id,
         sequence_group->pause_generation(true);
     }
 };
+
+std::vector<int32_t> Sampler::get_beam_idxs(SequenceGroup::CPtr sequence_group) {
+    size_t request_id = sequence_group->get_request_id();
+    auto beam_searcher = m_beam_search_info.find(request_id);
+    if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
+        return std::vector<int32_t>(sequence_group->num_running_seqs(), 0);
+    }
+    return beam_searcher->second.get_beam_idxs();
+}
 
 std::list<uint64_t>
 create_n_forked_sequences(SequenceGroup::Ptr sequence_group,

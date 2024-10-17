@@ -6,6 +6,28 @@
 #include "stb_image.h"
 #include "load_image.hpp"
 
+namespace fs = std::filesystem;
+
+std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_path) {
+    std::vector<ov::Tensor> images;
+    if (!input_path.empty() && fs::exists(input_path)) {
+        if (fs::is_directory(input_path)) {
+            for (const auto& dir_entry : fs::directory_iterator(input_path)) {
+                ov::Tensor image = utils::load_image(dir_entry.path());
+                images.push_back(std::move(image));
+            }
+        } else if (fs::is_regular_file(input_path)) {
+            ov::Tensor image = utils::load_image(input_path);
+            images.push_back(std::move(image));
+        }
+    }
+
+    if (images.empty())
+        throw std::runtime_error(std::string{"No images were found in path "} + input_path.string());
+
+    return images;
+}
+
 ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
     int x = 0, y = 0, channels_in_file = 0;
     constexpr int desired_channels = 3;
