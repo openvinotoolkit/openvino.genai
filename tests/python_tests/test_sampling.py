@@ -324,12 +324,14 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
-def test_echo_without_completion(tmp_path, sampling_config):
+@pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
+def test_echo_without_completion(tmp_path, sampling_config, max_num_batched_tokens):
     generation_config = sampling_config
     generation_config.max_new_tokens = 0
     generation_config.echo = True
 
     scheduler_config = get_scheduler_config()
+    scheduler_config.max_num_batched_tokens = max_num_batched_tokens
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
@@ -337,17 +339,6 @@ def test_echo_without_completion(tmp_path, sampling_config):
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
-
-    outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(outputs))
-    for output in outputs:
-        assert(len(output.m_generation_ids))
-        for sequence in output.m_generation_ids:
-            assert(sequence == "What is OpenVINO?")
-
-    # Force splitting processing into multiple steps to check if whole prompt gets processed correctly
-    scheduler_config.max_num_batched_tokens = 4
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
 
     outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
@@ -362,12 +353,14 @@ def test_echo_without_completion(tmp_path, sampling_config):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
-def test_echo_with_completion(tmp_path, sampling_config):
+@pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
+def test_echo_with_completion(tmp_path, sampling_config, max_num_batched_tokens):
     generation_config = sampling_config
     generation_config.max_new_tokens = 10
     generation_config.echo = True
 
     scheduler_config = get_scheduler_config()
+    scheduler_config.max_num_batched_tokens = max_num_batched_tokens
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
@@ -375,18 +368,6 @@ def test_echo_with_completion(tmp_path, sampling_config):
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
-
-    outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(outputs))
-    for output in outputs:
-        assert(len(output.m_generation_ids))
-        for sequence in output.m_generation_ids:
-            assert(sequence.startswith("What is OpenVINO?"))
-            assert(len(sequence) > len("What is OpenVINO?"))
-
-    # Force splitting processing into multiple steps to check if whole prompt gets processed correctly
-    scheduler_config.max_num_batched_tokens = 4
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
 
     outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
