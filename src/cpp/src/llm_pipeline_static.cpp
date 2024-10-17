@@ -69,8 +69,9 @@ bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
 
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
         config.erase(it);
-        return std::make_optional(it->second);
+        return found;
     }
     return std::nullopt;
 }
