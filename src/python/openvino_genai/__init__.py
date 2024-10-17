@@ -29,5 +29,6 @@ from .py_generate_pipeline import (
     WhisperGenerationConfig,
     WhisperPipeline,
     CacheEvictionConfig,
-    AggregationMode
+    AggregationMode,
+    DraftModel
 )

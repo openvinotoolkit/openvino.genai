@@ -130,6 +130,17 @@ def main():
     device = 'CPU'  # GPU can be used as well
 
     scheduler_config = openvino_genai.SchedulerConfig()
+    # batch size
+    scheduler_config.max_num_batched_tokens = 32
+    # cache params
+    scheduler_config.num_kv_blocks = 364
+    scheduler_config.block_size = 32
+    # mode - vLLM or dynamic_split_fuse
+    scheduler_config.dynamic_split_fuse = True
+    # vLLM specific params
+    scheduler_config.max_num_seqs = 2
+    scheduler_config.enable_prefix_caching = False
+
     draft_model = openvino_genai.DraftModel(args.draft_model_dir, device)
 
     ov_config = { "scheduler_config": scheduler_config, "draft_model": draft_model }

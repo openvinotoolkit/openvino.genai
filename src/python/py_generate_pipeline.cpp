@@ -766,7 +766,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("streamer") = std::monostate{}
         );
     
-    py::class_<ov::Any>(m, "DraftModel", "This class is used to enable Speculative Decoding")
+    py::class_<ov::Any>(m, "DraftModel", py::module_local(), "This class is used to enable Speculative Decoding")
         .def(py::init([](
             const std::string& model_path,
             const std::string& device,
