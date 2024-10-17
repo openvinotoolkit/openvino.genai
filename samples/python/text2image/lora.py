@@ -8,12 +8,9 @@ import openvino as ov
 import openvino_genai
 
 
-def image_write(path: str, image_tensor: ov.Tensor, convert_bgr2rgb: bool = False):
+def image_write(path: str, image_tensor: ov.Tensor):
     from PIL import Image
     image = Image.fromarray(image_tensor.data[0])
-    if convert_bgr2rgb:
-        b, g, r = image.split()
-        image = Image.merge("RGB", (r, g, b))
     image.save(path)
 
 
@@ -43,7 +40,7 @@ def main():
                           height=896,
                           num_inference_steps=20)
 
-    image_write("lora.bmp", image, True)
+    image_write("lora.bmp", image)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
     image = pipe.generate(prompt,
                           adapters=openvino_genai.AdapterConfig(),
@@ -52,7 +49,7 @@ def main():
                           width=512,
                           height=896,
                           num_inference_steps=20)
-    image_write("baseline.bmp", image, True)
+    image_write("baseline.bmp", image)
 
 
 if '__main__' == __name__:

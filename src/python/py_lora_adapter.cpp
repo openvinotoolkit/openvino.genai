@@ -7,7 +7,7 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 
-#include "./utils.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 namespace utils = ov::genai::pybind::utils;
