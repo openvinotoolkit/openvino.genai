@@ -13,8 +13,8 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 
 env:
   PYTHON_VERSION: '3.10'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu20_2024.5.0.dev20240830_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/w_openvino_toolkit_windows_2024.5.0.dev20240830_x86_64.zip
+  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241014_x86_64.tgz
+  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/w_openvino_toolkit_windows_2024.5.0.dev20241014_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 concurrency:
@@ -76,7 +76,7 @@ jobs:
           ./build/samples/cpp/text2image/lora_stable_diffusion ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "curly-haired unicorn in the forest, anime, line" ./models/soulcard.safetensors 0.7
 
   stable_diffusion_1_5_cpp-windows:
-      runs-on: windows-2019-16-core
+      runs-on: windows-latest
       defaults:
         run:
           shell: pwsh
@@ -93,11 +93,6 @@ jobs:
               Expand-Archive openvino_package.zip -DestinationPath ./tmp
               mv ./tmp/*/* .
             popd
-
-        - name: Configure Developer Command Prompt for Microsoft Visual C++
-          uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-          with:
-            toolset: 14.29
 
         - name: Build app
           run: |

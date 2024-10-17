@@ -30,60 +30,59 @@ unsigned char file[14] = {
 };
 
 unsigned char info[40] = {
-        40,
-        0,
-        0,
-        0,  // info hd size
-        0,
-        0,
-        0,
-        0,  // width
-        0,
-        0,
-        0,
-        0,  // height
-        1,
-        0,  // number color planes
-        24,
-        0,  // bits per pixel
-        0,
-        0,
-        0,
-        0,  // compression is none
-        0,
-        0,
-        0,
-        0,  // image bits size
-        0x13,
-        0x0B,
-        0,
-        0,  // horz resolution in pixel / m
-        0x13,
-        0x0B,
-        0,
-        0,  // vert resolution (0x03C3 = 96 dpi, 0x0B13 = 72
-            // dpi)
-        0,
-        0,
-        0,
-        0,  // #colors in palette
-        0,
-        0,
-        0,
-        0,  // #important colors
-    };
+    40,
+    0,
+    0,
+    0,  // info hd size
+    0,
+    0,
+    0,
+    0,  // width
+    0,
+    0,
+    0,
+    0,  // height
+    1,
+    0,  // number color planes
+    24,
+    0,  // bits per pixel
+    0,
+    0,
+    0,
+    0,  // compression is none
+    0,
+    0,
+    0,
+    0,  // image bits size
+    0x13,
+    0x0B,
+    0,
+    0,  // horz resolution in pixel / m
+    0x13,
+    0x0B,
+    0,
+    0,  // vert resolution (0x03C3 = 96 dpi, 0x0B13 = 72
+        // dpi)
+    0,
+    0,
+    0,
+    0,  // #colors in palette
+    0,
+    0,
+    0,
+    0,  // #important colors
+};
 
-}
-
-void imwrite(const std::string& name, ov::Tensor image, bool convert_bgr2rgb) {
-    std::ofstream output_file(name, std::ofstream::binary);
-    OPENVINO_ASSERT(output_file.is_open(), "Failed to open the output BMP image path");
-
+void imwrite_single_image(const std::string& name, ov::Tensor image, bool convert_bgr2rgb) {
     const ov::Shape shape = image.get_shape();
     const size_t width = shape[2], height = shape[1], channels = shape[3];
     OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
         shape.size() == 4 && shape[0] == 1 && channels == 3,
-        "Image of u8 type and [1, H, W, 3] shape is expected");
+        "Image of u8 type and [1, H, W, 3] shape is expected.",
+        "Given image has shape ", shape, " and element type ", image.get_element_type());
+
+    std::ofstream output_file(name, std::ofstream::binary);
+    OPENVINO_ASSERT(output_file.is_open(), "Failed to open the output BMP image path");
 
     int padSize = static_cast<int>(4 - (width * channels) % 4) % 4;
     int sizeData = static_cast<int>(width * height * channels + height * padSize);
@@ -129,5 +128,21 @@ void imwrite(const std::string& name, ov::Tensor image, bool convert_bgr2rgb) {
             output_file.write(reinterpret_cast<const char*>(current_row), width * channels);
         }
         output_file.write(reinterpret_cast<const char*>(pad), padSize);
+    }
+}
+
+} // namespace
+
+
+void imwrite(const std::string& name, ov::Tensor images, bool convert_bgr2rgb) {
+    const ov::Shape shape = images.get_shape(), img_shape = {1, shape[1], shape[2], shape[3]};
+    uint8_t* img_data = images.data<uint8_t>();
+
+    for (int img_num = 0, num_images = shape[0], img_size = ov::shape_size(img_shape); img_num < num_images; ++img_num, img_data += img_size) {
+        char img_name[25];
+        sprintf(img_name, name.c_str(), img_num);
+
+        ov::Tensor image(images.get_element_type(), img_shape, img_data);
+        imwrite_single_image(img_name, image, true);
     }
 }

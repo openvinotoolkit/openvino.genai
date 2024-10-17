@@ -9,6 +9,7 @@
 #include <openvino/runtime/core.hpp>
 
 #include "utils.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -30,6 +31,7 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::string& json_path) {
     read_json_param(data, "pad_token_id", pad_token_id);
     read_json_param(data, "no_timestamps_token_id", no_timestamps_token_id);
     read_json_param(data, "begin_timestamps_token_id", begin_timestamps_token_id);
+    read_json_param(data, "max_initial_timestamp_index", max_initial_timestamp_index);
 
     read_json_param(data, "is_multilingual", is_multilingual);
     if (is_multilingual) {
@@ -67,10 +69,12 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "translate_token_id", translate_token_id);
     read_anymap_param(config_map, "no_timestamps_token_id", no_timestamps_token_id);
     read_anymap_param(config_map, "begin_timestamps_token_id", begin_timestamps_token_id);
+    read_anymap_param(config_map, "max_initial_timestamp_index", max_initial_timestamp_index);
     read_anymap_param(config_map, "is_multilingual", is_multilingual);
     read_anymap_param(config_map, "language", language);
     read_anymap_param(config_map, "lang_to_id", lang_to_id);
     read_anymap_param(config_map, "task", task);
+    read_anymap_param(config_map, "return_timestamps", return_timestamps);
 }
 
 size_t WhisperGenerationConfig::get_max_new_tokens(size_t prompt_length) const {

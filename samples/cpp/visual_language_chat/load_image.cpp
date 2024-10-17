@@ -13,7 +13,7 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
         image_path.string().c_str(),
         &x, &y, &channels_in_file, desired_channels);
     if (!image) {
-        throw std::runtime_error{"Failed to load the image"};
+        throw std::runtime_error{"Failed to load the image."};
     }
     struct SharedImageAllocator {
         unsigned char* image;
@@ -22,11 +22,11 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
             if (channels * height * width == bytes) {
                 return image;
             }
-            throw std::runtime_error{"Unexpected number of bytes was requested to allocate"};
+            throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
         }
         void deallocate(void*, size_t bytes, size_t) {
             if (channels * height * width != bytes) {
-                throw std::runtime_error{"Unexpected number of bytes was requested to deallocate"};
+                throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
             }
             std::free(image);
             image = nullptr;

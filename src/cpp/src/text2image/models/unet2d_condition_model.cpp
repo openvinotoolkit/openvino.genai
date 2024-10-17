@@ -7,7 +7,7 @@
 
 #include "openvino/runtime/core.hpp"
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 #include "lora_helper.hpp"
 
 namespace ov {

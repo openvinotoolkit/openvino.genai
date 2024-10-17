@@ -8,8 +8,7 @@
 #include "text2image/schedulers/ischeduler.hpp"
 #include "openvino/genai/text2image/pipeline.hpp"
 
-#include "utils.hpp"
-
+#include "json_utils.hpp"
 namespace {
 
 void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1) {
@@ -71,7 +70,9 @@ public:
 protected:
     virtual void initialize_generation_config(const std::string& class_name) = 0;
 
-    virtual void check_inputs(const int height, const int width) const = 0;
+    virtual void check_image_size(const int height, const int width) const = 0;
+
+    virtual void check_inputs(const GenerationConfig& generation_config) const = 0;
 
     std::shared_ptr<IScheduler> m_scheduler;
     GenerationConfig m_generation_config;

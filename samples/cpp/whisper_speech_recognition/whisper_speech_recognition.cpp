@@ -21,15 +21,21 @@ int main(int argc, char* argv[]) try {
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";
     config.task = "transcribe";
+    config.return_timestamps = true;
 
     auto streamer = [](std::string word) {
         std::cout << word;
         return false;
     };
 
-    pipeline.generate(raw_speech, config, streamer);
+    auto result = pipeline.generate(raw_speech, config, streamer);
 
-    std::cout << std::endl;
+    std::cout << "\n";
+
+    for (auto& chunk : *result.chunks) {
+        std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+    }
+
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

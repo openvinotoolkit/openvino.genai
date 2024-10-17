@@ -26,16 +26,20 @@ def main():
         print(word, end="")
         return False
 
-    pipe.generate(
+    result = pipe.generate(
         raw_speech,
         max_new_tokens=100,
         # 'task' and 'language' parameters are supported for multilingual models only
         language="<|en|>",
         task="transcribe",
+        return_timestamps=True,
         streamer=streamer,
     )
 
     print()
+
+    for chunk in result.chunks:
+        print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
 
 
 if "__main__" == __name__:

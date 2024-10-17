@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "load_image.hpp"
-#include <openvino/genai/vlm_pipeline.hpp>
+#include <openvino/genai/visual_language/pipeline.hpp>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
 bool print_subword(std::string&& subword) {
@@ -26,12 +26,10 @@ int main(int argc, char* argv[]) try {
 
     pipe.start_chat();
     std::cout << "question:\n";
-    if (!std::getline(std::cin, prompt)) {
-        throw std::runtime_error("std::cin failed");
-    }
+    std::getline(std::cin, prompt);
     pipe.generate(
         prompt,
-        ov::genai::image(std::move(image)),
+        ov::genai::image(image),
         ov::genai::streamer(print_subword)
     );
     std::cout << "\n----------\n"

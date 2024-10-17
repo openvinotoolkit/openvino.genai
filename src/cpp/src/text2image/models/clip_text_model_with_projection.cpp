@@ -9,6 +9,7 @@
 
 #include "utils.hpp"
 #include "lora_helper.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -95,16 +96,16 @@ ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, con
 
     if (do_classifier_free_guidance) {
         perform_tokenization(neg_prompt,
-                                ov::Tensor(input_ids, {current_batch_idx    , 0},
-                                                    {current_batch_idx + 1, m_config.max_position_embeddings}));
+                             ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                                   {current_batch_idx + 1, m_config.max_position_embeddings}));
         ++current_batch_idx;
     } else {
         // Negative prompt is ignored when --guidanceScale < 1.0
     }
 
     perform_tokenization(pos_prompt,
-                            ov::Tensor(input_ids, {current_batch_idx    , 0},
-                                                {current_batch_idx + 1, m_config.max_position_embeddings}));
+                         ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                               {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
     m_request.set_tensor("input_ids", input_ids);

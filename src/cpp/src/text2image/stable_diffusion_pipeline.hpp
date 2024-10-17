@@ -6,7 +6,7 @@
 #include <ctime>
 #include <cassert>
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 #include "lora_helper.hpp"
 
 namespace ov {
@@ -120,7 +120,7 @@ public:
           m_vae_decoder(std::make_shared<AutoencoderKL>(vae_decoder)) { }
 
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
-        check_inputs(height, width);
+        check_image_size(height, width);
 
         const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         m_clip_text_encoder->reshape(batch_size_multiplier);
@@ -150,7 +150,7 @@ public:
             generation_config.height = unet_config.sample_size * vae_scale_factor;
         if (generation_config.width < 0)
             generation_config.width = unet_config.sample_size * vae_scale_factor;
-        check_inputs(generation_config.height, generation_config.width);
+        check_inputs(generation_config);
 
         m_clip_text_encoder->set_adapters(generation_config.adapters);
         m_unet->set_adapters(generation_config.adapters);
@@ -183,7 +183,7 @@ public:
             m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states_repeated);
         }
 
-        if (unet_config.time_cond_proj_dim >= 0) {
+        if (unet_config.time_cond_proj_dim >= 0) { // LCM
             ov::Tensor guidance_scale_embedding = get_guidance_scale_embedding(generation_config.guidance_scale, unet_config.time_cond_proj_dim);
             m_unet->set_hidden_states("timestep_cond", guidance_scale_embedding);
         }
@@ -249,7 +249,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale > 1.0 && m_unet->get_config().time_cond_proj_dim < 0;
+        return guidance_scale >= 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -271,12 +271,30 @@ private:
         }
     }
 
-    void check_inputs(const int height, const int width) const override {
+    void check_image_size(const int height, const int width) const override {
         assert(m_unet != nullptr);
         const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
             (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
             vae_scale_factor);
+    }
+
+    void check_inputs(const GenerationConfig& generation_config) const override {
+        check_image_size(generation_config.width, generation_config.height);
+
+        const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
+        const bool is_lcm = m_unet->get_config().time_cond_proj_dim > 0;
+        const char * const pipeline_name = is_lcm ? "Latent Consistency Model" : "Stable Diffusion";
+
+        OPENVINO_ASSERT(generation_config.prompt_2 == std::nullopt, "Prompt 2 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
+        if (is_lcm) {
+            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
+        } else if (!is_classifier_free_guidance) {
+            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
+        }
+        OPENVINO_ASSERT(generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
     }
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;

@@ -13,9 +13,8 @@
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/constant.hpp"
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 #include "lora_helper.hpp"
-
 namespace ov {
 namespace genai {
 
