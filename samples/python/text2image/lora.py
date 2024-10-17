@@ -48,8 +48,7 @@ def main():
                           random_generator=openvino_genai.CppStdGenerator(42),
                           width=512,
                           height=896,
-                          num_inference_steps=20,
-                          enable_mmap=False
+                          num_inference_steps=20
                           )
     image_write("baseline.bmp", image)
 
