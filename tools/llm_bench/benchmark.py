@@ -760,7 +760,7 @@ def get_argprser():
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
         '--torch_compile_backend',
-        default='openvino',
+        default=None,
         required=False,
         help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
     )
