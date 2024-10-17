@@ -44,6 +44,10 @@ public:
     std::string im_id_end = "</image_id>";
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
+
+    // llava_next specific config params
+    std::vector<float> image_newline;
+    
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

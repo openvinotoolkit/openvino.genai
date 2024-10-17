@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
 
 ### Sample notebooks using this API
 
-(TBD)
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+an+LLM-powered+Chatbot+using+OpenVINO+Generate+API)
 
 </details>
 
@@ -232,7 +232,7 @@ int main(int argc, char* argv[]) try {
 
  ### Sample notebooks using this API
 
-(TBD)
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automatic+speech+recognition+using+Whisper+and+OpenVINO+with+Generate+API)
 
 </details>
 
