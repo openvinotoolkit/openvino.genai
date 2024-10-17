@@ -67,6 +67,8 @@ public:
 
     LogitProcessor& get_logit_processor(uint64_t request_id);
     void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);
+
+    std::vector<int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
 };
 
 class Sampler::GroupBeamSearcher {
@@ -111,5 +113,6 @@ public:
 
     void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
     void finalize(SamplerOutput& sampler_output);
+    std::vector<int32_t> get_beam_idxs();
 };
 }

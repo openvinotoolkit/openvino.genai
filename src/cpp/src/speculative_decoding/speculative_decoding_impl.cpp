@@ -11,6 +11,10 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+bool operator==(const SchedulerConfig& lhs, const SchedulerConfig& rhs) {
+    return ov::Any(lhs).as<std::string>() == ov::Any(rhs).as<std::string>();
+}
+
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::string& main_models_path,
     const SchedulerConfig& main_scheduler_config,
@@ -31,16 +35,13 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     utils::apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
     utils::apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
 
-    std::string draft_device = draft_model_desc.device;
-    bool is_draft_device_undefined = false;
-    if (draft_device.empty() || draft_device == main_device) {
-        draft_device = main_device;
-        is_draft_device_undefined = true;
-    }
+    std::string draft_device = draft_model_desc.device.empty() ? main_device : draft_model_desc.device;
+
+    bool is_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
-                               draft_scheduler_config = is_draft_device_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
-    if (is_draft_device_undefined) {
+                               draft_scheduler_config = is_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
+    if (is_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
         size_t main_model_cache_size = utils::get_kv_cache_size(main_model),
             draft_model_cache_size = utils::get_kv_cache_size(draft_model);
@@ -57,7 +58,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
         draft_scheduler_config.cache_size = draft_cache_size;
     }
 
-    ov::AnyMap draft_plugin_config = is_draft_device_undefined ? compile_plugin_config : draft_model_desc.plugin_config;
+    ov::AnyMap draft_plugin_config = draft_model_desc.plugin_config == ov::AnyMap{} ? compile_plugin_config : draft_model_desc.plugin_config;
 
     DeviceConfig main_device_config(core, main_scheduler_config, main_device, compile_plugin_config),
                  draft_device_config(core, draft_scheduler_config, draft_device, draft_plugin_config);
@@ -196,8 +197,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         step();
             if (streamer_ptr) {
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
-            OPENVINO_ASSERT(1 == token.size());
-            OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
+            OPENVINO_ASSERT(1 <= token.size());
+            OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
             continue_generation = !streamer_ptr->put(token.begin()->second.generated_ids.at(0));
         }
     }
