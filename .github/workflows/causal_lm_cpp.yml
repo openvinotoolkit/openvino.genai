@@ -20,7 +20,6 @@ env:
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -257,7 +256,6 @@ jobs:
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -291,7 +289,6 @@ jobs:
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -326,7 +323,6 @@ jobs:
 
   cpp-beam_search_causal_lm-Phi-2:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -361,7 +357,6 @@ jobs:
 
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -396,7 +391,6 @@ jobs:
 
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -440,7 +434,6 @@ jobs:
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -514,7 +507,6 @@ jobs:
 
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -569,7 +561,6 @@ jobs:
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-4-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash
@@ -690,7 +681,6 @@ jobs:
 
   visual_language_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -743,7 +733,6 @@ jobs:
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     defaults:
       run:
         shell: bash

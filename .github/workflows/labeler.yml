@@ -10,7 +10,6 @@ jobs:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     steps:
     - uses: akladiev/labeler@eeac5941e7fb6f980d47e038ac0665168851c874 # v4.3.1
       with:
