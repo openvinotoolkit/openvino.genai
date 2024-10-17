@@ -3,6 +3,7 @@
 
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
+#include <filesystem>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
 bool print_subword(std::string&& subword) {
@@ -11,9 +12,14 @@ bool print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (3 != argc) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES>");
     }
-    ov::Tensor image = utils::load_image(argv[2]);
+
+    std::vector<ov::Tensor> images = utils::load_images(argv[2]);
+
+    ov::genai::GenerationConfig generation_config;
+    generation_config.max_new_tokens = 200;
+
     std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap enable_compile_cache;
     if ("GPU" == device) {
@@ -26,16 +32,18 @@ int main(int argc, char* argv[]) try {
 
     pipe.start_chat();
     std::cout << "question:\n";
+
     std::getline(std::cin, prompt);
-    pipe.generate(
-        prompt,
-        ov::genai::image(image),
-        ov::genai::streamer(print_subword)
-    );
+    pipe.generate(prompt,
+                  ov::genai::images(images),
+                  ov::genai::generation_config(generation_config),
+                  ov::genai::streamer(print_subword));
     std::cout << "\n----------\n"
         "question:\n";
     while (std::getline(std::cin, prompt)) {
-        pipe.generate(prompt, ov::genai::streamer(print_subword));
+        pipe.generate(prompt,
+                      ov::genai::generation_config(generation_config),
+                      ov::genai::streamer(print_subword));
         std::cout << "\n----------\n"
             "question:\n";
     }
