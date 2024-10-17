@@ -315,8 +315,8 @@ public:
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
-            m_history = {};
-            m_templated_chat_history = "";
+            m_history.clear();
+            m_templated_chat_history.clear();
         }
     }
 };
