@@ -2,7 +2,7 @@ transformers>=4.35.2
 sentence-transformers>=2.2.2
 openvino>=2024.3.0
 openvino-telemetry
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git
+optimum-intel>=1.19.0
 openvino-tokenizers
 pandas>=2.0.3
 numpy>=1.23.5
