@@ -272,5 +272,12 @@ private:
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func);
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
+OPENVINO_GENAI_EXPORTS
+std::pair<std::string, Any> draft_model(
+    const std::string& model_path,
+    const std::string& device = "",
+    const ov::AnyMap& plugin_config = {},
+    const ov::genai::SchedulerConfig& scheduler_config = {});
+
 }  // namespace genai
 }  // namespace ov
