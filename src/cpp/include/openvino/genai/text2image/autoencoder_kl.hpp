@@ -18,7 +18,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS AutoencoderKL {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 3;
         size_t latent_channels = 4;
         size_t out_channels = 3;

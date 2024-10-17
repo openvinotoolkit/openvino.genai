@@ -152,6 +152,24 @@ std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string,
     return properties_to_cpp;
 }
 
+
+ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
+    ov::AnyMap params = {};
+
+    for (const auto& item : kwargs) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+        if (utils::py_object_is_any_map(value)) {
+            auto map = utils::py_object_to_any_map(value);
+            params.insert(map.begin(), map.end());
+        } else {
+            params[key] = utils::py_object_to_any(value);
+        }
+
+    }
+    return params;
+}
+
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
     std::filesystem::path from_relative = tokenizers_relative_to_genai();
