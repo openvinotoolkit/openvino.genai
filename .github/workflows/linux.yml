@@ -271,7 +271,13 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py
+
+      - run: python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
+      - run: python -m pip install -U "optimum<1.23" --no-dependencies
+      - run: >
+            source ${OV_INSTALL_DIR}/setupvars.sh
+            && python -m pytest ./tests/python_tests/test_vlm_api.py
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
