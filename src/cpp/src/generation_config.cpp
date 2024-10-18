@@ -120,10 +120,6 @@ bool GenerationConfig::is_speculative_decoding() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
 }
 
-bool GenerationConfig::is_speculative_decoding() const {
-    return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
-}
-
 void GenerationConfig::validate() const {
     OPENVINO_ASSERT(!do_sample || num_beams == 1, 
                     "Beam search with sampling is not supported yet. "
