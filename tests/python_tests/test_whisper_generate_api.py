@@ -504,6 +504,45 @@ def test_longform_audio_return_timestamps(model_descr, test_sample):
             assert round(genai_chunk.end_ts, 2) == -1.0
 
 
+import pathlib
+whisper_distil = ("distil-whisper/distil-small.en", pathlib.Path("distil-small.en"))
+
+
+@pytest.mark.parametrize("model_descr", [whisper_distil])
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=10, long_form=True),
+    ],
+)
+@pytest.mark.precommit
+def test_longform_audio_return_timestamps_en(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(
+        test_sample,
+        return_timestamps=True,
+    )
+
+    genai_result = pipe.generate(
+        test_sample,
+        return_timestamps=True,
+    )
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert len(genai_result.chunks) == len(expected["chunks"])
+
+    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
+        assert opt_chunk["text"] == genai_chunk.text
+        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
+        if opt_chunk["timestamp"][1]:
+            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
+        else:
+            assert opt_chunk["timestamp"][1] == None
+            assert round(genai_chunk.end_ts, 2) == -1.0
+
+
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
     "test_sample",
