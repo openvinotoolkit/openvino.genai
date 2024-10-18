@@ -7,6 +7,7 @@ import argparse
 import openvino as ov
 import openvino_genai
 import numpy as np
+import sys
 
 
 class Generator(openvino_genai.Generator):
@@ -31,6 +32,7 @@ def main():
     parser.add_argument('models_path')
     parser.add_argument('prompt')
     args, adapters = parser.parse_known_args()
+    openvino_genai.Adapter(adapters) # debug
 
     prompt = args.prompt
 
