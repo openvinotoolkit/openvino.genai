@@ -1,0 +1,10 @@
+model
+*.png
+*.bmp
+*.txt
+*.jpg
+*.xml
+*.bin
+!requirements.txt
+!CMakeLists.txt
+*.pth
