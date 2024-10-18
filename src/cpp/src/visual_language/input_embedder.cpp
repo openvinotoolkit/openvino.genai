@@ -54,6 +54,7 @@ public:
         if (!m_is_cache_empty) {
             m_history.clear();
             m_templated_chat_history.clear();
+            m_is_cache_empty = true;
         }
         if (system_message.empty()) {
             return;
@@ -159,7 +160,7 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     // height and width after dividing by patch_size.
     ov::Tensor m_pos_embed_cache;
     // Used to insert <image_id>i</image_id> per image (not a slice).
-    size_t m_image_id;
+    size_t m_image_id = 0;
 
 public:
     InputsEmbedderMiniCPM(
