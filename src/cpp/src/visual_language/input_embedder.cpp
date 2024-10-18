@@ -107,6 +107,46 @@ protected:
         }
         return embed_output_tensor;
     }
+
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, const std::string& chat_template_fallback = "") {
+        ov::Tensor encoded_input_ids;
+        if (m_is_chat_conversation) {
+            // KV cache in model already contains prompts and answers from previous iterations.
+            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+            // <bos token> will be inserted on every iteration.
+            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+            // and takes only the difference between them.
+            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
+            m_history.push_back({{"role", "user"}, {"content", prompt}});
+            constexpr bool add_generation_prompt = true;
+            std::string new_templated_chat_history;
+            try {
+                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            } catch (const std::exception& error) {
+                // Use fallback chat template if it was not found in tokenizer_config.json
+                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
+            }
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
+            if (m_is_cache_empty) {
+                encoded_input_ids = new_chat_tokens;
+                // after first `get_inputs_embeds` is called, we supposed LLM is inferred and cache is not empty
+                m_is_cache_empty = false;
+            } else {
+                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
+                    m_templated_chat_history
+                );
+                encoded_input_ids = utils::subtract_chat_tokenized_inputs(
+                    {new_chat_tokens}, prev_chat_tokens
+                ).input_ids;
+            }
+            m_templated_chat_history = std::move(new_templated_chat_history);
+        } else {
+            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+        }
+        return encoded_input_ids;
+    }
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
@@ -183,36 +223,9 @@ public:
             }
         }
         images_prompt += prompt;
-        ov::Tensor encoded_input;
-        if (m_is_chat_conversation) {
-            // KV cache in model already contains prompts and answers from previous iterations.
-            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
-            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
-            // <bos token> will be inserted on every iteration.
-            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
-            // and takes only the difference between them.
-            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
-            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
-            m_history.push_back({{"role", "user"}, {"content", images_prompt}});
-            constexpr bool add_generation_prompt = true;
-            std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
-            if (m_is_cache_empty) {
-                encoded_input = new_chat_tokens;
-                // after this method call, LLM model will process input_embeds and cache will not empty
-                m_is_cache_empty = false;
-            } else {
-                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
-                    m_templated_chat_history
-                );
-                encoded_input = utils::subtract_chat_tokenized_inputs(
-                    {new_chat_tokens}, prev_chat_tokens
-                ).input_ids;
-            }
-            m_templated_chat_history = std::move(new_templated_chat_history);
-        } else {
-            encoded_input = m_tokenizer.encode(images_prompt).input_ids;
-        }
+
+        ov::Tensor encoded_input = get_encoded_input_ids(images_prompt);
+
         m_embedding.set_input_tensor(encoded_input);
         m_embedding.infer();
         ov::Tensor inputs_embeds = m_embedding.get_output_tensor();
@@ -453,8 +466,15 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
-        std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
-        ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
+        std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
+        
+        // std::string chat_template_fallback = m_templated_chat_history + " USER: " + formatted_prompt + " ASSISTANT: ";
+        // chat_template_fallback = chat_template_fallback.erase(0, chat_template_fallback.find_first_not_of(' '));
+
+        // Adapted from llava-1.5-7b-hf chat_template.json
+        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
         } else {
@@ -532,18 +552,12 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
-        std::string content = images.empty() ? prompt : image_token + "\n" + prompt;
-        m_history.push_back({{"role", "user"}, {"content", content}});
-        constexpr bool add_generation_prompt = true;
-        std::string new_templated_chat_history;
-        try {
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        } catch (const std::exception& error) {
-            // TODO Consider using template syntax instead of concatenating
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, "USER: " + content + " ASSISTANT:");
-        }
+        std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
+        
+        // Adapted from llava-1.5-7b-hf chat_template.json
+        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
 
-        ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
         } else {
