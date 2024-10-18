@@ -5,10 +5,9 @@
 
 #include <fstream>
 
-#include "openvino/runtime/core.hpp"
-
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -28,7 +27,8 @@ CLIPTextModel::Config::Config(const std::string& config_path) {
 CLIPTextModel::CLIPTextModel(const std::string root_dir) :
     m_clip_tokenizer(root_dir + "/../tokenizer"),
     m_config(root_dir + "/config.json") {
-    m_model = ov::Core().read_model(root_dir + "/openvino_model.xml");
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(root_dir + "/openvino_model.xml");
 }
 
 CLIPTextModel::CLIPTextModel(const std::string& root_dir,
@@ -64,7 +64,8 @@ CLIPTextModel& CLIPTextModel::reshape(int batch_size) {
 
 CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = ov::Core().compile_model(m_model, device, properties);
+    ov::Core core = utils::singleton_core();
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

@@ -4,6 +4,8 @@
 #pragma once
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/runtime/core.hpp"
+
 #include "visual_language/processor_config.hpp"
 
 namespace ov {
@@ -58,6 +60,9 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& p
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
+
+ov::Core singleton_core();
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

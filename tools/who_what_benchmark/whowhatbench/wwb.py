@@ -37,7 +37,7 @@ class GenAIModelWrapper:
 
     def __init__(self, model, model_dir):
         self.model = model
-        self.config = AutoConfig.from_pretrained(model_dir)
+        self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
@@ -199,7 +199,7 @@ def parse_args():
         type=str,
         choices=["text", "text-to-image"],
         default="text",
-        help="Indicated the model type, e.g. 'text' - for LLMs, 't2im' - for text-to-image pipelines.",
+        help="Indicated the model type, e.g. 'text' - for causal text generation, 'text-to-image' - for image generation.",
     )
     parser.add_argument(
         "--data-encoder",
@@ -335,6 +335,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = max_new_tokens
+    config.do_sample = False
     out = model.generate(question, config)
     return out
 
