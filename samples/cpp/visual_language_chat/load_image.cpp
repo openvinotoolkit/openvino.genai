@@ -9,7 +9,9 @@
 namespace fs = std::filesystem;
 
 std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_path) {
-    OPENVINO_ASSERT(!input_path.empty() && fs::exists(input_path), "Path to images is empty or does not exist.");
+    if (input_path.empty() || !fs::exists(input_path)) {
+        throw std::runtime_error{"Path to images is empty or does not exist."};
+    }
     if (fs::is_directory(input_path)) {
         std::set<fs::path> sorted_images{fs::directory_iterator(input_path), fs::directory_iterator()};
         std::vector<ov::Tensor> images;
@@ -34,7 +36,7 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
         unsigned char* image;
         int channels, height, width;
         void* allocate(size_t bytes, size_t) const {
-            if (channels * height * width == bytes) {
+            if (image && channels * height * width == bytes) {
                 return image;
             }
             throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
