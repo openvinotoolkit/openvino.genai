@@ -170,12 +170,11 @@ public:
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
                 // Do not add special tokens in chat scenario to be aligned with HF.
-                bool add_special_tokens = false;  
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
@@ -353,8 +352,8 @@ public:
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
-            m_history = {};
-            m_templated_chat_history = "";
+            m_history.clear();
+            m_templated_chat_history.clear();
         }
     }
 };

@@ -704,7 +704,7 @@ jobs:
           optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
           mkdir cat_img
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat_img/cat.jpg
-      - name: Generate reference
+      - name: Generate reference - MiniCPM-V-2_6
         shell: python
         run: |
           from optimum.intel.openvino import OVModelForVisualCausalLM
