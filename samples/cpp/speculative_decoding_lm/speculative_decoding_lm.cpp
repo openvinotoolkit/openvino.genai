@@ -12,6 +12,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
+    config.num_assistant_tokens = 5;
 
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
