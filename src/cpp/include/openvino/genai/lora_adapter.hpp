@@ -56,9 +56,9 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
 
     // Methods to get and set optional name prefix to filter tensor names in LoRA adapter file applicable to a particular model.
     // The prefix can be set at the user level or at a particular GenAI pipeline level. Usually GenAI pipelines should set
-    // the prefix appropriately and no need to be worried from user side.
+    // the prefix appropriately, and no need to be worried from user side.
     // But if the user has non-standard adapter file where the default prefix doesn't work, in this case
-    // user should set the prefix. If the prefix is set at the user side, it is not overriden by the pipeline logic.
+    // user should set the prefix. If the prefix is set at the user side, it is not overridden by the pipeline logic.
     // Use nullopt to indicate that the prefix is not set from the user side and let a particular GenAI pipeline set the default value.
     // The default value is nullopt.
     const std::optional<std::string>& get_tensor_name_prefix() const { return tensor_name_prefix; }
