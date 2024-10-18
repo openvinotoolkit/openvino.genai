@@ -3,10 +3,12 @@
 //
 
 #include <gtest/gtest.h>
+
 #include "openvino/runtime/core.hpp"
-#include "scheduler.hpp"
-#include "device_config.hpp"
-#include "cache_manager.hpp"
+
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/device_config.hpp"
+#include "continuous_batching/cache_manager.hpp"
 
 TEST(TestCacheManager, general_test) {
     ov::Core core;

@@ -2,14 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text_callback_streamer.hpp"
-#include "speculative_decoding_impl.hpp"
 #include "utils.hpp"
-#include "utils/paged_attention_transformations.hpp"
 
+#include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "continuous_batching/paged_attention_transformations.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
+
+std::pair<std::string, Any> draft_model(
+    const std::string& model_path,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    const ov::genai::SchedulerConfig& scheduler_config) {
+    return { DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
+}
 
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::string& main_models_path,

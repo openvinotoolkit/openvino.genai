@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
-#include <openvino/core/except.hpp>
 
-#include "logit_processor.hpp"
+#include "continuous_batching/logit_processor.hpp"
 
 using namespace LogitTransformers;
 

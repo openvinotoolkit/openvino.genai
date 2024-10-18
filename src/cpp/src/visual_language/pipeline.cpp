@@ -10,7 +10,7 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/image_embedder.hpp"
 
-#include "sampler.hpp"
+#include "continuous_batching/sampler.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
 

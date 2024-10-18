@@ -1,10 +1,10 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/openvino.hpp>
+#include "whisper/logit_processor.hpp"
 
 #include "openvino/genai/whisper_generation_config.hpp"
-#include "sampler.hpp"
+#include "continuous_batching/sampler.hpp"
 
 namespace ov {
 namespace genai {
@@ -26,7 +26,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
                                       const size_t batch_idx,
                                       const ov::genai::WhisperGenerationConfig& config,
                                       const std::vector<int64_t>& generated_tokens,
-                                      bool initial_step = false) {
+                                      bool initial_step) {
     const size_t batch_size = logits.get_shape().at(0);
     OPENVINO_ASSERT(batch_size == 1, "Batch != 1 is not supported");
 

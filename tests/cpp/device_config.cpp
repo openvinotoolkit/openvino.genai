@@ -3,9 +3,11 @@
 //
 
 #include <gtest/gtest.h>
+
 #include "openvino/runtime/core.hpp"
-#include "scheduler.hpp"
-#include "device_config.hpp"
+
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/device_config.hpp"
 
 TEST(TestDeviceConfig, kv_cache_precision_u8) {
     ov::Core core;

@@ -1,10 +1,11 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "cache_eviction.hpp"
+#include <algorithm>
+
 #include "gtest/gtest.h"
 
-#include <algorithm>
+#include "continuous_batching/cache_eviction.hpp"
 
 const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, ov::genai::AggregationMode::NORM_SUM};
 const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, ov::genai::AggregationMode::NORM_SUM};
