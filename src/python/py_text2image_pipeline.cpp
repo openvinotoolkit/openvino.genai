@@ -41,6 +41,7 @@ auto text2image_generate_docstring = R"(
     prompt_3: str - third prompt,
     negative_prompt: str - negative prompt,
     negative_prompt_2: str - second negative prompt,
+    negative_prompt_3: str - third negative prompt,
     num_images_per_prompt: int - number of images, that should be generated per prompt,
     guidance_scale: float - guidance scale,
     generation_config: GenerationConfig,
@@ -69,6 +70,8 @@ void update_text2image_config_from_kwargs(
             config.negative_prompt = py::cast<std::string>(value);
         } else if (key == "negative_prompt_2") {
             config.negative_prompt_2 = py::cast<std::string>(value);
+        } else if (key == "negative_prompt_3") {
+            config.negative_prompt_3 = py::cast<std::string>(value);
         } else if (key == "num_images_per_prompt") {
             config.num_images_per_prompt = py::cast<size_t>(value);
         } else if (key == "guidance_scale") {
@@ -106,6 +109,8 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
             params.insert({ov::genai::negative_prompt(std::move(py::cast<std::string>(value)))});
         } else if (key == "negative_prompt_2") {
             params.insert({ov::genai::negative_prompt_2(std::move(py::cast<std::string>(value)))});
+        } else if (key == "negative_prompt_3") {
+            params.insert({ov::genai::negative_prompt_3(std::move(py::cast<std::string>(value)))});
         } else if (key == "num_images_per_prompt") {
             params.insert({ov::genai::num_images_per_prompt(std::move(py::cast<size_t>(value)))});
         } else if (key == "guidance_scale") {
