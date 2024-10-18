@@ -16,6 +16,7 @@ protected:
         ov::genai::GenerationHandle
         add_request(uint64_t request_id, const ov::Tensor& input_ids) {
             auto sampling_params = ov::genai::greedy();
+            sampling_params.num_assistant_tokens = 1;
 
             ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(request_id, input_ids,
                                                                                 sampling_params, 
