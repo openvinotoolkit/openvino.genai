@@ -80,6 +80,7 @@ jobs:
           source openvino_sd_cpp/bin/activate
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
+          export LD_LIBRARY_PATH=./build/openvino_genai:$LD_LIBRARY_PATH
           python ./samples/python/text2image/main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
           
       
@@ -88,6 +89,7 @@ jobs:
           source openvino_sd_cpp/bin/activate
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
+          export LD_LIBRARY_PATH=./build/openvino_genai:$LD_LIBRARY_PATH
           python ./samples/python/text2image/lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
 
   stable_diffusion_1_5_cpp-windows:
@@ -151,6 +153,7 @@ jobs:
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           set PATH=.\build\openvino_genai\;${{ env.PATH }}
+          set PYTHONPATH=.\build\;${{ env.PYTHONPATH }}
           python .\samples\python\text2image\main.py .\dreamlike_anime_1_0_ov\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
 
 
@@ -159,6 +162,7 @@ jobs:
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           set PATH=.\build\openvino_genai\;${{ env.PATH }}
+          set PYTHONPATH=.\build\;${{ env.PYTHONPATH }}
           python .\samples\python\text2image\lora.py .\dreamlike_anime_1_0_ov\FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
 
   Overall_Status:
