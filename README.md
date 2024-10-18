@@ -113,10 +113,10 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code Mi
 
 ```python
 import openvino_genai as ov_genai
-#Will run model on CPU, GPU
+#Will run model on CPU, GPU is a possible option
 pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
 rgb = read_image("cat.jpg")
-print(pipe.generate(prompt, image=rgb))
+print(pipe.generate(prompt, image=rgb, max_new_tokens=100))
 ```
 
 ### Run generation using VLMPipeline in C++
@@ -132,7 +132,11 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::VLMPipeline pipe(model_path, "CPU");
     ov::Tensor rgb = utils::load_image(argv[2]);
-    std::cout << pipe.generate(prompt, ov::genai::image(rgb)) << '\n';
+    std::cout << pipe.generate(
+        prompt,
+        ov::genai::image(rgb),
+        ov::genai::max_new_tokens(100)
+    ) << '\n';
 }
 ```
 
