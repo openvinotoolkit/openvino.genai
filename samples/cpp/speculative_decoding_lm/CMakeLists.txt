@@ -10,7 +10,7 @@ find_package(OpenVINOGenAI REQUIRED
 
 set(TARGET_NAME speculative_decoding_lm)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai cxxopts::cxxopts)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai)
 
 set_target_properties(${TARGET_NAME} PROPERTIES
     COMPILE_PDB_NAME ${TARGET_NAME} 
