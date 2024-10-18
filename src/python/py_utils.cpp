@@ -9,7 +9,7 @@
 
 #include <openvino/runtime/auto/properties.hpp>
 
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizer_path.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 
 namespace py = pybind11;

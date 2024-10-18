@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include <jinja2cpp/user_callable.h>
@@ -14,9 +15,9 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
-#include "make_combine_segments_stateful.hpp"
-#include "tokenizers_path.hpp"
-#include "circular_buffer_queue.hpp"
+#include "tokenizer/make_combine_segments_stateful.hpp"
+#include "tokenizer/tokenizer_path.hpp"
+#include "tokenizer/circular_buffer_queue.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 

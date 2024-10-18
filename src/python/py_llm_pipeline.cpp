@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
-#include <openvino/runtime/auto/properties.hpp>
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizer_path.hpp"
 
 #include "py_utils.hpp"
 
@@ -391,7 +392,7 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 } // namespace
 
 
-PYBIND11_MODULE(py_generate_pipeline, m) {
+PYBIND11_MODULE(py_llm_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")

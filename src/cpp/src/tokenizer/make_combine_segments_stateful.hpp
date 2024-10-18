@@ -1,7 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/op/constant.hpp"
 #include "openvino/pass/pass.hpp"
 
 namespace ov {

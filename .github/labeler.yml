@@ -3,13 +3,7 @@
 
 'category: tokenizers':
 - 'src/cpp/include/openvino/genai/tokenizer.hpp'
-- 'src/cpp/src/tokenizer.cpp'
-- 'src/cpp/src/tokenizers_path.cpp'
-- 'src/cpp/src/tokenizers_path.hpp'
-- 'src/cpp/src/circular_buffer_queue.hpp'
-- 'src/cpp/src/synchronized_queue.hpp'
-- 'src/cpp/src/make_combine_segments_stateful.cpp'
-- 'src/cpp/src/make_combine_segments_stateful.hpp'
+- 'src/cpp/src/tokenizer/**/*'
 - 'thirdparty/openvino_tokenizers'
 - 'tests/python_tests/tokenizer_configs.py'
 
@@ -90,6 +84,7 @@
 - 'src/cpp/src/scheduler.hpp'
 - 'src/cpp/src/sequence_group.cpp'
 - 'src/cpp/src/sequence_group.hpp'
+- 'src/cpp/src/synchronized_queue.hpp'
 - 'src/cpp/src/timer.hpp'
 - 'tests/python_tests/test_cache_optimizations.py'
 - 'tests/python_tests/test_preemption.py'

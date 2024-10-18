@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "make_combine_segments_stateful.hpp"
+
 #include "openvino/op/constant.hpp"
 #include "openvino/op/select.hpp"
 #include "openvino/op/read_value.hpp"
 #include "openvino/op/assign.hpp"
-
 
 using namespace ov;
 using namespace ov::op;

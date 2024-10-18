@@ -3,12 +3,14 @@
 
 
 #include <filesystem>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
+
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "tokenizers_path.hpp"
+#include "tokenizer/tokenizer_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
