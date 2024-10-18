@@ -3,7 +3,7 @@
 This example showcases the inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen`, and other models with the same signature. The application has a few configuration options, and we encourage the reader to explore and modify the source code to experiment with. For example, we can utilize the GPU for inference by changing the device name. 
 
 ```
-device = 'GPU'  # GPU can be used as well
+device = 'CPU'  # GPU can be used as well
 pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 ```
 
