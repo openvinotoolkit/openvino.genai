@@ -3,7 +3,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "vlm_sampling.hpp"
+#include "sampler.hpp"
 #include "clip.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
@@ -21,64 +21,6 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr size_t BATCH_SIZE = 1;
 
-struct Args {
-    bool do_sample = false;
-    int top_k = 0;
-    float top_p = 0.7f;
-    float temp = 0.95f;
-    float repeat_penalty = 1.0f;
-};
-
-int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_t vocab_size, Args args) {
-    int64_t out_token;
-
-    // logits pre-process
-    if (args.repeat_penalty != 1.f) {
-        sampling_repetition_penalty(logits, logits + vocab_size, input_ids, args.repeat_penalty);
-    }
-
-    if (args.do_sample)
-    {
-        if (args.temp > 0) {
-            sampling_temperature(logits, logits + vocab_size, args.temp);
-        }
-
-        std::vector<TokenIdScore> token_scores(vocab_size);
-        for (int i = 0; i < vocab_size; i++) {
-            token_scores[i] = TokenIdScore(i, logits[i]);
-        }
-
-        // top_k sampling
-        if (0 < args.top_k && args.top_k < (int)token_scores.size()) {
-            sampling_top_k(token_scores.data(), token_scores.data() + args.top_k,
-                token_scores.data() + token_scores.size());
-            token_scores.resize(args.top_k);
-        }
-
-        // top_p sampling
-        if (0.f < args.top_p && args.top_p < 1.f) {
-            auto pos = sampling_top_p(token_scores.data(), token_scores.data() + token_scores.size(), args.top_p);
-            token_scores.resize(pos - token_scores.data());
-        }
-
-        // sample next token
-        sampling_softmax_inplace(token_scores.data(), token_scores.data() + token_scores.size());
-        for (size_t i = 0; i < token_scores.size(); i++) {
-            logits[i] = token_scores[i].score;
-        }
-
-        thread_local std::random_device rd;
-        thread_local std::mt19937 gen(rd());
-
-        std::discrete_distribution<> dist(logits, logits + token_scores.size());
-        out_token = token_scores[dist(gen)].id;
-    }
-    else {
-        out_token = std::max_element(logits, logits + vocab_size) - logits;
-    }
-
-    return out_token;
-}
 
 ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
     embedding.set_input_tensor(prompt);
@@ -557,6 +499,133 @@ ov::Tensor pack_image_features_llava_next(
         return result;
     }
 }
+
+// It's not possible to pass a GPU tensor from one model to another GPU
+// model on a different ov::Core instance.
+ov::Core singleton_core() {
+    static ov::Core core;
+    return core;
+}
+
+EncodedGenerationResult get_lm_encoded_results(
+    ov::InferRequest& language,
+    ov::InferRequest& embedding,
+    const ov::Tensor& inputs_embeds,
+    const VLMConfig& m_vlm_config,
+    const std::shared_ptr<StreamerBase>& streamer_ptr,
+    Sampler& sampler,
+    std::vector<SequenceGroup::Ptr> requests
+) {
+    SequenceGroup::Ptr request = requests.back();
+    GenerationHandle generation = std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), request->get_sampling_parameters());
+
+    language.set_tensor("inputs_embeds", inputs_embeds);
+
+    size_t history_len = language.get_tensor("attention_mask").get_shape().at(1);
+    language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
+    std::fill_n(language.get_tensor("attention_mask").data<int64_t>(), language.get_tensor("attention_mask").get_size(), 1);
+
+    language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
+    std::iota(language.get_tensor("position_ids").data<int64_t>(), language.get_tensor("position_ids").data<int64_t>() + language.get_tensor("position_ids").get_size(), history_len);
+
+    language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
+    language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+
+    language.infer();
+
+    int64_t sequence_len = language.get_tensor("logits").get_shape().at(1);
+    request->schedule_tokens(sequence_len);
+
+    SamplerOutput sampler_output = sampler.sample(requests, language.get_tensor("logits"));
+
+    language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, m_vlm_config.hidden_size});
+    language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
+
+    while (!request->has_finished()) {
+        request->schedule_tokens(1);
+        size_t num_sequences = request->num_running_seqs();
+        size_t total_num_tokens = request->get_num_scheduled_tokens() * num_sequences;
+
+        ov::Tensor
+            input_ids(ov::element::i64, {total_num_tokens, 1}),
+            position_ids(ov::element::i64, {total_num_tokens, 1}),
+            beam_idx(ov::element::i32, { total_num_tokens });
+
+        int64_t
+            * input_ids_data = input_ids.data<int64_t>(),
+            * position_ids_data = position_ids.data<int64_t>();
+
+        size_t num_scheduled_tokens = request->get_num_scheduled_tokens();
+        size_t group_position_id = request->get_num_processed_tokens();
+        for (Sequence::Ptr& sequence : request->get_running_sequences()) {
+            for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id) {
+                // compute token for current sequence
+                input_ids_data[token_id] = position_id < request->get_prompt_len() ?
+                    request->get_prompt_ids()[position_id] :
+                    sequence->get_generated_ids()[position_id - request->get_prompt_len()];
+
+                position_ids_data[token_id] = position_id;
+            }
+            // apply strides to shift to a next sequence
+            input_ids_data += num_scheduled_tokens;
+            position_ids_data += num_scheduled_tokens;
+        }
+
+        embedding.set_input_tensor(input_ids);
+
+        embedding.infer();
+        const ov::Tensor& embed_prompt_tensor = embedding.get_output_tensor();
+        float* embed_data = embed_prompt_tensor.data<float>();
+        for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
+            embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
+        }
+
+        language.set_tensor("inputs_embeds", embed_prompt_tensor);
+
+        language.get_tensor("attention_mask").set_shape({ total_num_tokens, language.get_tensor("attention_mask").get_shape()[1] + 1 });
+        std::fill_n(language.get_tensor("attention_mask").data<int64_t>(), language.get_tensor("attention_mask").get_size(), 1);
+
+        language.set_tensor("position_ids", position_ids);
+
+        std::vector<int32_t> beam_idxs = sampler.get_beam_idxs(request);
+        int32_t *beam_idx_data = beam_idx.data<int32_t>();
+        copy(beam_idxs.begin(), beam_idxs.end(), beam_idx_data);
+        language.set_tensor("beam_idx", beam_idx);
+
+        language.infer();
+
+        if (streamer_ptr) {
+            // first sequence
+            int64_t out_token = request.get()->operator[](0)->get_generated_ids().back();
+            if (streamer_ptr->put(out_token)) {
+                break;
+            }
+        }
+
+        sampler_output = sampler.sample(requests, language.get_tensor("logits"));
+    }
+
+    if (streamer_ptr) {
+        streamer_ptr->end();
+    }
+
+    EncodedGenerationResult result;
+    result.m_request_id = 1;
+    std::vector<GenerationOutput> generation_outputs = generation->read_all();
+    std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
+        return r1.score > r2.score;
+    });
+
+    auto num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, generation_outputs.size());
+    for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
+        const auto& generation_output = generation_outputs[generation_output_idx];
+        result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
+        result.m_scores.push_back(generation_output.score);
+    }
+    result.m_status = generation->get_status();
+
+    return result;
+}
 }
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
@@ -604,21 +673,22 @@ public:
             )
         },
         m_tokenizer{Tokenizer(model_dir.string(), device_config)},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, singleton_core()),
         m_is_chat_conversation{false},
         m_image_id{0} {
+            ov::Core core = singleton_core();
             if (m_vlm_config.model_type == VLMModelType::MINICPM) {
-                m_resampler = ov::Core{}.compile_model(
+                m_resampler = core.compile_model(
                     model_dir / "openvino_resampler_model.xml", device, device_config
                 ).create_infer_request();
 
                 m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
             }
-            m_embedding = ov::Core{}.compile_model(
+            m_embedding = core.compile_model(
                 model_dir / "openvino_text_embeddings_model.xml", device, device_config
             ).create_infer_request();
 
-            m_language = ov::Core{}.compile_model(
+            m_language = core.compile_model(
                 model_dir / "openvino_language_model.xml", device, device_config
             ).create_infer_request();
 
@@ -640,33 +710,21 @@ public:
             inputs_embeds = get_inputs_embeds_llava_next(prompt, rgbs);
         }
 
-        m_language.set_tensor("inputs_embeds", inputs_embeds);
-        size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
-        m_language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
-        std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
-        
-        m_language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
-        std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), history_len);
-        
-        m_language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
-        m_language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+        Sampler sampler = Sampler(m_tokenizer);
 
-        m_language.infer();
+        std::vector<SequenceGroup::Ptr> requests;
+        size_t request_id = 0;
+        size_t block_size = 1;
+        bool enable_prefix_caching = false;
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
+        size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+        ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
 
-        ov::Shape logits_shape = m_language.get_tensor("logits").get_shape();
-        auto attention_size = m_language.get_tensor("attention_mask").get_size();
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
+        sequence_group->update_processed_tokens_num(history_size);
+        sequence_group->set_sequence_group_ptr(sequence_group);
+        requests.push_back(sequence_group);
 
-        int64_t sequence_len = m_language.get_tensor("logits").get_shape().at(1) - 1;
-        size_t vocab_size = m_language.get_tensor("logits").get_shape().back();
-        float* logits = m_language.get_tensor("logits").data<float>() + sequence_len * vocab_size;
-        int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
-
-        m_language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, m_vlm_config.hidden_size});
-        m_language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
-
-        m_embedding.get_input_tensor().set_shape({ 1, 1 });
-
-        int64_t eos_token_id = m_tokenizer.get_eos_token_id();
         std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
             [&m_tokenizer = m_tokenizer](
                 const std::function<bool(std::string)>& callback
@@ -680,40 +738,19 @@ public:
                 return std::shared_ptr<StreamerBase>{nullptr};
             },
         }, streamer);
-        std::vector<int64_t> generated;
-        while (true) {  //(out_token != eos_token_id)
-            m_embedding.get_input_tensor().data<int64_t>()[0] = out_token;
-            m_embedding.infer();
-            const ov::Tensor& embed_prompt_tensor = m_embedding.get_output_tensor();
-            float* embed_data = embed_prompt_tensor.data<float>();
-            for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
-                embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
-            }
 
-            m_language.set_tensor("inputs_embeds", embed_prompt_tensor);
-            m_language.get_tensor("attention_mask").set_shape({ BATCH_SIZE, m_language.get_tensor("attention_mask").get_shape()[1] + 1 });
-            std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
-            m_language.get_tensor("position_ids").data<int64_t>()[0] = int64_t(m_language.get_tensor("attention_mask").get_size() - 1);
+        OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
+                        "Currently streaming is possible only for greedy or multinomial decoding");
 
-            m_language.infer();
+        EncodedGenerationResult encoded_result = get_lm_encoded_results(m_language, m_embedding, inputs_embeds, m_vlm_config, streamer_ptr, sampler, requests);
 
-            generated.push_back(out_token);
-            if (streamer_ptr && streamer_ptr->put(out_token)) {
-                break;
-            }
-            logits = m_language.get_tensor("logits").data<float>();
-
-            out_token = std::max_element(logits, logits + vocab_size) - logits;
-            if (out_token == eos_token_id) {
-                break;
-            }
+        DecodedResults decoded;
+        for (size_t idx = 0; idx < encoded_result.m_generation_ids.size(); ++idx) {
+            decoded.texts.push_back(m_tokenizer.decode(encoded_result.m_generation_ids.at(idx)));
+            decoded.scores.push_back(encoded_result.m_scores.at(idx));
         }
 
-        if (streamer_ptr) {
-            streamer_ptr->end();
-        }
-
-        std::string decoded_results = m_tokenizer.decode(generated);
+        std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
             // Tail of chat template is missing in KV cache.
             // Find the tail to concatenate it with the next input prompt.
@@ -725,7 +762,7 @@ public:
             }
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
-        return {{std::move(decoded_results)}};
+        return decoded;
     }
 
     DecodedResults generate(
@@ -747,6 +784,11 @@ public:
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
+
+        // If eos_token_id was not provided, take value
+        if (config.eos_token_id == -1)
+            config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+
         return generate(
             prompt,
             rgbs,
@@ -796,8 +838,15 @@ public:
 
     ov::Tensor get_inputs_embeds_llava(const std::string& prompt, const std::vector<ov::Tensor>& images) {
         std::string image_token = m_vlm_config.im_start;
-        std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
-        ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
+        std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
+        
+        // std::string chat_template_fallback = m_templated_chat_history + " USER: " + formatted_prompt + " ASSISTANT: ";
+        // chat_template_fallback = chat_template_fallback.erase(0, chat_template_fallback.find_first_not_of(' '));
+        
+        // Adapted from llava-1.5-7b-hf chat_template.json
+        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
         } else {
@@ -816,18 +865,12 @@ public:
 
     ov::Tensor get_inputs_embeds_llava_next(const std::string& prompt, const std::vector<ov::Tensor>& images) {
         std::string image_token = m_vlm_config.im_start;
-        std::string content = images.empty() ? prompt : image_token + "\n" + prompt;
-        m_history.push_back({{"role", "user"}, {"content", content}});
-        constexpr bool add_generation_prompt = true;
-        std::string new_templated_chat_history;
-        try {
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        } catch (const std::exception& error) {
-            // TODO Consider using template syntax instead of concatenating
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, "USER: " + content + " ASSISTANT:");
-        }
-         
-        ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
+        std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
+        
+        // Adapted from llava-1.5-7b-hf chat_template.json
+        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
         } else {
@@ -901,34 +944,9 @@ public:
             }
         }
         images_prompt += prompt;
-        ov::Tensor encoded_input;
-        if (m_is_chat_conversation) {
-            // KV cache in model already contains prompts and answers from previous iterations.
-            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
-            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
-            // <bos token> will be inserted on every iteration.
-            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
-            // and takes only the difference between them.
-            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
-            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
-            m_history.push_back({{"role", "user"}, {"content", images_prompt}});
-            constexpr bool add_generation_prompt = true;
-            std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
-            if (0 == m_language.get_tensor("attention_mask").get_shape().at(1)) {
-                encoded_input = new_chat_tokens;
-            } else {
-                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
-                    m_templated_chat_history
-                );
-                encoded_input = utils::subtract_chat_tokenized_inputs(
-                    {new_chat_tokens}, prev_chat_tokens
-                ).input_ids;
-            }
-            m_templated_chat_history = std::move(new_templated_chat_history);
-        } else {
-            encoded_input = m_tokenizer.encode(images_prompt).input_ids;
-        }
+
+        ov::Tensor encoded_input = get_encoded_input_ids(images_prompt);
+
         m_embedding.set_input_tensor(encoded_input);
         m_embedding.infer();
         ov::Tensor inputs_embeds = m_embedding.get_output_tensor();
@@ -1029,6 +1047,45 @@ public:
         pipe.m_resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
         pipe.m_resampler.infer();
         return pipe.m_resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
+    }
+
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, const std::string& chat_template_fallback = "") {
+        ov::Tensor encoded_input_ids;
+        if (m_is_chat_conversation) {
+            // KV cache in model already contains prompts and answers from previous iterations.
+            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+            // <bos token> will be inserted on every iteration.
+            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+            // and takes only the difference between them.
+            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
+            m_history.push_back({{"role", "user"}, {"content", prompt}});
+            constexpr bool add_generation_prompt = true;
+            std::string new_templated_chat_history;
+            try {
+                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            } catch (const std::exception& error) {
+                // Use fallback chat template if it was not found in tokenizer_config.json
+                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
+            }
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
+            auto history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
+            if (history_len == 0) {
+                encoded_input_ids = new_chat_tokens;
+            } else {
+                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
+                    m_templated_chat_history
+                );
+                encoded_input_ids = utils::subtract_chat_tokenized_inputs(
+                    {new_chat_tokens}, prev_chat_tokens
+                ).input_ids;
+            }
+            m_templated_chat_history = std::move(new_templated_chat_history);
+        } else {
+            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+        }
+        return encoded_input_ids;
     }
 };
 
