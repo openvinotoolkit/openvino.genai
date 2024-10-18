@@ -31,6 +31,8 @@ def main():
     parser.add_argument('models_path')
     parser.add_argument('prompt')
     args, adapters = parser.parse_known_args()
+    print("args: ".format(args))
+    print("adapters: ".format(adapters))
 
     prompt = args.prompt
 
