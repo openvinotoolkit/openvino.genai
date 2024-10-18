@@ -17,6 +17,7 @@
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 
 namespace ov {
 namespace genai {
@@ -134,12 +135,11 @@ public:
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
                 // Do not add special tokens in chat scenario to be aligned with HF.
-                bool add_special_tokens = false;
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
@@ -317,8 +317,8 @@ public:
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
-            m_history = {};
-            m_templated_chat_history = "";
+            m_history.clear();
+            m_templated_chat_history.clear();
         }
     }
 };
@@ -366,6 +366,14 @@ std::pair<std::string, Any> streamer(StreamerVariant func) {
 
 std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
+}
+
+std::pair<std::string, Any> draft_model(
+    const std::string& model_path,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    const ov::genai::SchedulerConfig& scheduler_config) {
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
 }
 
 }  // namespace genai

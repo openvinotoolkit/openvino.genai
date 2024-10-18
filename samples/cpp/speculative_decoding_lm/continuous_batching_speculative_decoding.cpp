@@ -4,11 +4,11 @@
 #include <openvino/openvino.hpp>
 #include <cxxopts.hpp>
 
-#include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 
-void print_generation_result(const std::vector<std::string>& texts, const std::vector<float>& log_probs) {
-    for (size_t output_id = 0; output_id < texts.size(); ++output_id) {
-        std::cout << "Answer " << output_id << " (" << log_probs[output_id] << ") : " << texts[output_id] << std::endl;
+void print_cb_generation_result(const ov::genai::GenerationResult& generation_result) {
+    for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
+        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
     }
 }
 
@@ -126,22 +126,35 @@ int main(int argc, char* argv[]) try {
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
     scheduler_config.enable_prefix_caching = use_prefix;
+    
+    ov::genai::ContinuousBatchingPipeline pipe(model_path, scheduler_config, device, {ov::genai::draft_model(draft_model_path, device)});
+    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
 
-    // It's possible to construct a Tokenizer from a different path.
-    // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::LLMPipeline pipe(model_path, device, ov::genai::draft_model(draft_model_path, device), ov::genai::scheduler_config(scheduler_config));
-
-    if (use_prefix) {
-        std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;
-        auto generation_results = pipe.generate(prefix_str, ov::genai::greedy());
-    }
-
-    for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
-        ov::genai::DecodedResults generation_results = pipe.generate(prompts[request_id], generation_config[request_id]);
+    for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
+        const ov::genai::GenerationResult & generation_result = generation_results[request_id];
         std::cout << "Question: " << prompts[request_id] << std::endl;
-        const std::vector<std::string>& text_results = generation_results.texts;
-        const std::vector<float>& log_prob_results = generation_results.scores;
-        print_generation_result(text_results, log_prob_results);
+        switch (generation_result.m_status)
+        {
+        case ov::genai::GenerationStatus::FINISHED:
+            print_cb_generation_result(generation_result);
+            break;
+        case ov::genai::GenerationStatus::IGNORED:
+            std::cout << "Request was ignored due to lack of memory." <<std::endl;
+            if (generation_result.m_generation_ids.size() > 0) {
+                std::cout << "Partial result:" << std::endl;
+                print_cb_generation_result(generation_result);
+            }
+            break;
+        case ov::genai::GenerationStatus::DROPPED_BY_PIPELINE:
+            std::cout << "Request was aborted." <<std::endl;
+            if (generation_result.m_generation_ids.size() > 0) {
+                std::cout << "Partial result:" << std::endl;
+                print_cb_generation_result(generation_result);
+            }
+            break;   
+        default:
+            break;
+        }
         std::cout << std::endl;
     }
 } catch (const std::exception& error) {
