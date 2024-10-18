@@ -22,7 +22,7 @@ dependencies = [
 directory = "src/python"
 
 [tool.py-build-cmake.sdist]
-exclude = ["llm_bench", "samples", "tests", "thirdparty"]
+exclude = ["tools", "samples", "tests", "thirdparty"]
 
 [tool.py-build-cmake.cmake]
 minimum_version = "3.23"

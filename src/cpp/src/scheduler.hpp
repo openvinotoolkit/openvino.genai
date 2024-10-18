@@ -70,6 +70,11 @@ public:
         return scheduler_output;
     }
 
+    void clean_empty_blocks(std::vector<SequenceGroup::Ptr>& seq_groups) {
+        for (const auto& seq_group : seq_groups)
+            m_block_manager.free_empty_physical_blocks(seq_group);
+    }
+
     const std::vector<BlocksPerLayer>& get_block_tables(const Sequence& seq) const {
         return m_block_manager.get_block_tables(seq.get_id());
     }
@@ -342,7 +347,6 @@ private:
                 // here we also assume that sequence must be scheduler in a single shot and has no already generated context
                 if (!m_config.enable_prefix_caching)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
-
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
 
@@ -367,7 +371,6 @@ private:
                 {
                     Sequence::Ptr sequence = (*sequence_group)[0];
                     uint64_t seq_id = sequence->get_id();
-
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
 
@@ -377,6 +380,7 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
+                        uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                     }

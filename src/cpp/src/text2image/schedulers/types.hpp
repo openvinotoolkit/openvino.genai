@@ -7,7 +7,7 @@
 
 #include "openvino/genai/text2image/pipeline.hpp"
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
