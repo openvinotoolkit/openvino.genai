@@ -12,8 +12,8 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
-#include "llm_pipeline_base.hpp"
-#include "llm_pipeline_static.hpp"
+#include "llm/llm_pipeline_base.hpp"
+#include "llm/llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 #include "lora/lora_helper.hpp"

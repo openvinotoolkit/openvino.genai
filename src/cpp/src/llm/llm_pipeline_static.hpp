@@ -5,7 +5,7 @@
 
 #include <filesystem>
 
-#include "llm_pipeline_base.hpp"
+#include "llm/llm_pipeline_base.hpp"
 
 namespace ov {
 namespace genai {

@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "llm_pipeline_static.hpp"
+#include "llm/llm_pipeline_static.hpp"
 
 #include <fstream>
 
