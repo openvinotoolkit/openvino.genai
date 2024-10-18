@@ -48,7 +48,12 @@ def main():
     image = read_image(args.image_dir)
 
     device = 'CPU'  # GPU can be used as well
-    pipe = openvino_genai.VLMPipeline(args.model_dir, device)
+    enable_compile_cache = dict()
+    if "GPU" == device:
+        # Cache compiled models on disk for GPU to save time on the
+        # next run. It's not beneficial for CPU.
+        enable_compile_cache["CACHE_DIR"] = "vlm_cache"
+    pipe = openvino_genai.VLMPipeline(args.model_dir, device, enable_compile_cache)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
@@ -56,15 +61,14 @@ def main():
     pipe.start_chat()
     prompt = input('question:\n')
     pipe.generate(prompt, image=image, generation_config=config, streamer=streamer)
-    print('\n----------')
 
     while True:
         try:
-            prompt = input('question:\n')
+            prompt = input("\n----------\n"
+                "question:\n")
         except EOFError:
             break
         pipe.generate(prompt, generation_config=config, streamer=streamer)
-        print('\n----------')
     pipe.finish_chat()
 
 
