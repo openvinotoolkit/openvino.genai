@@ -1,3 +1,0 @@
-baseline.bmp filter=lfs diff=lfs merge=lfs -text
-image.bmp filter=lfs diff=lfs merge=lfs -text
-lora.bmp filter=lfs diff=lfs merge=lfs -text

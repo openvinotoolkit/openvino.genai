@@ -768,39 +768,6 @@ jobs:
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
           timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg < input.txt > ./pred.txt
 
-  text2image_sample-ubuntu:
-    runs-on: ubuntu-22.04-8-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_generate_pipeline -j
-      - name: Download and convert stable-diffusion model, download lora adapter.
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
-          wget -O soulcard.safetensors https://civitai.com/api/download/models/72591
-      - name: Run python text2image sample
-        run: |
-          source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH
-          python ./samples/python/text2image/main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
-          python ./samples/python/text2image/lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
-
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:

@@ -69,6 +69,13 @@ jobs:
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           ./build/samples/cpp/text2image/stable_diffusion ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
 
+      - name: Run Python app
+        run: |
+          source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH
+          python ./samples/python/text2image/main.py ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          
+
   lcm_dreamshaper_v7_cpp-windows:
     runs-on: windows-latest
     defaults:
@@ -118,6 +125,13 @@ jobs:
         run: >
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           & "./build/samples/cpp/text2image/Release/stable_diffusion.exe ./models/lcm_dreamshaper_v7/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'"
+
+      - name: Run Python app
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          set PATH=.\build\openvino_genai\;%PATH%
+          python .\samples\python\text2image\main.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+
 
   Overall_Status:
     name: ci/gha_overall_status_lcm
