@@ -93,8 +93,8 @@ auto whisper_generation_config_docstring = R"(
     no_timestamps_token_id: No timestamps token id.
     type: int
     
-    begin_timestamps_token_id: Begin timestamps token id.
-    type: int
+    // begin_timestamps_token_id: Begin timestamps token id.
+    // type: int
     
     is_multilingual:
     type: bool
@@ -152,9 +152,11 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.transcribe_token_id = py::cast<int>(item.second);
         } else if (key == "no_timestamps_token_id") {
             res_config.no_timestamps_token_id = py::cast<int>(item.second);
-        } else if (key == "begin_timestamps_token_id") {
-            res_config.begin_timestamps_token_id = py::cast<int>(item.second);
-        } else if (key == "max_initial_timestamp_index") {
+        } 
+        // else if (key == "begin_timestamps_token_id") {
+        //     res_config.begin_timestamps_token_id = py::cast<int>(item.second);
+        // }
+         else if (key == "max_initial_timestamp_index") {
             res_config.max_initial_timestamp_index = py::cast<size_t>(item.second);
         } else if (key == "begin_suppress_tokens") {
             res_config.begin_suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
@@ -228,7 +230,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("pad_token_id", &WhisperGenerationConfig::pad_token_id)
         .def_readwrite("translate_token_id", &WhisperGenerationConfig::translate_token_id)
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
-        .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
+        // .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
         .def_readwrite("max_initial_timestamp_index", &WhisperGenerationConfig::max_initial_timestamp_index)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)

@@ -8,13 +8,13 @@
 #include <regex>
 #include <thread>
 
-#include "utils.hpp"
 #include "logit_processor.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "timestamps.hpp"
+#include "utils.hpp"
 #include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
@@ -177,7 +177,11 @@ std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
                                       const ov::genai::WhisperGenerationConfig& config,
                                       const bool return_timestamps) {
     if (!config.is_multilingual) {
-        return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
+        if (return_timestamps) {
+            return std::vector<int64_t>{config.decoder_start_token_id};
+        } else {
+            return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
+        }
     }
 
     int64_t language_token_id;
@@ -218,7 +222,10 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
     std::vector<int64_t> output_tokens{output_token};
 
-    bool is_timestamp = output_token >= config.begin_timestamps_token_id;
+    // bool is_timestamp = output_token >= config.begin_timestamps_token_id;
+
+    const size_t timestamp_begin = config.no_timestamps_token_id + 1;
+    bool is_timestamp = output_token >= timestamp_begin;
     if (!is_timestamp && streamer && streamer->put(output_token)) {
         return {true, output_tokens};
     }
@@ -248,7 +255,8 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         }
 
         output_tokens.push_back(output_token);
-        bool is_timestamp = output_token >= config.begin_timestamps_token_id;
+        // check: use different var name
+        bool is_timestamp = output_token >= timestamp_begin;
 
         if (!is_timestamp && streamer && streamer->put(output_token)) {
             return {true, output_tokens};
