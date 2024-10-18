@@ -40,8 +40,6 @@ int main(int argc, char* argv[]) try {
     scheduler_config.cache_size = 5;
     scheduler_config.block_size = get_default_block_size(main_device);
 
-    // Example to run main_model on GPU and draft_model on CPU:
-    // ov::genai::LLMPipeline pipe(main_model_path, "GPU", ov::genai::draft_model(draft_model_path, "CPU"), ov::genai::scheduler_config(scheduler_config));
     ov::genai::LLMPipeline pipe(main_model_path, main_device, ov::genai::draft_model(draft_model_path, draft_device), ov::genai::scheduler_config(scheduler_config));
 
     auto streamer = [](std::string subword) {
