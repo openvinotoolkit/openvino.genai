@@ -6,6 +6,7 @@ import argparse
 import openvino_genai
 import librosa
 
+
 def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
