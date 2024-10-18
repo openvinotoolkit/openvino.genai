@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+
 #include <openvino/core/except.hpp>
 #include "openvino/genai/generation_config.hpp"
-
 
 using namespace ov::genai;
 

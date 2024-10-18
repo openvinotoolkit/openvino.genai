@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
 #include <mutex>
 #include <atomic>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
-#include "synchronized_queue.hpp"
+
+#include "continuous_batching/synchronized_queue.hpp"
 
 namespace ov::genai {
 class GenerationStream {

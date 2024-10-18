@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <string_view>
-#include "sequence_group.hpp"
+
+#include "continuous_batching/sequence_group.hpp"
 
 namespace ov {
 namespace genai {

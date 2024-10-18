@@ -10,7 +10,8 @@
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "generation_stream.hpp"
+
+#include "continuous_batching/generation_stream.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {

@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include "openvino/openvino.hpp"
+
+#include <map>
+#include <vector>
+
+#include "openvino/runtime/tensor.hpp"
+
 using AttentionScoresForCacheOfSubsequence = ov::Tensor;
 using AttentionScoresForEachDecoderLayer = std::vector<AttentionScoresForCacheOfSubsequence>;
 using AttentionScoresForEachSubsequence = std::map<size_t, AttentionScoresForEachDecoderLayer>;

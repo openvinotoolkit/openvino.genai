@@ -6,18 +6,54 @@
 #include <variant>
 #include <algorithm>
 #include <nlohmann/json.hpp>
-#include <openvino/openvino.hpp>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+
 #include "llm_pipeline_base.hpp"
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
-#include "openvino/genai/lora_adapter.hpp"
-#include "lora_helper.hpp"
-#include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "lora/lora_helper.hpp"
+
+#include "openvino/op/add.hpp"
+#include "openvino/op/divide.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/matmul.hpp"
+#include "openvino/op/slice.hpp"
+#include "openvino/op/tanh.hpp"
+#include "openvino/op/transpose.hpp"
+namespace {
+
+void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
+    ov::Node* matmul = nullptr;
+    auto last_node = model->output(0).get_node()->input_value(0).get_node();
+    if (matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node)) {
+    } else if(auto add = dynamic_cast<ov::op::v1::Add*>(last_node)) {
+        matmul = dynamic_cast<ov::op::v0::MatMul*>(add->input_value(0).get_node());
+    } else if (auto transpose = dynamic_cast<ov::op::v1::Transpose*>(last_node)) {
+        matmul = dynamic_cast<ov::op::v0::MatMul*>(transpose->input_value(0).get_node());
+    } else if (auto multiply = dynamic_cast<ov::op::v1::Multiply*>(last_node)) {
+        if (auto tanh = dynamic_cast<ov::op::v0::Tanh*>(multiply->input_value(0).get_node())) {
+            if (auto divide = dynamic_cast<ov::op::v1::Divide*>(tanh->input_value(0).get_node())) {
+                matmul = dynamic_cast<ov::op::v0::MatMul*>(divide->input_value(0).get_node());
+            }
+        }
+    }
+
+    if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
+        auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+        auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-2});
+        auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto slice = std::make_shared<ov::op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
+        matmul->input(0).replace_source_output(slice);
+    }
+}
+
+}  // namespace
 
 namespace ov {
 namespace genai {
@@ -83,14 +119,14 @@ public:
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
-            utils::slice_matmul_statefull_model(model);
+            slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
-            utils::slice_matmul_statefull_model(model);
+            slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
         }
 
@@ -362,18 +398,6 @@ std::pair<std::string, Any> streamer(StreamerVariant func) {
         auto callback = std::get<std::function<bool(std::string)>>(func);
         return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
     }
-}
-
-std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
-    return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
-}
-
-std::pair<std::string, Any> draft_model(
-    const std::string& model_path,
-    const std::string& device,
-    const ov::AnyMap& plugin_config,
-    const ov::genai::SchedulerConfig& scheduler_config) {
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
 }
 
 }  // namespace genai

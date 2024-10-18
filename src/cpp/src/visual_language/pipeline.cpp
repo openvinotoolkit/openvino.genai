@@ -3,7 +3,8 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "sampler.hpp"
+
+#include "continuous_batching/sampler.hpp"
 #include "clip.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"

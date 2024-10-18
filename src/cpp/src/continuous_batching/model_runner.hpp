@@ -8,12 +8,11 @@
 
 #include <openvino/runtime/infer_request.hpp>
 
-#include "debug_utils.hpp"
-#include "sequence_group.hpp"
-#include "scheduler.hpp"
-#include "timer.hpp"
-
-#include "attention_output.hpp"
+#include "continuous_batching/debug_utils.hpp"
+#include "continuous_batching/sequence_group.hpp"
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/timer.hpp"
+#include "continuous_batching/attention_output.hpp"
 
 namespace ov::genai {
 

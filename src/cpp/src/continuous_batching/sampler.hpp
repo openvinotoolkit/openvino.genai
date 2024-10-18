@@ -16,9 +16,9 @@
 
 #include "openvino/runtime/tensor.hpp"
 
-#include "logit_processor.hpp"
-#include "scheduler.hpp"
-#include "sequence_group.hpp"
+#include "continuous_batching/logit_processor.hpp"
+#include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/sequence_group.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids

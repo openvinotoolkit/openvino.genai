@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "continuous_batching_impl.hpp"
-#include "continuous_batching_for_speculative_decoding_impl.hpp"
+#include "continuous_batching/continuous_batching_impl.hpp"
+
+#include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 
 namespace ov::genai {
@@ -25,6 +25,19 @@ struct ModelDesc {
         plugin_config(plugin_config),
         scheduler_config(scheduler_config) {}
 };
+
+extern const std::string DRAFT_MODEL_ARG_NAME;
+
+inline ov::genai::ModelDesc
+extract_draft_model_from_config(ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model("");
+    auto it = config.find(DRAFT_MODEL_ARG_NAME);
+    if (it != config.end()) {
+        draft_model = it->second.as<ov::genai::ModelDesc>();
+        config.erase(it);
+    }
+    return draft_model;
+}
 
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::ImplInterface {
 protected:

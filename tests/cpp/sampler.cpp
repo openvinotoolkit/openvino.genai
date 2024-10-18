@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
-#include "sampler.hpp"
-#include "openvino/genai/generation_config.hpp"
 
+#include "continuous_batching/sampler.hpp"
 
 using namespace ov::genai;
 

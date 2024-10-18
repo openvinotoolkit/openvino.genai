@@ -16,25 +16,23 @@
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
+- 'src/python/py_llm_pipeline.cpp'
 - 'tests/python_tests/test_generate_api.py'
 - 'tests/python_tests/test_chat_generate_api.py'
 
 'category: sampling':
 - 'src/cpp/include/openvino/genai/generation_config.hpp'
 - 'src/cpp/src/generation_config.cpp'
-- 'src/cpp/src/sampler.hpp'
-- 'src/cpp/src/sampler.cpp'
-- 'src/cpp/src/logit_processor.hpp'
+- 'src/cpp/src/continuous_batching/sampler.hpp'
+- 'src/cpp/src/continuous_batching/sampler.cpp'
+- 'src/cpp/src/continuous_batching/logit_processor.hpp'
 - 'tests/cpp/logit_filtering.cpp'
 - 'tests/cpp/generate_config.cpp'
 - 'tests/cpp/sampler.cpp'
 
 - 'category: LoRA':
 - 'src/cpp/include/openvino/genai/lora_adapter.hpp'
-- 'src/cpp/src/lora_adapter.cpp'
-- 'src/cpp/src/lora_helper.cpp'
-- 'src/cpp/src/lora_helper.hpp'
-- 'src/cpp/src/safetensors.c'
+- 'src/cpp/src/lora/**/*'
 
 'category: samples':
 - 'samples/**/*'
@@ -45,6 +43,7 @@
 - 'src/cpp/src/whisper/**/*'
 - 'src/cpp/src/whisper_generation_config.cpp'
 - 'src/cpp/src/whisper_pipeline.cpp'
+- 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_generate_api.py'
 
 'category: Python API':
@@ -53,39 +52,19 @@
 'category: visual language':
 - 'src/include/openvino/genai/visual_language/**/*'
 - 'src/cpp/src/visual_language/**/*'
+- 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_api.py'
 
 'category: speculative decoding':
 - 'src/cpp/src/speculative_decoding/**/*'
+- 'tests/cpp/speculative_decoding.cpp'
 
 'category: continuous batching':
 - 'src/cpp/include/openvino/genai/cache_eviction.hpp'
 - 'src/cpp/include/openvino/genai/continuous_batching_pipeline.hpp'
 - 'src/cpp/include/openvino/genai/generation_handle.hpp'
 - 'src/cpp/include/openvino/genai/scheduler_config.hpp'
-- 'src/cpp/src/attention_output.hpp'
-- 'src/cpp/src/block_manager.hpp'
-- 'src/cpp/src/cache_eviction.hpp'
-- 'src/cpp/src/cache_eviction.cpp'
-- 'src/cpp/src/cache_manager.hpp'
-- 'src/cpp/src/cache_state_dumper.hpp'
-- 'src/cpp/src/continuous_batching_impl_interface.hpp'
-- 'src/cpp/src/continuous_batching_impl_interface.cpp'
-- 'src/cpp/src/continuous_batching_impl.hpp'
-- 'src/cpp/src/continuous_batching_impl.cpp'
-- 'src/cpp/src/continuous_batching_pipeline.cpp'
-- 'src/cpp/src/debug_utils.hpp'
-- 'src/cpp/src/device_config.hpp'
-- 'src/cpp/src/generation_handle.cpp'
-- 'src/cpp/src/generation_stream.hpp'
-- 'src/cpp/src/model_runner.hpp'
-- 'src/cpp/src/paged_attention_transformations.cpp'
-- 'src/cpp/src/paged_attention_transformations.hpp'
-- 'src/cpp/src/scheduler.hpp'
-- 'src/cpp/src/sequence_group.cpp'
-- 'src/cpp/src/sequence_group.hpp'
-- 'src/cpp/src/synchronized_queue.hpp'
-- 'src/cpp/src/timer.hpp'
+- 'src/cpp/src/continuous_batching/**/*'
 - 'tests/python_tests/test_cache_optimizations.py'
 - 'tests/python_tests/test_preemption.py'
 - 'tests/python_tests/test_sampling.py'

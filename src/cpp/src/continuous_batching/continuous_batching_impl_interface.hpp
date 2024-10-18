@@ -5,10 +5,10 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
-#include "cache_manager.hpp"
-#include "sampler.hpp"
-#include "model_runner.hpp"
-#include "scheduler.hpp"
+#include "continuous_batching/cache_manager.hpp"
+#include "continuous_batching/sampler.hpp"
+#include "continuous_batching/model_runner.hpp"
+#include "continuous_batching/scheduler.hpp"
 
 namespace ov::genai {
 

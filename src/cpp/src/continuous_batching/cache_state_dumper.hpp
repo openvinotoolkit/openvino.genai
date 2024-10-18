@@ -7,9 +7,9 @@
 #include <filesystem>
 #include <vector>
 
-#include "block_manager.hpp"
-#include "sequence_group.hpp"
-#include "scheduler.hpp"
+#include "continuous_batching/block_manager.hpp"
+#include "continuous_batching/sequence_group.hpp"
+#include "continuous_batching/scheduler.hpp"
 
 namespace ov::genai {
 const std::string DEFAULT_POSTFIX = std::string();

@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text_callback_streamer.hpp"
-#include "continuous_batching_impl.hpp"
 #include "utils.hpp"
-#include "utils/paged_attention_transformations.hpp"
+
+#include "continuous_batching/continuous_batching_impl.hpp"
+#include "continuous_batching/paged_attention_transformations.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};

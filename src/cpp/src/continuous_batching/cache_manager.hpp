@@ -8,7 +8,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 
-#include "device_config.hpp"
+#include "continuous_batching/device_config.hpp"
 
 namespace ov::genai {
 class CacheManager {

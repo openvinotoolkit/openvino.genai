@@ -1,10 +1,11 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/openvino.hpp>
+#include <unordered_map>
+#include <vector>
 
 #include "openvino/genai/generation_handle.hpp"
-#include "generation_stream.hpp"
+#include "continuous_batching/generation_stream.hpp"
 
 using namespace ov::genai;
 

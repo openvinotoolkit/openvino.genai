@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include "continuous_batching_impl_interface.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "cache_eviction.hpp"
+
+#include "continuous_batching/continuous_batching_impl_interface.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::ImplInterface {

@@ -4,29 +4,22 @@
 #include <cstdint>
 #include <mutex>
 #include <memory>
+
 #include <openvino/runtime/properties.hpp>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "continuous_batching_impl.hpp"
-#include "speculative_decoding/speculative_decoding_impl.hpp"
-#include "timer.hpp"
+
 #include "utils.hpp"
-#include "debug_utils.hpp"
-#include "cache_state_dumper.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
+
+#include "continuous_batching/continuous_batching_impl.hpp"
+#include "continuous_batching/timer.hpp"
+#include "continuous_batching/debug_utils.hpp"
+#include "continuous_batching/cache_state_dumper.hpp"
 
 using namespace ov::genai;
-
-inline ov::genai::ModelDesc
-extract_draft_model_from_config(ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model("");
-    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-        config.erase(utils::DRAFT_MODEL_ARG_NAME);
-    }
-    return draft_model;
-}
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
                                                         const SchedulerConfig& scheduler_config,

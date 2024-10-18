@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <gtest/gtest.h>
-#include "openvino/runtime/core.hpp"
-#include "scheduler.hpp"
 #include <chrono>
 #include <thread>
+
+#include <gtest/gtest.h>
+
+#include "continuous_batching/scheduler.hpp"
 
 TEST(TestBlockHashStore, general_test) {
     ov::genai::OverwritableBlocksHashStore block_hash_store(1);

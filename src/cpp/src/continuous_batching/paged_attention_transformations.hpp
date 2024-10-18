@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include <memory>
+
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
-#include "device_config.hpp"
+
+#include "continuous_batching/device_config.hpp"
 
 namespace ov {
 namespace genai {

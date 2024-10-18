@@ -34,7 +34,6 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
-const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 
 template<typename Config=ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& model_path, const char config_name[]="generation_config.json") {
@@ -58,8 +57,6 @@ ProcessorConfig from_any_map(
 std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
-
-void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 

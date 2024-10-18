@@ -3,7 +3,9 @@
 
 #pragma once
 
-#include <openvino/openvino.hpp>
+#include <vector>
+
+#include <openvino/runtime/tensor.hpp>
 
 #include "openvino/genai/whisper_generation_config.hpp"
 

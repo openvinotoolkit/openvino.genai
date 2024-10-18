@@ -10,8 +10,7 @@
 #include <fstream>
 #include <chrono>
 
-#include "sequence_group.hpp"
-
+#include "continuous_batching/sequence_group.hpp"
 
 namespace ov::genai {
 

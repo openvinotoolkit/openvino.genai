@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "continuous_batching_impl_interface.hpp"
+#include "continuous_batching/continuous_batching_impl_interface.hpp"
 
 namespace ov::genai {
 GenerationConfig ContinuousBatchingPipeline::ImplInterface::get_config() const {

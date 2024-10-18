@@ -14,6 +14,10 @@
 namespace ov {
 namespace genai {
 
+std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
+    return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
+}
+
 GenerationConfig::GenerationConfig(const std::string& json_path) {
     using utils::read_json_param;
 

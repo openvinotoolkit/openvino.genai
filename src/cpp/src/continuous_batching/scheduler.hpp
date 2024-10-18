@@ -8,9 +8,10 @@
 #include <vector>
 
 #include "openvino/genai/scheduler_config.hpp"
-#include "device_config.hpp"
-#include "block_manager.hpp"
-#include "sequence_group.hpp"
+
+#include "continuous_batching/device_config.hpp"
+#include "continuous_batching/block_manager.hpp"
+#include "continuous_batching/sequence_group.hpp"
 
 namespace ov::genai {
 class Scheduler {
