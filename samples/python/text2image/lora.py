@@ -56,8 +56,8 @@ def main():
     image_write("lora.bmp", image)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
     image = pipe.generate(prompt,
-                          adapters=openvino_genai.AdapterConfig(),
                           # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
+                          adapters=openvino_genai.AdapterConfig(),
                           random_generator=Generator(42),
                           width=512,
                           height=896,
