@@ -41,8 +41,8 @@ jobs:
       - name: Build app
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON -S ./ -B ./build/
-          cmake --build ./build/ --config Release --parallel
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --target py_generate_pipeline --parallel
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -112,8 +112,8 @@ jobs:
       - name: Build app
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON -S ./ -B ./build/
-          cmake --build ./build/ --config Release --parallel
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --target py_generate_pipeline --parallel
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
