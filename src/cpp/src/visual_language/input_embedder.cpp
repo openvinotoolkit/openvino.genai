@@ -49,7 +49,7 @@ public:
         return m_tokenizer;
     }
 
-    void start_chat(const std::string& system_message) {
+    virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
         if (!m_is_cache_empty) {
             m_history.clear();
@@ -71,7 +71,7 @@ public:
         m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
     }
 
-    void finish_chat() {
+    virtual void finish_chat() {
         m_is_chat_conversation = false;
         m_is_cache_empty = true;
 
@@ -281,7 +281,21 @@ public:
             }
         }
 
+        if (!m_is_chat_conversation) {
+            m_image_id = 0;
+        }
+
         return inputs_embeds;
+    }
+
+    virtual void start_chat(const std::string& system_message) override {
+        IInputsEmbedder::start_chat(system_message);
+        m_image_id = 0;
+    }
+
+    virtual void finish_chat() override {
+        IInputsEmbedder::finish_chat();
+        m_image_id = 0;
     }
 
 private:
@@ -468,7 +482,7 @@ public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
         std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
-        
+
         // std::string chat_template_fallback = m_templated_chat_history + " USER: " + formatted_prompt + " ASSISTANT: ";
         // chat_template_fallback = chat_template_fallback.erase(0, chat_template_fallback.find_first_not_of(' '));
 
@@ -554,7 +568,7 @@ public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
         std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
-        
+
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
