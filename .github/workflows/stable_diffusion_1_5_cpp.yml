@@ -41,7 +41,7 @@ jobs:
       - name: Build app
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
@@ -77,6 +77,7 @@ jobs:
       
       - name: Run Python main app
         run: |
+          source openvino_sd_cpp/bin/activate
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           python ./samples/python/text2image/main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
@@ -84,6 +85,7 @@ jobs:
       
       - name: Run Python LoRA app
         run: |
+          source openvino_sd_cpp/bin/activate
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           python ./samples/python/text2image/lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
@@ -110,7 +112,7 @@ jobs:
       - name: Build app
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=Release  -DENABLE_PYTHON=ON -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
@@ -146,15 +148,17 @@ jobs:
 
       - name: Run Python main app
         run: |
+          . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          set PATH=.\build\openvino_genai\;%PATH%
+          set PATH=.\build\openvino_genai\;${{ env.PATH }}
           python .\samples\python\text2image\main.py .\dreamlike_anime_1_0_ov\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
 
 
       - name: Run Python LoRA app
         run: |
+          . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          set PATH=.\build\openvino_genai\;%PATH%
+          set PATH=.\build\openvino_genai\;${{ env.PATH }}
           python .\samples\python\text2image\lora.py .\dreamlike_anime_1_0_ov\FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
 
   Overall_Status:
