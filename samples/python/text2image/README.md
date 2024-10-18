@@ -1,4 +1,4 @@
-# Text to Image C++ Generation Pipeline
+# Text to Image Python Generation Pipeline
 
 Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.Text2ImagePipeline` and uses a text prompt as input source.
 
