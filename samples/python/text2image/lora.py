@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import sys
 
-import numpy as np
 import openvino as ov
 import openvino_genai
+import numpy as np
 
 
 class Generator(openvino_genai.Generator):
@@ -31,8 +30,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('models_path')
     parser.add_argument('prompt')
-    args, _ = parser.parse_known_args()
-    adapters = sys.argv[3:]
+    args, adapters = parser.parse_known_args()
 
     prompt = args.prompt
 
