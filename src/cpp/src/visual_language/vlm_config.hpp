@@ -11,7 +11,7 @@
 namespace ov::genai {
 /// @brief A Configuration class passed to VLMPipeline and used to
 /// change VLMPipeline's behavior. Corresponds to config.json.
-class OPENVINO_GENAI_EXPORTS VLMConfig {
+class VLMConfig {
 public:
     /// @brief A enum denoting model type.
     VLMModelType model_type;

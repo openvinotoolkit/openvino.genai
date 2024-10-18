@@ -141,10 +141,17 @@ def get_argprser():
 
 
 CASE_TO_BENCH = {
+<<<<<<< HEAD
     'text_gen': bench_text.run_text_generation_benchmark,
     'image_gen': bench_image.run_image_generation_benchmark,
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
+=======
+    'text_gen': run_text_generation_benchmark,
+    'image_gen': run_image_generation_benchmark,
+    'code_gen': run_text_generation_benchmark,
+    'ldm_super_resolution': run_ldm_super_resolution_benchmark,
+>>>>>>> 075374be8e47d953f28885cd11017edc2973f6b7
 }
 
 
