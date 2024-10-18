@@ -18,6 +18,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 
 namespace ov {
 namespace genai {
@@ -368,12 +369,18 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
-std::pair<std::string, Any> draft_model(
+std::pair<std::string, Any> _draft_model(
     const std::string& model_path,
     const std::string& device,
-    const ov::AnyMap& plugin_config,
-    const ov::genai::SchedulerConfig& scheduler_config) {
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
+    const ov::AnyMap& llm_config) {
+    ov::AnyMap plugin_config = llm_config;
+    if (plugin_config.count(ov::genai::scheduler_config.name())) {
+        auto scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        plugin_config.erase(ov::genai::scheduler_config.name());
+        return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
+    }
+    SchedulerConfig scheduler_config;
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };   
 }
 
 }  // namespace genai

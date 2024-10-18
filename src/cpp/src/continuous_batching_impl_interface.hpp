@@ -28,11 +28,11 @@ protected:
         float m_infer_total_ms = 0.0f;
 
         ~PerfTime() {
-            std::cout << "Inference requests aggregated statistic: " << std::endl;
-            std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
-            std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
-            std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
-            std::cout << std::endl;
+            // std::cout << "Inference requests aggregated statistic: " << std::endl;
+            // std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
+            // std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
+            // std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
+            // std::cout << std::endl;
         }
     } m_perf;
     bool m_is_chat_conversation = false;
