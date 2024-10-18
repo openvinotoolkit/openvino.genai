@@ -15,9 +15,18 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 ## Prepare audio file
 
-Prepare audio file in wav format with sampling rate 16k Hz.
+You can prepare an audio file in WAV format with a sampling rate of 16k Hz using the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
 
-## Run
+To install dependencies:
+```
+pip install pyaudio
+```
+To run the script:
+```
+python recorder.py
+```
+
+## Run the Whisper model
 
 `whisper_speech_recognition whisper-base sample.wav`
 
@@ -26,15 +35,7 @@ Output: text transcription of `sample.wav`
 Models can be downloaded from [OpenAI HuggingFace](https://huggingface.co/openai).
 
 Supported Models:
-[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)
-[openai/whisper-tiny.en](https://huggingface.co/openai/whisper-tiny.en)
-[openai/whisper-base](https://huggingface.co/openai/whisper-base)
-[openai/whisper-base.en](https://huggingface.co/openai/whisper-base.en)
-[openai/whisper-small](https://huggingface.co/openai/whisper-small)
-[openai/whisper-small.en](https://huggingface.co/openai/whisper-small.en)
-[openai/whisper-medium](https://huggingface.co/openai/whisper-medium)
-[openai/whisper-medium.en](https://huggingface.co/openai/whisper-medium.en)
-[openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)
+[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny) | [openai/whisper-tiny.en](https://huggingface.co/openai/whisper-tiny.en) | [openai/whisper-base](https://huggingface.co/openai/whisper-base) | [openai/whisper-base.en](https://huggingface.co/openai/whisper-base.en) | [openai/whisper-small](https://huggingface.co/openai/whisper-small) | [openai/whisper-small.en](https://huggingface.co/openai/whisper-small.en) | [openai/whisper-medium](https://huggingface.co/openai/whisper-medium) | [openai/whisper-medium.en](https://huggingface.co/openai/whisper-medium.en) | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)
 
 ### Troubleshooting
 
@@ -45,4 +46,4 @@ Example output:
 ----------------
 ```
 
-To resolve this ensure that audio data has 16k Hz sampling rate
+To resolve this ensure that audio data has a 16k Hz sampling rate. You can use the recorder.py provided to record or use FFmpeg to convert the audio to the required format. 
