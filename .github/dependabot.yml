@@ -5,6 +5,14 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "pip"
+    directory: "./tools/llm_bench/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "./tools/who_what_benchmark/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
     directory: "samples/"
     schedule:
       interval: "weekly"
