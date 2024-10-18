@@ -44,7 +44,7 @@ struct EncodedImage {
 
 /// @brief A class used to infer embeddings of an image using
 /// ov::InferRequest and configured by ProcessorConfig.
-class OPENVINO_GENAI_EXPORTS VisionEncoder {
+class VisionEncoder {
 public:
     /// @brief A enum denoting model type.
     VLMModelType model_type;

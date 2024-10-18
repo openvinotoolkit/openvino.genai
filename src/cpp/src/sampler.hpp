@@ -63,6 +63,7 @@ public:
 
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
+
     void clear_request_info(uint64_t request_id);
 
     LogitProcessor& get_logit_processor(uint64_t request_id);
