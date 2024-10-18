@@ -27,9 +27,10 @@
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "openvino/pass/graph_rewrite.hpp"
 #include "openvino/pass/manager.hpp"
-#include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
+
+#include "utils.hpp"
 
 extern "C" {
     #include "safetensors.h"
@@ -561,6 +562,7 @@ public:
     }
 
     void insert (const Signature& signature, std::shared_ptr<ov::Model> model) {
+        ov::Core core = ov::genai::utils::singleton_core();
         requests[signature] = core.compile_model(model, device).create_infer_request();
     }
 
@@ -589,7 +591,6 @@ public:
 
 private:
 
-    ov::Core core;
     std::unordered_map<Signature, ov::InferRequest> requests;
     std::string device;
 };
