@@ -8,12 +8,11 @@ import openvino_tokenizers
 import openvino
 from ov_genai_test_utils import get_whisper_models_list
 import datasets
-from transformers import WhisperProcessor, pipeline, AutoTokenizer, WhisperTokenizerFast
+from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import json
 import time
 import typing
-from pathlib import Path
 
 
 @functools.lru_cache(1)

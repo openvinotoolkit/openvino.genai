@@ -60,14 +60,13 @@ def get_models_list():
 def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
     precommit_models = [
         "openai/whisper-tiny",
-        "openai/whisper-small.en",
+        "openai/whisper-tiny.en",
         "distil-whisper/distil-small.en",
-        "openai/whisper-base",
     ]
     if multilingual:
-        precommit_models = ["openai/whisper-tiny", "openai/whisper-base"]
+        precommit_models = ["openai/whisper-tiny"]
     if en_only:
-        precommit_models = ["openai/whisper-small.en", "distil-whisper/distil-small.en"]
+        precommit_models = ["openai/whisper-tiny.en", "distil-whisper/distil-small.en"]
     if tiny_only:
         precommit_models = ["openai/whisper-tiny"]
 
