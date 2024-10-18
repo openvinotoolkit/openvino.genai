@@ -379,7 +379,6 @@ std::pair<std::string, Any> draft_model(
 }  // namespace genai
 }  // namespace ov
 
-
 namespace {
 using namespace ov::genai;
 
