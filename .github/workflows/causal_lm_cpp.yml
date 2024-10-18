@@ -794,12 +794,13 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
           wget -O soulcard.safetensors https://civitai.com/api/download/models/72591
-      - name: Run python chat sample
+      - name: Run python text2image sample
         run: |
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           timeout 300s python ./samples/python/text2image/main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
-         
+          timeout 600s python ./samples/python/text2image/lora.py ./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
+
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:
