@@ -48,8 +48,8 @@ public:
     // No timestamps token id.
     int64_t no_timestamps_token_id = 50363;
 
-    // Begin timestamps token id.
-    int64_t begin_timestamps_token_id = 50364;
+    // // Begin timestamps token id.
+    // int64_t begin_timestamps_token_id = 50364;
 
     size_t max_initial_timestamp_index = 50;
 
@@ -114,7 +114,7 @@ static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
 static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
 static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
-static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
+// static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};
