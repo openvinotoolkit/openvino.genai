@@ -15,7 +15,7 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 ## Prepare audio file
 
-You can prepare an audio file in WAV format with a sampling rate of 16k Hz using the `recorder.py` script. The script will record 5 seconds of audio from the microphone. 
+You can prepare an audio file in WAV format with a sampling rate of 16k Hz using the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
 
 To install dependencies:
 ```
