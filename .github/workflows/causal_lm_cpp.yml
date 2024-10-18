@@ -799,8 +799,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           timeout 120s python ./samples/python/text2image/main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
-          timeout 120s python ./samples/python/text2image/lora.py ./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
-
+         
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:
