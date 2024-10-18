@@ -588,29 +588,6 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     return iter_data_list, pretrain_time
 
 
-def run_image_classification(model_path, framework, device, args, num_iters=10):
-    if args['genai']:
-        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
-    model, input_size = FW_UTILS[framework].create_image_classification_model(model_path, device, **args)
-
-    data = torch.rand(input_size)
-
-    test_time = []
-    iter_data_list = []
-    for num in range(num_iters or 10):
-        start = time.perf_counter()
-        model(data)
-        end = time.perf_counter()
-        generation_time = end - start
-        test_time.append(generation_time)
-
-        iter_data = gen_iterate_data(iter_idx=num, in_size=input_size, infer_count=num_iters, gen_time=generation_time)
-        iter_data_list.append(iter_data)
-    log.info(f'Processed {num_iters} images in {np.sum(test_time)}s')
-    log.info(f'Average processing time {np.mean(test_time)} s')
-    return iter_data_list
-
-
 def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id):
     set_seed(args['seed'])
     nsteps = img.get('steps', DEFAULT_SUPER_RESOLUTION_STEPS)
@@ -842,7 +819,6 @@ def get_argprser():
 CASE_TO_BENCH = {
     'text_gen': run_text_generation_benchmark,
     'image_gen': run_image_generation_benchmark,
-    'image_cls': run_image_classification,
     'code_gen': run_text_generation_benchmark,
     'ldm_super_resolution': run_ldm_super_resolution_benchmark,
 }
