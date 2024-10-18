@@ -773,7 +773,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const ov::AnyMap& config,
             const ov::genai::SchedulerConfig& scheduler_config
         ) {
-            return ov::genai::draft_model(model_path, device, config, scheduler_config).second;
+            auto updated_config = config;
+            updated_config.insert({"scheduler_config", scheduler_config});
+            return ov::genai::_draft_model(model_path, device, updated_config).second;
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be performed",
