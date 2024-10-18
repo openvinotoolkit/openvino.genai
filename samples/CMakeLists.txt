@@ -39,7 +39,7 @@ install(DIRECTORY
             python/greedy_causal_lm
             python/multinomial_causal_lm
             python/whisper_speech_recognition
-            cpp/speculative_decoding_lm
+            python/speculative_decoding_lm
             # python/text2image
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
