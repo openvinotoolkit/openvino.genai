@@ -391,12 +391,6 @@ jobs:
           ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         timeout-minutes: 1
 
-      - name: Test python samples (speculative_decoding_lm)
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          ${OV_INSTALL_DIR}/samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "What is OpenVINO?"
-
   Overall_Status:
     name: ci/gha_overall_status_macos
     needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]

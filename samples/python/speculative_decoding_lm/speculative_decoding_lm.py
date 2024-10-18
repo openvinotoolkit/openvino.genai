@@ -150,6 +150,7 @@ def main():
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
+    config.num_assistant_tokens = 5
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
