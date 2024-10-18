@@ -69,8 +69,9 @@ bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
 
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
         config.erase(it);
-        return std::make_optional(it->second);
+        return found;
     }
     return std::nullopt;
 }
@@ -227,7 +228,12 @@ ov::AnyMap get_baseline_common_config() {
 
 ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_baseline_common_config();
-    config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
+    const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
+    if (npu_l0 && std::atoi(npu_l0) == 1) {
+        config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
+    } else {
+        config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
+    }
     enable_npuw_dq_if_allowed(config, model);
     return config;
 }
@@ -250,6 +256,27 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
         return anyopt.value().as<T>();
     }
     return default_value;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
 }
 
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
@@ -338,8 +365,8 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
     // (7) Reshape both models to static shape
-    const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
-    const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
+    const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(150u);
     KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);

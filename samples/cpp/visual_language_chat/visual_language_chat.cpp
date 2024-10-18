@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
     std::vector<ov::Tensor> images = utils::load_images(argv[2]);
 
     ov::genai::GenerationConfig generation_config;
-    generation_config.max_new_tokens = 200;
+    generation_config.max_new_tokens = 100;
 
     std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap enable_compile_cache;
