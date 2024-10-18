@@ -507,7 +507,7 @@ def test_longform_audio_return_timestamps(model_descr, test_sample):
 import pathlib
 
 whisper_distil = ("distil-whisper/distil-small.en", pathlib.Path("distil-small.en"))
-whisper_small_en = ("openai/whisper-small.en", pathlib.Path("whisper-small.en"))
+whisper_small_en = ("openai/whisper-tiny.en", pathlib.Path("whisper-tiny.en"))
 
 
 @pytest.mark.parametrize("model_descr", [whisper_distil, whisper_small_en])
