@@ -32,7 +32,7 @@ def main():
     parser.add_argument('models_path')
     parser.add_argument('prompt')
     args, adapters = parser.parse_known_args()
-    openvino_genai.Adapter(adapters) # debug
+    openvino_genai.Adapter(sys.argv) # debug
 
     prompt = args.prompt
 
