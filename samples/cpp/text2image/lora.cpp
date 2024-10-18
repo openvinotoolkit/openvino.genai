@@ -12,7 +12,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string device = "CPU";  // GPU, NPU can be used as well
 
     ov::genai::AdapterConfig adapter_config;
-    // Multiple LoRA adapters applied simultaniously are supported, parse them all and corresponding alphas from cmd parameters:
+    // Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     for(size_t i = 0; i < (argc - 3)/2; ++i) {
         ov::genai::Adapter adapter(argv[3 + 2*i]);
         float alpha = std::atof(argv[3 + 2*i + 1]);

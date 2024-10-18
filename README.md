@@ -162,9 +162,27 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 ### Run generation using Text2Image API in Python
 
 ```python
+import argparse
+from PIL import Image
+import openvino_genai
 
-#WIP
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir')
+    parser.add_argument('prompt')
+    args = parser.parse_args()
 
+    device = 'CPU'  # GPU, NPU can be used as well
+    pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
+    image_tensor = pipe.generate(
+        args.prompt,
+        width=512,
+        height=512,
+        num_inference_steps=20
+    )
+
+    image = Image.fromarray(image_tensor.data[0])
+    image.save("image.bmp")
 ```
 
 ### Run generation using Text2Image API in C++

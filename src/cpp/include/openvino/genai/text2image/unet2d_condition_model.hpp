@@ -21,7 +21,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS UNet2DConditionModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 4;
         size_t sample_size = 0;
         std::vector<size_t> block_out_channels = { 320, 640, 1280, 1280 };
