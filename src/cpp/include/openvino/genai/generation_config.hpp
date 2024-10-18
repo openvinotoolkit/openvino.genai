@@ -10,6 +10,7 @@
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/scheduler_config.hpp"
 #include "lora_adapter.hpp"
 
 namespace ov {

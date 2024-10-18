@@ -18,6 +18,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 
 namespace ov {
 namespace genai {
