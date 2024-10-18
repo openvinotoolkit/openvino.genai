@@ -439,10 +439,10 @@ jobs:
           ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "What is OpenVINO?" > py_speculative.txt
           python -c "
           with open('cpp_speculative.txt', 'r') as f:
-              predicted_greedy = f.readline()
+              cpp_speculative = f.readline()
           with open('py_speculative.txt', 'r') as f:
-              predicted_speculative = f.readline()
-          assert predicted_greedy == predicted_speculative
+              py_speculative = f.readline()
+          assert py_speculative == cpp_speculative
           "
           echo "What is OpenVINO?" passed
 

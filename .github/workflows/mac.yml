@@ -357,8 +357,6 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
 
       - name: Install samples
         run: |
