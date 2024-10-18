@@ -1,30 +1,34 @@
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
+# start of dependencies
 
-find_package(OpenVINOGenAI REQUIRED
-    PATHS
-        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
-    NO_CMAKE_FIND_ROOT_PATH
-)
+include(FetchContent)
 
-add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
-target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime openvino::threading)
-set_target_properties(speculative_decoding_lm PROPERTIES
-    COMPILE_PDB_NAME speculative_decoding_lm
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(speculative_decoding_lm PRIVATE cxx_std_17)
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
 
-get_target_property(genai_imported openvino::genai IMPORTED_LOCATION)
-set(OPENVINO_TOKENIZERS_PATH $<IF:$<BOOL:${genai_imported}>,${genai_imported},$<TARGET_FILE_DIR:openvino::genai>>)
-set(OPENVINO_TOKENIZERS_FILENAME "${CMAKE_SHARED_LIBRARY_PREFIX}openvino_tokenizers${CMAKE_SHARED_LIBRARY_SUFFIX}")
-target_compile_definitions(speculative_decoding_lm PRIVATE
-    OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}/${OPENVINO_TOKENIZERS_FILENAME}")
+FetchContent_Declare(cxxopts
+    URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.1.1.tar.gz
+    URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
+FetchContent_MakeAvailable(cxxopts)
 
-install(TARGETS speculative_decoding_lm
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+if(NOT TARGET nlohmann_json)
+    FetchContent_Declare(nlohmann_json
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+
+# end of dependencies
+
+set(TARGET_NAME speculative_decoding_lm)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai cxxopts::cxxopts)
+
+set(TARGET_NAME_CB continuous_batching_speculative_decoding)
+add_executable(${TARGET_NAME_CB} ${TARGET_NAME_CB}.cpp)
+target_link_libraries(${TARGET_NAME_CB} PRIVATE openvino::genai cxxopts::cxxopts)

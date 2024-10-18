@@ -310,6 +310,10 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
+    // speculative decoding parameters
+    float m_assistant_confidence_threshold = 0.f;
+
+
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids) {
@@ -354,7 +358,14 @@ public:
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
             }
+            if (sampling_params.assistant_confidence_threshold > 0) {
+                m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
+            }
         }
+    }
+
+    float get_assistant_confidence_threshold() {
+        return m_assistant_confidence_threshold;
     }
 
     void apply(Logits& logits) {
