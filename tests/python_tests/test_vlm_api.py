@@ -12,7 +12,7 @@ from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, g
 def get_ov_model(model_dir):
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    model_id = "openbmb/MiniCPM-V-2_6"
+    model_id = "katuni4ka/tiny-random-minicpmv-2_6"
     processor = transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
     processor.tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
@@ -48,7 +48,7 @@ def test_vlm_pipeline(cache):
     def streamer(word: str) -> bool:
         return False
 
-    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    model_path = get_ov_model(cache.mkdir("tiny-random-minicpmv-2_6"))
 
     for links in image_links_for_testing:
         images = []
@@ -69,7 +69,7 @@ def test_vlm_pipeline(cache):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_vlm_get_tokenizer(cache):
-    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    model_path = get_ov_model(cache.mkdir("tiny-random-minicpmv-2_6"))
     pipe = VLMPipeline(str(model_path), "CPU")
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
@@ -83,7 +83,7 @@ def test_vlm_get_tokenizer(cache):
 ])
 @pytest.mark.skip("Enable after sampler are enabled")
 def test_sampling(config, cache):
-    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    model_path = get_ov_model(cache.mkdir("tiny-random-minicpmv-2_6"))
     image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(str(model_path), "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)
