@@ -769,7 +769,7 @@ jobs:
           timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg < input.txt > ./pred.txt
 
   text2image_sample-ubuntu:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     steps:
       - uses: actions/checkout@v4
         with:
