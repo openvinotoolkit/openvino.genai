@@ -12,7 +12,7 @@ namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
 /// change VisionEncoder's behavior. Corresponds to
 /// preprocessor_config.json.
-class OPENVINO_GENAI_EXPORTS ProcessorConfig {
+class ProcessorConfig {
 public:
     size_t image_size = 980;
     /// @brief Dimensions of the smaller, non-overlapping patches that the
