@@ -17,11 +17,13 @@ std::optional<AnyMap> extract_adapters_from_properties (const AnyMap& properties
     return std::nullopt;
 }
 
-void update_adapters_from_properties (const AnyMap& properties, AdapterConfig& adapter_config) {
+bool update_adapters_from_properties (const AnyMap& properties, AdapterConfig& adapter_config) {
     auto adapters_iter = properties.find(AdaptersProperty::name());
     if (adapters_iter != properties.end()) {
         adapter_config = adapters_iter->second.as<AdapterConfig>();
+        return true;
     }
+    return false;
 }
 
 }

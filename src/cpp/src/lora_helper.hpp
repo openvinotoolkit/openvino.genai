@@ -13,9 +13,9 @@ namespace genai {
 // If there is no `adapters` property, `adapter_config` is left unchanged and std::nullopt is returned.
 std::optional<AnyMap> extract_adapters_from_properties (const AnyMap& properties, AdapterConfig* adapter_config = nullptr);
 
-// Search for `adapters` property in `properties` map. If it is found, set `adapter_config` with found value.
-// If `adapters` property is not found, do nothing.
-void update_adapters_from_properties (const AnyMap& properties, AdapterConfig& adapter_config);
+// Search for `adapters` property in `properties` map. If it is found, set `adapter_config` with found value and return true.
+// If `adapters` property is not found, do nothing and return false.
+bool update_adapters_from_properties (const AnyMap& properties, AdapterConfig& adapter_config);
 
 }
 }

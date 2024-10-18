@@ -54,6 +54,16 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     Mode get_mode() const { return mode; }
     void set_mode(Mode);
 
+    // Methods to get and set optional name prefix to filter tensor names in LoRA adapter file applicable to a particular model.
+    // The prefix can be set at the user level or at a particular GenAI pipeline level. Usually GenAI pipelines should set
+    // the prefix appropriately, and no need to be worried from user side.
+    // But if the user has non-standard adapter file where the default prefix doesn't work, in this case
+    // user should set the prefix. If the prefix is set at the user side, it is not overridden by the pipeline logic.
+    // Use nullopt to indicate that the prefix is not set from the user side and let a particular GenAI pipeline set the default value.
+    // The default value is nullopt.
+    const std::optional<std::string>& get_tensor_name_prefix() const { return tensor_name_prefix; }
+    void set_tensor_name_prefix(const std::optional<std::string>& _tensor_name_prefix) { tensor_name_prefix = _tensor_name_prefix; }
+
     AdapterConfig (Mode mode = MODE_AUTO);
 
     AdapterConfig (const Adapter& adapter, float alpha, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, mode) {}
@@ -76,6 +86,10 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     AdapterConfig& remove(const Adapter&);
     const std::vector<Adapter>& get_adapters() const { return adapters; }
 
+    // Update adapters and alphas from other config. Mode and tensor_name_prefix are updated if they are set not to default values in other config.
+    // It means that if other.get_mode() == MODE_AUTO, it will not override value in this config. If tensor_name_prefix is not set (== nullopt) then it won't be updated either.
+    void update (const AdapterConfig& other);
+
     // Returns true if it is not a trivial config
     operator bool() const {
         return !adapters.empty();
@@ -86,6 +100,7 @@ private:
     Mode mode;
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
+    std::optional<std::string> tensor_name_prefix;
 
 };
 
@@ -168,7 +183,7 @@ public:
 
     AdapterController() = default;
 
-    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix, std::string device = "");
+    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device);
 
     // Apply adapters configured in the current config set last time, or set and use new config given as optional `config` argument
     void apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config = std::nullopt);

@@ -16,7 +16,7 @@ packaging
 psutil
 timm
 tiktoken
-onnx<=1.16.1
+onnx!=1.16.2
 einops
 transformers_stream_generator
 bitsandbytes

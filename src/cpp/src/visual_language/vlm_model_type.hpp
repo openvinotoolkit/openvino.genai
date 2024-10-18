@@ -11,7 +11,7 @@
 
 namespace ov::genai {
 
-enum class OPENVINO_GENAI_EXPORTS VLMModelType {
+enum class VLMModelType {
     MINICPM,
     LLAVA,
     LLAVA_NEXT,
