@@ -55,6 +55,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 
 ## Performing text generation 
 <details>
+
 For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing text generation model from Hugging Face library
@@ -76,7 +77,7 @@ pipe = ov_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
-### Run generation using LLM Pipeline in C++
+### Run generation using LLMPipeline in C++
 
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
 
@@ -85,9 +86,9 @@ Code below requires installation of C++ compatible package (see [here](https://d
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-   std::string model_path = argv[1];
-   ov::genai::LLMPipeline pipe(model_path, "CPU");
-   std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100));
+    std::string model_path = argv[1];
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100)) << '\n';
 }
 ```
 
@@ -97,9 +98,54 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+a
 
 </details>
 
+## Performing visual language text generation
+<details>
+
+For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+
+### Converting and compressing the model from Hugging Face library
+
+```sh
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+```
+
+### Run generation using VLMPipeline API in Python
+
+```python
+import openvino_genai as ov_genai
+#Will run model on CPU, GPU
+pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
+rgb = read_image("cat.jpg")
+print(pipe.generate(prompt, image=rgb))
+```
+
+### Run generation using VLMPipeline in C++
+
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
+
+```cpp
+#include "load_image.hpp"
+#include <openvino/genai/visual_language/pipeline.hpp>
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string model_path = argv[1];
+    ov::genai::VLMPipeline pipe(model_path, "CPU");
+    ov::Tensor rgb = utils::load_image(argv[2]);
+    std::cout << pipe.generate(prompt, ov::genai::image(rgb)) << '\n';
+}
+```
+
+### Sample notebooks using this API
+
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-language+assistant+with+MiniCPM-V2+and+OpenVINO)
+
+</details>
+
 ## Performing image generation
 
 <details>
+
 For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing image generation model from Hugging Face library
@@ -146,6 +192,7 @@ int main(int argc, char* argv[]) {
 
 ## Speech-to-text processing using Whisper Pipeline
 <details>
+
 For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
