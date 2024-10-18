@@ -10,6 +10,7 @@ def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir")
@@ -34,10 +35,12 @@ def main():
         return_timestamps=True,
         streamer=streamer,
     )
+    
     print()
-
+    
     for chunk in result.chunks:
         print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
+
 
 if "__main__" == __name__:
     main()
