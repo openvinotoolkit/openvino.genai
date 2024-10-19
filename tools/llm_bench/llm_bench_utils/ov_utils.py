@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig
+from transformers import AutoConfig, AutoProcessor
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -277,6 +277,23 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
+
+
+def create_genai_speech_2txt_model(model_path, device, **kwargs):
+    import openvino_genai as ov_genai
+    if kwargs.get("genai", False) == False:
+        raise RuntimeError('==Failure the command line does not set --genai ==')
+    if is_genai_available(log_msg=True) == False:
+        raise RuntimeError('==Failure genai is not enable ==')
+    start = time.perf_counter()
+    genai_pipe = ov_genai.WhisperPipeline(
+        str(model_path), device=device.upper()
+    )
+    end = time.perf_counter()
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    processor = AutoProcessor.from_pretrained(model_path)
+    return genai_pipe, processor, from_pretrained_time
 
 
 def is_genai_available(log_msg=False):

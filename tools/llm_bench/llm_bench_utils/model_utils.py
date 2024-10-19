@@ -7,6 +7,7 @@ import json
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
+from transformers.pipelines.audio_utils import ffmpeg_read
 
 
 def get_prompts(args):
@@ -45,6 +46,16 @@ def get_prompts(args):
                 else:
                     raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
     return prompts_list
+
+
+def get_audio(audio_file, sampling_rate):
+    with open(audio_file, "rb") as f:
+        inputs = f.read()
+    audio = ffmpeg_read(inputs, sampling_rate)
+    return {
+        "raw": audio,
+        "sampling_rate": sampling_rate,
+    }
 
 
 def get_image_param_from_prompt_file(args):
@@ -90,6 +101,43 @@ def get_image_param_from_prompt_file(args):
                 else:
                     raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
     return image_param_list
+
+
+def get_audio_param_from_prompt_file(args):
+    audio_param_list = []
+    if args['prompt'] is None and args['prompt_file'] is None:
+        raise RuntimeError('== prompt and prompt file is empty ==')
+    elif args['prompt'] is not None and args['prompt_file'] is not None:
+        raise RuntimeError('== prompt and prompt file should not exist together ==')
+    else:
+        if args['prompt'] is not None:
+            if args['prompt'] != '':
+                audio_param_list.append({'prompt' : args['prompt']})
+            else:
+                raise RuntimeError('== prompt should not be empty string ==')
+        else:
+            input_prompt_list = args['prompt_file']
+            for input_prompt in input_prompt_list:
+                if input_prompt.endswith('.jsonl'):
+                    if os.path.exists(input_prompt):
+                        log.info(f'Read prompts from {input_prompt}')
+                        with open(input_prompt, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                audio_param = {}
+                                data = json.loads(line)
+                                if 'media' in data:
+                                    if data['media'] != '':
+                                        audio_param['prompt'] = data['media']
+                                    else:
+                                        raise RuntimeError(f'== prompt should not be empty string in prompt file:{input_prompt} ==')
+                                else:
+                                    raise RuntimeError(f'== key word "media" does not exist in prompt file:{input_prompt} ==')
+                                audio_param_list.append(audio_param)
+                    else:
+                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
+                else:
+                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
+    return audio_param_list
 
 
 def set_default_param_for_ov_config(ov_config):
@@ -271,4 +319,4 @@ def get_model_precision(model_name_list):
                 break
         if model_precision != 'unknown':
             break
-    return model_precision
+    return '' if model_precision == 'unknown' else model_precision

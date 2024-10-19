@@ -15,6 +15,7 @@ import llm_bench_utils.output_json
 import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
+import task.audio_generation as bench_speech
 
 
 mem_consumption = MemConsumption()
@@ -145,6 +146,7 @@ CASE_TO_BENCH = {
     'image_gen': bench_image.run_image_generation_benchmark,
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
+    'speech2text': bench_speech.run_speech_2txt_benchmark,
 }
 
 
