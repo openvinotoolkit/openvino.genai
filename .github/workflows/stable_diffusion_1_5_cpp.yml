@@ -81,7 +81,7 @@ jobs:
         run: |
           source openvino_sd_cpp/bin/activate
           source ./ov/setupvars.sh
-          python ./samples/python/text2image/main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          python ./samples/python/text2image/main.py ./models/dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
           PYTHONPATH: ${{ env.build_dir }}
           LD_LIBRARY_PATH: ${{ env.build_dir }}/openvino_genai
@@ -90,7 +90,7 @@ jobs:
         run: |
           source openvino_sd_cpp/bin/activate
           source ./ov/setupvars.sh
-          python ./samples/python/text2image/lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
+          python ./samples/python/text2image/lora.py ./models/dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" ./models/soulcard.safetensors 0.7
         env:
           PYTHONPATH: ${{ env.build_dir }}
           LD_LIBRARY_PATH: ${{ env.build_dir }}/openvino_genai
@@ -153,7 +153,7 @@ jobs:
       - name: Run LoRA app
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          "${{ env.build_dir }}/samples/cpp/text2image/Release/lora_stable_diffusion.exe" ./models/dreamlike-art-dreamlike-anime-1.0/FP16 'curly-haired unicorn in the forest, anime, line' ./models/soulcard.safetensors 0.7
+          "${{ env.build_dir }}/samples/cpp/text2image/Release/lora_stable_diffusion.exe ./models/dreamlike-art-dreamlike-anime-1.0/FP16 'curly-haired unicorn in the forest, anime, line' ./models/soulcard.safetensors 0.7"
         env:
           PATH: ${{ env.build_dir }}\openvino_genai
 
@@ -161,7 +161,7 @@ jobs:
         run: |
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python .\samples\python\text2image\main.py .\dreamlike_anime_1_0_ov\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          python .\samples\python\text2image\main.py .\models\dreamlike_anime_1_0_ov\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
           PATH: ${{ env.build_dir }}\openvino_genai
           PYTHONPATH: ${{ env.build_dir }}
@@ -170,7 +170,7 @@ jobs:
         run: |
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python .\samples\python\text2image\lora.py .\dreamlike_anime_1_0_ov\FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
+          python .\samples\python\text2image\lora.py .\models\dreamlike_anime_1_0_ov\FP16 "curly-haired unicorn in the forest, anime, line" .\models\soulcard.safetensors 0.7
         env:
           PATH: ${{ env.build_dir }}\openvino_genai
           PYTHONPATH: ${{ env.build_dir }}
