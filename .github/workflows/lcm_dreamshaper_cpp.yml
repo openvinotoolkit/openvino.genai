@@ -13,7 +13,7 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 
 env:
   PYTHON_VERSION: '3.9'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241018_x86_64.tgz
+  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241018_x86_64.tgz
   WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/w_openvino_toolkit_windows_2024.5.0.dev20241018_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
@@ -81,7 +81,7 @@ jobs:
           LD_LIBRARY_PATH: ${{ env.build_dir }}/openvino_genai
 
   lcm_dreamshaper_v7_cpp-windows:
-    runs-on: windows-latest
+    runs-on: windows-2019
     defaults:
       run:
         shell: pwsh
