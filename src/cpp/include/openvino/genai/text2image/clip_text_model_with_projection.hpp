@@ -19,7 +19,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS CLIPTextModelWithProjection {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t max_position_embeddings = 77;
         size_t hidden_size = 512;
         size_t num_hidden_layers = 33;
