@@ -96,7 +96,7 @@ jobs:
           LD_LIBRARY_PATH: ${{ env.build_dir }}/openvino_genai
 
   stable_diffusion_1_5_cpp-windows:
-    runs-on: windows-latest
+    runs-on: windows-2019
     defaults:
       run:
         shell: pwsh
