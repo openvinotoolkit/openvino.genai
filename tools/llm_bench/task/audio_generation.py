@@ -168,7 +168,7 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, me
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
     ov_model, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
-    if use_genai == False:
+    if use_genai is False:
         pipe = pipeline(
             "automatic-speech-recognition",
             model=ov_model,
@@ -186,7 +186,7 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, me
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
         for idx, audio_prompt in enumerate(audio_list):
-            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], 
+            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx],
                                        audio_prompt, iter_data_list, json_data_list, mem_consumption, processor, use_genai)
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, True, 0)
 
