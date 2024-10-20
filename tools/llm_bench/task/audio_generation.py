@@ -132,6 +132,6 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, me
         for idx, audio_prompt in enumerate(audio_list):
             run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx],
                                        audio_prompt, iter_data_list, mem_consumption, processor)
-    metrics_print.print_average(iter_data_list, prompt_idx_list, 1, True, 0)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, 1, True)
 
     return iter_data_list, pretrain_time
