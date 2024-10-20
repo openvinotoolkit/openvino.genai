@@ -70,6 +70,7 @@ jobs:
         python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1
     - name: Test whisper-tiny on Linux
       run: |
+        pip install ffmpeg
         optimum-cli export openvino --trust-remote-code --model openai/whisper-base ./ov_models/whisper-base
         python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-base -pf ./tools/llm_bench/prompts/multimodal/whisper-tiny-stateful.jsonl -d cpu -n 1 --genai
     - name: WWB Tests
