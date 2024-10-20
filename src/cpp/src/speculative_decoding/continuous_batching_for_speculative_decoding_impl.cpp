@@ -148,6 +148,8 @@ init_request(
     LogitProcessor& logit_processor,
     bool is_update_logit_processor,
     bool is_init_all_sequences_in_request = false) {
+    OPENVINO_ASSERT(request->get_sampling_parameters().is_speculative_decoding(),
+                    "Speculative decoding should have initialized options `assistant_confidence_threshold` xor `num_assistant_tokens` in `GenerationConfig`.");
     if (candidates.begin()->second.token_ids.empty() && !is_init_all_sequences_in_request) {
         return 0;
     }

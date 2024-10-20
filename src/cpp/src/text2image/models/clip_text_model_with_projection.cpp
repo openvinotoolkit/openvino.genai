@@ -5,6 +5,7 @@
 
 #include <fstream>
 
+#include "lora_helper.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -34,7 +35,14 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& root
                 const std::string& device,
                 const ov::AnyMap& properties) :
     CLIPTextModelWithProjection(root_dir) {
-    compile(device, properties);
+    AdapterConfig adapters;
+    if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+        adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or("lora_te"));
+        m_adapter_controller = AdapterController(m_model, adapters, device);
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
 }
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const CLIPTextModelWithProjection&) = default;
@@ -64,6 +72,10 @@ CLIPTextModelWithProjection& CLIPTextModelWithProjection::compile(const std::str
     m_model.reset();
 
     return *this;
+}
+
+void CLIPTextModelWithProjection::set_adapters(const AdapterConfig& adapters) {
+    m_adapter_controller.apply(m_request, adapters);
 }
 
 ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
