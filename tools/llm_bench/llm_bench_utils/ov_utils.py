@@ -281,9 +281,9 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
 
 def create_genai_speech_2txt_model(model_path, device, **kwargs):
     import openvino_genai as ov_genai
-    if kwargs.get("genai", False) == False:
+    if kwargs.get("genai", False) is False:
         raise RuntimeError('==Failure the command line does not set --genai ==')
-    if is_genai_available(log_msg=True) == False:
+    if is_genai_available(log_msg=True) is False:
         raise RuntimeError('==Failure genai is not enable ==')
     start = time.perf_counter()
     genai_pipe = ov_genai.WhisperPipeline(
