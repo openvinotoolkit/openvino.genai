@@ -122,7 +122,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        loop_idx='',
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
@@ -236,7 +235,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     )
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        loop_idx='',
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_list),
         out_size=num_tokens,
@@ -347,7 +345,6 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        loop_idx='',
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_list),
         out_size=num_tokens,
