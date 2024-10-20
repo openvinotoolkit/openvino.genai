@@ -771,8 +771,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("sampling_params"),
             py::arg("streamer") = std::monostate{}
         );
-    
-    py::class_<ov::Any>(m, "DraftModel", py::module_local(), "This class is used to enable Speculative Decoding")
+
+    py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
         .def(py::init([](
             const std::string& model_path,
             const std::string& device,
@@ -788,6 +788,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         py::arg("scheduler_config") = ov::genai::SchedulerConfig({}), "openvino.properties map"
         );
+
 
     // init lora adapters
     init_lora_adapter(m);

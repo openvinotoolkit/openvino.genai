@@ -31,7 +31,7 @@ Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
 
-> *_NOTE:_*  User can run speculative decoding on different devices. Please, specify `device` in `LLMPipeline` constructor to run main model and `device` for `DraftModel` in the constructor.
+> *_NOTE:_*  User can run speculative decoding on different devices. Please, specify `device` in `LLMPipeline` constructor to run main model and `device` for `draft_model` in the constructor.
 
 ### Troubleshooting
 

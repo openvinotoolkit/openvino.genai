@@ -31,8 +31,6 @@ install(DIRECTORY
             cpp/text2image
             cpp/visual_language_chat
             cpp/whisper_speech_recognition
-            cpp/text2image
-            cpp/lora_greedy_causal_lm
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
@@ -43,7 +41,6 @@ install(DIRECTORY
             python/visual_language_chat
             python/text2image
             python/whisper_speech_recognition
-            # python/text2image
             python/speculative_decoding_lm
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)

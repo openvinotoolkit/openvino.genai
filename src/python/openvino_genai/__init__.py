@@ -39,6 +39,6 @@ from .py_generate_pipeline import (
     AggregationMode,
     Generator,
     CppStdGenerator,
-    DraftModel
+    draft_model
 
 )
