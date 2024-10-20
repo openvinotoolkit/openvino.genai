@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import numpy as np
 from pathlib import Path
 import hashlib
 import logging as log
@@ -18,20 +19,43 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 whisper_hook = WhisperHook()
 
 
-def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_prompt, iter_data_list, json_data_list, mem_consumption):
+def streamer(word: str) -> bool:
+    print(word, end="")
+    return False
+
+
+def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
+                               audio_prompt, iter_data_list,
+                               json_data_list, mem_consumption, processor, use_genai):
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    inputs = model_utils.get_audio(audio_prompt['prompt'], pipe.feature_extractor.sampling_rate)
-    start = time.perf_counter()
-    result_text = pipe(inputs, generate_kwargs={"task": 'translate'}, return_timestamps=True)["text"]
-    end = time.perf_counter()
-    generation_time = end - start
+    raw_speech = model_utils.get_audio(audio_prompt['prompt'], processor.feature_extractor.sampling_rate)
+    if use_genai is True:
+        start = time.perf_counter()
+        result_text = pipe.generate(
+            raw_speech['raw'],
+            max_new_tokens=1000,
+            # 'task' and 'language' parameters are supported for multilingual models only
+            language="<|en|>",
+            task="transcribe",
+            return_timestamps=True,
+            streamer=streamer,
+        )
+        end = time.perf_counter()
+        tm_list = np.array(result_text.perf_metrics.raw_metrics.m_durations) / 1000 / 1000
+        result_text = result_text.texts[0]
+    else:
+        start = time.perf_counter()
+        result_text = pipe(raw_speech, generate_kwargs={"task": 'translate'}, return_timestamps=True)["text"]
+        end = time.perf_counter()
+        tm_list = None
 
-    out_data = pipe.tokenizer(result_text, return_tensors='pt')
+    generation_time = end - start
+    out_data = processor.tokenizer(result_text, return_tensors='pt')
     out_data.pop('token_type_ids', None)
     # Remove `token_type_ids` from inputs
     out_tokens = out_data['input_ids'] if 'input_ids' in out_data else out_data
@@ -48,10 +72,24 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
         mem_consumption.clear_max_memory_consumption()
 
     latency_list = whisper_hook.get_whisper_latency()
-    for loop_idx, data in enumerate(latency_list):
+    if len(latency_list) > 0:
+        for loop_idx, data in enumerate(latency_list):
+            iter_data = gen_output_data.gen_iterate_data(
+                iter_idx=num,
+                loop_idx=loop_idx,
+                out_size=out_token_size,
+                gen_time=generation_time,
+                res_md5=result_md5_list,
+                max_rss_mem=max_rss_mem_consumption,
+                max_shared_mem=max_shared_mem_consumption,
+                max_uss_mem=max_uss_mem_consumption,
+                prompt_idx=prompt_id,
+                loop_data=data
+            )
+            iter_data_list.append(iter_data)
+    else:
         iter_data = gen_output_data.gen_iterate_data(
             iter_idx=num,
-            loop_idx=loop_idx,
             out_size=out_token_size,
             gen_time=generation_time,
             res_md5=result_md5_list,
@@ -59,7 +97,6 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
             max_shared_mem=max_shared_mem_consumption,
             max_uss_mem=max_uss_mem_consumption,
             prompt_idx=prompt_id,
-            loop_data=data
         )
         iter_data_list.append(iter_data)
     json_data = gen_output_data.gen_json_data(
@@ -77,6 +114,7 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
     metrics_print.print_metrics(
         num,
         iter_data,
+        tms=tm_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
@@ -99,7 +137,8 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
                 assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=prompt_id)
-    whisper_hook.clear_statistics()
+    if whisper_hook is not None:
+        whisper_hook.clear_statistics()
 
 
 def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
@@ -128,23 +167,27 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, me
     if len(audio_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
-    ov_model, processor, pretrain_time = FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=ov_model,
-        chunk_length_s=30,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-    )
-    if framework == "ov":
-        whisper_hook.new_text_encoder(pipe)
-        whisper_hook.new_text_encoder_request(pipe)
-        whisper_hook.new_generate(pipe)
-        whisper_hook.new_text_sample(pipe)
+    ov_model, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
+    if use_genai == False:
+        pipe = pipeline(
+            "automatic-speech-recognition",
+            model=ov_model,
+            chunk_length_s=30,
+            tokenizer=processor.tokenizer,
+            feature_extractor=processor.feature_extractor,
+        )
+        if framework == "ov":
+            whisper_hook.new_text_encoder(pipe)
+            whisper_hook.new_text_encoder_request(pipe)
+            whisper_hook.new_generate(pipe)
+            whisper_hook.new_text_sample(pipe)
+    else:
+        pipe = ov_model
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
         for idx, audio_prompt in enumerate(audio_list):
-            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], audio_prompt, iter_data_list, json_data_list, mem_consumption)
+            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], 
+                                       audio_prompt, iter_data_list, json_data_list, mem_consumption, processor, use_genai)
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, True, 0)
 
     return iter_data_list, pretrain_time, json_data_list

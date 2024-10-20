@@ -12,10 +12,10 @@ import traceback
 from llm_bench_utils.memory_profile import MemConsumption
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
-import llm_bench_utils.bench_text as bench_text
-import llm_bench_utils.bench_image as bench_image
-import llm_bench_utils.bench_ldm_sr as bench_ldm_sr
-import llm_bench_utils.bench_speech as bench_speech
+import task.text_generation as bench_text
+import task.image_generation as bench_image
+import task.super_resolution_generation as bench_ldm_sr
+import task.audio_generation as bench_speech
 
 
 mem_consumption = MemConsumption()

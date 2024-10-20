@@ -43,12 +43,12 @@ def gen_iterate_data(
         iter_data['first_token_infer_latency'] = loop_data['dec_1st_infer_time']
         iter_data['other_tokens_infer_avg_latency'] = loop_data['dec_2nd_infers_time']
     else:
-        iter_data['enc_token_latency'] = ''
-        iter_data['enc_infer_latency'] = ''
-        iter_data['first_token_latency'] = ''
-        iter_data['other_tokens_avg_latency'] = ''
-        iter_data['first_token_infer_latency'] = ''
-        iter_data['other_tokens_infer_avg_latency'] = ''
+        iter_data['enc_token_latency'] = -1
+        iter_data['enc_infer_latency'] = -1
+        iter_data['first_token_latency'] = -1
+        iter_data['other_tokens_avg_latency'] = -1
+        iter_data['first_token_infer_latency'] = -1
+        iter_data['other_tokens_infer_avg_latency'] = -1
 
     return iter_data
 

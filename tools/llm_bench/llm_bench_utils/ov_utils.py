@@ -279,6 +279,19 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     return ov_model, from_pretrained_time
 
 
+def create_genai_speech_2txt_model(model_path, device, **kwargs):
+    import openvino_genai as ov_genai
+    start = time.perf_counter()
+    genai_pipe = ov_genai.WhisperPipeline(
+        str(model_path), device=device.upper()
+    )
+    end = time.perf_counter()
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    processor = AutoProcessor.from_pretrained(model_path)
+    return genai_pipe, processor, from_pretrained_time, True
+
+
 def create_speech_2txt_model(model_path, device, **kwargs):
     """Create speech generation model.
 
@@ -295,6 +308,11 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
+        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+            if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+            else:
+                return create_genai_speech_2txt_model(model_path, device, **kwargs)
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,
@@ -304,7 +322,7 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-    return ov_model, processor, from_pretrained_time
+    return ov_model, processor, from_pretrained_time, False
 
 
 def is_genai_available(log_msg=False):

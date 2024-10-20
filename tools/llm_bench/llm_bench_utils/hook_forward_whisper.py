@@ -62,8 +62,9 @@ class WhisperHook:
     def clear_statistics(self):
         self.enc_infer_count = 0
         self.time_data.clear()
-        self.greedy_hook.clear_time_list()
-        self.greedy_hook.clear_time_infer_list()
+        if self.greedy_hook is not None:
+            self.greedy_hook.clear_time_list()
+            self.greedy_hook.clear_time_infer_list()
 
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.model.encoder.forward
@@ -112,5 +113,6 @@ class WhisperHook:
             prev_data = self.time_data[self.enc_infer_count - 1]
             prev_data['dec_token_time'] = copy.deepcopy(self.greedy_hook.get_time_list())
             prev_data['dec_infer_time'] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
-            self.greedy_hook.clear_time_list()
-            self.greedy_hook.clear_time_infer_list()
+            if self.greedy_hook is not None:
+                self.greedy_hook.clear_time_list()
+                self.greedy_hook.clear_time_infer_list()
