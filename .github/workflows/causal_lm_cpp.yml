@@ -811,7 +811,7 @@ jobs:
       - name: Run accuracy_sample
         run: |
           source ./ov/setupvars.sh
-          timeout --verbose 50s ./build/tools/continuos_batching/accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout --verbose 50s ./build/tools/continuous_batching/accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
