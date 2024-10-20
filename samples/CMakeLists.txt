@@ -4,8 +4,6 @@
 
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/chat_sample)
-add_subdirectory(cpp/continuous_batching_accuracy)
-add_subdirectory(cpp/continuous_batching_benchmark)
 add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/lora_greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
@@ -26,7 +24,6 @@ install(DIRECTORY
             cpp/lora_greedy_causal_lm
             cpp/multinomial_causal_lm
             # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
-            # Don't install continuous_batching_accuracy and continuous_batching_benchmark because CB isn't ready.
             cpp/speculative_decoding_lm
             cpp/text2image
             cpp/visual_language_chat
