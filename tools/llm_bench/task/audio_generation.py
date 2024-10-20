@@ -29,10 +29,10 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    raw_speech = model_utils.get_audio(audio_prompt['prompt'], processor.feature_extractor.sampling_rate)
+    raw_speech = model_utils.read_wav(audio_prompt['prompt'], processor.feature_extractor.sampling_rate)
     start = time.perf_counter()
     result_text = pipe.generate(
-        raw_speech['raw'],
+        raw_speech,
         max_new_tokens=1000,
         # 'task' and 'language' parameters are supported for multilingual models only
         language="<|en|>",

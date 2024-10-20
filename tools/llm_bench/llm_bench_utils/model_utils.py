@@ -7,7 +7,7 @@ import json
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
-from transformers.pipelines.audio_utils import ffmpeg_read
+import librosa
 
 
 def get_prompts(args):
@@ -48,14 +48,9 @@ def get_prompts(args):
     return prompts_list
 
 
-def get_audio(audio_file, sampling_rate):
-    with open(audio_file, "rb") as f:
-        inputs = f.read()
-    audio = ffmpeg_read(inputs, sampling_rate)
-    return {
-        "raw": audio,
-        "sampling_rate": sampling_rate,
-    }
+def read_wav(filepath, sampling_rate):
+    raw_speech = librosa.load(filepath, sr=sampling_rate)
+    return raw_speech[0].tolist()
 
 
 def get_image_param_from_prompt_file(args):
