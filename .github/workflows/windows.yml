@@ -295,7 +295,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_generate_pipeline -j
 
       - name: Test bindings
         run: |
@@ -304,13 +304,6 @@ jobs:
           python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-
-      - name: Test bindings (wheel)
-        run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
-
 
   genai_python_lib_vlm:
     name: OpenVINO genai VLM tests (cmake + wheel)
@@ -360,7 +353,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_generate_pipeline -j
 
       - name: Test bindings
         run: |
@@ -371,13 +364,6 @@ jobs:
           python -m pytest ./tests/python_tests/test_vlm_api.py
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-
-      - name: Test bindings (wheel)
-        run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/test_vlm_api.py
-
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)

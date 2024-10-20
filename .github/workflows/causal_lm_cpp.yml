@@ -773,7 +773,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
-          python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
+          ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
         timeout-minutes: 2
 
   cpp-continuous-batching-ubuntu:
