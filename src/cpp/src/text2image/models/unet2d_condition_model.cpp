@@ -5,10 +5,9 @@
 
 #include <fstream>
 
-#include "openvino/runtime/core.hpp"
-
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -28,7 +27,8 @@ UNet2DConditionModel::Config::Config(const std::string& config_path) {
 
 UNet2DConditionModel::UNet2DConditionModel(const std::string root_dir) :
     m_config(root_dir + "/config.json") {
-    m_model = ov::Core().read_model(root_dir + "/openvino_model.xml");
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(root_dir + "/openvino_model.xml");
     // compute VAE scale factor
     m_vae_scale_factor = std::pow(2, m_config.block_out_channels.size() - 1);
 }
@@ -39,7 +39,8 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& root_dir,
     UNet2DConditionModel(root_dir) {
     AdapterConfig adapters;
     if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
-        m_adapter_controller = AdapterController(m_model, adapters, "lora_unet", device);
+        adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or("lora_unet"));
+        m_adapter_controller = AdapterController(m_model, adapters, device);
         compile(device, *filtered_properties);
     } else {
         compile(device, properties);
@@ -86,7 +87,8 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
 
 UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = ov::Core().compile_model(m_model, device, properties);
+    ov::Core core = utils::singleton_core();
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

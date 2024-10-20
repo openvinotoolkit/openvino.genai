@@ -67,14 +67,32 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir + "/text_encoder", device, properties);
+            AdapterConfig adapters;
+            std::string path = root_dir + "/text_encoder";
+            if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
+                auto clip_properties = properties;
+                adapters.set_tensor_name_prefix("lora_te1");
+                clip_properties[ov::genai::adapters.name()] = adapters;
+                m_clip_text_encoder = std::make_shared<CLIPTextModel>(path, device, clip_properties);
+            } else {
+                m_clip_text_encoder = std::make_shared<CLIPTextModel>(path, device, properties);
+            }
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder_2", device, properties);
+            AdapterConfig adapters;
+            std::string path = root_dir + "/text_encoder_2";
+            if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
+                auto clip_properties = properties;
+                adapters.set_tensor_name_prefix("lora_te2");
+                clip_properties[ov::genai::adapters.name()] = adapters;
+                m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(path, device, clip_properties);
+            } else {
+                m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(path, device, properties);
+            }
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
@@ -95,6 +113,8 @@ public:
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
+
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     StableDiffusionXLPipeline(
@@ -142,16 +162,20 @@ public:
             generation_config.width = unet_config.sample_size * vae_scale_factor;
         check_image_size(generation_config.height, generation_config.width);
 
+        m_clip_text_encoder->set_adapters(generation_config.adapters);
+        m_clip_text_encoder_with_projection->set_adapters(generation_config.adapters);
+        m_unet->set_adapters(generation_config.adapters);
+
         if (generation_config.random_generator == nullptr) {
             uint32_t seed = time(NULL);
             generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        std::vector<float> time_ids = {static_cast<float>(generation_config.width), 
+        std::vector<float> time_ids = {static_cast<float>(generation_config.width),
                                        static_cast<float>(generation_config.height),
                                        0,
-                                       0, 
-                                       static_cast<float>(generation_config.width), 
+                                       0,
+                                       static_cast<float>(generation_config.width),
                                        static_cast<float>(generation_config.height),
                                        };
         ov::Tensor add_time_ids(ov::element::f32, {batch_size_multiplier, time_ids.size()});
@@ -176,7 +200,7 @@ public:
 
         OPENVINO_ASSERT(ehs_1_shape[0] == ehs_2_shape[0] && ehs_1_shape[1] == ehs_2_shape[1],
                         "Tensors for concatenation must have the same dimensions");
-    
+
         // concatenate hidden_states from two encoders
         ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0], ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
         ov::Tensor encoder_hidden_states(encoder_hidden_states_1.get_element_type(), encoder_hidden_states_shape);
@@ -189,9 +213,9 @@ public:
             for (size_t j = 0; j < ehs_1_shape[1]; ++j) {
                 size_t offset_1 = (i * ehs_1_shape[1] + j) * ehs_1_shape[2];
                 size_t offset_2 = (i * ehs_2_shape[1] + j) * ehs_2_shape[2];
-                
+
                 size_t step = (i * ehs_1_shape[1] + j) * (ehs_1_shape[2] + ehs_2_shape[2]);
-                
+
                 std::memcpy(encoder_hidden_states_data + step, ehs_1_data + offset_1, ehs_1_shape[2] * sizeof(float));
                 std::memcpy(encoder_hidden_states_data + step + ehs_1_shape[2], ehs_2_data + offset_2, ehs_2_shape[2] * sizeof(float));
             }

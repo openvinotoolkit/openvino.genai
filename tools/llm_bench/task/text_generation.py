@@ -104,7 +104,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         md5_list[num] = {prompt_index : result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    per_token_time = ""
+    if num_tokens > 0:
+        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    else:
+        log.warning("No generated tokens")
     tm_list = []
     tm_infer_list = []
     if bench_hook is not None:
@@ -117,14 +121,14 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if args['num_beams'] == 1 and generated_token_size != len(tm_infer_list):
             log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_output_data.gen_iterate_data(
-        num,
-        '',
-        input_token_size * args['batch_size'],
-        len(tm_infer_list),
-        num_tokens,
-        generation_time,
-        per_token_time,
-        result_md5_list,
+        iter_idx=num,
+        loop_idx='',
+        in_size=input_token_size * args['batch_size'],
+        infer_count=len(tm_infer_list),
+        out_size=num_tokens,
+        gen_time=generation_time,
+        latency=per_token_time,
+        res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
@@ -218,7 +222,11 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         md5_list[num] = {prompt_index : result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    per_token_time = ""
+    if num_tokens > 0:
+        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    else:
+        log.warning("No generated tokens")
     tm_list = np.array(perf_metrics.raw_metrics.m_durations) / 1000 / 1000
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
@@ -227,14 +235,14 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000
     )
     iter_data = gen_output_data.gen_iterate_data(
-        num,
-        '',
-        input_token_size * args['batch_size'],
-        len(tm_list),
-        num_tokens,
-        generation_time,
-        per_token_time,
-        result_md5_list,
+        iter_idx=num,
+        loop_idx='',
+        in_size=input_token_size * args['batch_size'],
+        infer_count=len(tm_list),
+        out_size=num_tokens,
+        gen_time=generation_time,
+        latency=per_token_time,
+        res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
@@ -329,19 +337,23 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         md5_list[num] = {prompt_index : result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    per_token_time = ""
+    if num_tokens > 0:
+        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    else:
+        log.warning("No generated tokens")
     tm_list = streamer.get_time_list()
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     iter_data = gen_output_data.gen_iterate_data(
-        num,
-        '',
-        input_token_size * args['batch_size'],
-        len(tm_list),
-        num_tokens,
-        generation_time,
-        per_token_time,
-        result_md5_list,
+        iter_idx=num,
+        loop_idx='',
+        in_size=input_token_size * args['batch_size'],
+        infer_count=len(tm_list),
+        out_size=num_tokens,
+        gen_time=generation_time,
+        latency=per_token_time,
+        res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
@@ -350,10 +362,10 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
-        num,
-        iter_data,
-        tm_list,
-        [],
+        iter_num=num,
+        iter_data=iter_data,
+        tms=tm_list,
+        tms_infer=[],
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,

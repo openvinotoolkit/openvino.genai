@@ -1,18 +1,26 @@
 # OpenVINO™ GenAI
 
-OpenVINO™ GenAI is a library of most popular Generative AI model pipelines, optimized execution methods and samples that runs on top of highly performant [OpenVINO Runtime](https://github.com/openvinotoolkit/openvino).
+OpenVINO™ GenAI is a library of the most popular Generative AI model pipelines, optimized execution methods, and samples that run on top of highly performant [OpenVINO Runtime](https://github.com/openvinotoolkit/openvino).
 
-Library is friendly to PC and laptop execution, optimized for resource consumption and requires no external dependencies to run generative models and includes all required functionality (e.g. tokenization via openvino-tokenizers).
+This library is friendly to PC and laptop execution, and optimized for resource consumption. It requires no external dependencies to run generative models as it already includes all the core functionality (e.g. tokenization via openvino-tokenizers).
 
 ![Text generation using LLaMa 3.2 model running on Intel ARC770 dGPU](./samples/generation.gif)
+
+## Getting Started
+
+Please follow the following blogs to setup your first hands-on experience with C++ and Python samples.
+
+* [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
+* [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
+
 
 ## Supported Generative AI scenarios
 
 OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run following Generative Scenarios:
  - Text generation using Large Language Models. For example, chat with local LLaMa model
- - Image generation using Diffuser models, for example generation using Stable Diffusion models
+ - Image generation using Diffuser models, for example, generation using Stable Diffusion models
  - Speech recognition using Whisper family models
- - Text generation using Large Visual Models, for instance Image analysis using LLaVa or miniCPM models family
+ - Text generation using Large Visual Models, for instance, Image analysis using LLaVa or miniCPM models family
 
 Library efficiently supports LoRA adapters for Text and Image generation scenarios:
 - Load multiple adapters per model
@@ -23,11 +31,11 @@ All scenarios are run on top of OpenVINO Runtime that supports inference on CPU,
 
 ## Supported Generative AI optimization methods
 
-OpenVINO™ GenAI library provides transparent way to use state of the art generation optimizations:
-- Speculative decoding that employs two models of different size and uses large model to periodically correct results of small model. See [here](https://pytorch.org/blog/hitchhikers-guide-speculative-decoding/) for more detailed overview
-- KVCache token eviction algorithm that reduces size of the KVCache by pruning less impacting tokens.
+OpenVINO™ GenAI library provides a transparent way to use state-of-the-art generation optimizations:
+- Speculative decoding that employs two models of different sizes and uses the large model to periodically correct the results of the small model. See [here](https://pytorch.org/blog/hitchhikers-guide-speculative-decoding/) for more detailed overview
+- KVCache token eviction algorithm that reduces the size of the KVCache by pruning less impacting tokens.
 
-Additionally, OpenVINO™ GenAI library implements continuous batching approach to use OpenVINO within LLM serving. Continuous batching library could be used in LLM serving frameworks and supports following features:
+Additionally, OpenVINO™ GenAI library implements a continuous batching approach to use OpenVINO within LLM serving. Continuous batching library could be used in LLM serving frameworks and supports the following features:
 - Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query. See [here](https://google.com) for more detailed overview
 
 Continuous batching functionality is used within OpenVINO Model Server (OVMS) to serve LLMs, see [here](https://docs.openvino.ai/2024/ovms_docs_llm_reference.html) for more details.
@@ -47,6 +55,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 
 ## Performing text generation 
 <details>
+
 For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing text generation model from Hugging Face library
@@ -68,7 +77,7 @@ pipe = ov_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
-### Run generation using LLM Pipeline in C++
+### Run generation using LLMPipeline in C++
 
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
 
@@ -77,21 +86,70 @@ Code below requires installation of C++ compatible package (see [here](https://d
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-   std::string model_path = argv[1];
-   ov::genai::LLMPipeline pipe(model_path, "CPU");
-   std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100));
+    std::string model_path = argv[1];
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100)) << '\n';
 }
 ```
 
 ### Sample notebooks using this API
 
-(TBD)
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+an+LLM-powered+Chatbot+using+OpenVINO+Generate+API)
+
+</details>
+
+## Performing visual language text generation
+<details>
+
+For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+
+### Converting and compressing the model from Hugging Face library
+
+```sh
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+```
+
+### Run generation using VLMPipeline API in Python
+
+```python
+import openvino_genai as ov_genai
+#Will run model on CPU, GPU is a possible option
+pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
+rgb = read_image("cat.jpg")
+print(pipe.generate(prompt, image=rgb, max_new_tokens=100))
+```
+
+### Run generation using VLMPipeline in C++
+
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
+
+```cpp
+#include "load_image.hpp"
+#include <openvino/genai/visual_language/pipeline.hpp>
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string model_path = argv[1];
+    ov::genai::VLMPipeline pipe(model_path, "CPU");
+    ov::Tensor rgb = utils::load_image(argv[2]);
+    std::cout << pipe.generate(
+        prompt,
+        ov::genai::image(rgb),
+        ov::genai::max_new_tokens(100)
+    ) << '\n';
+}
+```
+
+### Sample notebooks using this API
+
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-language+assistant+with+MiniCPM-V2+and+OpenVINO)
 
 </details>
 
 ## Performing image generation
 
 <details>
+
 For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing image generation model from Hugging Face library
@@ -104,14 +162,32 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 ### Run generation using Text2Image API in Python
 
 ```python
+import argparse
+from PIL import Image
+import openvino_genai
 
-#WIP
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir')
+    parser.add_argument('prompt')
+    args = parser.parse_args()
 
+    device = 'CPU'  # GPU, NPU can be used as well
+    pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
+    image_tensor = pipe.generate(
+        args.prompt,
+        width=512,
+        height=512,
+        num_inference_steps=20
+    )
+
+    image = Image.fromarray(image_tensor.data[0])
+    image.save("image.bmp")
 ```
 
 ### Run generation using Text2Image API in C++
 
-Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for additional setup details, or this blog for full instruction [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 
 ```cpp
 #include "openvino/genai/text2image/pipeline.hpp"
@@ -136,8 +212,9 @@ int main(int argc, char* argv[]) {
 
 </details>
 
-## Speech to text processing using Whisper Pipeline
+## Speech-to-text processing using Whisper Pipeline
 <details>
+
 For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
@@ -150,7 +227,7 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 ### Run generation using Whisper Pipeline API in Python
 
-NOTE: this sample is simplified version of full sample that is available [here](./samples/python/whisper_speech_recognition/whisper_speech_recognition.py)
+NOTE: This sample is a simplified version of the full sample that is available [here](./samples/python/whisper_speech_recognition/whisper_speech_recognition.py)
 
 ```python
 import argparse
@@ -190,7 +267,7 @@ def main():
  
 ### Run generation using Whisper Pipeline API in C++
 
-NOTE: this sample is simplified version of full sample that is available [here](./samples/cpp/whisper_speech_recognition/whisper_speech_recognition.cpp)
+NOTE: This sample is a simplified version of the full sample that is available [here](./samples/cpp/whisper_speech_recognition/whisper_speech_recognition.cpp)
 
 ```cpp
 #include "audio_utils.hpp"
@@ -224,7 +301,7 @@ int main(int argc, char* argv[]) try {
 
  ### Sample notebooks using this API
 
-(TBD)
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automatic+speech+recognition+using+Whisper+and+OpenVINO+with+Generate+API)
 
 </details>
 

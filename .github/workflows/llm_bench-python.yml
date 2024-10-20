@@ -23,14 +23,11 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10"]
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -47,6 +44,7 @@ jobs:
       run: |
         # stop the build if there are Python syntax errors or undefined names
         python -m flake8 ${{ env.LLM_BENCH_PYPATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
+        python -m flake8 ${{ env.WWB_PATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
     - name: Create code style diff for samples
       if: failure()
       run: |

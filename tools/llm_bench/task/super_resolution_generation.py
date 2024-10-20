@@ -126,5 +126,4 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id, mem_consumption)
             tm_list.clear()
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
-
     return iter_data_list, pretrain_time, json_data_list
