@@ -29,7 +29,7 @@ minimum_version = "3.23"
 build_type = "Release"
 config = ["Release"]
 find_python3 = true
-build_args = ["--parallel", "--target", "py_generate_pipeline"]
+build_args = ["--parallel", "--target", "py_openvino_genai"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
 options = {"BUILD_TOKENIZERS" = "OFF"}

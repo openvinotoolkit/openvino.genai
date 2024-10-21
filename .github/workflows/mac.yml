@@ -284,7 +284,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_generate_pipeline -j
+          cmake --build ./build/ --config Release --target py_openvino_genai -j
 
       - name: Test bindings
         run: |

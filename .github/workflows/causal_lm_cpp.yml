@@ -717,7 +717,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat py_generate_pipeline -j
+          cmake --build ./build/ --config Release --target visual_language_chat py_openvino_genai -j
       - name: Install dependencies
         run: |
           source ./ov/setupvars.sh
