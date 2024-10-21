@@ -94,7 +94,7 @@ void update_text2image_config_from_kwargs(
     }
 }
 
-ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
+ov::AnyMap text2image_kwargs_to_any_map(const std::map<std::string, py::object>& config, const py::kwargs& kwargs, bool allow_compile_properties=true) {
     ov::AnyMap params = {};
 
     for (const auto& item : kwargs) {
@@ -144,8 +144,10 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
                                             "Use help(openvino_genai.Text2ImagePipeline.generate) to get list of acceptable parameters."));
             }
         }
-        
-        
+    }
+    if (config.size()) {
+        auto properties = utils::properties_to_any_map(config);
+        params.insert(properties.begin(), properties.end());
     }
     return params;
 }
@@ -179,16 +181,19 @@ void init_text2image_pipeline(py::module_& m) {
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
+            const std::map<std::string, py::object>& config,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, text2image_kwargs_to_any_map(kwargs, true));
+            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, text2image_kwargs_to_any_map(config, kwargs, true));
         }),
         py::arg("model_path"), "folder with exported model files.", 
         py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             Text2ImagePipeline class constructor.
             model_path (str): Path with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU).
+            config (dict): Device properties.
             kwargs: Text2ImagePipeline properties
         )")
         .def("get_generation_config", &ov::genai::Text2ImagePipeline::get_generation_config)
@@ -218,7 +223,7 @@ void init_text2image_pipeline(py::module_& m) {
                 const std::string& prompt,
                 const py::kwargs& kwargs
             ) {
-                ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
+                ov::AnyMap params = text2image_kwargs_to_any_map({}, kwargs, false);
                 return py::cast(pipe.generate(prompt, params));
             },
             py::arg("prompt"), "Input string",

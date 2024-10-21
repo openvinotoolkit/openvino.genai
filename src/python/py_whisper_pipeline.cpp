@@ -252,9 +252,13 @@ void init_whisper_pipeline(py::module_& m) {
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
         .def(py::init([](const std::string& model_path,
                          const std::string& device,
-                         const std::map<std::string, py::object>& config) {
+                         const std::map<std::string, py::object>& config,
+                         const py::kwargs& kwargs) {
                  ScopedVar env_manager(utils::ov_tokenizers_module_path());
-                 return std::make_unique<WhisperPipeline>(model_path, device, utils::properties_to_any_map(config));
+                 auto properies = utils::properties_to_any_map(config);
+                 auto kwargs_properies = utils::kwargs_to_any_map(kwargs);
+                 properies.insert(kwargs_properies.begin(), kwargs_properies.end());
+                 return std::make_unique<WhisperPipeline>(model_path, device, properies);
              }),
              py::arg("model_path"),
              "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
@@ -266,16 +270,21 @@ void init_whisper_pipeline(py::module_& m) {
             WhisperPipeline class constructor.
             model_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            kwargs: Device properties.
         )")
 
         .def(py::init([](const std::string& model_path,
                          const Tokenizer& tokenizer,
                          const std::string& device,
-                         const std::map<std::string, py::object>& config) {
+                         const std::map<std::string, py::object>& config,
+                         const py::kwargs& kwargs) {
+                 auto properies = utils::properties_to_any_map(config);
+                 auto kwargs_properies = utils::kwargs_to_any_map(kwargs);
+                 properies.insert(kwargs_properies.begin(), kwargs_properies.end());
                  return std::make_unique<WhisperPipeline>(model_path,
                                                           tokenizer,
                                                           device,
-                                                          utils::properties_to_any_map(config));
+                                                          properies);
              }),
              py::arg("model_path"),
              py::arg("tokenizer"),
@@ -287,6 +296,7 @@ void init_whisper_pipeline(py::module_& m) {
             model_path (str): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            kwargs: Device properties.
         )")
 
         .def(
