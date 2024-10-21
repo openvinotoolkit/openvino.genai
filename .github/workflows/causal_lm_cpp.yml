@@ -711,6 +711,7 @@ jobs:
           source ./ov/setupvars.sh
           optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
+          mkdir images
       - name: Generate reference - MiniCPM-V-2_6
         shell: python
         run: |
