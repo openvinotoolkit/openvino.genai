@@ -318,10 +318,10 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
+@pytest.mark.parametrize("get_generation_config", [get_greedy, get_beam_search, get_multinomial_all_parameters])
 @pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
-def test_echo_without_completion(tmp_path, sampling_config, max_num_batched_tokens):
-    generation_config = sampling_config
+def test_echo_without_completion(tmp_path, get_generation_config, max_num_batched_tokens):
+    generation_config = get_generation_config()
     generation_config.max_new_tokens = 0
     generation_config.echo = True
 
@@ -343,14 +343,12 @@ def test_echo_without_completion(tmp_path, sampling_config, max_num_batched_toke
         for sequence in output.m_generation_ids:
             assert(sequence == "What is OpenVINO?")
 
-    del pipe
-    shutil.rmtree(model_path)
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
+@pytest.mark.parametrize("get_generation_config", [get_greedy, get_beam_search, get_multinomial_all_parameters])
 @pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
-def test_echo_with_completion(tmp_path, sampling_config, max_num_batched_tokens):
-    generation_config = sampling_config
+def test_echo_with_completion(tmp_path, get_generation_config, max_num_batched_tokens):
+    generation_config = get_generation_config()
     generation_config.max_new_tokens = 10
     generation_config.echo = True
 
@@ -373,8 +371,6 @@ def test_echo_with_completion(tmp_path, sampling_config, max_num_batched_tokens)
             assert(sequence.startswith("What is OpenVINO?"))
             assert(len(sequence) > len("What is OpenVINO?"))
 
-    del pipe
-    shutil.rmtree(model_path)
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
@@ -402,5 +398,3 @@ def test_post_oom_health(tmp_path, sampling_config):
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert (len(output))
     assert(len(output[0].m_generation_ids))
-    del pipe
-    shutil.rmtree(models_path)
