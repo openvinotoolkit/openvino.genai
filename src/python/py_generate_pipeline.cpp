@@ -815,7 +815,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return ov::genai::_draft_model(models_path, device, utils::kwargs_to_any_map(kwargs)).second;
+            return ov::genai::draft_model(models_path, device, utils::kwargs_to_any_map(kwargs)).second;
         }),
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "", "device on which inference will be performed"
