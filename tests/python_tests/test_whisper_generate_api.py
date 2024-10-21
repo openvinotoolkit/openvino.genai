@@ -68,7 +68,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         path,
         opt_pipe,
         ov_genai.WhisperPipeline(
-            str(path), device="CPU", config={"ENABLE_MMAP": False}
+            str(path), device="CPU", **{"ENABLE_MMAP": False}
         ),
     )
 
@@ -201,7 +201,7 @@ def test_whisper_constructors(model_descr, test_sample):
     expected = opt_pipe(test_sample)["text"]
 
     genai_result = ov_genai.WhisperPipeline(
-        str(path), device="CPU", config={"ENABLE_MMAP": False}
+        str(path), device="CPU", **{"ENABLE_MMAP": False}
     ).generate(test_sample)
 
     assert genai_result.texts[0] == expected
@@ -213,7 +213,7 @@ def test_whisper_constructors(model_descr, test_sample):
     tokenizer = ov_genai.Tokenizer(str(path))
 
     genai_result = ov_genai.WhisperPipeline(
-        str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
+        str(path), tokenizer=tokenizer, device="CPU", **{"ENABLE_MMAP": False}
     ).generate(test_sample)
 
     assert genai_result.texts[0] == expected
@@ -237,7 +237,7 @@ def test_max_new_tokens(model_descr, test_sample):
     tokenizer = ov_genai.Tokenizer(str(path))
 
     genai_pipeline = ov_genai.WhisperPipeline(
-        str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
+        str(path), tokenizer=tokenizer, device="CPU", **{"ENABLE_MMAP": False}
     )
     config = genai_pipeline.get_generation_config()
     config.max_new_tokens = 30
