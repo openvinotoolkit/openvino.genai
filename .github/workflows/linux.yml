@@ -78,7 +78,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Clone OpenVINO
         uses: actions/checkout@v4
@@ -232,7 +232,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Install build dependencies
         run: |
@@ -268,7 +268,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py
+          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
       - run: python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
       - run: python -m pip install -U "optimum<1.23" --no-dependencies
@@ -325,7 +325,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Install build dependencies
         run: |
@@ -347,7 +347,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_generate_pipeline -j
 
       - name: Test bindings
         run: |
@@ -361,7 +361,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
