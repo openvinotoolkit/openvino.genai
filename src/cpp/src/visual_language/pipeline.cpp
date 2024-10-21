@@ -169,9 +169,9 @@ public:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
     VLMPipelineImpl(
-        const std::filesystem::path& model_dir,
+        const std::string& model_dir,
         const std::string& device,
-        const ov::AnyMap device_config
+        const ov::AnyMap& device_config
     ) :
         m_vlm_config{
             utils::from_config_json_if_exists<ov::genai::VLMConfig>(
@@ -186,7 +186,7 @@ public:
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         m_language = utils::singleton_core().compile_model(
-            model_dir / "openvino_language_model.xml", device, device_config
+            model_dir + "/openvino_language_model.xml", device, device_config
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
@@ -321,9 +321,9 @@ public:
 };
 
 VLMPipeline::VLMPipeline(
-    const std::filesystem::path& model_dir,
+    const std::string& model_dir,
     const std::string& device,
-    const ov::AnyMap device_config
+    const ov::AnyMap& device_config
 ) : m_pimpl{std::make_unique<VLMPipelineImpl>(model_dir, device, device_config)} {}
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;

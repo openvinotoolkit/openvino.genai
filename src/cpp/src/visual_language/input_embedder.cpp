@@ -82,14 +82,14 @@ public:
 protected:
     IInputsEmbedder(
         const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
+        const std::string& model_dir,
         const std::string& device,
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, utils::singleton_core()),
-        m_tokenizer{model_dir.string(), device_config} {
+        m_tokenizer{model_dir, device_config} {
         m_embedding = utils::singleton_core().compile_model(
-            model_dir / "openvino_text_embeddings_model.xml", device, device_config
+            model_dir + "/openvino_text_embeddings_model.xml", device, device_config
         ).create_infer_request();
     }
 
@@ -165,12 +165,12 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
 public:
     InputsEmbedderMiniCPM(
         const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
+        const std::string& model_dir,
         const std::string& device,
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) {
         m_resampler = utils::singleton_core().compile_model(
-            model_dir / "openvino_resampler_model.xml", device, device_config
+            model_dir + "/openvino_resampler_model.xml", device, device_config
         ).create_infer_request();
 
         m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
@@ -474,7 +474,7 @@ class InputsEmbedderLLaVA : public InputsEmbedder::IInputsEmbedder {
 public:
     InputsEmbedderLLaVA(
         const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
+        const std::string& model_dir,
         const std::string& device,
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
@@ -560,7 +560,7 @@ class InputsEmbedderLLaVANext : public InputsEmbedderLLaVA {
 public:
     InputsEmbedderLLaVANext(
         const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
+        const std::string& model_dir,
         const std::string& device,
         const ov::AnyMap device_config) :
         InputsEmbedderLLaVA(vlm_config, model_dir, device, device_config) { }
@@ -861,7 +861,7 @@ private:
 };
 
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
-                               const std::filesystem::path& model_dir,
+                               const std::string& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) {
     if (vlm_config.model_type == VLMModelType::MINICPM) {

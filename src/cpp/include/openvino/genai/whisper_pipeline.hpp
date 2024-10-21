@@ -38,7 +38,7 @@ class OPENVINO_GENAI_EXPORTS WhisperPipeline {
 
 public:
     /**
-     * @brief Constructs an WhisperSpeechRecognitionPipeline from xml/bin files, tokenizers and configuration in the
+     * @brief Constructs an WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir.
      *
      * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
@@ -48,6 +48,20 @@ public:
     WhisperPipeline(const std::string& model_path,
                     const std::string& device = "CPU",
                     const ov::AnyMap& plugin_config = {});
+
+    /**
+     * @brief Constructs an WhisperPipeline from xml/bin files, tokenizers and configuration in the
+     * same dir. Accepts arbitrary list of optional properties.
+     *
+     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+     * @param device optional device
+     * @param device_config optional device_config
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    WhisperPipeline(const std::string& root_dir,
+                  const std::string& device,
+                  Properties&&... device_config)
+        : WhisperPipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(device_config)...}) { }
 
     /**
      * @brief Constructs a WhisperPipeline when ov::genai::Tokenizer is initialized manually using file

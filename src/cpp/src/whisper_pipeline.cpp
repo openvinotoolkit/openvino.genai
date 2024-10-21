@@ -137,16 +137,6 @@ public:
 }  // namespace ov
 
 ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
-                                            const ov::genai::Tokenizer& tokenizer,
-                                            const std::string& device,
-                                            const ov::AnyMap& plugin_config) {
-    auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, tokenizer, device, plugin_config);
-    auto stop_time = std::chrono::steady_clock::now();
-    m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
-}
-
-ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
                                             const std::string& device,
                                             const ov::AnyMap& plugin_config) {
     auto start_time = std::chrono::steady_clock::now();
