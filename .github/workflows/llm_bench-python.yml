@@ -57,9 +57,10 @@ jobs:
         path: llm.bench_diff.diff
     - name: Test native pytorch model on Linux
       run: |
-        export GIT_LFS_SKIP_SMUDGE=0
         git clone --depth 1 https://huggingface.co/katuni4ka/tiny-random-qwen
         python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
+      env:
+        GIT_LFS_SKIP_SMUDGE: 0
     - name: Test tiny-random-baichuan2 on Linux
       run: |
         optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16

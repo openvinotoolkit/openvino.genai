@@ -53,13 +53,15 @@ jobs:
           ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
-          ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
+          && timeout 25s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
+        env:
+          PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
@@ -97,10 +99,10 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
+        env:
+          PYTHONPATH: "./build/" # C++ ignores that
         run: |
           source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
-
           timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" > ./pred.txt
           python -c "
           import transformers
@@ -285,8 +287,9 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -318,9 +321,10 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-Phi-2:
     runs-on: ubuntu-20.04-16-cores
@@ -352,9 +356,10 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
@@ -386,9 +391,10 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
@@ -422,16 +428,8 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_speculative.txt', 'r') as f:
-              predicted_speculative = f.readline()
-          assert predicted_greedy == predicted_speculative
-          "
-          echo "Alan Turing was a" passed
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5
+          ./build/samples/cpp/speculative_decoding_lm/continuous_batching_speculative_decoding -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
@@ -480,7 +478,7 @@ jobs:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
+          assert predicted_greedy == predicted_prompt_lookup, f'Expected {predicted_greedy}, actual {predicted_prompt_lookup}'
           "
           echo "Prompt lookup" passed
       - name: run and compare (model with seq_length_axis = 1)
@@ -502,7 +500,7 @@ jobs:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
+          assert predicted_greedy == predicted_prompt_lookup, f'Expected {predicted_greedy}, actual {predicted_prompt_lookup}'
           "
           echo "Prompt lookup" passed
 
@@ -556,9 +554,10 @@ jobs:
           echo Phi-1_5 passed
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-4-cores
@@ -610,9 +609,10 @@ jobs:
           echo "Alan Turing was a" passed
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
+        env:
+          PYTHONPATH: "./build"
 
   cpp-chat_sample-ubuntu:
     runs-on: ubuntu-24.04
@@ -643,6 +643,8 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
+        env:
+          PYTHONPATH: "./build"
         run: |
           source ./ov/setupvars.sh
           printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
@@ -675,10 +677,10 @@ jobs:
           "
           diff pred.txt ref.txt
           echo "Chat sample cpp" passed
-          export PYTHONPATH=./build/:$PYTHONPATH
           timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
+
 
   visual_language_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
@@ -772,8 +774,9 @@ jobs:
       - name: Run visual_language_chat Python sample - MiniCPM-V-2_6
         run: |
           source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH
           python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
+        env:
+          PYTHONPATH: "./build/"
         timeout-minutes: 2
 
   cpp-continuous-batching-ubuntu:
