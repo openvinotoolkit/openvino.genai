@@ -254,11 +254,10 @@ jobs:
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
       - run: python ref.py
       - run: >
-          call .\ov\setupvars.bat
+          set PATH=.\build\openvino_genai\;%PATH%
+          && set "PYTHONPATH=./build/"
+          && call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
-        env:
-          PYTHONPATH: ".\build\"
-          PATH: ".\build\openvino_genai"
       - run: fc .\cpp.txt .\py.txt
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
