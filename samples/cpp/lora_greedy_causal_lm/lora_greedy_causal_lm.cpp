@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) try {
     std::string model_path = argv[1];
     std::string adapter_path = argv[2];
     std::string prompt = argv[3];
-    std::string device = "CPU";
+    std::string device = "CPU";  // GPU can be used as well
 
     using namespace ov::genai;
 

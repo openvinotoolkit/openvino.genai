@@ -165,9 +165,9 @@ void GenerationConfig::validate() const {
     }
     if (is_speculative_decoding()) {
         if (assistant_confidence_threshold != 0.f) {
-            OPENVINO_ASSERT(num_assistant_tokens == 0);
+            OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually excluded in `GenerationConfig`");
         } else {
-            OPENVINO_ASSERT(num_assistant_tokens > 0);
+            OPENVINO_ASSERT(num_assistant_tokens > 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually excluded in `GenerationConfig`");
         };
     }
 }
@@ -201,6 +201,7 @@ GenerationConfig multinomial() {
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
 }
+
 
 }  // namespace genai
 }  // namespace ov

@@ -55,7 +55,6 @@ int main(int argc, char* argv[]) try {
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("a,draft_model", "Path to assisting model base directory", cxxopts::value<std::string>()->default_value("."))
     ("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("CPU"))
-    ("use_prefix", "Whether to use a prefix or not", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -77,14 +76,6 @@ int main(int argc, char* argv[]) try {
     const std::string model_path = result["model"].as<std::string>();
     const std::string draft_model_path = result["draft_model"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
-    const bool use_prefix = result["use_prefix"].as<bool>();
-
-    std::string prefix_str =
-        "You are an advanced language model designed to assist users by providing accurate, "
-        "relevant, and helpful information. Your responses should be accurate, concise, contextual, "
-        "respectful, and helpful. The request is: ";
-
-    // create dataset
 
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
@@ -117,7 +108,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config;
     // batch size
-    scheduler_config.max_num_batched_tokens = use_prefix ? 256 : 32;
+    scheduler_config.max_num_batched_tokens = 32;
     // cache params
     scheduler_config.num_kv_blocks = 364;
     scheduler_config.block_size = get_default_block_size(device);
@@ -125,7 +116,6 @@ int main(int argc, char* argv[]) try {
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
-    scheduler_config.enable_prefix_caching = use_prefix;
     
     ov::genai::ContinuousBatchingPipeline pipe(model_path, scheduler_config, device, {ov::genai::draft_model(draft_model_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
