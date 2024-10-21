@@ -16,8 +16,8 @@
 #include "whisper/whisper_models.hpp"
 
 namespace {
-ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-    auto config_file_path = model_path / "generation_config.json";
+ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& models_path) {
+    auto config_file_path = models_path / "generation_config.json";
     if (std::filesystem::exists(config_file_path)) {
         return ov::genai::WhisperGenerationConfig((config_file_path).string());
     } else {
@@ -48,24 +48,23 @@ public:
     Tokenizer m_tokenizer;
     float m_load_time_ms = 0;
 
-    Impl(const std::filesystem::path& model_path,
-         const ov::genai::Tokenizer& tokenizer,
+    Impl(const std::filesystem::path& models_path,
          const std::string& device,
-         const ov::AnyMap& plugin_config)
-        : m_generation_config{from_config_json_if_exists(model_path)},
-          m_tokenizer{tokenizer},
-          m_feature_extractor{(model_path / "preprocessor_config.json").string()},
-          m_model_config{(model_path / "config.json").string()} {
-        ov::Core core;
-        auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
-        core.set_property(core_plugin_config);
+         const ov::AnyMap& properties)
+        : m_generation_config{from_config_json_if_exists(models_path)},
+          m_tokenizer{models_path},
+          m_feature_extractor{(models_path / "preprocessor_config.json")},
+          m_model_config{(models_path / "config.json")} {
+        ov::Core core = utils::singleton_core();
+        auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+        core.set_property(core_properties);
 
-        m_models.encoder = core.compile_model(model_path / "openvino_encoder_model.xml", device, compile_plugin_config)
+        m_models.encoder = core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties)
                                .create_infer_request();
-        m_models.decoder = core.compile_model(model_path / "openvino_decoder_model.xml", device, compile_plugin_config)
+        m_models.decoder = core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
                                .create_infer_request();
         m_models.decoder_with_past =
-            core.compile_model(model_path / "openvino_decoder_with_past_model.xml", device, compile_plugin_config)
+            core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties)
                 .create_infer_request();
 
         // If eos_token_id was not provided, take value
@@ -73,9 +72,6 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
     }
-
-    Impl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
-        : Impl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
@@ -139,21 +135,11 @@ public:
 }  // namespace genai
 }  // namespace ov
 
-ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
-                                            const ov::genai::Tokenizer& tokenizer,
+ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_path,
                                             const std::string& device,
-                                            const ov::AnyMap& plugin_config) {
+                                            const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, tokenizer, device, plugin_config);
-    auto stop_time = std::chrono::steady_clock::now();
-    m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
-}
-
-ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
-                                            const std::string& device,
-                                            const ov::AnyMap& plugin_config) {
-    auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, device, plugin_config);
+    m_impl = std::make_unique<WhisperPipeline::Impl>(models_path, device, properties);
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }

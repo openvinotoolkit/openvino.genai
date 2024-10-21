@@ -73,8 +73,8 @@ int main(int argc, char* argv[]) try {
 
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
-    const std::string model_path = result["model"].as<std::string>();
-    const std::string draft_model_path = result["draft_model"].as<std::string>();
+    const std::string models_path = result["model"].as<std::string>();
+    const std::string draft_models_path = result["draft_model"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
 
     std::vector<std::string> prompt_examples = {
@@ -117,7 +117,7 @@ int main(int argc, char* argv[]) try {
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
     
-    ov::genai::ContinuousBatchingPipeline pipe(model_path, scheduler_config, device, {ov::genai::draft_model(draft_model_path, device)});
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {

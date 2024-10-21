@@ -132,7 +132,7 @@ def hf_ov_genai_tensors_comparison(
 
     hf_output = model.generate(**inputs_hf, **generation_config_hf)
 
-    pipe = ov_genai.LLMPipeline(str(path), device)
+    pipe = ov_genai.LLMPipeline(path, device)
     ov_output = pipe.generate(inputs_ov, **config)
 
     hf_res = hf_output[0, input_ids.shape[1]:].numpy()

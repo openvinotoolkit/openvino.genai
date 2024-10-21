@@ -5,6 +5,7 @@
 
 #include <ctime>
 #include <cassert>
+#include <filesystem>
 
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
@@ -39,33 +40,33 @@ ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding
 
 class Text2ImagePipeline::StableDiffusionPipeline : public Text2ImagePipeline::DiffusionPipeline {
 public:
-    explicit StableDiffusionPipeline(const std::string& root_dir) {
-        const std::string model_index_path = root_dir + "/model_index.json";
+    explicit StableDiffusionPipeline(const std::filesystem::path& root_dir) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir + "/scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir + "/text_encoder");
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir + "/unet");
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet");
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir + "/vae_decoder");
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -74,33 +75,33 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
     }
 
-    StableDiffusionPipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties) {
-        const std::string model_index_path = root_dir + "/model_index.json";
+    StableDiffusionPipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir + "/scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir + "/text_encoder", device, properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir + "/unet", device, properties);
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir + "/vae_decoder", device, properties);
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }

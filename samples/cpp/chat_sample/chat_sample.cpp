@@ -8,10 +8,10 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR>");
     }
     std::string prompt;
-    std::string model_path = argv[1];
+    std::string models_path = argv[1];
 
     std::string device = "CPU";  // GPU, NPU can be used as well
-    ov::genai::LLMPipeline pipe(model_path, device);
+    ov::genai::LLMPipeline pipe(models_path, device);
     
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;

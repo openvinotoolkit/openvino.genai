@@ -89,11 +89,11 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+    models_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
     scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "block_size": 32, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
-    generate_and_compare_with_reference_text(model_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
+    generate_and_compare_with_reference_text(models_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
 
 
 multinomial_params_n_seq = RandomSamplingTestStruct(
@@ -170,9 +170,9 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+    models_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "block_size": 32, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
-    generate_and_compare_with_reference_text(model_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, generation_configs, scheduler_config)
+    generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, generation_configs, scheduler_config)

@@ -118,7 +118,7 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
     # Need to regenerate openvino_tokenizer/detokenizer.
     model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
-    pipe_with_kv_cache = ov_genai.LLMPipeline(str(path), device, **{"ENABLE_MMAP": False})
+    pipe_with_kv_cache = ov_genai.LLMPipeline(path, device, **{"ENABLE_MMAP": False})
   
     pipe_with_kv_cache.start_chat()
     for question in quenstions:

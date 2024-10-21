@@ -18,7 +18,7 @@ GenerationConfig::GenerationConfig(const std::string& json_path) {
     using utils::read_json_param;
 
     std::ifstream f(json_path);
-    OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path, "' with generation config");
 
     nlohmann::json data = nlohmann::json::parse(f);
     

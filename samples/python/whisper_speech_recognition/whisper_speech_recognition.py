@@ -18,8 +18,6 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    raw_speech = read_wav(args.wav_file_path)
-
     config = openvino_genai.WhisperGenerationConfig(
         args.model_dir + "/generation_config.json"
     )
@@ -29,12 +27,14 @@ def main():
     config.task = "transcribe"
     config.return_timestamps = True
 
-    pipe = openvino_genai.WhisperPipeline(args.model_dir)
+    device = 'CPU'  # GPU can be used as well
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
 
     def streamer(word: str) -> bool:
         print(word, end="")
         return False
 
+    raw_speech = read_wav(args.wav_file_path)
     result = pipe.generate(raw_speech, config, streamer)
 
     print()

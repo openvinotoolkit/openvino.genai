@@ -7,6 +7,7 @@
 #include <variant>
 #include <string>
 #include <optional>
+#include <filesystem>
 
 #include "openvino/op/constant.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -25,12 +26,13 @@ struct AdapterControllerImpl;
 class OPENVINO_GENAI_EXPORTS Adapter {
     class Impl;
     std::shared_ptr<Impl> m_pimpl;
+
     friend AdapterController;
     friend AdapterControllerImpl;
     friend bool operator== (const Adapter& a, const Adapter& b);
     friend bool operator< (const Adapter& a, const Adapter& b);
 public:
-    explicit Adapter(const std::string& path);
+    explicit Adapter(const std::filesystem::path& path);
     Adapter() = default;
 
     operator bool() const {

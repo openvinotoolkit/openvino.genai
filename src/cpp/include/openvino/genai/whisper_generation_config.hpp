@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -17,7 +18,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig {
 public:
     WhisperGenerationConfig() = default;
-    explicit WhisperGenerationConfig(const std::string& json_path);
+    explicit WhisperGenerationConfig(const std::filesystem::path& json_path);
 
     // Generic
 

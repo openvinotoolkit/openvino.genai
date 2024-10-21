@@ -36,9 +36,9 @@ const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 
-template<typename Config=ov::genai::GenerationConfig>
-Config from_config_json_if_exists(const std::filesystem::path& model_path, const char config_name[]="generation_config.json") {
-    auto config_file_path = model_path / config_name;
+template<typename Config = ov::genai::GenerationConfig>
+Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
+    auto config_file_path = models_path / config_name;
     if (std::filesystem::exists(config_file_path)) {
         return Config{(config_file_path).string()};
     } else {
@@ -55,7 +55,7 @@ ProcessorConfig from_any_map(
     const ProcessorConfig& initial
 );
 
-std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
+std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 

@@ -21,7 +21,7 @@
 namespace ov {
 namespace genai {
 
-AutoencoderKL::Config::Config(const std::string& config_path) {
+AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
 
@@ -35,19 +35,19 @@ AutoencoderKL::Config::Config(const std::string& config_path) {
     read_json_param(data, "block_out_channels", block_out_channels);
 }
 
-AutoencoderKL::AutoencoderKL(const std::string& root_dir)
-    : m_config(root_dir + "/config.json") {
+AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir)
+    : m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
-    m_model = core.read_model(root_dir + "/openvino_model.xml");
+    m_model = core.read_model((root_dir / "openvino_model.xml").string());
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     merge_vae_image_processor();
 }
 
-AutoencoderKL::AutoencoderKL(const std::string& root_dir,
-                const std::string& device,
-                const ov::AnyMap& properties)
+AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
     : AutoencoderKL(root_dir) {
-    if(auto filtered_properties = extract_adapters_from_properties(properties)) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
         compile(device, *filtered_properties);
     } else {
         compile(device, properties);

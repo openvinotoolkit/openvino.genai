@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 #include "openvino/genai/visibility.hpp"
@@ -24,18 +25,18 @@ public:
         size_t hidden_size = 512;
         size_t num_hidden_layers = 13;
 
-        explicit Config(const std::string& config_path);
+        explicit Config(const std::filesystem::path& config_path);
     };
 
-    explicit CLIPTextModel(const std::string root_dir);
+    explicit CLIPTextModel(const std::filesystem::path& root_dir);
 
-    CLIPTextModel(const std::string& root_dir,
+    CLIPTextModel(const std::filesystem::path& root_dir,
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    CLIPTextModel(const std::string& root_dir,
+    CLIPTextModel(const std::filesystem::path& root_dir,
                   const std::string& device,
                   Properties&&... properties)
         : CLIPTextModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }

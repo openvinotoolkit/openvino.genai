@@ -25,8 +25,8 @@ void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_bat
     ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
 }
 
-const std::string get_class_name(const std::string& root_dir) {
-    const std::string model_index_path = root_dir + "/model_index.json";
+const std::string get_class_name(const std::filesystem::path& root_dir) {
+    const std::filesystem::path model_index_path = root_dir / "model_index.json";
     std::ifstream file(model_index_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 

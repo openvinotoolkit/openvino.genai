@@ -11,27 +11,27 @@ template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
-    const std::string& models_path,
+    const std::filesystem::path& models_path,
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
+    const ov::AnyMap& properties) {
     m_tokenizer = tokenizer;
 
     ov::Core core;
 
-    auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
-    core.set_property(core_plugin_config);
+    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+    core.set_property(core_properties);
 
     // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
+    std::shared_ptr<ov::Model> model = core.read_model((models_path / "openvino_model.xml").string());
 
-    DeviceConfig device_config(core, scheduler_config, device, compile_plugin_config);
+    DeviceConfig device_config(core, scheduler_config, device, compile_properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
-    init(model, scheduler_config, compile_plugin_config, device_config, core);
+    init(model, scheduler_config, compile_properties, device_config, core);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -43,10 +43,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
-    const ov::AnyMap& plugin_config,
+    const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
+    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), properties).create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);

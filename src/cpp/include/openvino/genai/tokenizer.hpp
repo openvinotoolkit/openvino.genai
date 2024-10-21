@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <initializer_list>
+#include <filesystem>
 
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
@@ -29,8 +30,19 @@ public:
     /**
     * @brief ov::genai::Tokenizer constructor.
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
+    * @param properties Properties passed to ov::Core::compile_model
     */
-    Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config = {});
+    Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
+
+    /**
+     * @brief ov::genai::Tokenizer constructor with variable number of properties
+     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
+     * @param properties optional properties
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Tokenizer(const std::filesystem::path& tokenizer_path,
+              Properties&&... properties)
+        : Tokenizer(tokenizer_path, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /**
     * @brief encode a single prompt
@@ -105,9 +117,9 @@ public:
      * @return A string with the transformed and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
-    std::string apply_chat_template(ChatHistory history, 
+    std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt, 
-                                    const std::string& chat_template="") const;
+                                    const std::string& chat_template = {}) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.
     /// @param chat_template The new template to override with.
