@@ -52,10 +52,10 @@ public:
          const std::string& device,
          const ov::AnyMap& plugin_config)
         : m_generation_config{from_config_json_if_exists(model_path)},
-          m_tokenizer{model_path},
+          m_tokenizer{model_path.string()},
           m_feature_extractor{(model_path / "preprocessor_config.json").string()},
           m_model_config{(model_path / "config.json").string()} {
-        ov::Core core;
+        ov::Core core = utils::singleton_core();
         auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
         core.set_property(core_plugin_config);
 

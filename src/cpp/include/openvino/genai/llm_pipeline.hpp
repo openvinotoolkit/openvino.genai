@@ -111,6 +111,10 @@ public:
         const ov::AnyMap& plugin_config = {}
     );
 
+    OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
+    explicit LLMPipeline(const std::string& path) :
+        LLMPipeline(path, "CPU") { }
+
     /**
     * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     * Accepts arbitrary list of optional properties.
@@ -157,6 +161,10 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config = {}
     );
+
+    OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
+    LLMPipeline(const std::string& model_path, const ov::genai::Tokenizer& tokenizer) :
+        LLMPipeline(model_path, tokenizer, "CPU") { }
 
     ~LLMPipeline();
 

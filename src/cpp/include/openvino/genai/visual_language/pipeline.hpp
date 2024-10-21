@@ -25,7 +25,7 @@ public:
     VLMPipeline(
         const std::string& model_dir,
         const std::string& device,
-        const ov::AnyMap& device_config={}
+        const ov::AnyMap& device_config = {}
     );
 
     /// @brief Construct a pipeline form a folder containing tokenizer
@@ -35,9 +35,10 @@ public:
     /// for CPU.
     /// @param device_config A config to pass to ov::Core::compile_model().
     template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    VLMPipeline(const std::string& root_dir,
-                  const std::string& device,
-                  Properties&&... device_config)
+    VLMPipeline(
+        const std::string& root_dir,
+        const std::string& device,
+        Properties&&... device_config)
         : VLMPipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(device_config)...}) { }
 
     /// @brief Default destructor.
