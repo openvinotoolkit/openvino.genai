@@ -272,10 +272,10 @@ private:
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func);
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> _draft_model(
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
     const std::string& model_path,
-    const std::string& device,
-    const ov::AnyMap& llm_config);
+    const std::string& device = {},
+    const ov::AnyMap& properties = {});
 
 template <typename... Properties,
           typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
@@ -283,7 +283,7 @@ inline std::pair<std::string, Any> draft_model(
     const std::string& model_path,
     const std::string& device,
     Properties&&... properties) {
-    return _draft_model(model_path, device, ov::AnyMap{std::forward<Properties>(properties)...});
+    return draft_model(model_path, device, ov::AnyMap{std::forward<Properties>(properties)...});
 }
 
 template <typename... Properties,
@@ -291,16 +291,8 @@ template <typename... Properties,
 inline std::pair<std::string, Any> draft_model(
     const std::string& model_path,
     Properties&&... properties) {
-    return _draft_model(model_path, "", ov::AnyMap{std::forward<Properties>(properties)...});
+    return draft_model(model_path, {}, ov::AnyMap{std::forward<Properties>(properties)...});
 }
 
-
-inline std::pair<std::string, Any> 
-draft_model(
-    const std::string& model_path,
-    const std::string& device = "",
-    const ov::AnyMap& llm_config = ov::AnyMap()) {
-    return _draft_model(model_path, device, llm_config);
-}
 }  // namespace genai
 }  // namespace ov
