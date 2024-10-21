@@ -29,10 +29,10 @@ namespace {
 
 auto whisper_generate_docstring = R"(
     High level generate that receives raw speech as a vector of floats and returns decoded output.
-    
+
     :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
     :type raw_speech_input: List[float]
-    
+
     :param generation_config: generation_config
     :type generation_config: WhisperGenerationConfig or a Dict
 
@@ -50,7 +50,7 @@ auto whisper_decoded_results_docstring = R"(
     Structure to store resulting batched text outputs and scores for each batch.
     The first num_return_sequences elements correspond to the first batch element.
 
-    Parameters: 
+    Parameters:
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
@@ -84,19 +84,19 @@ auto whisper_generation_config_docstring = R"(
 
     pad_token_id: Padding token id.
     type: int
-    
+
     translate_token_id: Translate token id.
     type: int
-    
+
     transcribe_token_id: Transcribe token id.
     type: int
-    
+
     no_timestamps_token_id: No timestamps token id.
     type: int
-    
+
     is_multilingual:
     type: bool
-    
+
     begin_suppress_tokens: A list containing tokens that will be supressed at the beginning of the sampling process.
     type: list[int]
 
@@ -106,10 +106,10 @@ auto whisper_generation_config_docstring = R"(
     language: Language token to use for generation in the form of <|en|>.
               You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
     type: Optional[str]
-    
+
     lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
     type: Dict[str, int]
-    
+
     task: Task to use for generation, either “translate” or “transcribe”
     type: int
 
@@ -221,8 +221,8 @@ void init_whisper_pipeline(py::module_& m) {
 
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig>(m, "WhisperGenerationConfig", whisper_generation_config_docstring)
-        .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) {
+        .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
+        .def(py::init([](const py::kwargs& kwargs) {
             return *update_whisper_config_from_kwargs(WhisperGenerationConfig(), kwargs);
         }))
         .def_readwrite("max_new_tokens", &WhisperGenerationConfig::max_new_tokens)
@@ -255,7 +255,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readonly("chunks", &WhisperDecodedResults::chunks);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
-        .def(py::init([](const std::string& models_path,
+        .def(py::init([](const std::filesystem::path& models_path,
                          const std::string& device,
                          const py::kwargs& kwargs) {
                  ScopedVar env_manager(utils::ov_tokenizers_module_path());

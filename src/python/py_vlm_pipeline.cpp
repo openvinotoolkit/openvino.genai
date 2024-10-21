@@ -21,7 +21,7 @@ auto vlm_generate_docstring = R"(
     :param prompt: input prompt
     :type prompt: str
 
-    :param images: list of images 
+    :param images: list of images
     :type inputs: List[ov.Tensor]
 
     :param generation_config: generation_config
@@ -43,9 +43,9 @@ auto vlm_generate_kwargs_docstring = R"(
     :param prompt: input prompt
     :type prompt: str
 
-    :param kwargs: arbitrary keyword arguments with keys corresponding to generate params. 
-    
-    Expected parameters list: 
+    :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+
+    Expected parameters list:
     image: ov.Tensor - input image,
     images: List[ov.Tensor] - input images,
     generation_config: GenerationConfig,
@@ -72,7 +72,7 @@ ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_pr
         } else if (key == "streamer") {
             auto py_streamer = py::cast<utils::PyBindStreamerVariant>(value);
             params.insert({ov::genai::streamer(std::move(ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer)))});
-        } 
+        }
         else {
             if (allow_compile_properties) {
                 // convert arbitrary objects to ov::Any
@@ -95,30 +95,30 @@ ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_pr
 }
 
 py::object call_vlm_generate(
-    ov::genai::VLMPipeline& pipe, 
+    ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const ov::genai::GenerationConfig& generation_config, 
-    const utils::PyBindStreamerVariant& py_streamer, 
+    const ov::genai::GenerationConfig& generation_config,
+    const utils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
     auto updated_config = *ov::genai::pybind::utils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
-    
+
     return py::cast(pipe.generate(prompt, images, updated_config, streamer));
 }
 
 void init_vlm_pipeline(py::module_& m) {
     py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
         .def(py::init([](
-            const std::string& models_path, 
+            const std::filesystem::path& models_path,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::VLMPipeline>(models_path, device, vlm_kwargs_to_any_map(kwargs, true));
         }),
-        py::arg("models_path"), "folder with exported model files", 
+        py::arg("models_path"), "folder with exported model files",
         py::arg("device"), "device on which inference will be done",
         R"(
             VLMPipeline class constructor.
@@ -128,16 +128,16 @@ void init_vlm_pipeline(py::module_& m) {
         )")
 
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &ov::genai::VLMPipeline::finish_chat) 
+        .def("finish_chat", &ov::genai::VLMPipeline::finish_chat)
         .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
         .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config)
         .def(
-            "generate", 
-            [](ov::genai::VLMPipeline& pipe, 
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
                 const std::string& prompt,
                 const std::vector<ov::Tensor>& images,
-                const ov::genai::GenerationConfig& generation_config, 
+                const ov::genai::GenerationConfig& generation_config,
                 const utils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) {
@@ -150,8 +150,8 @@ void init_vlm_pipeline(py::module_& m) {
             (vlm_generate_docstring + std::string(" \n ")).c_str()
         )
         .def(
-            "generate", 
-            [](ov::genai::VLMPipeline& pipe, 
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
                 const std::string& prompt,
                 const py::kwargs& kwargs
             ) {

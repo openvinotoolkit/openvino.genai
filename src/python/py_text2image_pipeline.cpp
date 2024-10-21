@@ -164,7 +164,7 @@ void init_text2image_pipeline(py::module_& m) {
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](
-            const std::string& models_path
+            const std::filesystem::path& models_path
         ) {
             return std::make_unique<ov::genai::Text2ImagePipeline>(models_path);
         }),
@@ -175,7 +175,7 @@ void init_text2image_pipeline(py::module_& m) {
         )")
 
         .def(py::init([](
-            const std::string& models_path, 
+            const std::filesystem::path& models_path, 
             const std::string& device,
             const py::kwargs& kwargs
         ) {

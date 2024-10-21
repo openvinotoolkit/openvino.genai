@@ -84,7 +84,7 @@ auto decoded_results_docstring = R"(
     Structure to store resulting batched text outputs and scores for each batch.
     The first num_return_sequences elements correspond to the first batch element.
 
-    Parameters: 
+    Parameters:
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
@@ -97,18 +97,18 @@ auto encoded_results_docstring = R"(
     sum of logarithmic probabilities for each token in the sequence. In the case
     of greedy decoding scores are filled with zeros.
 
-    Parameters: 
+    Parameters:
     tokens: sequence of resulting tokens.
     scores: sum of logarithmic probabilities of all tokens in the sequence.
     metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
 )";
 
 auto generation_config_docstring = R"(
-    Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-    and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+    Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+    and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
     be used while greedy and beam search parameters will not affect decoding at all.
 
-    Parameters: 
+    Parameters:
     max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                    max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
     max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
@@ -129,8 +129,8 @@ auto generation_config_docstring = R"(
         length_penalty < 0.0 encourages shorter sequences.
     num_return_sequences: the number of sequences to return for grouped beam search decoding.
     no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-    stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-        "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+    stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+        "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
         "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
         "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
 
@@ -139,13 +139,13 @@ auto generation_config_docstring = R"(
     top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
     top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
     do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-    repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+    repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
 )";
 
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
 
-    Parameters: 
+    Parameters:
     max_num_batched_tokens:     a maximum number of tokens to batch (in constrast to max_batch_size which combines
         independent sequences, we consider total amount of tokens in a batch).
     num_kv_blocks:              total number of KV blocks available to scheduler logic.
@@ -166,7 +166,7 @@ auto scheduler_config_docstring = R"(
 auto generation_result_docstring = R"(
     GenerationResult stores resulting batched tokens and scores.
 
-    Parameters: 
+    Parameters:
     request_id:         obsolete when handle API is approved as handle will connect results with prompts.
     generation_ids:     in a generic case we have multiple generation results per initial prompt
         depending on sampling parameters (e.g. beam search or parallel sampling).
@@ -182,7 +182,7 @@ auto generation_result_docstring = R"(
 
 auto stop_criteria_docstring =  R"(
     StopCriteria controls the stopping condition for grouped beam search.
-    
+
     The following values are possible:
         "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
         "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
@@ -195,8 +195,8 @@ auto streamer_base_docstring =  R"(
 
 auto tokenized_inputs_docstring =  R"(
     Structure to agregate inputs to model.
-    
-    Parameters: 
+
+    Parameters:
     input_ids:         numerical token IDs from the tokenizer
     attention_mask:    indicates which tokens are attended to
 )";
@@ -332,10 +332,10 @@ py::list handle_utf8_results(const std::vector<std::string>& decoded_res) {
 }
 
 py::object call_common_generate(
-    LLMPipeline& pipe, 
-    const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
-    const OptionalGenerationConfig& config, 
-    const utils::PyBindStreamerVariant& py_streamer, 
+    LLMPipeline& pipe,
+    const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs,
+    const OptionalGenerationConfig& config,
+    const utils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
     auto updated_config = ov::genai::pybind::utils::update_config_from_kwargs(config, kwargs);
@@ -365,7 +365,7 @@ py::object call_common_generate(
         results = py::cast(pipe.generate(string_input, updated_config, streamer));
     }},
     inputs);
-    
+
     return results;
 }
 
@@ -402,17 +402,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")
-        // init(models_path, tokenizer, device, config, kwargs) should be defined before init(models_path, device, config, kwargs) 
+        // init(models_path, tokenizer, device, config, kwargs) should be defined before init(models_path, device, config, kwargs)
         // to prevent tokenizer treated as kwargs argument
         .def(py::init([](
-            const std::string& models_path,
+            const std::filesystem::path& models_path,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(models_path, device, utils::kwargs_to_any_map(kwargs));
         }),
-        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device"), "device on which inference will be done",
         R"(
             LLMPipeline class constructor.
@@ -422,7 +422,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )")
 
         .def(py::init([](
-            const std::string& models_path,
+            const std::filesystem::path& models_path,
             const Tokenizer& tokenizer,
             const std::string& device,
             const std::map<std::string, py::object>& config,
@@ -431,8 +431,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             auto kwargs_properies = utils::kwargs_to_any_map(kwargs);
             if (config.size()) {
-                PyErr_WarnEx(PyExc_DeprecationWarning, 
-                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.",
                          1);
                 auto properies = utils::properties_to_any_map(config);
                 kwargs_properies.insert(properies.begin(), properies.end());
@@ -452,7 +452,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
         .def(py::init([](
-            const std::string& models_path, 
+            const std::filesystem::path& models_path,
             const std::string& device,
             const std::map<std::string, py::object>& config,
             const py::kwargs& kwargs
@@ -460,15 +460,15 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             auto kwargs_properies = utils::kwargs_to_any_map(kwargs);
             if (config.size()) {
-                PyErr_WarnEx(PyExc_DeprecationWarning, 
-                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.",
                          1);
                 auto properies = utils::properties_to_any_map(config);
                 kwargs_properies.insert(properies.begin(), properies.end());
             }
             return std::make_unique<LLMPipeline>(models_path, device, kwargs_properies);
         }),
-        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device"), "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
@@ -480,7 +480,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )")
 
         .def(py::init([](
-            const std::string& models_path,
+            const std::filesystem::path& models_path,
             const Tokenizer& tokenizer,
             const std::string& device,
             const py::kwargs& kwargs
@@ -500,11 +500,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )")
 
         .def(
-            "generate", 
-            [](LLMPipeline& pipe, 
-                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
-                const OptionalGenerationConfig& generation_config, 
-                const utils::PyBindStreamerVariant& streamer, 
+            "generate",
+            [](LLMPipeline& pipe,
+                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs,
+                const OptionalGenerationConfig& generation_config,
+                const utils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
@@ -516,11 +516,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )
 
         .def(
-            "__call__", 
-            [](LLMPipeline& pipe, 
-                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
-                const OptionalGenerationConfig& generation_config, 
-                const utils::PyBindStreamerVariant& streamer, 
+            "__call__",
+            [](LLMPipeline& pipe,
+                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs,
+                const OptionalGenerationConfig& generation_config,
+                const utils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
@@ -539,14 +539,14 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
      // Binding for Tokenizer
     py::class_<ov::genai::Tokenizer>(m, "Tokenizer",
-        R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
+        R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
            if it's located in a different path than the main model.)")
-        
+
         .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, utils::properties_to_any_map(plugin_config));
         }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
-        
+
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
@@ -555,7 +555,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("prompts"),
             py::arg("add_special_tokens") = true,
             R"(Encodes a list of prompts into tokenized inputs.)")
-        
+
         .def("encode", [](Tokenizer& tok, const std::string prompt, bool add_special_tokens) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
@@ -563,43 +563,43 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             },
             py::arg("prompt"), py::arg("add_special_tokens") = true,
             R"(Encodes a single prompt into tokenized input.)")
-        
+
         .def(
-            "decode", 
-            [](Tokenizer& tok, std::vector<int64_t>& tokens) -> py::str { 
+            "decode",
+            [](Tokenizer& tok, std::vector<int64_t>& tokens) -> py::str {
                 return handle_utf8_results({tok.decode(tokens)})[0];
             },
             py::arg("tokens"),
             R"(Decode a sequence into a string prompt.)"
         )
-        
+
         .def(
-            "decode", 
-            [](Tokenizer& tok, ov::Tensor& tokens) -> py::list { 
-                return handle_utf8_results(tok.decode(tokens)); 
+            "decode",
+            [](Tokenizer& tok, ov::Tensor& tokens) -> py::list {
+                return handle_utf8_results(tok.decode(tokens));
             },
             py::arg("tokens"),
             R"(Decode tensor into a list of string prompts.)")
-        
+
         .def(
-            "decode", 
-            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::list{ 
-                return handle_utf8_results(tok.decode(tokens)); 
+            "decode",
+            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::list{
+                return handle_utf8_results(tok.decode(tokens));
             },
             py::arg("tokens"),
             R"(Decode a batch of tokens into a list of string prompt.)")
-        
+
         .def("apply_chat_template", [](Tokenizer& tok,
                                         ChatHistory history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template) {
             return tok.apply_chat_template(history, add_generation_prompt, chat_template);
-        }, 
-            py::arg("history"), 
-            py::arg("add_generation_prompt"), 
+        },
+            py::arg("history"),
+            py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
             R"(Embeds input prompts with special tags for a chat scenario.)")
-        
+
         .def(
             "set_chat_template", &Tokenizer::set_chat_template,
             py::arg("chat_template"), "The new template to override with.",
@@ -662,7 +662,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::str res;
             if (valid_utf8_strings.size() == 1)
                 return valid_utf8_strings[0];
-            
+
             for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
                 res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
             }
@@ -675,11 +675,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
             return get_ms(rw, &RawPerfMetrics::generate_durations);
         })
-        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
+        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) {
             return get_ms(rw, &RawPerfMetrics::tokenization_durations);
         })
-        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::detokenization_durations);
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
             return get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
@@ -800,11 +800,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             .export_values();
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
-        .def(py::init([](const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, utils::properties_to_any_map(llm_plugin_config), utils::properties_to_any_map(tokenizer_plugin_config));
         }), py::arg("models_path"), py::arg("scheduler_config"), py::arg("device"), py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
-        .def(py::init([](const std::string& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, utils::properties_to_any_map(plugin_config));
         }), py::arg("models_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device"), py::arg("plugin_config") = ov::AnyMap({}))
@@ -832,13 +832,13 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
         .def(py::init([](
-            const std::string& models_path,
+            const std::filesystem::path& models_path,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
             return ov::genai::draft_model(models_path, device, utils::kwargs_to_any_map(kwargs)).second;
         }),
-        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device") = "", "device on which inference will be performed"
         );
 
@@ -860,5 +860,5 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     // init text2image pipeline
     init_text2image_pipeline(m);
-    
+
 }
