@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
-#include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
@@ -404,7 +403,6 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(model_path, device, utils::properties_to_any_map(config));
         }),
-        py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),  // Respect std::cout flushes from constructor.
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
@@ -424,7 +422,6 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
         }),
-        py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),  // Respect std::cout flushes from constructor.
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
