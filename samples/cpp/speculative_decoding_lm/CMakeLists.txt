@@ -1,7 +1,5 @@
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
-find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
 
 find_package(OpenVINOGenAI REQUIRED
     PATHS
@@ -10,21 +8,16 @@ find_package(OpenVINOGenAI REQUIRED
     NO_CMAKE_FIND_ROOT_PATH
 )
 
-add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
-target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime openvino::threading)
-set_target_properties(speculative_decoding_lm PROPERTIES
-    COMPILE_PDB_NAME speculative_decoding_lm
+set(TARGET_NAME speculative_decoding_lm)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai)
+
+set_target_properties(${TARGET_NAME} PROPERTIES
+    COMPILE_PDB_NAME ${TARGET_NAME} 
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(speculative_decoding_lm PRIVATE cxx_std_17)
 
-get_target_property(genai_imported openvino::genai IMPORTED_LOCATION)
-set(OPENVINO_TOKENIZERS_PATH $<IF:$<BOOL:${genai_imported}>,${genai_imported},$<TARGET_FILE_DIR:openvino::genai>>)
-set(OPENVINO_TOKENIZERS_FILENAME "${CMAKE_SHARED_LIBRARY_PREFIX}openvino_tokenizers${CMAKE_SHARED_LIBRARY_SUFFIX}")
-target_compile_definitions(speculative_decoding_lm PRIVATE
-    OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}/${OPENVINO_TOKENIZERS_FILENAME}")
-
-install(TARGETS speculative_decoding_lm
+install(TARGETS ${TARGET_NAME} 
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

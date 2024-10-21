@@ -7,13 +7,13 @@
 #include <string>
 #include <memory>
 
-#include "openvino/genai/visibility.hpp"
-
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
+
+#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
@@ -21,7 +21,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS UNet2DConditionModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 4;
         size_t sample_size = 0;
         std::vector<size_t> block_out_channels = { 320, 640, 1280, 1280 };

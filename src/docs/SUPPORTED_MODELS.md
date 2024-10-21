@@ -215,6 +215,17 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       </td>
     </tr>
     <tr>
+      <td>LLaVA-NeXT</td>
+      <td><code>LLaVa-v1.6</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/llava-hf/llava-v1.6-mistral-7b-hf"><code>llava-hf/llava-v1.6-mistral-7b-hf</code></a></li>
+          <li><a href="https://huggingface.co/llava-hf/llava-v1.6-vicuna-7b-hf"><code>llava-hf/llava-v1.6-vicuna-7b-hf</code></a></li>
+          <li><a href="https://huggingface.co/llava-hf/llama3-llava-next-8b-hf"><code>llava-hf/llama3-llava-next-8b-hf</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
       <td>MiniCPMV</td>
       <td><code>MiniCPM-V-2_6</code></td>
       <td>

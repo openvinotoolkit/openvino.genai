@@ -69,8 +69,17 @@ bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
 
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
         config.erase(it);
-        return std::make_optional(it->second);
+        return found;
+    }
+    return std::nullopt;
+}
+
+template <typename T>
+std::optional<T> get_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        return std::make_optional(it->second.as<T>());
     }
     return std::nullopt;
 }
@@ -79,7 +88,6 @@ void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
-        pop_option(config, "NPUW_ONLINE_AVOID");
     }
 }
 
@@ -213,33 +221,43 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
-ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_USE_NPUW", "YES" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
+        { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE",  "YES" },
-        { "NPUW_WEIGHTS_BANK",  "shared" },
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+        { "NPUW_DCOFF_SCALE", "YES"},
+        { "NPUW_WEIGHTS_BANK", "shared" },
+        { "NPUW_PMM", "NO" }
     };
+    return config;
+}
+
+ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
+    auto config = get_baseline_common_config();
+    const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
+    if (npu_l0 && std::atoi(npu_l0) == 1) {
+        config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
+    } else {
+        config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
+    }
     enable_npuw_dq_if_allowed(config, model);
     return config;
 }
 
+ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+    auto config = get_default_common_config(model);
+    if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
+        config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    }
+    return config;
+}
+
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
-    ov::AnyMap config = {
-        { "NPU_USE_NPUW", "YES" },
-        { "NPUW_FOLD", "YES" },
-        { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE", "YES" },
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-        { "NPUW_PARALLEL_COMPILE", "YES" },
-        { "NPUW_FUNCALL_ASYNC", "YES" },
-        { "NPUW_WEIGHTS_BANK",  "shared" },
-        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
-    };
-    enable_npuw_dq_if_allowed(config, model);
+    auto config = get_default_common_config(model);
+    config.emplace("NPUW_FUNCALL_ASYNC", "YES");
+    config.emplace("NPUW_PARALLEL_COMPILE", "YES");
     return config;
 }
 
@@ -250,6 +268,27 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
         return anyopt.value().as<T>();
     }
     return default_value;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
 }
 
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
@@ -338,8 +377,8 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
     // (7) Reshape both models to static shape
-    const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
-    const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
+    const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
@@ -357,11 +396,11 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
-    ).create_infer_request();
     m_kvcache_request = core.compile_model(
         m_kvcache_model, device, generate_config
+    ).create_infer_request();
+    m_prefill_request = core.compile_model(
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
 }
 

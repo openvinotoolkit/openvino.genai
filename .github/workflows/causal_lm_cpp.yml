@@ -7,16 +7,17 @@ on:
     branches:
       - master
       - 'releases/**'
+
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241014_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241014_x86_64.tgz
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241018_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241018_x86_64.tgz
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241014_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/w_openvino_toolkit_windows_2024.5.0.dev20241014_x86_64.zip
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/w_openvino_toolkit_windows_2024.5.0.dev20241018_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -421,7 +422,7 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
@@ -698,38 +699,82 @@ jobs:
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --target visual_language_chat py_generate_pipeline -j
-      - name: Download and convert MiniCPM-V-2_6 model and an image
+      - name: Install dependencies
         run: |
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
-      - name: Run visual_language_chat sample - MiniCPM-V-2_6
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+      - name: Download and convert MiniCPM-V-2_6 model and an image
+        run: |
+          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
+          python -m pip install -U "optimum<1.23" --no-dependencies
+          source ./ov/setupvars.sh
+          optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
+          mkdir cat_img
+          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat_img/cat.jpg
+      - name: Generate reference - MiniCPM-V-2_6
+        shell: python
+        run: |
+          from optimum.intel.openvino import OVModelForVisualCausalLM
+          from transformers import AutoProcessor
+          from PIL import Image
+          import cv2
+          import numpy as np
+          res = 448, 448
+          lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
+          lines = lines.reshape([*res, 3])
+          cv2.imwrite("lines.png", lines)
+          lines = Image.open("lines.png").convert('RGB')
+          model_id = "openbmb/MiniCPM-V-2_6"
+          processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+          prompt = processor.tokenizer.apply_chat_template([{"role": "user", "content": "(<image>./</image>)\nWhat is unusual on this image?"}], tokenize=False, add_generation_prompt=True)
+          inputs = processor([prompt], [lines], return_tensors="pt")
+          model = OVModelForVisualCausalLM.from_pretrained("MiniCPM-V-2_6", device="CPU", trust_remote_code=True)
+          result = model.generate(**inputs, max_new_tokens=99)
+          decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
+          print(decoded)
+          with open("ref.txt", "w") as f:
+              f.write(f"question:\n{decoded}\n----------\nquestion:\n")
+
+      - name: Run visual_language_chat C++ sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
-          <<< $'What is on the image?\nWhat is special on the image?'
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ lines.png
+          <<< $'What is unusual on this image?' | tee cpp.txt
+      - run: diff cpp.txt ref.txt
+      - name: Run visual_language_chat C++ sample with dir - MiniCPM-V-2_6
+        run: >
+          source ./ov/setupvars.sh
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ cat_img
+          <<< $'What is unusual on this image?'
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
           wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat sample - LLaVa 1.5
+      - name: Run visual_language_chat C++ sample - LLaVa 1.5
         run: >
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
-
-      - name: Run python chat sample
+      - name: Download and convert LLaVa-Next model and an image
+        run: |
+          source ./ov/setupvars.sh
+          optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
+      - name: Run visual_language_chat C++ sample - LLaVa-Next
+        run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
+          <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
+      - name: Run visual_language_chat Python sample - MiniCPM-V-2_6
         run: |
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
-          printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
+          python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
+        timeout-minutes: 2
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
