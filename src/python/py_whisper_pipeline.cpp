@@ -4,6 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/functional.h>
 
 #include "tokenizers_path.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
@@ -93,9 +94,6 @@ auto whisper_generation_config_docstring = R"(
     no_timestamps_token_id: No timestamps token id.
     type: int
     
-    begin_timestamps_token_id: Begin timestamps token id.
-    type: int
-    
     is_multilingual:
     type: bool
     
@@ -114,6 +112,16 @@ auto whisper_generation_config_docstring = R"(
     
     task: Task to use for generation, either “translate” or “transcribe”
     type: int
+
+    return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
+                       For instance, if you get
+                       WhisperDecodedResultChunk
+                           start_ts = 0.5
+                           end_ts = 1.5
+                           text = " Hi there!"
+                       then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
+                       Note that a segment of text refers to a sequence of one or more words, rather than individual words.
+    type: bool
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -152,8 +160,6 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.transcribe_token_id = py::cast<int>(item.second);
         } else if (key == "no_timestamps_token_id") {
             res_config.no_timestamps_token_id = py::cast<int>(item.second);
-        } else if (key == "begin_timestamps_token_id") {
-            res_config.begin_timestamps_token_id = py::cast<int>(item.second);
         } else if (key == "max_initial_timestamp_index") {
             res_config.max_initial_timestamp_index = py::cast<size_t>(item.second);
         } else if (key == "begin_suppress_tokens") {
@@ -220,7 +226,6 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("pad_token_id", &WhisperGenerationConfig::pad_token_id)
         .def_readwrite("translate_token_id", &WhisperGenerationConfig::translate_token_id)
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
-        .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
         .def_readwrite("max_initial_timestamp_index", &WhisperGenerationConfig::max_initial_timestamp_index)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
