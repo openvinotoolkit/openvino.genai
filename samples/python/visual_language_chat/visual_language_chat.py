@@ -8,6 +8,7 @@ import numpy as np
 import openvino_genai
 from PIL import Image
 from openvino import Tensor
+from pathlib import Path
 
 
 def streamer(subword: str) -> bool:
@@ -39,13 +40,20 @@ def read_image(path: str) -> Tensor:
     return Tensor(image_data)
 
 
+def read_images(path: str) -> list[Tensor]:
+    entry = Path(path)
+    if entry.is_dir():
+        return [read_image(str(file)) for file in sorted(entry.iterdir())]
+    return [read_image(path)]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
-    parser.add_argument('image_dir')
+    parser.add_argument('image_dir', help="Image file or dir with images")
     args = parser.parse_args()
 
-    image = read_image(args.image_dir)
+    rgbs = read_images(args.image_dir)
 
     device = 'CPU'  # GPU can be used as well
     enable_compile_cache = dict()
@@ -60,7 +68,7 @@ def main():
 
     pipe.start_chat()
     prompt = input('question:\n')
-    pipe.generate(prompt, image=image, generation_config=config, streamer=streamer)
+    pipe.generate(prompt, images=rgbs, generation_config=config, streamer=streamer)
 
     while True:
         try:
