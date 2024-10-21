@@ -122,6 +122,9 @@ public:
             result.chunks = chunks;
         }
 
+
+        m_models.decoder_with_past.reset_state();
+
         auto& metrics = result.perf_metrics;
         metrics.load_time = this->m_load_time_ms;
         auto stop_time = std::chrono::steady_clock::now();

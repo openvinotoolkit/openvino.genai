@@ -4,8 +4,6 @@
 
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/chat_sample)
-add_subdirectory(cpp/continuous_batching_accuracy)
-add_subdirectory(cpp/continuous_batching_benchmark)
 add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/lora_greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
@@ -25,8 +23,7 @@ install(DIRECTORY
             cpp/greedy_causal_lm
             cpp/lora_greedy_causal_lm
             cpp/multinomial_causal_lm
-            # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
-            # Don't install continuous_batching_accuracy and continuous_batching_benchmark because CB isn't ready.
+            # Don't install prompt_lookup_decoding_lm because it doesn't use openvino_genai library and is not verified yet.
             cpp/speculative_decoding_lm
             cpp/text2image
             cpp/visual_language_chat
@@ -38,9 +35,9 @@ install(DIRECTORY
             python/chat_sample
             python/greedy_causal_lm
             python/multinomial_causal_lm
-            python/visual_language_chat
-            # python/speculative_decoding_lm
+            python/speculative_decoding_lm
             python/text2image
+            python/visual_language_chat
             python/whisper_speech_recognition
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)

@@ -57,12 +57,16 @@ def get_models_list():
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
 
-def get_whisper_models_list(tiny_only=False):
+def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
     precommit_models = [
         "openai/whisper-tiny",
-        "openai/whisper-small.en",
-        "openai/whisper-base",
+        "openai/whisper-tiny.en",
+        "distil-whisper/distil-small.en",
     ]
+    if multilingual:
+        precommit_models = ["openai/whisper-tiny"]
+    if en_only:
+        precommit_models = ["openai/whisper-tiny.en", "distil-whisper/distil-small.en"]
     if tiny_only:
         precommit_models = ["openai/whisper-tiny"]
 
@@ -75,7 +79,7 @@ def get_whisper_models_list(tiny_only=False):
 
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
-    # pytest.set_trace()
+
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
@@ -193,7 +197,7 @@ def read_model(params, **tokenizer_kwargs):
         path,
         tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False}),
+        ov_genai.LLMPipeline(str(path), device='CPU', **{"ENABLE_MMAP": False}),
     )
 
 
@@ -248,4 +252,4 @@ def load_pipe(configs: List[Tuple], temp_path):
 def get_continuous_batching(path):
     scheduler_config = ov_genai.SchedulerConfig()
     scheduler_config.cache_size = 1
-    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), device='CPU', config={"scheduler_config": scheduler_config})
+    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), device='CPU', **{"scheduler_config": scheduler_config})
