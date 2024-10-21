@@ -55,7 +55,7 @@ def test_vlm_pipeline(cache):
         for link in links:
             images.append(get_image_by_link(link))
 
-        pipe = VLMPipeline(str(models_path), "CPU")
+        pipe = VLMPipeline(models_path, "CPU")
         pipe.start_chat()
 
         pipe.generate(prompts[0], images=images, generation_config=get_greedy(), streamer=streamer)
@@ -70,7 +70,7 @@ def test_vlm_pipeline(cache):
 @pytest.mark.nightly
 def test_vlm_get_tokenizer(cache):
     models_path = get_ov_model(cache)
-    pipe = VLMPipeline(str(models_path), "CPU")
+    pipe = VLMPipeline(models_path, "CPU")
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
 
@@ -84,5 +84,5 @@ def test_vlm_get_tokenizer(cache):
 def test_sampling(config, cache):
     models_path = get_ov_model(cache)
     image = get_image_by_link(image_links[0])
-    pipe = VLMPipeline(str(models_path), "CPU")
+    pipe = VLMPipeline(models_path, "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)

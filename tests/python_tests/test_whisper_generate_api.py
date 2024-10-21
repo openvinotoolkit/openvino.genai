@@ -200,7 +200,7 @@ def test_max_new_tokens(model_descr, test_sample):
 
     expected = opt_pipe(test_sample, max_new_tokens=30)["text"]
 
-    genai_result = ov_genai.WhisperPipeline(str(path), "CPU").generate(
+    genai_result = ov_genai.WhisperPipeline(path, "CPU").generate(
         test_sample, max_new_tokens=30
     )
 

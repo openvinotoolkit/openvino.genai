@@ -5,10 +5,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
-#include <openvino/runtime/auto/properties.hpp>
 #include "tokenizers_path.hpp"
 
 #include "py_utils.hpp"
