@@ -224,7 +224,7 @@ with open(csv_path_all, "w", encoding='UTF-8') as csv_all_file:
                                             print(command_line_llm)
                                             run(command_line_llm, check=True, shell=True)
                                             llm_duration = parse_log()
-                                            llm_token_per_sec = llm_duration / gen_len
+                                            llm_token_per_sec = float(llm_duration) / generation_len
 
                                             avg_llm_duration += llm_duration
                                             avg_llm_token_per_sec += llm_token_per_sec
@@ -235,7 +235,7 @@ with open(csv_path_all, "w", encoding='UTF-8') as csv_all_file:
                                             print(command_line_cb)
                                             run(command_line_cb, check=True, shell=True)
                                             cb_duration = parse_log()
-                                            cd_token_per_sec = cb_duration / gen_len
+                                            cd_token_per_sec = float(cb_duration) / generation_len
 
                                             avg_cb_duration += cb_duration
                                             avg_cb_token_per_sec += cd_token_per_sec
@@ -303,7 +303,7 @@ with open(csv_path_all, "w", encoding='UTF-8') as csv_all_file:
                                     csv_writer.writerow([
                                             model_pair[0], main_element_type, model_pair[1], draft_element_type,
                                             sd_type, sampling, generation_len, devices[0], devices[0],
-                                            avg_llm_token_per_sec, avg_cd_token_per_sec, avg_sd_token_per_second,
+                                            avg_llm_token_per_sec, avg_cb_token_per_sec, avg_sd_token_per_second,
                                             avg_sd_iterations, avg_sd_accepted_token_cnt, avg_sd_accepted_token_rate, avg_sd_avg_acceptance_rate,
                                             avg_sd_draft_duration, avg_sd_draft_duration_percentage, avg_sd_main_duration, avg_sd_main_duration_percentage,
                                             avg_llm_duration, avg_cb_duration, avg_sd_duration,
