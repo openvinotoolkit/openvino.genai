@@ -56,7 +56,7 @@ auto vlm_generate_kwargs_docstring = R"(
 )";
 
 
-ov::AnyMap vlm_kwargs_to_any_map(const std::map<std::string, py::object>& config, const py::kwargs& kwargs, bool allow_compile_properties=true) {
+ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
     ov::AnyMap params = {};
 
     for (const auto& item : kwargs) {
@@ -91,10 +91,6 @@ ov::AnyMap vlm_kwargs_to_any_map(const std::map<std::string, py::object>& config
             }
         }
     }
-    if (config.size()) {
-        auto properties = utils::properties_to_any_map(config);
-        params.insert(properties.begin(), properties.end());
-    }
     return params;
 }
 
@@ -117,20 +113,17 @@ void init_vlm_pipeline(py::module_& m) {
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
-            const std::map<std::string, py::object>& config,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, vlm_kwargs_to_any_map(config, kwargs, true));
+            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, vlm_kwargs_to_any_map(kwargs, true));
         }),
         py::arg("model_path"), "folder with exported model files", 
         py::arg("device") = "CPU", "device on which inference will be done",
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map"
         R"(
             VLMPipeline class constructor.
             model_path (str): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            config (dict): Device properties.
             kwargs: Device properties
         )")
 
@@ -162,7 +155,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const std::string& prompt,
                 const py::kwargs& kwargs
             ) {
-                return py::cast(pipe.generate(prompt, vlm_kwargs_to_any_map({}, kwargs, false)));
+                return py::cast(pipe.generate(prompt, vlm_kwargs_to_any_map(kwargs, false)));
             },
             py::arg("prompt"), "Input string",
             (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
