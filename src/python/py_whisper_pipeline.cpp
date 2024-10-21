@@ -4,6 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/functional.h>
 
 #include "tokenizers_path.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
