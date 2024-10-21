@@ -429,7 +429,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             return std::make_unique<LLMPipeline>(models_path, device, utils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
-        py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("device"), "device on which inference will be done",
         R"(
             LLMPipeline class constructor.
             models_path (str): Path to the model file.
@@ -469,7 +469,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         }),
         py::arg("models_path"),
         py::arg("tokenizer"),
-        py::arg("device") = "CPU",
+        py::arg("device"),
         R"(
             LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
             models_path (str): Path to the model file.
