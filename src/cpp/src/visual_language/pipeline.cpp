@@ -209,6 +209,7 @@ public:
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
+        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
         sequence_group->update_processed_tokens_num(history_size);
