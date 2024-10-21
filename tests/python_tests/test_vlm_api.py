@@ -9,18 +9,18 @@ from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline
 from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, get_multinomial_all_parameters
 
-def get_ov_model(model_dir):
+def get_ov_model(cache):
+    model_dir = cache.mkdir("tiny-random-minicpmv-2_6")
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    model_id = "openbmb/MiniCPM-V-2_6"
+    model_id = "katuni4ka/tiny-random-minicpmv-2_6"
     processor = transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
     processor.tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
     model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, trust_remote_code=True)
-    model.config.save_pretrained(model_dir)
-    model.generation_config.save_pretrained(model_dir)
+    processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
 
@@ -48,7 +48,7 @@ def test_vlm_pipeline(cache):
     def streamer(word: str) -> bool:
         return False
 
-    models_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    models_path = get_ov_model(cache)
 
     for links in image_links_for_testing:
         images = []
@@ -69,7 +69,7 @@ def test_vlm_pipeline(cache):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_vlm_get_tokenizer(cache):
-    models_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    models_path = get_ov_model(cache)
     pipe = VLMPipeline(str(models_path), "CPU")
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
@@ -81,9 +81,8 @@ def test_vlm_get_tokenizer(cache):
     get_beam_search(),
     get_multinomial_all_parameters(),
 ])
-@pytest.mark.skip("Enable after sampler are enabled")
 def test_sampling(config, cache):
-    models_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    models_path = get_ov_model(cache)
     image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(str(models_path), "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)
