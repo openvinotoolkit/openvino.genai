@@ -432,15 +432,22 @@ jobs:
           source ./ov/setupvars.sh
           ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          python ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_speculative.txt', 'r') as f:
               predicted_speculative = f.readline()
+          with open('predictions_py.txt', 'r') as f:
+              predicted_py = f.readline()
           assert predicted_greedy == predicted_speculative
+          assert predicted_greedy == predicted_py
+          assert predicted_speculative == predicted_py
           "
           echo "Alan Turing was a" passed
-
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -783,7 +790,7 @@ jobs:
       - name: Run visual_language_chat Python sample - MiniCPM-V-2_6
         run: |
           source ./ov/setupvars.sh
-          python ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
+          ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ cat_img/cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
         env:
           PYTHONPATH: "./build/"
         timeout-minutes: 2
@@ -823,13 +830,13 @@ jobs:
       - name: Run accuracy_sample
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout --verbose 50s ./build/tools/continuous_batching/accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
-          timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          timeout --verbose 200s ./build/tools/continuous_batching/benchmark/continuous_batching_benchmark -n 10 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          timeout --verbose 200s ./build/tools/continuous_batching/benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-windows:
     runs-on: windows-latest
@@ -871,13 +878,13 @@ jobs:
         run: |
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
-          .\build\samples\cpp\continuous_batching_accuracy\Release\continuous_batching_accuracy.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
+          .\build\tools\continuous_batching\accuracy\Release\continuous_batching_accuracy.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
       - name: Run throughput_benchmark
         run: |
           curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
-          .\build\samples\cpp\continuous_batching_benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          .\build\tools\continuous_batching\benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-macos:
     runs-on: macos-12
@@ -914,12 +921,12 @@ jobs:
       - name: Run accuracy_sample
         run: |
           source ./ov/setupvars.sh
-          timeout 120s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout --verbose 120s ./build/tools/continuous_batching/accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 5 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          ./build/tools/continuous_batching/benchmark/continuous_batching_benchmark -n 5 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   Overall_Status:
     name: ci/gha_overall_status_causal_lm

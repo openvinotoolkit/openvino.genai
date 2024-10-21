@@ -37,6 +37,7 @@ using ov::genai::StreamerVariant;
 using ov::genai::StringInputs;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
+using ov::genai::draft_model;
 
 template <typename T, typename U>
 std::vector<float> get_ms(const T& instance, U T::*member) {
@@ -420,6 +421,23 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )")
 
         .def(py::init([](
+            const std::string& model_path, 
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, device, utils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("device") = "CPU", "device on which inference will be done",
+        R"(
+            LLMPipeline class constructor.
+            model_path (str): Path to the model file.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+        )")
+
+        .def(py::init([](
             const std::string& model_path,
             const Tokenizer& tokenizer,
             const std::string& device,
@@ -432,6 +450,26 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
+        R"(
+            LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
+            model_path (str): Path to the model file.
+            tokenizer (openvino_genai.Tokenizer): tokenizer object.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+        )")
+
+        .def(py::init([](
+            const std::string& model_path,
+            const Tokenizer& tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, utils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model_path"),
+        py::arg("tokenizer"),
+        py::arg("device") = "CPU",
         R"(
             LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
             model_path (str): Path to the model file.
@@ -586,6 +624,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
+        .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
+        .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
@@ -768,7 +808,20 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("sampling_params"),
             py::arg("streamer") = std::monostate{}
         );
-    
+
+    py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
+        .def(py::init([](
+            const std::string& model_path,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return ov::genai::_draft_model(model_path, device, utils::kwargs_to_any_map(kwargs)).second;
+        }),
+        py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("device") = "", "device on which inference will be performed"
+        );
+
+
     // init lora adapters
     init_lora_adapter(m);
 
