@@ -11,7 +11,7 @@
 #include "py_utils.hpp"
 
 namespace py = pybind11;
-namespace utils = ov::genai::pybind::utils;
+namespace pyutils = ov::genai::pybind::utils;
 
 void init_clip_text_model(py::module_& m) {
     auto clip_text_model = py::class_<ov::genai::CLIPTextModel>(m, "CLIPTextModel", "CLIPTextModel class.")
@@ -30,7 +30,7 @@ void init_clip_text_model(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -72,7 +72,7 @@ void init_clip_text_model(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
             R"(
@@ -99,7 +99,7 @@ void init_unet2d_condition_model(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -143,7 +143,7 @@ void init_unet2d_condition_model(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
             R"(
@@ -170,7 +170,7 @@ void init_autoencoder_kl(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -211,7 +211,7 @@ void init_autoencoder_kl(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done"
             R"(
@@ -238,7 +238,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -279,7 +279,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
             py::arg("device") = "CPU", "device on which inference will be done",
             R"(

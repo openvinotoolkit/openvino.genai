@@ -295,7 +295,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_generate_pipeline -j
+          cmake --build ./build/ --config Release --target py_openvino_genai -j
 
       - name: Test bindings
         run: |
@@ -359,7 +359,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_generate_pipeline -j
+          cmake --build ./build/ --config Release --target py_openvino_genai -j
 
       - name: Test bindings
         run: |

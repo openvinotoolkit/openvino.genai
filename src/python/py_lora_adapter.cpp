@@ -10,8 +10,6 @@
 #include "py_utils.hpp"
 
 namespace py = pybind11;
-namespace utils = ov::genai::pybind::utils;
-
 
 void init_lora_adapter(py::module_& m) {
     py::class_<ov::genai::Adapter>(m, "Adapter", "Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.")
@@ -21,7 +19,7 @@ void init_lora_adapter(py::module_& m) {
         ) {
             return ov::genai::Adapter(path);
         }),
-        py::arg("path"), "path", 
+        py::arg("path"), "path",
         R"(
             Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
             path (str): Path to adapter file in safetensors format.
