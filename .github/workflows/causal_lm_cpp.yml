@@ -424,15 +424,22 @@ jobs:
           source ./ov/setupvars.sh
           ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          python ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_speculative.txt', 'r') as f:
               predicted_speculative = f.readline()
+          with open('predictions_py.txt', 'r') as f:
+              predicted_py = f.readline()
           assert predicted_greedy == predicted_speculative
+          assert predicted_greedy == predicted_py
+          assert predicted_speculative == predicted_py
           "
           echo "Alan Turing was a" passed
-
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     defaults:
