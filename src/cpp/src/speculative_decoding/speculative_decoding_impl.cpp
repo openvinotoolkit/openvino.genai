@@ -113,7 +113,7 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // generate candidates by draft model
-    static ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
+    ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
     draft_timer.start();
     m_draft_pipeline->multistep();
     draft_timer.end();
@@ -128,7 +128,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         update_sequence_info.insert({{candidate.first, update_result}});
     }
 
-    static ManualTimer main_timer("speculative_decoding: main_model: step()");
+    ManualTimer main_timer("speculative_decoding: main_model: step()");
     main_timer.start();
     m_main_pipeline->step();
     main_timer.end();
@@ -150,7 +150,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         }
         auto updated_seq_info = update_sequence_info[request_id];
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
-        m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate);
+        m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
 }
@@ -159,8 +159,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {                                                  
-    static ManualTimer timer("speculative_decoding: generate()");
-    timer.start();
+    ManualTimer timer_("speculative_decoding: generate()");
+    timer_.start();
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
     const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
@@ -233,8 +233,26 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
-    timer.end();
-    m_sd_metrics.total_duration = timer.get_duration_ms();
+    timer_.end();
+    m_sd_metrics.total_duration = timer_.get_duration_ms();
+
+    // Print Speculative decoding metrics
+    std::cout << std::endl;
+
+    std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
+    std::cout << "Draft model duration, ms: " << m_sd_metrics.draft_duration << std::endl;
+    std::cout << "Main model duration, ms: " << m_sd_metrics.main_duration << std::endl;
+    std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
+    std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
+
+    std::cout << "Main model iterations: " << m_sd_metrics.get_main_iteration_number(0) << std::endl;
+
+    std::cout << "Token per sec:" << float(sampling_params[0].max_new_tokens) / m_sd_metrics.total_duration << std::endl;
+    std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(0) << std::endl;
+    std::cout << "Accepted token rate, %: " << m_sd_metrics.get_draft_accepted_tokens_percentage(0) << std::endl;
+    std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(0) << std::endl;
+    std::cout << "Generated tokens: " << sampling_params[0].max_new_tokens << std::endl;
+
     return results;
 }
 
