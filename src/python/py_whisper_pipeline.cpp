@@ -111,6 +111,16 @@ auto whisper_generation_config_docstring = R"(
     
     task: Task to use for generation, either “translate” or “transcribe”
     type: int
+
+    return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
+                       For instance, if you get
+                       WhisperDecodedResultChunk
+                           start_ts = 0.5
+                           end_ts = 1.5
+                           text = " Hi there!"
+                       then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
+                       Note that a segment of text refers to a sequence of one or more words, rather than individual words.
+    type: bool
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
