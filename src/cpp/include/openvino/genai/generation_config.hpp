@@ -41,6 +41,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param stop_strings vector of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
  * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
  * @param stop_token_ids vector of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+ * @param echo if set to true, output will include user prompt (default: false).
  *
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
