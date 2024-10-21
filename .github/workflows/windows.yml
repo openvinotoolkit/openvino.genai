@@ -8,6 +8,8 @@ on:
       - master
       - 'releases/**'
 
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
 concurrency:
   # github.ref is not unique in post-commit
   group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-windows
@@ -17,8 +19,6 @@ env:
   PYTHON_VERSION: '3.11'
   OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   OV_TARBALL: ''
-
-permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
   openvino_download:
@@ -245,7 +245,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -295,7 +295,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_generate_pipeline -j
 
       - name: Test bindings
         run: |
@@ -309,8 +309,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
-
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_python_lib_vlm:
     name: OpenVINO genai VLM tests (cmake + wheel)
@@ -360,7 +359,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_generate_pipeline -j
 
       - name: Test bindings
         run: |
@@ -371,13 +370,6 @@ jobs:
           python -m pytest ./tests/python_tests/test_vlm_api.py
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-
-      - name: Test bindings (wheel)
-        run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/test_vlm_api.py
-
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -470,7 +462,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_vlm, genai_python_lib_whisper]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

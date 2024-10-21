@@ -17,6 +17,8 @@
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 
 namespace ov {
 namespace genai {
@@ -81,7 +83,8 @@ public:
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
-            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
+            m_generation_config.adapters.set_tensor_name_prefix("base_model.model.model.");
+            m_adapter_controller = AdapterController(model, m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
@@ -133,12 +136,11 @@ public:
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
                 // Do not add special tokens in chat scenario to be aligned with HF.
-                bool add_special_tokens = false;  
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
@@ -316,8 +318,8 @@ public:
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
-            m_history = {};
-            m_templated_chat_history = "";
+            m_history.clear();
+            m_templated_chat_history.clear();
         }
     }
 };
@@ -365,6 +367,20 @@ std::pair<std::string, Any> streamer(StreamerVariant func) {
 
 std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
+}
+
+std::pair<std::string, Any> _draft_model(
+    const std::string& model_path,
+    const std::string& device,
+    const ov::AnyMap& llm_config) {
+    ov::AnyMap plugin_config = llm_config;
+    if (plugin_config.count(ov::genai::scheduler_config.name())) {
+        auto scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        plugin_config.erase(ov::genai::scheduler_config.name());
+        return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
+    }
+    SchedulerConfig scheduler_config;
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };   
 }
 
 }  // namespace genai

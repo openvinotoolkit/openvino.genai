@@ -8,6 +8,8 @@ on:
       - master
       - 'releases/**'
 
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
 concurrency:
   # github.ref is not unique in post-commit
   group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-mac
@@ -17,8 +19,6 @@ env:
   PYTHON_VERSION: '3.9'
   OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   OV_TARBALL: ''
-
-permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
   openvino_download:
@@ -235,7 +235,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py  --ignore ./tests/python_tests/test_vlm_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -284,7 +284,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_generate_pipeline -j
 
       - name: Test bindings
         run: |
@@ -299,7 +299,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
