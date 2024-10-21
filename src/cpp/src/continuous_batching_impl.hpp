@@ -60,7 +60,7 @@ public:
                            const std::string& device,
                            const ov::AnyMap& properties);
 
-    ContinuousBatchingImpl(const std::string& models_path,
+    ContinuousBatchingImpl(const std::filesystem::path& models_path,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
                            const ov::AnyMap& properties,
