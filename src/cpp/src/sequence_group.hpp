@@ -652,11 +652,8 @@ public:
         output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
         output.score = 0.0; // Should we accumulate prompt log probs here?
         output.finish_reason = GenerationFinishReason::NONE;
-        // We finish the sequence when 
-            // a) last_token_position == get_prompt_len()       : all tokens from the prompt have been processed
-            // b) last_token_position == get_prompt_len() - 1   : there is one remaining token in the prompt, but results for the last token 
-            //                                                    are not in prompt logprobs, so we can skip next iteration and finish already
-        if (last_token_position == get_prompt_len() || last_token_position == get_prompt_len() - 1) {
+
+        if (last_token_position == get_prompt_len()) {
             output.finish_reason = GenerationFinishReason::LENGTH;
             set_generation_status(GenerationStatus::FINISHED);
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup

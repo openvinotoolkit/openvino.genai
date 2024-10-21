@@ -94,7 +94,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "do_sample", do_sample);
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
-    read_anymap_param(config_map, "echo", eos_token_id);
+    read_anymap_param(config_map, "echo", echo);
     read_anymap_param(config_map, "adapters", adapters);
 }
 
