@@ -66,9 +66,9 @@ ov::AnyMap vlm_kwargs_to_any_map(const std::map<std::string, py::object>& config
         if (key == "images") {
             params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(value)))});
         } else if (key == "image") {
-            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(item.second)))});
+            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(value)))});
         } else if (key == "generation_config") {
-            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(item.second)))});
+            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(value)))});
         } else if (key == "streamer") {
             auto py_streamer = py::cast<utils::PyBindStreamerVariant>(value);
             params.insert({ov::genai::streamer(std::move(ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer)))});
