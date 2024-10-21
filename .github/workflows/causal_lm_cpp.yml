@@ -438,8 +438,8 @@ jobs:
           "
           echo "Alan Turing was a" passed
         env:
-          PYTHONPATH: ${{ env.build_dir }}
-          LD_LIBRARY_PATH: ${{ env.build_dir }}/openvino_genai
+          PYTHONPATH: "./build/:$PYTHONPATH"
+          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     defaults:
