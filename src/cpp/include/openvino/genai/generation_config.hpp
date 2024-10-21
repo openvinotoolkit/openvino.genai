@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <limits>
 #include <variant>
 #include <string>
@@ -11,7 +12,7 @@
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "lora_adapter.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -76,7 +77,7 @@ class OPENVINO_GENAI_EXPORTS GenerationConfig {
 
 public:
     GenerationConfig() = default;
-    explicit GenerationConfig(const std::string& json_path);
+    explicit GenerationConfig(const std::filesystem::path& json_path);
 
     // Generic
     size_t max_new_tokens = SIZE_MAX;

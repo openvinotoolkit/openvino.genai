@@ -603,7 +603,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) { return *ov::genai::pybind::utils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
+        .def(py::init([](const py::kwargs& kwargs) { return *ov::genai::pybind::utils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
