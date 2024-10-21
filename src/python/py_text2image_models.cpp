@@ -74,7 +74,7 @@ void init_clip_text_model(py::module_& m) {
             ) {
                 self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -145,7 +145,7 @@ void init_unet2d_condition_model(py::module_& m) {
             ) {
                 self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -213,7 +213,7 @@ void init_autoencoder_kl(py::module_& m) {
             ) {
                 self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done"
+            py::arg("device"), "device on which inference will be done"
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -281,7 +281,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
             ) {
                 self.compile(device,  utils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).

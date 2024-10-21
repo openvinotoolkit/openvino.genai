@@ -11,10 +11,11 @@ int main(int argc, char* argv[]) try {
 
     std::string model_path = argv[1];
     std::string wav_file_path = argv[2];
+    std::string device = "CPU"; // GPU can be used as well
+
+    ov::genai::WhisperPipeline pipeline(model_path, device);
 
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
-
-    ov::genai::WhisperPipeline pipeline{model_path};
 
     ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
     config.max_new_tokens = 100;

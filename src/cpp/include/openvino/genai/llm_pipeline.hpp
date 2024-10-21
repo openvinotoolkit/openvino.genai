@@ -24,13 +24,6 @@ using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
 /**
-* @brief scheduler_config property serves to activate continuous batching pipeline.
-* Create SchedulerConfig and fill it with sutable values. Copy or move it to plugin_config.
-* And create LLMPipeline instance with this config.
-*/
-static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
-
-/**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
 * In the case if results decoded with beam search and random sampling scores contain
@@ -114,8 +107,8 @@ public:
     */
     LLMPipeline(
         const std::string& path,
-        const std::string& device="CPU",
-        const ov::AnyMap& plugin_config={}
+        const std::string& device,
+        const ov::AnyMap& plugin_config = {}
     );
 
     /**
@@ -131,7 +124,7 @@ public:
     template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     LLMPipeline(
             const std::string& path,
-            const std::string& device="CPU",
+            const std::string& device,
             Properties&&... properties)
         : LLMPipeline(path, device,  AnyMap{std::forward<Properties>(properties)...}) {
     }
@@ -161,7 +154,7 @@ public:
     LLMPipeline(
         const std::string& model_path,
         const ov::genai::Tokenizer& tokenizer,
-        const std::string& device="CPU",
+        const std::string& device,
         const ov::AnyMap& plugin_config = {}
     );
 
@@ -177,7 +170,7 @@ public:
     */
     DecodedResults generate(
         StringInputs inputs,
-        OptionalGenerationConfig generation_config=std::nullopt,
+        OptionalGenerationConfig generation_config = std::nullopt,
         StreamerVariant streamer=std::monostate()
     );
 
@@ -225,7 +218,7 @@ public:
     */
     EncodedResults generate(
         const EncodedInputs& inputs,
-        OptionalGenerationConfig generation_config=std::nullopt,
+        OptionalGenerationConfig generation_config = std::nullopt,
         StreamerVariant streamer=std::monostate()
     );
 
@@ -258,7 +251,7 @@ public:
     *
     * @param system_message optional system message.
     */
-    void start_chat(const std::string& system_message = "");
+    void start_chat(const std::string& system_message = {});
 
     /**
     * @brief finish chat and clear kv cache.
@@ -293,6 +286,13 @@ inline std::pair<std::string, Any> draft_model(
     Properties&&... properties) {
     return draft_model(model_path, {}, ov::AnyMap{std::forward<Properties>(properties)...});
 }
+
+/**
+* @brief scheduler_config property serves to activate continuous batching pipeline.
+* Create SchedulerConfig and fill it with sutable values. Copy or move it to plugin_config.
+* And create LLMPipeline instance with this config.
+*/
+static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 }  // namespace genai
 }  // namespace ov

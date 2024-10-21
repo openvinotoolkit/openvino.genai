@@ -29,8 +29,19 @@ public:
     /**
     * @brief ov::genai::Tokenizer constructor.
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
+    * @param device_config Properties passed to ov::Core::compile_model
     */
-    Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config = {});
+    Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& device_config = {});
+
+    /**
+     * @brief ov::genai::Tokenizer constructor with variable number of properties
+     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
+     * @param device_config optional device_config
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Tokenizer(const std::string& tokenizer_path,
+              Properties&&... device_config)
+        : Tokenizer(tokenizer_path, ov::AnyMap{std::forward<Properties>(device_config)...}) { }
 
     /**
     * @brief encode a single prompt

@@ -18,21 +18,21 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    raw_speech = read_wav(args.wav_file_path)
+    device = 'CPU'  # GPU can be used as well
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
 
-    pipe = openvino_genai.WhisperPipeline(args.model_dir)
+    raw_speech = read_wav(args.wav_file_path)
 
     def streamer(word: str) -> bool:
         print(word, end="")
         return False
 
-    result = pipe.generate(
+    pipe.generate(
         raw_speech,
         max_new_tokens=100,
         # 'task' and 'language' parameters are supported for multilingual models only
         language="<|en|>",
         task="transcribe",
-        return_timestamps=True,
         streamer=streamer,
     )
 

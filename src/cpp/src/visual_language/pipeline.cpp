@@ -169,7 +169,7 @@ public:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
     VLMPipelineImpl(
-        const std::string& model_dir,
+        const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap& device_config
     ) :
@@ -186,7 +186,7 @@ public:
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         m_language = utils::singleton_core().compile_model(
-            model_dir + "/openvino_language_model.xml", device, device_config
+            model_dir / "openvino_language_model.xml", device, device_config
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});

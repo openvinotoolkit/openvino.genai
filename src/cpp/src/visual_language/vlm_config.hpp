@@ -6,6 +6,7 @@
 #include "openvino/genai/visibility.hpp"
 #include "visual_language/vlm_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
+#include <filesystem>
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -52,7 +53,7 @@ public:
     /// @brief Construct VLMConfig from values in json_path.
     /// Keys in the file must match the VLMConfig's members.
     /// @param json_path A path to a file to extract the values from.
-    explicit VLMConfig(const std::string& config_path);
+    explicit VLMConfig(const std::filesystem::path& config_path);
     /// @brief Default copy constructor.
     /// @param A config to copy from.
     VLMConfig(const VLMConfig&) = default;

@@ -49,11 +49,10 @@ public:
     float m_load_time_ms = 0;
 
     Impl(const std::filesystem::path& model_path,
-         const ov::genai::Tokenizer& tokenizer,
          const std::string& device,
          const ov::AnyMap& plugin_config)
         : m_generation_config{from_config_json_if_exists(model_path)},
-          m_tokenizer{tokenizer},
+          m_tokenizer{model_path},
           m_feature_extractor{(model_path / "preprocessor_config.json").string()},
           m_model_config{(model_path / "config.json").string()} {
         ov::Core core;
@@ -73,9 +72,6 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
     }
-
-    Impl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
-        : Impl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,

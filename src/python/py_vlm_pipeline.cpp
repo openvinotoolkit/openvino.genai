@@ -110,7 +110,7 @@ void init_vlm_pipeline(py::module_& m) {
             return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config));
         }),
         py::arg("model_path"), "folder with exported model files", 
-        py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("device"), "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map"
         R"(
             VLMPipeline class constructor.

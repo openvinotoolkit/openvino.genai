@@ -46,7 +46,7 @@ public:
      * @param plugin_config optional plugin_config
      */
     WhisperPipeline(const std::string& model_path,
-                    const std::string& device = "CPU",
+                    const std::string& device,
                     const ov::AnyMap& plugin_config = {});
 
     /**
@@ -62,20 +62,6 @@ public:
                   const std::string& device,
                   Properties&&... device_config)
         : WhisperPipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(device_config)...}) { }
-
-    /**
-     * @brief Constructs a WhisperPipeline when ov::genai::Tokenizer is initialized manually using file
-     * from the different dirs.
-     *
-     * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
-     * @param tokenizer manually initialized ov::genai::Tokenizer
-     * @param device optional device
-     * @param plugin_config optional plugin_config
-     */
-    WhisperPipeline(const std::string& model_path,
-                    const ov::genai::Tokenizer& tokenizer,
-                    const std::string& device = "CPU",
-                    const ov::AnyMap& plugin_config = {});
 
     ~WhisperPipeline();
 

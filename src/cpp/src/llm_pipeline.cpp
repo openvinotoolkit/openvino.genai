@@ -58,13 +58,13 @@ public:
     bool m_is_cache_empty = true;
     std::optional<int32_t> m_selected_beam = std::nullopt;
     ChatHistory m_history;
-    std::string m_templated_chat_history = "";
+    std::string m_templated_chat_history = {};
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
         const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
-    ): LLMPipelineImplBase(tokenizer),
+    ) : LLMPipelineImplBase(tokenizer),
        m_model_runner(request) {
        GenerationConfig default_config;
        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
@@ -75,11 +75,10 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ):
-        LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
+    ) : LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
-        if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
+        if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
@@ -105,7 +104,7 @@ public:
         const std::filesystem::path& model_path,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    ) : StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
     DecodedResults generate(
         StringInputs inputs,
@@ -405,7 +404,7 @@ public:
         const ov::InferRequest& request,
         const Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config
-    ): LLMPipelineImplBase{dont_construct()}, m_impl{"", {}} {}
+    ): LLMPipelineImplBase{dont_construct()}, m_impl{{}, {}, {}} {}
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& model_path,

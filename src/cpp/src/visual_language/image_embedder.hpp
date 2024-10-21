@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -16,7 +17,7 @@ namespace ov::genai {
 class InputsEmbedder {
 public:
     InputsEmbedder(const VLMConfig& vlm_config,
-                   const std::string& model_dir,
+                   const std::filesystem::path& model_dir,
                    const std::string& device,
                    const ov::AnyMap device_config);
 

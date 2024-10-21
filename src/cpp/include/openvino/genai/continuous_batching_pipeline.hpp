@@ -65,7 +65,7 @@ protected:
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
                                const SchedulerConfig& scheduler_config,
-                               const std::string& device = "CPU",
+                               const std::string& device,
                                const ov::AnyMap& llm_plugin_config = {},
                                const ov::AnyMap& tokenizer_plugin_config = {});
 
@@ -82,7 +82,7 @@ public:
         const std::string& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
-        const std::string& device="CPU",
+        const std::string& device,
         const ov::AnyMap& plugin_config={}
     );
 

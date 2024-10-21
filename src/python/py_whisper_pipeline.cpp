@@ -258,7 +258,7 @@ void init_whisper_pipeline(py::module_& m) {
              }),
              py::arg("model_path"),
              "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
-             py::arg("device") = "CPU",
+             py::arg("device"),
              "device on which inference will be done",
              py::arg("config") = ov::AnyMap({}),
              "openvino.properties map",

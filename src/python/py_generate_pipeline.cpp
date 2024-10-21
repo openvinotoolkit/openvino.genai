@@ -410,7 +410,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             return std::make_unique<LLMPipeline>(model_path, device, utils::properties_to_any_map(config));
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
-        py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("device"), "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor.
@@ -430,7 +430,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         }),
         py::arg("model_path"),
         py::arg("tokenizer"),
-        py::arg("device") = "CPU",
+        py::arg("device"),
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
@@ -742,11 +742,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, utils::properties_to_any_map(llm_plugin_config), utils::properties_to_any_map(tokenizer_plugin_config));
-        }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
+        }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device"), py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
         .def(py::init([](const std::string& model_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(model_path, tokenizer, scheduler_config, device, utils::properties_to_any_map(plugin_config));
-        }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
+        }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device"), py::arg("plugin_config") = ov::AnyMap({}))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
