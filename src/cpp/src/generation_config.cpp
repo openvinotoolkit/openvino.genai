@@ -189,15 +189,18 @@ GenerationConfig greedy() {
 }
 
 GenerationConfig multinomial() {
-    GenerationConfig multinomial_config;
+    GenerationConfig multinomial_config;    
     multinomial_config.do_sample = true;
-    multinomial_config.temperature = 0.9f;
-    multinomial_config.top_p = 0.9f;
-    multinomial_config.top_k = 20;
-    multinomial_config.num_return_sequences = 3;
-    multinomial_config.presence_penalty = 0.01f;
-    multinomial_config.frequency_penalty = 0.1f;
-    multinomial_config.min_new_tokens = 15;
+    multinomial_config.top_p = 0.9;
+    multinomial_config.top_k = 30;
+    // multinomial_config.do_sample = true;
+    // multinomial_config.temperature = 0.9f;
+    // multinomial_config.top_p = 0.9f;
+    // multinomial_config.top_k = 20;
+    // multinomial_config.num_return_sequences = 3;
+    // multinomial_config.presence_penalty = 0.01f;
+    // multinomial_config.frequency_penalty = 0.1f;
+    // multinomial_config.min_new_tokens = 15;
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
 }
