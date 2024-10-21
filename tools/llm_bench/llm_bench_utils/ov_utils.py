@@ -201,7 +201,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
                 setattr(scheduler_config, param, value)
         ov_config["scheduler_config"] = scheduler_config
     start = time.perf_counter()
-    llm_pipe = openvino_genai.LLMPipeline(model_path, device.upper(), **ov_config)
+    llm_pipe = openvino_genai.LLMPipeline(model_path, device.upper(), ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
