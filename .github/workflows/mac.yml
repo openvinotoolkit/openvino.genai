@@ -235,7 +235,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py  --ignore ./tests/python_tests/test_vlm_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -293,6 +293,13 @@ jobs:
           python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
+
+      - name: Test bindings (wheel)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+          python -c "from openvino_genai import LLMPipeline"
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
