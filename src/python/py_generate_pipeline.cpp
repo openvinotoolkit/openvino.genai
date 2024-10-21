@@ -794,19 +794,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& model_path,
             const std::string& device,
             const py::kwargs& kwargs
-            // const ov::AnyMap& config,
-            // const ov::genai::SchedulerConfig& scheduler_config
         ) {
-            // auto updated_config = config;
-            // updated_config.insert({"scheduler_config", scheduler_config});
-            // return ov::genai::_draft_model(model_path, device, updated_config).second;
             return ov::genai::_draft_model(model_path, device, utils::kwargs_to_any_map(kwargs)).second;
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be performed"
-        // py::kwargs("kwargs"), "Argument to define `draft_pipeline` for `speculative_decoding`"
-        // py::arg("config") = ov::AnyMap({}), "openvino.properties map",
-        // py::arg("scheduler_config") = ov::genai::SchedulerConfig({}), "openvino.properties map"
         );
 
 
