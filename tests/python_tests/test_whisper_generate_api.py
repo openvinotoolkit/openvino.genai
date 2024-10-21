@@ -68,7 +68,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         path,
         opt_pipe,
         ov_genai.WhisperPipeline(
-            str(path), "CPU", **{"ENABLE_MMAP": False}
+            path, "CPU", **{"ENABLE_MMAP": False}
         ),
     )
 
@@ -157,7 +157,7 @@ def test_smoke(model_descr, test_sample):
 def test_whisper_config_constructor(model_descr):
     model_id, path = model_descr
 
-    config = ov_genai.WhisperGenerationConfig(str(path / "generation_config.json"))
+    config = ov_genai.WhisperGenerationConfig(path / "generation_config.json")
 
     with open(path / "generation_config.json") as f:
         original_config = json.load(f)

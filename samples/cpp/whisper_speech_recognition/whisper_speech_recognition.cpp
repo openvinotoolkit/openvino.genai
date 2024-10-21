@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
 
-    ov::genai::WhisperGenerationConfig config{models_path / "generation_config.json"};
+    ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
     config.max_new_tokens = 100;
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";

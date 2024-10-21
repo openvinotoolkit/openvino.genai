@@ -543,7 +543,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
            if it's located in a different path than the main model.)")
 
-        .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, utils::properties_to_any_map(plugin_config));
         }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
@@ -623,7 +623,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
-        .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
+        .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](py::kwargs kwargs) { return *ov::genai::pybind::utils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)

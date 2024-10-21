@@ -276,7 +276,7 @@ NOTE: This sample is a simplified version of the full sample that is available [
 
 int main(int argc, char* argv[]) try {
 
-    std::string models_path = argv[1];
+    std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
     std::string device = "CPU"; // GPU can be used as well
 
@@ -284,7 +284,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
 
-    ov::genai::WhisperGenerationConfig config{models_path + "/generation_config.json"};
+    ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
     config.max_new_tokens = 100;
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";
