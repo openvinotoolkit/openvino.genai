@@ -28,3 +28,7 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 set(TARGET_NAME continuous_batching_accuracy)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai cxxopts::cxxopts)
+
+set(TARGET_NAME_CB continuous_batching_speculative_decoding)
+add_executable(${TARGET_NAME_CB} ${TARGET_NAME_CB}.cpp)
+target_link_libraries(${TARGET_NAME_CB} PRIVATE openvino::genai cxxopts::cxxopts)

@@ -49,8 +49,14 @@ std::vector<float> get_ms(const T& instance, U T::*member) {
     return res;
 }
 
+void init_lora_adapter(py::module_& m);
 void init_whisper_pipeline(py::module_& m);
 void init_vlm_pipeline(py::module_& m);
+void init_clip_text_model(py::module_& m);
+void init_clip_text_model_with_projection(py::module_& m);
+void init_unet2d_condition_model(py::module_& m);
+void init_autoencoder_kl(py::module_& m);
+void init_text2image_pipeline(py::module_& m);
 
 namespace {
 
@@ -763,9 +769,22 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("streamer") = std::monostate{}
         );
     
+    // init lora adapters
+    init_lora_adapter(m);
+
     // init whisper bindings
     init_whisper_pipeline(m);
 
     // init vlm pipeline
     init_vlm_pipeline(m);
+
+    // init text2image models
+    init_clip_text_model(m);
+    init_clip_text_model_with_projection(m);
+    init_unet2d_condition_model(m);
+    init_autoencoder_kl(m);
+
+    // init text2image pipeline
+    init_text2image_pipeline(m);
+    
 }
