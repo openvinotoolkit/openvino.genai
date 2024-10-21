@@ -16,9 +16,6 @@ int main(int argc, char* argv[]) try {
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
-    ov::genai::GenerationConfig generation_config;
-    generation_config.max_new_tokens = 100;
-
     std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap enable_compile_cache;
     if ("GPU" == device) {
@@ -27,6 +24,10 @@ int main(int argc, char* argv[]) try {
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
     ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
+
+    ov::genai::GenerationConfig generation_config;
+    generation_config.max_new_tokens = 100;
+
     std::string prompt;
 
     pipe.start_chat();
