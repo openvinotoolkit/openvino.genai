@@ -144,6 +144,8 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
                                             "Use help(openvino_genai.Text2ImagePipeline.generate) to get list of acceptable parameters."));
             }
         }
+        
+        
     }
     return params;
 }
