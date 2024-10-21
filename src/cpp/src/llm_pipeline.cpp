@@ -329,7 +329,14 @@ DecodedResults LLMPipeline::generate(
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
 ) {
-    return m_pimpl->generate(inputs, generation_config, streamer);
+    static ManualTimer timer("generate()");
+    timer.start();
+    timer.start();
+    auto a = m_pimpl->generate(inputs, generation_config, streamer);
+    timer.end();
+    std::cout << std::endl;
+    std::cout << "Total duration, ms: " << timer.get_duration_ms() << std::endl;
+    return a;
 }
 
 DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config_map) {

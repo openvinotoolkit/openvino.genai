@@ -24,11 +24,13 @@ public:
     void update_acceptance_rate(int64_t request_id, float acceptance_rate);
 
     float get_draft_accepted_tokens_percentage(int64_t request_id);
+    size_t get_draft_accepted_tokens_counter(int64_t request_id);
     void update_draft_accepted_tokens(int64_t request_id, size_t num_matches);
 
     void set_generated_len(int64_t request_id, size_t generated_len);
 
-    size_t get_iteration_number(int64_t request_id);
+    size_t get_main_iteration_number(int64_t request_id);
+    size_t get_draft_iteration_number(int64_t request_id);
 
     float get_draft_duration_percentage();
     float get_main_duration_percentage();
