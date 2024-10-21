@@ -11,18 +11,18 @@
 namespace ov::genai {
 
 struct ModelDesc {
-    std::string model_path;
+    std::filesystem::path models_path;
     std::string device;
     ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap plugin_config;
+    ov::AnyMap properties;
 
-    ModelDesc(const std::string& model_path,
-              const std::string& device = "",
-              const ov::AnyMap& plugin_config = {},
+    ModelDesc(const std::filesystem::path& models_path,
+              const std::string& device = {},
+              const ov::AnyMap& properties = {},
               const ov::genai::SchedulerConfig& scheduler_config = {}) :
-        model_path(model_path),
+        models_path(models_path),
         device(device),
-        plugin_config(plugin_config),
+        properties(properties),
         scheduler_config(scheduler_config) {}
 };
 
@@ -32,12 +32,12 @@ protected:
     SpeculativeDecodingMetrics m_sd_metrics;
     
 public:
-    SpeculativeDecodingImpl(const std::string& main_models_path,
+    SpeculativeDecodingImpl(const std::filesystem::path& main_models_path,
                             const SchedulerConfig& scheduler_config,
                             const std::string& device,
-                            const ov::AnyMap& plugin_config,
+                            const ov::AnyMap& properties,
                             const ov::genai::ModelDesc draft_model_desc,
-                            const ov::AnyMap& tokenizer_config = {});
+                            const ov::AnyMap& tokenizer_properties = {});
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

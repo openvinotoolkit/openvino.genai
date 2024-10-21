@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -18,28 +19,28 @@ class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
     /// @brief Construct a pipeline form a folder containing tokenizer
     /// and model IRs.
-    /// @param model_dir A folder to read tokenizer and model IRs.
+    /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
-    /// @param device_config A config to pass to ov::Core::compile_model().
+    /// @param properties A config to pass to ov::Core::compile_model().
     VLMPipeline(
-        const std::string& model_dir,
+        const std::filesystem::path& models_path,
         const std::string& device,
-        const ov::AnyMap& device_config = {}
+        const ov::AnyMap& properties = {}
     );
 
     /// @brief Construct a pipeline form a folder containing tokenizer
     /// and model IRs. Accepts arbitrary list of optional properties.
-    /// @param model_dir A folder to read tokenizer and model IRs.
+    /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
-    /// @param device_config A config to pass to ov::Core::compile_model().
+    /// @param properties A config to pass to ov::Core::compile_model().
     template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     VLMPipeline(
-        const std::string& root_dir,
+        const std::filesystem::path& models_path,
         const std::string& device,
-        Properties&&... device_config)
-        : VLMPipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(device_config)...}) { }
+        Properties&&... properties)
+        : VLMPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /// @brief Default destructor.
     ~VLMPipeline();

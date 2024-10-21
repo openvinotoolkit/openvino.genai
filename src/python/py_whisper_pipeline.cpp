@@ -250,13 +250,13 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readonly("chunks", &WhisperDecodedResults::chunks);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
-        .def(py::init([](const std::string& model_path,
+        .def(py::init([](const std::string& models_path,
                          const std::string& device,
                          const std::map<std::string, py::object>& config) {
                  ScopedVar env_manager(utils::ov_tokenizers_module_path());
-                 return std::make_unique<WhisperPipeline>(model_path, device, utils::properties_to_any_map(config));
+                 return std::make_unique<WhisperPipeline>(models_path, device, utils::properties_to_any_map(config));
              }),
-             py::arg("model_path"),
+             py::arg("models_path"),
              "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
              py::arg("device"),
              "device on which inference will be done",
@@ -264,7 +264,7 @@ void init_whisper_pipeline(py::module_& m) {
              "openvino.properties map",
              R"(
             WhisperPipeline class constructor.
-            model_path (str): Path to the model file.
+            models_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
         )")
 

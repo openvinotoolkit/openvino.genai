@@ -28,32 +28,32 @@ extract_draft_model_from_config(ov::AnyMap& config) {
     return draft_model;
 }
 
-ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
+ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
-                                                        const ov::AnyMap& llm_plugin_config,
-                                                        const ov::AnyMap& tokenizer_plugin_config) {
-    auto llm_plugin_config_without_draft_model = llm_plugin_config;
-    auto draft_model = extract_draft_model_from_config(llm_plugin_config_without_draft_model);
-    if (draft_model.model_path.empty()) {
-        m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, llm_plugin_config, tokenizer_plugin_config);
+                                                        const ov::AnyMap& properties,
+                                                        const ov::AnyMap& tokenizer_properties) {
+    auto properties_without_draft_model = properties;
+    auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
+    if (draft_model.models_path.empty()) {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, properties, tokenizer_properties);
     } else {
-        m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, llm_plugin_config_without_draft_model, draft_model, tokenizer_plugin_config);
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, properties_without_draft_model, draft_model, tokenizer_properties);
     }
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
-    const std::string& model_path,
+    const std::filesystem::path& models_path,
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
-    auto plugin_config_without_draft_model = plugin_config;
-    auto draft_model = extract_draft_model_from_config(plugin_config_without_draft_model);
-    if (draft_model.model_path.empty()) {
-        m_impl = std::make_shared<ContinuousBatchingImpl>(model_path, tokenizer, scheduler_config, device, plugin_config);
+    const ov::AnyMap& properties) {
+    auto properties_without_draft_model = properties;
+    auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
+    if (draft_model.models_path.empty()) {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, tokenizer, scheduler_config, device, properties);
     } else {
-        m_impl = std::make_shared<SpeculativeDecodingImpl>(model_path, scheduler_config, device, plugin_config_without_draft_model, draft_model);
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, properties_without_draft_model, draft_model);
     }
 }
 

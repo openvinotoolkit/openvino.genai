@@ -102,19 +102,19 @@ py::object call_vlm_generate(
 void init_vlm_pipeline(py::module_& m) {
     py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
         .def(py::init([](
-            const std::string& model_path, 
+            const std::string& models_path, 
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config));
+            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, utils::properties_to_any_map(config));
         }),
-        py::arg("model_path"), "folder with exported model files", 
+        py::arg("models_path"), "folder with exported model files", 
         py::arg("device"), "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map"
         R"(
             VLMPipeline class constructor.
-            model_path (str): Path to the folder with exported model files.
+            models_path (str): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
         )")
 

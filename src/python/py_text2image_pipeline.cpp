@@ -166,28 +166,28 @@ void init_text2image_pipeline(py::module_& m) {
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](
-            const std::string& model_path
+            const std::string& models_path
         ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path);
+            return std::make_unique<ov::genai::Text2ImagePipeline>(models_path);
         }),
-        py::arg("model_path"), "folder with exported model files.", 
+        py::arg("models_path"), "folder with exported model files.", 
         R"(
             Text2ImagePipeline class constructor.
-            model_path (str): Path to the folder with exported model files.
+            models_path (str): Path to the folder with exported model files.
         )")
 
         .def(py::init([](
-            const std::string& model_path, 
+            const std::string& models_path, 
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, text2image_kwargs_to_any_map(kwargs, true));
+            return std::make_unique<ov::genai::Text2ImagePipeline>(models_path, device, text2image_kwargs_to_any_map(kwargs, true));
         }),
-        py::arg("model_path"), "folder with exported model files.", 
+        py::arg("models_path"), "folder with exported model files.", 
         py::arg("device"), "device on which inference will be done",
         R"(
             Text2ImagePipeline class constructor.
-            model_path (str): Path with exported model files.
+            models_path (str): Path with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Text2ImagePipeline properties
         )")

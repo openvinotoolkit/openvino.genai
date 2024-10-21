@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <openvino/openvino.hpp>
+#include <filesystem>
 #include <optional>
 #include <variant>
+#include <vector>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -41,27 +42,27 @@ public:
      * @brief Constructs an WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir.
      *
-     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+     * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
-     * @param plugin_config optional plugin_config
+     * @param properties optional properties
      */
-    WhisperPipeline(const std::string& model_path,
+    WhisperPipeline(const std::filesystem::path& models_path,
                     const std::string& device,
-                    const ov::AnyMap& plugin_config = {});
+                    const ov::AnyMap& properties = {});
 
     /**
      * @brief Constructs an WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir. Accepts arbitrary list of optional properties.
      *
-     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+     * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
-     * @param device_config optional device_config
+     * @param properties optional properties
      */
     template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    WhisperPipeline(const std::string& root_dir,
+    WhisperPipeline(const std::string& models_path,
                     const std::string& device,
-                    Properties&&... device_config)
-        : WhisperPipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(device_config)...}) { }
+                    Properties&&... properties)
+        : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     ~WhisperPipeline();
 

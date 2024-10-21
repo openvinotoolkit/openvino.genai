@@ -54,23 +54,22 @@ protected:
     void _pull_awaiting_requests();
 
 public:
-    ContinuousBatchingImpl(const std::string& models_path,
+    ContinuousBatchingImpl(const std::filesystem::path& models_path,
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
-                           const ov::AnyMap& plugin_config);
+                           const ov::AnyMap& properties);
 
     ContinuousBatchingImpl(const std::string& models_path,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
-                           const ov::AnyMap& llm_plugin_config,
-                           const ov::AnyMap& tokenizer_plugin_config)
+                           const ov::AnyMap& properties,
+                           const ov::AnyMap& tokenizer_properties)
     : ContinuousBatchingImpl{ models_path,
-                              Tokenizer(models_path, tokenizer_plugin_config),
+                              Tokenizer(models_path, tokenizer_properties),
                               scheduler_config,
                               device,
-                              llm_plugin_config } {};
-
+                              properties } {}
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

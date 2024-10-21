@@ -6,6 +6,7 @@
 #include <optional>
 #include <variant>
 #include <chrono>
+#include <filesystem>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -99,27 +100,27 @@ public:
     /**
     * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     *
-    * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+    * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
-    * @param plugin_config optional plugin_config
-    * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline.
-    * Add ov::genai::adapters property to plugin_config to register LoRA adapters.
+    * @param properties optional properties
+    * Add ov::genai::scheduler_config property to properties to create continuous batching pipeline.
+    * Add ov::genai::adapters property to properties to register LoRA adapters.
     */
     LLMPipeline(
-        const std::string& path,
+        const std::filesystem::path& models_path,
         const std::string& device,
-        const ov::AnyMap& plugin_config = {}
+        const ov::AnyMap& properties = {}
     );
 
     OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
-    explicit LLMPipeline(const std::string& path) :
+    explicit LLMPipeline(const std::filesystem::path& path) :
         LLMPipeline(path, "CPU") { }
 
     /**
     * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     * Accepts arbitrary list of optional properties.
     *
-    * @param model_path Path to the dir model xml/bin files, tokenizers and generation_config.json
+    * @param models_path Path to the dir model xml/bin files, tokenizers and generation_config.json
     * @param device optional device
     * @param properties optional plugin properties, ov::genai::adapters property for LoRA adapters and
     * ov::genai::scheduler_config property to create continuous batching pipeline. Properties can be
@@ -127,10 +128,10 @@ public:
     */
     template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     LLMPipeline(
-            const std::string& path,
+            const std::filesystem::path& models_path,
             const std::string& device,
             Properties&&... properties)
-        : LLMPipeline(path, device,  AnyMap{std::forward<Properties>(properties)...}) {
+        : LLMPipeline(models_path, device,  AnyMap{std::forward<Properties>(properties)...}) {
     }
 
     /**
@@ -149,22 +150,22 @@ public:
     /**
     * @brief Constructs a LLMPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
     *
-    * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
+    * @param models_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
     * @param tokenizer manually initialized ov::genai::Tokenizer
     * @param device optional device
-    * @param plugin_config optional plugin_config
+    * @param properties optional plugin_config
     * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
     */
     LLMPipeline(
-        const std::string& model_path,
+        const std::filesystem::path& models_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
-        const ov::AnyMap& plugin_config = {}
+        const ov::AnyMap& properties = {}
     );
 
     OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
-    LLMPipeline(const std::string& model_path, const ov::genai::Tokenizer& tokenizer) :
-        LLMPipeline(model_path, tokenizer, "CPU") { }
+    LLMPipeline(const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer) :
+        LLMPipeline(models_path, tokenizer, "CPU") { }
 
     ~LLMPipeline();
 
@@ -274,25 +275,25 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
-    const std::string& model_path,
+    const std::filesystem::path& models_path,
     const std::string& device = {},
     const ov::AnyMap& properties = {});
 
 template <typename... Properties,
           typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
 inline std::pair<std::string, Any> draft_model(
-    const std::string& model_path,
+    const std::filesystem::path& models_path,
     const std::string& device,
     Properties&&... properties) {
-    return draft_model(model_path, device, ov::AnyMap{std::forward<Properties>(properties)...});
+    return draft_model(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...});
 }
 
 template <typename... Properties,
           typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
 inline std::pair<std::string, Any> draft_model(
-    const std::string& model_path,
+    const std::filesystem::path& models_path,
     Properties&&... properties) {
-    return draft_model(model_path, {}, ov::AnyMap{std::forward<Properties>(properties)...});
+    return draft_model(models_path, {}, ov::AnyMap{std::forward<Properties>(properties)...});
 }
 
 /**
