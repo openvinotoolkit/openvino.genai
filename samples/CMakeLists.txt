@@ -23,7 +23,7 @@ install(DIRECTORY
             cpp/greedy_causal_lm
             cpp/lora_greedy_causal_lm
             cpp/multinomial_causal_lm
-            # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
+            # Don't install prompt_lookup_decoding_lm because it doesn't use openvino_genai library and is not verified yet.
             cpp/speculative_decoding_lm
             cpp/text2image
             cpp/visual_language_chat
