@@ -9,8 +9,10 @@ on:
       - 'releases/**'
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # github.ref is not unique in post-commit
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-causal-lm-cpp
   cancel-in-progress: true
 
 env:
@@ -428,8 +430,16 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5
-          ./build/samples/cpp/speculative_decoding_lm/continuous_batching_speculative_decoding -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_speculative.txt', 'r') as f:
+              predicted_speculative = f.readline()
+          assert predicted_greedy == predicted_speculative
+          "
+          echo "Alan Turing was a" passed
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
@@ -478,7 +488,7 @@ jobs:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup, f'Expected {predicted_greedy}, actual {predicted_prompt_lookup}'
+          assert predicted_greedy == predicted_prompt_lookup
           "
           echo "Prompt lookup" passed
       - name: run and compare (model with seq_length_axis = 1)
@@ -494,13 +504,12 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
-
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup, f'Expected {predicted_greedy}, actual {predicted_prompt_lookup}'
+          assert predicted_greedy == predicted_prompt_lookup
           "
           echo "Prompt lookup" passed
 

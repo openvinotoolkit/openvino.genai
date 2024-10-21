@@ -11,15 +11,16 @@ on:
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
+concurrency:
+  # github.ref is not unique in post-commit
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-stable-diffusion-1-5-cpp
+  cancel-in-progress: true
+
 env:
   PYTHON_VERSION: '3.10'
   LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241018_x86_64.tgz
   WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/w_openvino_toolkit_windows_2024.5.0.dev20241018_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   stable_diffusion_1_5_cpp-linux:
