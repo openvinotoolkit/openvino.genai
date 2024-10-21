@@ -38,5 +38,7 @@ from .py_generate_pipeline import (
     CacheEvictionConfig,
     AggregationMode,
     Generator,
-    CppStdGenerator
+    CppStdGenerator,
+    draft_model
+
 )
