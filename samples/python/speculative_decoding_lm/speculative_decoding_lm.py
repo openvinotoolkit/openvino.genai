@@ -21,7 +21,7 @@ def main():
     args = parser.parse_args()
 
     # User can run main and draft model on different devices.
-    # Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
+    # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
     main_device = 'CPU'  # GPU can be used as well
     draft_device = main_device
 
