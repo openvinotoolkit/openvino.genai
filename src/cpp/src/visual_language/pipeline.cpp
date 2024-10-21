@@ -52,7 +52,7 @@ EncodedGenerationResult get_lm_encoded_results(
     int64_t sequence_len = language.get_tensor("logits").get_shape().at(1);
     request->schedule_tokens(sequence_len);
 
-    SamplerOutput sampler_output = sampler.sample(requests, language.get_tensor("logits"));
+    sampler.sample(requests, language.get_tensor("logits"));
 
     language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, m_vlm_config.hidden_size});
     language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
@@ -118,7 +118,7 @@ EncodedGenerationResult get_lm_encoded_results(
             }
         }
 
-        sampler_output = sampler.sample(requests, language.get_tensor("logits"));
+        sampler.sample(requests, language.get_tensor("logits"));
     }
 
     if (streamer_ptr) {
@@ -195,9 +195,14 @@ public:
     DecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& rgbs,
-        const GenerationConfig& generation_config,
+        GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) {
+        // If eos_token_id was not provided, take value
+        if (generation_config.eos_token_id == -1) {
+            generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
+
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
 
         Sampler sampler = Sampler(m_tokenizer);
@@ -209,6 +214,7 @@ public:
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
+        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
         sequence_group->update_processed_tokens_num(history_size);
@@ -269,10 +275,6 @@ public:
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
-
-        // If eos_token_id was not provided, take value
-        if (config.eos_token_id == -1)
-            config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 
         return generate(
             prompt,
