@@ -20,3 +20,4 @@ onnx!=1.16.2
 einops
 transformers_stream_generator
 bitsandbytes
+librosa
