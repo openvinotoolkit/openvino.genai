@@ -76,6 +76,14 @@ std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_
     return std::nullopt;
 }
 
+template <typename T>
+std::optional<T> get_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        return std::make_optional(it->second.as<T>());
+    }
+    return std::nullopt;
+}
+
 void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
@@ -239,7 +247,11 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 }
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
-    return get_default_common_config(model);
+    auto config = get_default_common_config(model);
+    if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
+        config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    }
+    return config;
 }
 
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
@@ -366,7 +378,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
     // (7) Reshape both models to static shape
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
-    const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(150u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
@@ -384,11 +396,11 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
-    ).create_infer_request();
     m_kvcache_request = core.compile_model(
         m_kvcache_model, device, generate_config
+    ).create_infer_request();
+    m_prefill_request = core.compile_model(
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
 }
 
