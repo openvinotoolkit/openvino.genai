@@ -475,6 +475,12 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
 
+      - name: Test python samples (whisper_speech_recognition)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python ${{ env.OV_INSTALL_DIR }}\samples\python\whisper_speech_recognition\whisper_speech_recognition.py whisper-tiny how_are_you_doing_today.wav
+
   Overall_Status:
     name: ci/gha_overall_status_windows
     needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_vlm, genai_python_lib_whisper]
