@@ -81,7 +81,6 @@ def test_vlm_get_tokenizer(cache):
     get_beam_search(),
     get_multinomial_all_parameters(),
 ])
-@pytest.mark.skip("Enable after sampler are enabled")
 def test_sampling(config, cache):
     model_path = get_ov_model(cache)
     image = get_image_by_link(image_links[0])
