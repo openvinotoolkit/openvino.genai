@@ -51,8 +51,9 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
-          ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
+          && timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
+        env:
+          PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
           && timeout 25s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
@@ -253,10 +254,11 @@ jobs:
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
       - run: python ref.py
       - run: >
-          set PATH=.\build\openvino_genai\;%PATH%
-          && set "PYTHONPATH=./build/"
-          && call .\ov\setupvars.bat
+          call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+        env:
+          PYTHONPATH: ".\build\"
+          PATH: ".\build\openvino_genai"
       - run: fc .\cpp.txt .\py.txt
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
@@ -768,9 +770,10 @@ jobs:
       - name: Run visual_language_chat Python sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH
-          ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./images/
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./images/
           <<< $'Describe the images?' | tee py.txt
+        env:
+          PYTHONPATH: "./build/"
       - run: diff py.txt ref.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - MiniCPM-V-2_6
         run: >
@@ -781,9 +784,10 @@ jobs:
       - name: Run visual_language_chat Python sample with 2 prompts - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH
-          ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./cat.jpg
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./cat.jpg
           <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
+        env:
+          PYTHONPATH: "./build/"
       - run: diff cpp2.txt py2.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
