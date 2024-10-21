@@ -435,8 +435,7 @@ jobs:
       - name: run and compare python sample
         run: |
           . ./ov/setupvars.sh
-          && timeout 25s 
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "What is OpenVINO?" > cpp_speculative.txt
+          && timeout 25s ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "What is OpenVINO?" > cpp_speculative.txt
           | diff <(timeout 25s python ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "What is OpenVINO?") 
         env:
           PYTHONPATH: ${{ env.build_dir }}

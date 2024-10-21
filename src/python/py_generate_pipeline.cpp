@@ -441,6 +441,23 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
+        .def(py::init([](
+            const std::string& model_path, 
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, device, utils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("device") = "CPU", "device on which inference will be done",
+        R"(
+            LLMPipeline class constructor.
+            model_path (str): Path to the model file.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+        )")
+
         .def(
             "generate", 
             [](LLMPipeline& pipe, 
@@ -776,23 +793,26 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](
             const std::string& model_path,
             const std::string& device,
-            const ov::AnyMap& config,
-            const ov::genai::SchedulerConfig& scheduler_config
+            const py::kwargs& kwargs
+            // const ov::AnyMap& config,
+            // const ov::genai::SchedulerConfig& scheduler_config
         ) {
-            auto updated_config = config;
-            updated_config.insert({"scheduler_config", scheduler_config});
-            return ov::genai::_draft_model(model_path, device, updated_config).second;
+            // auto updated_config = config;
+            // updated_config.insert({"scheduler_config", scheduler_config});
+            // return ov::genai::_draft_model(model_path, device, updated_config).second;
+            return ov::genai::_draft_model(model_path, device, utils::kwargs_to_any_map(kwargs)).second;
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
-        py::arg("device") = "CPU", "device on which inference will be performed",
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
-        py::arg("scheduler_config") = ov::genai::SchedulerConfig({}), "openvino.properties map"
+        py::arg("device") = "CPU", "device on which inference will be performed"
+        // py::kwargs("kwargs"), "Argument to define `draft_pipeline` for `speculative_decoding`"
+        // py::arg("config") = ov::AnyMap({}), "openvino.properties map",
+        // py::arg("scheduler_config") = ov::genai::SchedulerConfig({}), "openvino.properties map"
         );
 
 
     // init lora adapters
     init_lora_adapter(m);
-    
+
     // init whisper bindings
     init_whisper_pipeline(m);
 

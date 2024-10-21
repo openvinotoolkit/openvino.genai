@@ -38,9 +38,9 @@ install(DIRECTORY
             python/chat_sample
             python/greedy_causal_lm
             python/multinomial_causal_lm
-            python/visual_language_chat
-            python/text2image
-            python/whisper_speech_recognition
             python/speculative_decoding_lm
+            python/text2image
+            python/visual_language_chat
+            python/whisper_speech_recognition
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
