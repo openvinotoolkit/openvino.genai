@@ -127,6 +127,10 @@ public:
         return m_num_decoder_layers;
     }
 
+    size_t get_head_size() const {
+        return m_head_size;
+    }
+
     ov::Shape get_key_cache_shape() const {
         OPENVINO_ASSERT(!m_key_cache_shape.empty());
         return m_key_cache_shape;
