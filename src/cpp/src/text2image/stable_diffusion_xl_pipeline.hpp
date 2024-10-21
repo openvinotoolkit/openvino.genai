@@ -68,7 +68,7 @@ public:
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
             AdapterConfig adapters;
-            std::string path = root_dir / "text_encoder";
+            std::filesystem::path path = root_dir / "text_encoder";
             if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
                 auto clip_properties = properties;
                 adapters.set_tensor_name_prefix("lora_te1");
@@ -84,7 +84,7 @@ public:
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
             AdapterConfig adapters;
-            std::string path = root_dir / "text_encoder_2";
+            std::filesystem::path path = root_dir / "text_encoder_2";
             if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
                 auto clip_properties = properties;
                 adapters.set_tensor_name_prefix("lora_te2");

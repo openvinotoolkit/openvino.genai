@@ -39,7 +39,7 @@ class OPENVINO_GENAI_EXPORTS WhisperPipeline {
 
 public:
     /**
-     * @brief Constructs an WhisperPipeline from xml/bin files, tokenizers and configuration in the
+     * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir.
      *
      * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
@@ -51,7 +51,7 @@ public:
                     const ov::AnyMap& properties = {});
 
     /**
-     * @brief Constructs an WhisperPipeline from xml/bin files, tokenizers and configuration in the
+     * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir. Accepts arbitrary list of optional properties.
      *
      * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
