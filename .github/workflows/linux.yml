@@ -442,6 +442,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
       - name: Install samples
         run: |
@@ -464,6 +465,12 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+
+      - name: Test C++ samples (whisper_speech_recognition)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
 
       - name: Test python samples (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
