@@ -25,14 +25,10 @@ py::str handle_utf8(const std::string& text) {
 }
 
 py::list handle_utf8(const std::vector<std::string>& decoded_res) {
-    // pybind11 decodes strings similar to Pythons's
-    // bytes.decode('utf-8'). It raises if the decoding fails.
-    // generate() may return incomplete Unicode points if max_new_tokens
-    // was reached. Replace such points with � instead of raising an exception
     py::list res;
     for (const auto s: decoded_res) {
-        PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
-        res.append(py::reinterpret_steal<py::object>(py_s));
+        py::str r = handle_utf8(s);
+        res.append(r);
     }
     return res;
 }
