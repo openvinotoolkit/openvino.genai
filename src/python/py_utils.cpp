@@ -15,6 +15,24 @@
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
 
+py::str handle_utf8(const std::string& text) {
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an exception
+    PyObject* py_s = PyUnicode_DecodeUTF8(text.data(), text.length(), "replace");
+    return py::reinterpret_steal<py::object>(py_s);
+}
+
+py::list handle_utf8(const std::vector<std::string>& decoded_res) {
+    py::list res;
+    for (const auto s: decoded_res) {
+        py::str r = handle_utf8(s);
+        res.append(r);
+    }
+    return res;
+}
+
 bool py_object_is_any_map(const py::object& py_obj) {
     if (!py::isinstance<py::dict>(py_obj)) {
         return false;
@@ -179,10 +197,10 @@ std::string ov_tokenizers_module_path() {
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
-ov::genai::StreamerVariant pystreamer_to_streamer(const utils::PyBindStreamerVariant& py_streamer) {
+ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
-    std::visit(utils::overloaded {
+    std::visit(overloaded {
     [&streamer](const std::function<bool(py::str)>& py_callback){
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
