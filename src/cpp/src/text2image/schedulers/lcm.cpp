@@ -86,9 +86,8 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
     m_final_alpha_cumprod = m_config.set_alpha_to_one ? 1 : m_alphas_cumprod[0];
 }
 
-void LCMScheduler::set_timesteps(size_t num_inference_steps) {
+void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_num_inference_steps = num_inference_steps;
-    const float strength = 1.0f;
 
     // LCM Timesteps Setting
     size_t k = m_config.num_train_timesteps / m_config.original_inference_steps;
@@ -245,6 +244,34 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     }
 
     return thresholded_sample;
+}
+
+void LCMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
+    int64_t latent_timestep = m_timesteps.back();
+
+    // self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device)
+    // alphas_cumprod = self.alphas_cumprod.to(dtype=original_samples.dtype)
+    // timesteps = timesteps.to(original_samples.device)
+
+    // sqrt_alpha_prod = alphas_cumprod[timesteps] ** 0.5
+    // sqrt_alpha_prod = sqrt_alpha_prod.flatten()
+    // while len(sqrt_alpha_prod.shape) < len(original_samples.shape):
+    //     sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+
+    // sqrt_one_minus_alpha_prod = (1 - alphas_cumprod[timesteps]) ** 0.5
+    // sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
+    // while len(sqrt_one_minus_alpha_prod.shape) < len(original_samples.shape):
+    //     sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+
+    float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
+    float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
+
+    float * init_latent_data = init_latent.data<float>();
+    const float * noise_data = noise.data<const float>();
+
+    for (size_t i = 0; i < init_latent.get_size(); ++i) {
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
+    }
 }
 
 } // namespace genai

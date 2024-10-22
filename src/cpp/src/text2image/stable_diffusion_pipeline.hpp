@@ -66,7 +66,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", root_dir / "vae_encoder");
+            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", root_dir / "vae_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -101,7 +101,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -118,7 +118,7 @@ public:
         const AutoencoderKL& vae_decoder)
         : m_clip_text_encoder(std::make_shared<CLIPTextModel>(clip_text_model)),
           m_unet(std::make_shared<UNet2DConditionModel>(unet)),
-          m_vae_decoder(std::make_shared<AutoencoderKL>(vae_decoder)) { }
+          m_vae(std::make_shared<AutoencoderKL>(vae_decoder)) { }
 
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
@@ -126,13 +126,44 @@ public:
         const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         m_clip_text_encoder->reshape(batch_size_multiplier);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
-        m_vae_decoder->reshape(num_images_per_prompt, height, width);
+        m_vae->reshape(num_images_per_prompt, height, width);
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         m_clip_text_encoder->compile(device, properties);
         m_unet->compile(device, properties);
-        m_vae_decoder->compile(device, properties);
+        m_vae->compile(device, properties);
+    }
+
+    ov::Tensor prepare_latents(const GenerationConfig& generation_config) const {
+        const auto& unet_config = m_unet->get_config();
+        const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
+
+        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
+                               generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
+        ov::Tensor initial_image = generation_config.image;
+        ov::Tensor latent(ov::element::f32, {});
+
+        if (initial_image) {
+            latent = m_vae->encode(initial_image);
+
+            ov::Tensor noise(latent.get_element_type(), latent.get_shape());
+            std::generate_n(noise.data<float>(), noise.get_size(), [&]() -> float {
+                return generation_config.random_generator->next();
+            });
+
+            // add noise
+            m_scheduler->add_noise(latent, noise);
+        } else {
+            latent.set_shape(latent_shape);
+
+            // latents are multiplied by 'init_noise_sigma'
+            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
+                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
+            });
+        }
+
+        return latent;
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -189,19 +220,17 @@ public:
             m_unet->set_hidden_states("timestep_cond", guidance_scale_embedding);
         }
 
-        m_scheduler->set_timesteps(generation_config.num_inference_steps);
+        const float strength = 0.8f; // used < 1.0f for image to image generation
+        m_scheduler->set_timesteps(generation_config.num_inference_steps, strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
-        // latents are multiplied by 'init_noise_sigma'
-        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
-                               generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
-        ov::Shape latent_shape_cfg = latent_shape;
-        latent_shape_cfg[0] *= batch_size_multiplier;
+        // preparate initial latents
+        ov::Tensor latent = prepare_latents(generation_config);
 
-        ov::Tensor latent(ov::element::f32, latent_shape), latent_cfg(ov::element::f32, latent_shape_cfg);
-        std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-            return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
-        });
+        // prepare latents passed to models taking into account guidance scale (batch size multipler)
+        ov::Shape latent_shape_cfg = latent.get_shape();
+        latent_shape_cfg[0] *= batch_size_multiplier;
+        ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
@@ -245,7 +274,7 @@ public:
             denoised = it != scheduler_step_result.end() ? it->second : latent;
         }
 
-        return m_vae_decoder->decode(denoised);
+        return m_vae->decode(denoised);
     }
 
 private:
@@ -296,11 +325,21 @@ private:
         }
         OPENVINO_ASSERT(generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+
+        if (generation_config.image) {
+            ov::Shape initial_image_shape = generation_config.image.get_shape();
+            size_t height = initial_image_shape[1], width = initial_image_shape[2];
+
+            OPENVINO_ASSERT(generation_config.height == height,
+                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
+            OPENVINO_ASSERT(generation_config.width == width,
+                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
+        }
     }
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<UNet2DConditionModel> m_unet;
-    std::shared_ptr<AutoencoderKL> m_vae_decoder;
+    std::shared_ptr<AutoencoderKL> m_vae;
 };
 
 }  // namespace genai

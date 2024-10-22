@@ -11,6 +11,7 @@
 #include "openvino/op/clamp.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/subtract.hpp"
 #include "openvino/op/constant.hpp"
 
 #include "utils.hpp"
@@ -49,7 +50,8 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
     m_decoder_model = core.read_model((vae_decoder_path / "openvino_model.xml").string());
-    // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
+    // apply VaeImageProcessor pre- and post-processing steps by merging them into the VAE encoder / decoder model
+    merge_vae_image_pre_processing();
     merge_vae_image_post_processing();
 }
 
@@ -138,10 +140,29 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
     return m_encoder_request.get_output_tensor();
 }
 
+void AutoencoderKL::merge_vae_image_pre_processing() const {
+    ov::preprocess::PrePostProcessor ppp(m_encoder_model);
+
+    // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L90-L110
+
+    ppp.input().tensor().set_layout("NHWC");
+    ppp.input().model().set_layout("NCHW");
+
+    ppp.input().preprocess()
+        .convert_element_type(ov::element::f32)
+        .scale(2.0f / 255.0f)
+        .mean(1.0f);
+
+    // apply m_config.scaling_factor as last step
+    ppp.input().preprocess().scale(m_config.scaling_factor);
+
+    ppp.build();
+}
+
 void AutoencoderKL::merge_vae_image_post_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
-    // scale input before VAE encoder
+    // scale input before VAE decoder
     ppp.input().preprocess().scale(m_config.scaling_factor);
 
     // apply VaeImageProcessor normalization steps

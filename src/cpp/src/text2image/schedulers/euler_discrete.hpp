@@ -37,7 +37,7 @@ public:
     explicit EulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
     explicit EulerDiscreteScheduler(const Config& scheduler_config);
 
-    void set_timesteps(size_t num_inference_steps) override;
+    void set_timesteps(size_t num_inference_steps, float strength) override;
 
     std::vector<std::int64_t> get_timesteps() const override;
 
@@ -46,6 +46,8 @@ public:
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
+
+    void add_noise(ov::Tensor init_latent, ov::Tensor noise) override;
 
 private:
     Config m_config;

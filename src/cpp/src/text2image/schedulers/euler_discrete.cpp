@@ -104,7 +104,7 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
     m_step_index = -1;
 }
 
-void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps) {
+void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     // TODO: support `timesteps` and `sigmas` inputs
     m_timesteps.clear();
     m_sigmas.clear();
@@ -278,6 +278,10 @@ void EulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inferen
     for (size_t i = 0; i < sample.get_size(); i++) {
         sample_data[i] /= std::pow((std::pow(sigma, 2) + 1), 0.5);
     }
+}
+
+void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
+    OPENVINO_THROW("Not implemented");
 }
 
 }  // namespace genai

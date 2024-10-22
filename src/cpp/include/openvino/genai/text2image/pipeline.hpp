@@ -74,6 +74,9 @@ public:
         std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
         std::string negative_prompt, negative_prompt_2, negative_prompt_3;
 
+        // Optional image for image to image generation
+        ov::Tensor image;
+
         size_t num_images_per_prompt = 1;
 
         // random generator to have deterministic results
@@ -172,6 +175,8 @@ static constexpr ov::Property<std::string> prompt_3{"prompt_3"};
 static constexpr ov::Property<std::string> negative_prompt{"negative_prompt"};
 static constexpr ov::Property<std::string> negative_prompt_2{"negative_prompt_2"};
 static constexpr ov::Property<std::string> negative_prompt_3{"negative_prompt_3"};
+
+static constexpr ov::Property<ov::Tensor> image{"image"};
 
 static constexpr ov::Property<size_t> num_images_per_prompt{"num_images_per_prompt"};
 static constexpr ov::Property<float> guidance_scale{"guidance_scale"};

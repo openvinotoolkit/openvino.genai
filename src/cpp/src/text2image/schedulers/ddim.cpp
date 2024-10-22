@@ -76,7 +76,7 @@ DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
     m_final_alpha_cumprod = m_config.set_alpha_to_one ? 1 : m_alphas_cumprod[0];
 }
 
-void DDIMScheduler::set_timesteps(size_t num_inference_steps) {
+void DDIMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_timesteps.clear();
 
     OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
@@ -195,6 +195,10 @@ float DDIMScheduler::get_init_noise_sigma() const {
 
 void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
     return;
+}
+
+void DDIMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
+    OPENVINO_THROW("Not implemented");
 }
 
 } // namespace genai

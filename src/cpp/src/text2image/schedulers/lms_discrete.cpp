@@ -159,7 +159,7 @@ void LMSDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inference
     }
 }
 
-void LMSDiscreteScheduler::set_timesteps(size_t num_inference_steps) {
+void LMSDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_timesteps.clear();
     m_derivative_list.clear();
 
@@ -252,6 +252,10 @@ std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pr
     std::map<std::string, ov::Tensor> result{{"latent", prev_sample}};
 
     return result;
+}
+
+void LMSDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
+    OPENVINO_THROW("Not implemented");
 }
 
 } // namespace genai

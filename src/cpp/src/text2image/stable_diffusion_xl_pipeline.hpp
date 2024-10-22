@@ -271,7 +271,8 @@ public:
             m_unet->set_hidden_states("time_ids", add_time_ids_repeated);
         }
 
-        m_scheduler->set_timesteps(generation_config.num_inference_steps);
+        const float strength = 1.0f; // used < 1.0f for image to image generation
+        m_scheduler->set_timesteps(generation_config.num_inference_steps, strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
         // latents are multiplied by 'init_noise_sigma'

@@ -13,7 +13,7 @@ namespace genai {
 
 class IScheduler : public Text2ImagePipeline::Scheduler {
 public:
-    virtual void set_timesteps(size_t num_inference_steps) = 0;
+    virtual void set_timesteps(size_t num_inference_steps, float strength) = 0;
 
     virtual std::vector<std::int64_t> get_timesteps() const = 0;
 
@@ -22,6 +22,8 @@ public:
     virtual void scale_model_input(ov::Tensor sample, size_t inference_step) = 0;
 
     virtual std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) = 0;
+
+    virtual void add_noise(ov::Tensor init_latent, ov::Tensor noise) = 0;
 };
 
 } // namespace genai
