@@ -138,7 +138,6 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python .\samples\python\text2image\main.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
-          PATH: ${{ env.build_dir }}\openvino_genai
           PYTHONPATH: ${{ env.build_dir }}
   
   Overall_Status:
