@@ -35,18 +35,40 @@ AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     read_json_param(data, "block_out_channels", block_out_channels);
 }
 
-AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir)
-    : m_config(root_dir / "config.json") {
+AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path)
+    : m_config(vae_decoder_path / "config.json") {
     ov::Core core = utils::singleton_core();
-    m_model = core.read_model((root_dir / "openvino_model.xml").string());
+    m_decoder_model = core.read_model((vae_decoder_path / "openvino_model.xml").string());
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
-    merge_vae_image_processor();
+    merge_vae_image_post_processing();
 }
 
-AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir,
+AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
+                             const std::filesystem::path& vae_decoder_path)
+    : m_config(vae_decoder_path / "config.json") {
+    ov::Core core = utils::singleton_core();
+    m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
+    m_decoder_model = core.read_model((vae_decoder_path / "openvino_model.xml").string());
+    // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
+    merge_vae_image_post_processing();
+}
+
+AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
                              const std::string& device,
                              const ov::AnyMap& properties)
-    : AutoencoderKL(root_dir) {
+    : AutoencoderKL(vae_decoder_path) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
+}
+
+AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
+                             const std::filesystem::path& vae_decoder_path,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : AutoencoderKL(vae_encoder_path, vae_decoder_path) {
     if (auto filtered_properties = extract_adapters_from_properties(properties)) {
         compile(device, *filtered_properties);
     } else {
@@ -57,41 +79,67 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir,
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
-    OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
+    OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     const size_t vae_scale_factor = std::pow(2, m_config.block_out_channels.size() - 1);
+
+    OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            vae_scale_factor);
+
+    if (m_encoder_model) {
+        ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
+        std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], height, width}}};
+        m_encoder_model->reshape(idx_to_shape);
+    }
 
     height /= vae_scale_factor;
     width /= vae_scale_factor;
 
-    ov::PartialShape input_shape = m_model->input(0).get_partial_shape();
+    ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
     std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], height, width}}};
-    m_model->reshape(idx_to_shape);
+    m_decoder_model->reshape(idx_to_shape);
 
     return *this;
 }
 
 AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMap& properties) {
-    OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
+    OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
-    m_request = compiled_model.create_infer_request();
+
+    if (m_encoder_model) {
+        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, properties);
+        m_encoder_request = encoder_compiled_model.create_infer_request();
+        // release the original model
+        m_encoder_model.reset();
+    }
+
+    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, properties);
+    m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
-    m_model.reset();
+    m_decoder_model.reset();
 
     return *this;
 }
 
-ov::Tensor AutoencoderKL::infer(ov::Tensor latent) {
-    OPENVINO_ASSERT(m_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
+    OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
-    m_request.set_input_tensor(latent);
-    m_request.infer();
-    return m_request.get_output_tensor();
+    m_decoder_request.set_input_tensor(latent);
+    m_decoder_request.infer();
+    return m_decoder_request.get_output_tensor();
 }
 
-void AutoencoderKL::merge_vae_image_processor() const {
-    ov::preprocess::PrePostProcessor ppp(m_model);
+ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
+    OPENVINO_ASSERT(m_decoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+
+    m_encoder_request.set_input_tensor(image);
+    m_encoder_request.infer();
+    return m_encoder_request.get_output_tensor();
+}
+
+void AutoencoderKL::merge_vae_image_post_processing() const {
+    ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
     // scale input before VAE encoder
     ppp.input().preprocess().scale(m_config.scaling_factor);

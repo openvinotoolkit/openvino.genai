@@ -29,18 +29,34 @@ public:
         explicit Config(const std::filesystem::path& config_path);
     };
 
-    explicit AutoencoderKL(const std::filesystem::path& root_dir);
+    explicit AutoencoderKL(const std::filesystem::path& vae_decoder_path);
 
-    AutoencoderKL(const std::filesystem::path& root_dir,
+    AutoencoderKL(const std::filesystem::path& vae_encoder_path,
+                  const std::filesystem::path& vae_decoder_path);
+
+    AutoencoderKL(const std::filesystem::path& vae_decoder_path,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
+    AutoencoderKL(const std::filesystem::path& vae_encoder_path,
+                  const std::filesystem::path& vae_decoder_path,
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    AutoencoderKL(const std::filesystem::path& root_dir,
+    AutoencoderKL(const std::filesystem::path& vae_decoder_path,
                   const std::string& device,
                   Properties&&... properties)
-        : AutoencoderKL(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+        : AutoencoderKL(vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+        
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKL(const std::filesystem::path& vae_encoder_path,
+                  const std::filesystem::path& vae_decoder_path,
+                  const std::string& device,
+                  Properties&&... properties)
+        : AutoencoderKL(vae_encoder_path, vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     AutoencoderKL(const AutoencoderKL&);
 
@@ -55,14 +71,16 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor infer(ov::Tensor latent);
+    ov::Tensor decode(ov::Tensor latent);
+
+    ov::Tensor encode(ov::Tensor image);
 
 private:
-    void merge_vae_image_processor() const;
+    void merge_vae_image_post_processing() const;
 
     Config m_config;
-    ov::InferRequest m_request;
-    std::shared_ptr<ov::Model> m_model;
+    ov::InferRequest m_encoder_request, m_decoder_request;
+    std::shared_ptr<ov::Model> m_encoder_model, m_decoder_model;
 };
 
 } // namespace genai

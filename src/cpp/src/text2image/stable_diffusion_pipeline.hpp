@@ -66,7 +66,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", root_dir / "vae_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -245,7 +245,7 @@ public:
             denoised = it != scheduler_step_result.end() ? it->second : latent;
         }
 
-        return m_vae_decoder->infer(denoised);
+        return m_vae_decoder->decode(denoised);
     }
 
 private:

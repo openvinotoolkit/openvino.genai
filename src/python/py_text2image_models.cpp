@@ -210,7 +210,7 @@ void init_autoencoder_kl(py::module_& m) {
         .def_readwrite("block_out_channels", &ov::genai::AutoencoderKL::Config::block_out_channels);
 
     autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape);
-    autoencoder_kl.def("infer", &ov::genai::AutoencoderKL::infer);
+    autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode);
     autoencoder_kl.def(
             "compile", 
             [](ov::genai::AutoencoderKL& self,

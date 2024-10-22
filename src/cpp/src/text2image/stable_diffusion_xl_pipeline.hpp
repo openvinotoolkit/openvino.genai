@@ -327,7 +327,7 @@ public:
             denoised = it != scheduler_step_result.end() ? it->second : latent;
         }
 
-        return m_vae_decoder->infer(denoised);
+        return m_vae_decoder->decode(denoised);
     }
 
 private:
