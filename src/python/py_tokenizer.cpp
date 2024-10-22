@@ -55,7 +55,7 @@ void init_tokenizer(py::module_& m) {
         .def(
             "decode",
             [](Tokenizer& tok, std::vector<int64_t>& tokens) -> py::str {
-                return pyutils::handle_utf8({tok.decode(tokens)})[0];
+                return pyutils::handle_utf8(tok.decode(tokens));
             },
             py::arg("tokens"),
             R"(Decode a sequence into a string prompt.)"

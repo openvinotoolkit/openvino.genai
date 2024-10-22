@@ -245,19 +245,11 @@ def load_pipe(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-<<<<<<< HEAD
-    return ov_genai.LLMPipeline(str(temp_path), 'CPU')
-=======
     return ov_genai.LLMPipeline(temp_path, 'CPU')
->>>>>>> upstream/master
 
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
     scheduler_config = ov_genai.SchedulerConfig()
     scheduler_config.cache_size = 1
-<<<<<<< HEAD
-    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CPU', config={"scheduler_config": scheduler_config})
-=======
     return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', config={"scheduler_config": scheduler_config})
->>>>>>> upstream/master
