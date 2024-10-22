@@ -201,8 +201,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
     model->reshape(new_shapes);
 }
 
-void fill_tensor(ov::Tensor tensor, int64_t fill_val, size_t offset = 0u) {
-    int64_t* tensor_data = tensor.data<int64_t>();
+template <typename T>
+void fill_tensor(ov::Tensor tensor, T fill_val, size_t offset = 0u) {
+    T* tensor_data = tensor.data<T>();
     std::fill(tensor_data + offset, tensor_data + tensor.get_size(), fill_val);
 }
 
@@ -517,10 +518,10 @@ void StaticLLMPipeline::finish_chat() {
 };
 
 void StaticLLMPipeline::prepare_for_new_conversation() {
-    fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
-    fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
-    fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
-    fill_tensor(m_kvcache_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("position_ids"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_kvcache_request.get_tensor("attention_mask"), 0u);
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
@@ -645,7 +646,7 @@ EncodedResults StaticLLMPipeline::generate(
     copy_with_offset(input_ids, offset, padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
-    fill_tensor(padded_attention_mask, 1u, offset);
+    fill_tensor<int64_t>(padded_attention_mask, 1u, offset);
 
     auto padded_position_ids = m_prefill_request.get_tensor("position_ids");
     auto* padded_pos_data = padded_position_ids.data<int64_t>();
@@ -680,6 +681,8 @@ EncodedResults StaticLLMPipeline::generate(
 
         const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
         auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+        fill_tensor<ov::float16>(kvcache_in_tensor, 0);
+
         auto kvcache_in_slice = make_tensor_slice(
             kvcache_in_tensor, m_kvcache_desc.dim, 0u, m_kvcache_desc.num_stored_tokens
         );
