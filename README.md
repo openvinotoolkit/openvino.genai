@@ -238,8 +238,8 @@ def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
 
-
-pipe = openvino_genai.WhisperPipeline("whisper-base", "CPU")   GPU can be used as well
+device = "CPU" # GPU can be used as well
+pipe = openvino_genai.WhisperPipeline("whisper-base", device)
 raw_speech = read_wav("sample.wav")
 print(pipe.generate(raw_speech))
 ```
@@ -258,7 +258,7 @@ NOTE: This sample is a simplified version of the full sample that is available [
 int main(int argc, char* argv[]) {
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU";  // GPU can be used as well
+    std::string device = "CPU"; // GPU can be used as well
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
