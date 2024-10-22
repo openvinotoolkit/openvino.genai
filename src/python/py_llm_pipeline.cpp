@@ -96,7 +96,14 @@ void init_llm_pipeline(py::module_& m) {
             const std::map<std::string, py::object>& config
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(models_path, device, pyutils::properties_to_any_map(config));
+            ov::AnyMap properties = {};
+            if (config.size()) {
+                PyErr_WarnEx(PyExc_DeprecationWarning, 
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                         1);
+                properties = pyutils::properties_to_any_map(config);
+            }
+            return std::make_unique<LLMPipeline>(models_path, device, properties);
         }),
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device"), "device on which inference will be done",
@@ -132,7 +139,14 @@ void init_llm_pipeline(py::module_& m) {
             const std::map<std::string, py::object>& config
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(models_path, tokenizer, device, pyutils::properties_to_any_map(config));
+            ov::AnyMap properties = {};
+            if (config.size()) {
+                PyErr_WarnEx(PyExc_DeprecationWarning, 
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                         1);
+                properties = pyutils::properties_to_any_map(config);
+            }
+            return std::make_unique<LLMPipeline>(models_path, tokenizer, device, properties);
         }),
         py::arg("models_path"),
         py::arg("tokenizer"),
