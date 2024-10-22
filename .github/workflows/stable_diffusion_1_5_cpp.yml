@@ -160,18 +160,18 @@ jobs:
         run: |
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
           python .\samples\python\text2image\main.py .\models\dreamlike-art-dreamlike-anime-1.0\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
-          PATH: ${{ env.build_dir }}\openvino_genai
           PYTHONPATH: ${{ env.build_dir }}
 
       - name: Run Python LoRA app
         run: |
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
           python .\samples\python\text2image\lora.py .\models\dreamlike-art-dreamlike-anime-1.0\FP16 "curly-haired unicorn in the forest, anime, line" .\models\soulcard.safetensors 0.7
         env:
-          PATH: ${{ env.build_dir }}\openvino_genai
           PYTHONPATH: ${{ env.build_dir }}
 
   Overall_Status:
