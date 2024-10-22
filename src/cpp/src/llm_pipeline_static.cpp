@@ -9,6 +9,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/intel_npu/properties.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
@@ -221,6 +223,21 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
+struct NPUDesc {
+    std::string arch;
+    int64_t max_tiles;
+};
+
+std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
+    const auto all_devices = core.get_available_devices();
+    if (std::find(all_devices.begin(), all_devices.end(), "NPU") == all_devices.end()) {
+        return std::nullopt;
+    }
+    const auto arch = core.get_property("NPU", ov::device::architecture);
+    const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
+    return std::make_optional(NPUDesc{arch, max_tiles});
+}
+
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
@@ -246,10 +263,16 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     return config;
 }
 
-ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
+                                      const std::optional<NPUDesc>& npudesc) {
     auto config = get_default_common_config(model);
     if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
         config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    }
+    if (npudesc.has_value() &&
+        npudesc->arch == "4000" &&
+        npudesc->max_tiles != -1) {
+        config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
     return config;
 }
@@ -363,6 +386,9 @@ void StaticLLMPipeline::setupAndCompileModels(
 
     ov::Core core;
 
+    // NB: Get information about NPU if available
+    auto npudesc = extract_npu_descriptor(core);
+
     // (1) Read the template model - this will be kvcache model
     m_kvcache_model = core.read_model(path / "openvino_model.xml");
     // (2) Expose KV-cache input and output layers from kvcache model
@@ -385,7 +411,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (8) Compile both model
     auto prefill_config = pop_or_default(
-        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model)
+        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     auto generate_config = pop_or_default(
         pipeline_config, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
