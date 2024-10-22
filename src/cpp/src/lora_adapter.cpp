@@ -86,7 +86,7 @@ using LoRATensors = std::map<std::string, LoRAWeight>;
 
 
 // Read binary file to memory.
-BufferPtr read_file_helper(const std::string& filename) {
+BufferPtr read_file_helper(const std::filesystem::path& filename) {
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
     OPENVINO_ASSERT(file.is_open(), "Cannot open file with LoRA weights: ", filename);
 
@@ -136,7 +136,7 @@ struct AutoSafetensor: public safetensors_File {
 // The key in the map is a tensor name and the Constant uses a region of memory from the memory block.
 // Each Constant holds a shared pointer to the block in the runtime info.
 // The memory block will be deallocated when the last Constant is destroyed.
-ConstantMap read_safetensors(const std::string& filename) {
+ConstantMap read_safetensors(const std::filesystem::path& filename) {
     auto buffer = read_file_helper(filename);
     AutoSafetensor safe_tensors_file{};
 
@@ -771,7 +771,7 @@ namespace genai {
 
 class Adapter::Impl {
 public:
-    Impl(const std::string& path) :
+    Impl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
     {
         std::set<std::string> keys;
@@ -799,7 +799,7 @@ public:
 };
 
 
-Adapter::Adapter(const std::string& path) :
+Adapter::Adapter(const std::filesystem::path& path) :
     m_pimpl(std::make_shared<Adapter::Impl>(path)) {
 }
 

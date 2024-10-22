@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <list>
 #include <string>
 
@@ -30,10 +31,10 @@ public:
         bool use_karras_sigmas = false, use_exponential_sigmas = false, use_beta_sigmas = false;
 
         Config() = default;
-        explicit Config(const std::string& scheduler_config_path);
+        explicit Config(const std::filesystem::path& scheduler_config_path);
     };
 
-    explicit EulerDiscreteScheduler(const std::string scheduler_config_path);
+    explicit EulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
     explicit EulerDiscreteScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps) override;

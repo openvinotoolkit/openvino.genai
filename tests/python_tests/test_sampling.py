@@ -307,11 +307,11 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+    models_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
     # run multinomial without comparison with reference
-    _ = run_continuous_batching(model_path, DEFAULT_SCHEDULER_CONFIG, prompts, generation_configs)
+    _ = run_continuous_batching(models_path, DEFAULT_SCHEDULER_CONFIG, prompts, generation_configs)
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
@@ -332,10 +332,10 @@ def test_post_oom_health(tmp_path, sampling_config):
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+    models_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), Tokenizer(models_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert (len(output))
@@ -345,4 +345,4 @@ def test_post_oom_health(tmp_path, sampling_config):
     assert (len(output))
     assert(len(output[0].m_generation_ids))
     del pipe
-    shutil.rmtree(model_path)
+    shutil.rmtree(models_path)
