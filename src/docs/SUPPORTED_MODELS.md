@@ -206,6 +206,18 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <th>Example HuggingFace Models</th>
     </tr>
     <tr>
+      <td>InternVL2</td>
+      <td><code>InternVL2</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2-1B"><code>OpenGVLab/InternVL2-1B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2-2B"><code>OpenGVLab/InternVL2-2B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2-4B"><code>OpenGVLab/InternVL2-4B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2-8B"><code>OpenGVLab/InternVL2-8B</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
       <td>LLaVA</td>
       <td><code>LLaVA-v1.5</code></td>
       <td>
