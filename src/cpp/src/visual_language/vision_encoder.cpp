@@ -510,6 +510,8 @@ EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfi
         return encode_llava(image, config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
         return encode_llava_next(image, config);
+    } else {
+        OPENVINO_THROW("Unsupported type of VisionEncoder");
     }
 }
 

@@ -17,8 +17,15 @@ from .py_generate_pipeline import (
     EncodedResults,
     GenerationConfig,
     GenerationResult,
+    Adapter,
+    AdapterConfig,
+    CLIPTextModel,
+    CLIPTextModelWithProjection,
+    UNet2DConditionModel,
+    AutoencoderKL,
     LLMPipeline, 
-    VLMPipeline, 
+    VLMPipeline,
+    Text2ImagePipeline,
     PerfMetrics,
     RawPerfMetrics,
     SchedulerConfig,
@@ -30,4 +37,8 @@ from .py_generate_pipeline import (
     WhisperPipeline,
     CacheEvictionConfig,
     AggregationMode,
+    Generator,
+    CppStdGenerator,
+    draft_model
+
 )
