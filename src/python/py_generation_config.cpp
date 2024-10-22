@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include "py_utils.hpp"
@@ -77,7 +78,7 @@ void init_generation_config(py::module_& m) {
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
-        .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
+        .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](py::kwargs kwargs) { return *pyutils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)

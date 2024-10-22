@@ -223,7 +223,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
 }
 
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs) {
-    if(!config.has_value() && kwargs.empty())
+    if (!config.has_value() && kwargs.empty())
         return std::nullopt;
 
     ov::genai::GenerationConfig res_config;

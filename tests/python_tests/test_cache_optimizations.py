@@ -37,7 +37,7 @@ def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
 class ConvertedModel:
     model: OVModelForCausalLM
     tokenizer: AutoTokenizer
-    model_path: Path
+    models_path: Path
 
 
 @pytest.fixture(scope='module')
@@ -45,12 +45,12 @@ def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
-    model.save_pretrained(model_path)
+    models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
+    model.save_pretrained(models_path)
     ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
-    serialize(ov_tokenizer, model_path / "openvino_tokenizer.xml")
-    serialize(ov_detokenizer, model_path / "openvino_detokenizer.xml")
-    converted_model = ConvertedModel(model, tokenizer, model_path)
+    serialize(ov_tokenizer, models_path / "openvino_tokenizer.xml")
+    serialize(ov_detokenizer, models_path / "openvino_detokenizer.xml")
+    converted_model = ConvertedModel(model, tokenizer, models_path)
     yield converted_model
     del converted_model
     del model
@@ -110,9 +110,9 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
         scheduler_config_opt.cache_eviction_config = test_struct.cache_eviction_config
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
-    model_path = converted_model.model_path
-    model_cb_noopt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config, "CPU", {})
-    model_cb_opt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
+    models_path = converted_model.models_path
+    model_cb_noopt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
+    model_cb_opt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
 
     tokenizer = converted_model.tokenizer
 

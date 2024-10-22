@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
+
 #include "openvino/genai/text2image/pipeline.hpp"
 #include "py_utils.hpp"
 
@@ -180,28 +183,28 @@ void init_text2image_pipeline(py::module_& m) {
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](
-            const std::string& model_path
+            const std::filesystem::path& models_path
         ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path);
+            return std::make_unique<ov::genai::Text2ImagePipeline>(models_path);
         }),
-        py::arg("model_path"), "folder with exported model files.", 
+        py::arg("models_path"), "folder with exported model files.", 
         R"(
             Text2ImagePipeline class constructor.
-            model_path (str): Path to the folder with exported model files.
+            models_path (str): Path to the folder with exported model files.
         )")
 
         .def(py::init([](
-            const std::string& model_path, 
+            const std::filesystem::path& models_path, 
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device, text2image_kwargs_to_any_map(kwargs, true));
+            return std::make_unique<ov::genai::Text2ImagePipeline>(models_path, device, text2image_kwargs_to_any_map(kwargs, true));
         }),
-        py::arg("model_path"), "folder with exported model files.", 
-        py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("models_path"), "folder with exported model files.", 
+        py::arg("device"), "device on which inference will be done",
         R"(
             Text2ImagePipeline class constructor.
-            model_path (str): Path with exported model files.
+            models_path (str): Path with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Text2ImagePipeline properties
         )")
@@ -220,7 +223,7 @@ void init_text2image_pipeline(py::module_& m) {
             ) {
                 pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -273,5 +276,4 @@ void init_text2image_pipeline(py::module_& m) {
         const py::kwargs& kwargs) {
             update_text2image_config_from_kwargs(config, kwargs);
         });
-
 }

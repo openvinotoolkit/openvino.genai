@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include "tokenizers_path.hpp"
@@ -28,10 +30,10 @@ void init_tokenizer(py::module_& m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
            if it's located in a different path than the main model.)")
 
-        .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, pyutils::properties_to_any_map(plugin_config));
-        }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, pyutils::properties_to_any_map(properties));
+        }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
 
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
                 ov::AnyMap tokenization_params;

@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include "py_utils.hpp"
@@ -15,7 +16,7 @@ void init_lora_adapter(py::module_& m) {
     py::class_<ov::genai::Adapter>(m, "Adapter", "Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.")
         .def(py::init<>())
         .def(py::init([](
-            const std::string& path
+            const std::filesystem::path& path
         ) {
             return ov::genai::Adapter(path);
         }),

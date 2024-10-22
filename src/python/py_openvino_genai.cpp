@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
+
 #include "openvino/genai/llm_pipeline.hpp"
 
 #include "py_utils.hpp"
@@ -58,6 +61,7 @@ auto encoded_results_docstring = R"(
 auto streamer_base_docstring =  R"(
     Base class for streamers. In order to use inherit from from this class and inplement put, and methods.
 )";
+
 class ConstructableStreamer: public StreamerBase {
     bool put(int64_t token) override {
         PYBIND11_OVERRIDE_PURE(
@@ -106,42 +110,14 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stoped, if return true generation stops")
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
-    py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
-        .def(py::init([](
-            const std::string& model_path,
-            const std::string& device,
-            const py::kwargs& kwargs
-        ) {
-            return ov::genai::_draft_model(model_path, device, pyutils::kwargs_to_any_map(kwargs)).second;
-        }),
-        py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
-        py::arg("device") = "", "device on which inference will be performed"
-        );
-
-    // init tokenizers
     init_tokenizer(m);
-
-    // init perf metrics
     init_perf_metrics(m);
-
-    // init generation config
     init_generation_config(m);
-
-    // init lora adapters
     init_lora_adapter(m);
 
-    // init continuous batching pipeline
     init_continuous_batching_pipeline(m);
-
-    // init LLM pipeline
     init_llm_pipeline(m);
-
-    // init text2image pipeline
     init_text2image_pipeline(m);
-
-    // init vlm pipeline
     init_vlm_pipeline(m);
-
-    // init whisper pipeline
     init_whisper_pipeline(m);
 }
