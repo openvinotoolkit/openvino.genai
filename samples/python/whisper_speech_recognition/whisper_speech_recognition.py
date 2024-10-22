@@ -21,7 +21,7 @@ def main():
     config = openvino_genai.WhisperGenerationConfig(
         args.model_dir + "/generation_config.json"
     )
-    config.max_new_tokens = 500 # increase this based on your speech length
+    config.max_new_tokens = 100 # increase this based on your speech length
     # 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>" # can switch to <|zh|> for Chinese language 
     config.task = "transcribe"
