@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <vector>
 #include <string>
 #include <memory>
@@ -27,20 +28,20 @@ public:
         std::vector<size_t> block_out_channels = { 320, 640, 1280, 1280 };
         int time_cond_proj_dim = -1;
 
-        explicit Config(const std::string& config_path);
+        explicit Config(const std::filesystem::path& config_path);
     };
 
-    explicit UNet2DConditionModel(const std::string root_dir);
+    explicit UNet2DConditionModel(const std::filesystem::path& root_dir);
 
-    UNet2DConditionModel(const std::string& root_dir,
+    UNet2DConditionModel(const std::filesystem::path& root_dir,
                          const std::string& device,
                          const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    UNet2DConditionModel(const std::string& root_dir,
-                  const std::string& device,
-                  Properties&&... properties)
+    UNet2DConditionModel(const std::filesystem::path& root_dir,
+                         const std::string& device,
+                         Properties&&... properties)
         : UNet2DConditionModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     UNet2DConditionModel(const UNet2DConditionModel&);

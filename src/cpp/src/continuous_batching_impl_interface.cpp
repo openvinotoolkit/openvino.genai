@@ -4,6 +4,7 @@
 #include "continuous_batching_impl_interface.hpp"
 
 namespace ov::genai {
+
 GenerationConfig ContinuousBatchingPipeline::ImplInterface::get_config() const {
     return m_generation_config;
 }
@@ -27,6 +28,7 @@ void ContinuousBatchingPipeline::ImplInterface::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
 };
+
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::ImplInterface::generate(
     const std::vector<std::string>& prompts,
