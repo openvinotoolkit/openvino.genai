@@ -863,6 +863,7 @@ def main():
             #    torch.set_num_threads(int(original_torch_thread_nums / 2))
             #else:
             #    torch.set_num_threads(1)
+            torch.set_num_threads(16)
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
