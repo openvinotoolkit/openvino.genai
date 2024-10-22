@@ -15,12 +15,15 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 ## Prepare audio file
 
-You can prepare an audio file in WAV format with a sampling rate of 16k Hz using the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
+Download example audio file:
+```sh
+wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+```
 
-To install dependencies:
-```
-pip install pyaudio
-```
+Or you can use the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
+
+To install `PyAudio` dependency follow the [installation instructions](https://pypi.org/project/PyAudio/).
+
 To run the script:
 ```
 python recorder.py
@@ -28,11 +31,13 @@ python recorder.py
 
 ## Run the Whisper model
 
-`whisper_speech_recognition whisper-base sample.wav`
+`whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
 
-Output: text transcription of `sample.wav`
-
-Models can be downloaded from [OpenAI HuggingFace](https://huggingface.co/openai).
+Output:
+```sh
+ How are you doing today?
+timestamps: [0, 2] text:  How are you doing today?
+```
 
 See [SUPPORTED_MODELS.md](../../../src/docs/SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
 
