@@ -230,39 +230,18 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 NOTE: This sample is a simplified version of the full sample that is available [here](./samples/python/whisper_speech_recognition/whisper_speech_recognition.py)
 
 ```python
-import argparse
 import openvino_genai
 import librosa
+
 
 def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("model_dir")
-    parser.add_argument("wav_file_path")
-    args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
-    pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
-
-    raw_speech = read_wav(args.wav_file_path)
-
-    def streamer(word: str) -> bool:
-        print(word, end="")
-        return False
-
-    pipe.generate(
-        raw_speech,
-        max_new_tokens=100,
-        # 'task' and 'language' parameters are supported for multilingual models only
-        language="<|en|>",
-        task="transcribe",
-        streamer=streamer,
-    )
-
-    print()
+pipe = openvino_genai.WhisperPipeline("whisper-base", "CPU")   GPU can be used as well
+raw_speech = read_wav("sample.wav")
+print(pipe.generate(raw_speech))
 ```
 
  
@@ -271,33 +250,21 @@ def main():
 NOTE: This sample is a simplified version of the full sample that is available [here](./samples/cpp/whisper_speech_recognition/whisper_speech_recognition.cpp)
 
 ```cpp
+#include <iostream>
+
 #include "audio_utils.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 
-int main(int argc, char* argv[]) try {
-
+int main(int argc, char* argv[]) {
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU"; // GPU can be used as well
+    std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
 
-    ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
-    config.max_new_tokens = 100;
-    // 'task' and 'language' parameters are supported for multilingual models only
-    config.language = "<|en|>";
-    config.task = "transcribe";
-
-    auto streamer = [](std::string word) {
-        std::cout << word;
-        return false;
-    };
-
-    pipeline.generate(raw_speech, config, streamer);
-
-    std::cout << std::endl;
+    std::cout << pipeline.generate(raw_speech, ov::genai::max_new_tokens(100)) << '\n';
 }
 ```
 
