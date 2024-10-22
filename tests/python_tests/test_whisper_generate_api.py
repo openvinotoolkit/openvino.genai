@@ -215,14 +215,18 @@ def test_whisper_constructors(model_descr, test_sample):
 def test_max_new_tokens(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(test_sample, max_new_tokens=30)["text"]
+    expected = opt_pipe(test_sample, max_new_tokens=10)["text"]
 
-    genai_result = pipe.generate(test_sample, max_new_tokens=30)
+    genai_result = pipe.generate(test_sample, max_new_tokens=10)
 
     assert genai_result.texts[0] == expected
 
+    genai_result = pipe.generate(test_sample)
+
+    assert genai_result.texts[0] != expected
+
     config = pipe.get_generation_config()
-    config.max_new_tokens = 30
+    config.max_new_tokens = 10
     genai_result = pipe.generate(test_sample, config)
     assert genai_result.texts[0] == expected
 
