@@ -13,40 +13,40 @@ namespace genai {
 
 class Text2ImagePipeline::StableDiffusionXLPipeline : public Text2ImagePipeline::DiffusionPipeline {
 public:
-    explicit StableDiffusionXLPipeline(const std::string& root_dir) {
-        const std::string model_index_path = root_dir + "/model_index.json";
+    explicit StableDiffusionXLPipeline(const std::filesystem::path& root_dir) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir + "/scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir + "/text_encoder");
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder_2");
+            m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir + "/unet");
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet");
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir + "/vae_decoder");
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -55,20 +55,20 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
     }
 
-    StableDiffusionXLPipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties) {
-        const std::string model_index_path = root_dir + "/model_index.json";
+    StableDiffusionXLPipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir + "/scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
             AdapterConfig adapters;
-            std::string path = root_dir + "/text_encoder";
+            std::filesystem::path path = root_dir / "text_encoder";
             if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
                 auto clip_properties = properties;
                 adapters.set_tensor_name_prefix("lora_te1");
@@ -84,7 +84,7 @@ public:
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
             AdapterConfig adapters;
-            std::string path = root_dir + "/text_encoder_2";
+            std::filesystem::path path = root_dir / "text_encoder_2";
             if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
                 auto clip_properties = properties;
                 adapters.set_tensor_name_prefix("lora_te2");
@@ -99,14 +99,14 @@ public:
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir + "/unet", device, properties);
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir + "/vae_decoder", device, properties);
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }

@@ -18,7 +18,7 @@ def main():
     # Perf metrics is stored in DecodedResults. 
     # In order to get DecodedResults instead of a string input should be a list.
     prompt = [args.prompt]
-    model_path = args.model
+    models_path = args.model
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter
@@ -26,7 +26,7 @@ def main():
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
 
-    pipe = ov_genai.LLMPipeline(model_path, device)
+    pipe = ov_genai.LLMPipeline(models_path, device)
     
     for _ in range(num_warmup):
         pipe.generate(prompt, config)

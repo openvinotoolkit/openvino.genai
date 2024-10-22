@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <list>
 #include <string>
 
@@ -24,10 +25,10 @@ public:
         size_t steps_offset = 0;
 
         Config() = default;
-        explicit Config(const std::string& scheduler_config_path);
+        explicit Config(const std::filesystem::path& scheduler_config_path);
     };
 
-    explicit LMSDiscreteScheduler(const std::string scheduler_config_path);
+    explicit LMSDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
     explicit LMSDiscreteScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps) override;

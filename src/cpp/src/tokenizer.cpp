@@ -79,11 +79,11 @@ public:
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;
 
-    std::string m_pad_token = "";
-    std::string m_bos_token = "";
-    std::string m_eos_token = "";
+    std::string m_pad_token = {};
+    std::string m_bos_token = {};
+    std::string m_eos_token = {};
 
-    std::string m_chat_template = "";
+    std::string m_chat_template = {};
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, bool add_special_tokens) {
         // If user requested add_special_tokens mode different from the current one,
@@ -110,15 +110,15 @@ public:
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path, const ov::AnyMap& plugin_config)
+    TokenizerImpl(std::filesystem::path tokenizer_path, const ov::AnyMap& properties)
         : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
 
-        OPENVINO_ASSERT(tokenizer_path.extension() != ".xml", "ov_tokenizers_path should be a path to a dir not a xml file");
+        OPENVINO_ASSERT(tokenizer_path.extension() != ".xml", "ov_tokenizer_path should be a path to a dir not a xml file");
 
-        const char* ov_tokenizers_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-        OPENVINO_ASSERT(ov_tokenizers_path, "openvino_tokenizers path is not set");
-        core.add_extension(ov_tokenizers_path);
+        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+        OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
+        core.add_extension(ov_tokenizer_path);
 
         read_config(tokenizer_path);
         read_special_tokens_map(tokenizer_path);
@@ -133,9 +133,9 @@ public:
         manager.register_pass<MakeCombineSegmentsSatateful>();
         manager.run_passes(ov_tokenizer);
         
-        m_tokenizer = core.compile_model(ov_tokenizer, device, plugin_config);
+        m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
         if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
-            m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", device, plugin_config);
+            m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", device, properties);
         }
 
         
@@ -306,7 +306,6 @@ public:
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {
-        
         TokenizedInputs unpadded;
         {
             bool add_special_tokens_flag = true;
@@ -491,9 +490,9 @@ public:
     }
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {
+Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
     ScopedVar env_manager(tokenizers_relative_to_genai().string());
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, plugin_config);
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, properties);
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
