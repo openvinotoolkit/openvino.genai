@@ -590,7 +590,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
         auto config_without_scheduler_config = config;
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
-        auto& scheduler_config = properties.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, config_without_scheduler_config);
     } else if (true) {
         SchedulerConfig scheduler_config;
@@ -600,7 +600,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             models_path,
             scheduler_config,
             device,
-            properties
+            config
         );
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
