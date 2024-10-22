@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <random>
 #include <vector>
@@ -35,10 +36,10 @@ public:
         bool rescale_betas_zero_snr = false;
 
         Config() = default;
-        explicit Config(const std::string scheduler_config_path);
+        explicit Config(const std::filesystem::path& scheduler_config_path);
     };
 
-    explicit LCMScheduler(const std::string scheduler_config_path);
+    explicit LCMScheduler(const std::filesystem::path& scheduler_config_path);
     explicit LCMScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps) override;

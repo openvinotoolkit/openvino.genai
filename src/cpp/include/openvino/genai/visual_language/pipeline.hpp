@@ -3,29 +3,44 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+#include <filesystem>
+
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include <filesystem>
 
 namespace ov::genai {
+
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
     /// @brief Construct a pipeline form a folder containing tokenizer
     /// and model IRs.
-    /// @param model_dir A folder to read tokenizer and model IRs.
+    /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
-    /// @param device_config A config to pass to ov::Core.set_property()
-    /// and ov::Core::compile_model().
-    /// @param core ov::Core instance to use.
-    explicit VLMPipeline(
-        const std::filesystem::path& model_dir,
-        const std::string& device="CPU",
-        const ov::AnyMap device_config={}
+    /// @param properties A config to pass to ov::Core::compile_model().
+    VLMPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
     );
+
+    /// @brief Construct a pipeline form a folder containing tokenizer
+    /// and model IRs. Accepts arbitrary list of optional properties.
+    /// @param models_path A folder to read tokenizer and model IRs.
+    /// @param device Inference device. A tokenizer is always compiled
+    /// for CPU.
+    /// @param properties A config to pass to ov::Core::compile_model().
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    VLMPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        Properties&&... properties)
+        : VLMPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /// @brief Default destructor.
     ~VLMPipeline();
@@ -43,6 +58,7 @@ public:
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     );
+
     /// @brief Generate a response given a prompt and config.
     /// @param prompt A prompt to respond to.
     /// @param config_map A config may contain GenerationConfig, values
@@ -53,6 +69,7 @@ public:
         const std::string& prompt,
         const ov::AnyMap& config_map
     );
+
     /// @brief Generate a response given a prompt and arbitrary number
     /// of ov::Property instances.
     /// Example:
@@ -70,6 +87,7 @@ public:
             prompt, AnyMap{std::forward<Properties>(properties)...}
         );
     }
+
     /// @brief Activate chat mode. Chat preserves previous history and
     /// applies chat_template to input prompts. Calling start_chat()
     /// again or finish_chat() drops the memorized history.
@@ -80,8 +98,10 @@ public:
     /// in addition to user and assistant roles. Set a message for that
     /// role.
     void start_chat(const std::string& system_message="");
+
     /// @brief Deactivate chat mode.
     void finish_chat();
+
     /// @brief Set a custom chat template. Can be used to deactivate
     /// chat_template application for chat mode if called with
     /// "{% for message in messages %}{{ message['content'] }}{% endfor %}"
@@ -89,15 +109,19 @@ public:
     /// model chat_template.
     /// @param new_template A new template to override with.
     void set_chat_template(const std::string& new_template);
+
     /// @brief Get a Tokenizer used to tokenize input and detokenize
     /// output.
     ov::genai::Tokenizer get_tokenizer() const;
+
     /// @brief Extract GenerationConfig used to get default values.
     /// @return Default values used.
     GenerationConfig get_generation_config() const;
+
     /// @brief Override default values for GenerationConfig
     /// @param new_config A config to override default values with.
     void set_generation_config(const GenerationConfig& new_config);
+
 private:
     class VLMPipelineImpl;
     std::unique_ptr<VLMPipelineImpl> m_pimpl;

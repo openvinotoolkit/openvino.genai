@@ -14,7 +14,7 @@
 namespace ov {
 namespace genai {
 
-LCMScheduler::Config::Config(const std::string scheduler_config_path) {
+LCMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 
@@ -40,7 +40,7 @@ LCMScheduler::Config::Config(const std::string scheduler_config_path) {
     read_json_param(data, "timestep_spacing", timestep_spacing);
 }
 
-LCMScheduler::LCMScheduler(const std::string scheduler_config_path) :
+LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path) :
     LCMScheduler(Config(scheduler_config_path)) {
 }
 
