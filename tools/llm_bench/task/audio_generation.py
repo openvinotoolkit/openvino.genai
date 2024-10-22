@@ -20,16 +20,14 @@ def streamer(word: str) -> bool:
     return False
 
 
-def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
-                               audio_prompt, iter_data_list,
-                               mem_consumption, processor):
+def run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
+                               iter_data_list, mem_consumption, processor):
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    raw_speech = model_utils.read_wav(audio_prompt['prompt'], processor.feature_extractor.sampling_rate)
     start = time.perf_counter()
     result_text = pipe.generate(
         raw_speech,
@@ -53,9 +51,9 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
 
     result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_id : result_md5_list}
+        md5_list[num] = {audio_id : result_md5_list}
     else:
-        md5_list[num][prompt_id] = result_md5_list
+        md5_list[num][audio_id] = result_md5_list
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
@@ -69,7 +67,7 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        prompt_idx=prompt_id,
+        prompt_idx=audio_id,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -81,14 +79,14 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        prompt_idx=prompt_id
+        prompt_idx=audio_id
     )
     if num > 0:
-        prev_md5 = md5_list[num - 1][prompt_id]
+        prev_md5 = md5_list[num - 1][audio_id]
         if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_id}]'s md5 {result_md5_list} "
+            log.warning(f"[{num}] Prompt[{audio_id}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=prompt_id)
+            metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=audio_id)
             if num == 1:
                 # if the device is CPU, throw exception
                 if args['devices'].lower().startswith('cpu') is True:
@@ -97,7 +95,7 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id,
                 # throw exception
                 assert (result_md5_list == prev_md5)
     else:
-        metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=prompt_id)
+        metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=audio_id)
 
 
 def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
@@ -113,25 +111,26 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, me
             audio_prompt['prompt'] = Path(audio_prompt['prompt'])
             audios_prompt_list.append(audio_prompt)
     if args['prompt_index'] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_prompt_list)]
+        audio_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_prompt_list)]
         audio_list = audios_prompt_list
     else:
-        prompt_idx_list = []
+        audio_idx_list = []
         audio_list = []
         for i in args['prompt_index']:
             if 0 <= i < len(audios_prompt_list):
                 audio_list.append(audios_prompt_list[i])
-                prompt_idx_list.append(i)
+                audio_idx_list.append(i)
     if len(audio_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
+        raise RuntimeError('==Failure audio list is empty ==')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {audio_idx_list}')
     ov_model, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2txt_model(model_path, device, **args)
     pipe = ov_model
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
         for idx, audio_prompt in enumerate(audio_list):
-            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx],
-                                       audio_prompt, iter_data_list, mem_consumption, processor)
-    metrics_print.print_average(iter_data_list, prompt_idx_list, 1, True)
+            raw_speech = model_utils.read_wav(audio_prompt['prompt'], processor.feature_extractor.sampling_rate)
+            run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_idx_list[idx],
+                                       iter_data_list, mem_consumption, processor)
+    metrics_print.print_average(iter_data_list, audio_idx_list, 1, True)
 
     return iter_data_list, pretrain_time
