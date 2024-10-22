@@ -38,7 +38,6 @@ def main():
     result = pipe.generate(raw_speech, config, streamer)
 
     print()
-    
     for chunk in result.chunks:
         print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
 
