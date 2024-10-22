@@ -813,7 +813,7 @@ jobs:
       - name: Download and convert InternVL2 model and an image
         run: |
           source ./ov/setupvars.sh
-          optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/
+          optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
           wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - InternVL2
         run: >
