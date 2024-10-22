@@ -67,9 +67,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         model_id,
         path,
         opt_pipe,
-        ov_genai.WhisperPipeline(
-            path, 'CPU', config={'ENABLE_MMAP': False}
-        ),
+        ov_genai.WhisperPipeline(path, "CPU", config={"ENABLE_MMAP": False}),
     )
 
 
@@ -194,16 +192,38 @@ def test_whisper_config_constructor(model_descr):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
+def test_whisper_constructors(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(test_sample)["text"]
+
+    genai_result = ov_genai.WhisperPipeline(
+        path, device="CPU", config={"ENABLE_MMAP": False}
+    ).generate(test_sample)
+
+    assert genai_result.texts[0] == expected
+
+    genai_result = ov_genai.WhisperPipeline(
+        path, "CPU", {"ENABLE_MMAP": False}
+    ).generate(test_sample)
+    assert genai_result.texts[0] == expected
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
+@pytest.mark.precommit
 def test_max_new_tokens(model_descr, test_sample):
-    model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     expected = opt_pipe(test_sample, max_new_tokens=30)["text"]
 
-    genai_result = ov_genai.WhisperPipeline(path, 'CPU').generate(
-        test_sample, max_new_tokens=30
-    )
+    genai_result = pipe.generate(test_sample, max_new_tokens=30)
 
+    assert genai_result.texts[0] == expected
+
+    config = pipe.get_generation_config()
+    config.max_new_tokens = 30
+    genai_result = pipe.generate(test_sample, config)
     assert genai_result.texts[0] == expected
 
 
