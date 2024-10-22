@@ -102,7 +102,6 @@ public:
 /*
  * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::genai::max_new_tokens(200),...)
- * pipe(text, ov::genai::max_new_tokens(200),...)
  */
 
 static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin_suppress_tokens"};

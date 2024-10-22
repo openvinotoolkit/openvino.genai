@@ -33,6 +33,9 @@ struct WhisperDecodedResults : public DecodedResults {
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
 };
 
+/**
+ * @brief Automatic speech recognition pipeline
+ */
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
     class Impl;
     std::unique_ptr<Impl> m_impl;
@@ -58,11 +61,10 @@ public:
      * @param device optional device
      * @param properties optional properties
      */
-    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    WhisperPipeline(const std::string& models_path,
-                    const std::string& device,
-                    Properties&&... properties)
-        : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    WhisperPipeline(const std::string& models_path, const std::string& device, Properties&&... properties)
+        : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     ~WhisperPipeline();
 

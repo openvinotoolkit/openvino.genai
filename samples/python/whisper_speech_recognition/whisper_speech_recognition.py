@@ -27,7 +27,7 @@ def main():
     config.task = "transcribe"
     config.return_timestamps = True
 
-    device = 'CPU'  # GPU can be used as well
+    device = "CPU"  # GPU can be used as well
     pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
 
     def streamer(word: str) -> bool:
