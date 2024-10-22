@@ -17,9 +17,7 @@
 'category: LLM':
 - 'src/cpp/include/openvino/genai/llm_pipeline.hpp'
 - 'src/cpp/src/llm_pipeline.cpp'
-- 'src/cpp/src/greedy_decoding.cpp'
-- 'src/cpp/src/group_beam_searcher.cpp'
-- 'src/cpp/src/multinomial_decoding.cpp'
+- 'src/cpp/src/lm_encoding.cpp'
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
