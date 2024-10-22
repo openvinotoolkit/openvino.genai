@@ -19,8 +19,6 @@ import typing
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
-
     if (path / "openvino_encoder_model.xml").exists():
         opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
             path,
@@ -33,7 +31,10 @@ def read_whisper_model(params, **tokenizer_kwargs):
 
         tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer, with_detokenizer=True, **tokenizer_kwargs
+            tokenizer,
+            with_detokenizer=True,
+            clean_up_tokenization_spaces=False,
+            **tokenizer_kwargs,
         )
 
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
@@ -54,6 +55,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
 
+    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
     opt_pipe = pipeline(
         "automatic-speech-recognition",
         model=opt_model,
@@ -66,7 +68,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         path,
         opt_pipe,
         ov_genai.WhisperPipeline(
-            str(path), device="CPU", config={"ENABLE_MMAP": False}
+            path, 'CPU', config={'ENABLE_MMAP': False}
         ),
     )
 
@@ -155,7 +157,7 @@ def test_smoke(model_descr, test_sample):
 def test_whisper_config_constructor(model_descr):
     model_id, path = model_descr
 
-    config = ov_genai.WhisperGenerationConfig(str(path / "generation_config.json"))
+    config = ov_genai.WhisperGenerationConfig(path / "generation_config.json")
 
     with open(path / "generation_config.json") as f:
         original_config = json.load(f)
@@ -192,54 +194,15 @@ def test_whisper_config_constructor(model_descr):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
-def test_whisper_constructors(model_descr, test_sample):
-    model_id, path = model_descr
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    expected = opt_pipe(test_sample)["text"]
-
-    genai_result = ov_genai.WhisperPipeline(
-        str(path), device="CPU", config={"ENABLE_MMAP": False}
-    ).generate(test_sample)
-
-    assert genai_result.texts[0] == expected
-
-    genai_result = ov_genai.WhisperPipeline(str(path)).generate(test_sample)
-
-    assert genai_result.texts[0] == expected
-
-    tokenizer = ov_genai.Tokenizer(str(path))
-
-    genai_result = ov_genai.WhisperPipeline(
-        str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
-    ).generate(test_sample)
-
-    assert genai_result.texts[0] == expected
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
-@pytest.mark.precommit
 def test_max_new_tokens(model_descr, test_sample):
     model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     expected = opt_pipe(test_sample, max_new_tokens=30)["text"]
 
-    genai_result = ov_genai.WhisperPipeline(str(path)).generate(
+    genai_result = ov_genai.WhisperPipeline(path, 'CPU').generate(
         test_sample, max_new_tokens=30
     )
-
-    assert genai_result.texts[0] == expected
-
-    tokenizer = ov_genai.Tokenizer(str(path))
-
-    genai_pipeline = ov_genai.WhisperPipeline(
-        str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
-    )
-    config = genai_pipeline.get_generation_config()
-    config.max_new_tokens = 30
-    genai_result = genai_pipeline.generate(test_sample, config)
 
     assert genai_result.texts[0] == expected
 
@@ -468,7 +431,7 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
             assert round(genai_chunk.end_ts, 2) == -1.0
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(multilingual=True))
 @pytest.mark.parametrize(
     "test_sample",
     [
@@ -477,7 +440,42 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
-def test_longform_audio_return_timestamps(model_descr, test_sample):
+def test_longform_audio_return_timestamps_multilingual(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(
+        test_sample,
+        return_timestamps=True,
+    )
+
+    genai_result = pipe.generate(
+        test_sample,
+        return_timestamps=True,
+    )
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert len(genai_result.chunks) == len(expected["chunks"])
+
+    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
+        assert opt_chunk["text"] == genai_chunk.text
+        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
+        if opt_chunk["timestamp"][1]:
+            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
+        else:
+            assert opt_chunk["timestamp"][1] == None
+            assert round(genai_chunk.end_ts, 2) == -1.0
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(en_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=10, long_form=True),
+    ],
+)
+@pytest.mark.precommit
+def test_longform_audio_return_timestamps_en(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     expected = opt_pipe(

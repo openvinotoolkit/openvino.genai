@@ -86,8 +86,8 @@ Code below requires installation of C++ compatible package (see [here](https://d
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
     std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100)) << '\n';
 }
 ```
@@ -129,8 +129,8 @@ Code below requires installation of C++ compatible package (see [here](https://d
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::VLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::VLMPipeline pipe(models_path, "CPU");
     ov::Tensor rgb = utils::load_image(argv[2]);
     std::cout << pipe.generate(
         prompt,
@@ -244,9 +244,10 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    raw_speech = read_wav(args.wav_file_path)
+    device = 'CPU'  # GPU can be used as well
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
 
-    pipe = openvino_genai.WhisperPipeline(args.model_dir)
+    raw_speech = read_wav(args.wav_file_path)
 
     def streamer(word: str) -> bool:
         print(word, end="")
@@ -275,14 +276,15 @@ NOTE: This sample is a simplified version of the full sample that is available [
 
 int main(int argc, char* argv[]) try {
 
-    std::string model_path = argv[1];
+    std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
+    std::string device = "CPU"; // GPU can be used as well
+
+    ov::genai::WhisperPipeline pipeline(models_path, device);
 
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
 
-    ov::genai::WhisperPipeline pipeline{model_path};
-
-    ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
+    ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
     config.max_new_tokens = 100;
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <string>
+#include <filesystem>
 #include <vector>
 
 #include "openvino/genai/visibility.hpp"
@@ -41,7 +41,7 @@ public:
     size_t n_samples = 480000;
     size_t nb_max_frames = 3000;
 
-    explicit WhisperFeatureExtractor(const std::string& preprocessor_json_path);
+    explicit WhisperFeatureExtractor(const std::filesystem::path& preprocessor_json_path);
 
     /**
      * @brief Create a flattened 2d log-mel spectrogram [feature_size, n_frames] from raw speech data
@@ -57,7 +57,7 @@ private:
     std::vector<float> mel_filter;
 
     void init_mel_filter();
-    void init_parameters(const std::string& preprocessor_json_path);
+    void init_parameters(const std::filesystem::path& preprocessor_json_path);
 };
 
 }  // namespace genai
