@@ -1,5 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-openvino
+--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+openvino-tokenizers~=2024.5.0.0.dev
 optimum-intel @ git+https://github.com/huggingface/optimum-intel.git
 numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.0  # For Qwen
