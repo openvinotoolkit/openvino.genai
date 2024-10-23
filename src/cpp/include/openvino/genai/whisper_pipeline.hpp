@@ -63,7 +63,7 @@ public:
      */
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    WhisperPipeline(const std::string& models_path, const std::string& device, Properties&&... properties)
+    WhisperPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
         : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     ~WhisperPipeline();
