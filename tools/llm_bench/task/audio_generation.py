@@ -20,7 +20,7 @@ def streamer(word: str) -> bool:
     return False
 
 
-def run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
+def run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
                                iter_data_list, mem_consumption, processor):
     result_md5_list = []
     max_rss_mem_consumption = ''
