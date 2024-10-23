@@ -860,9 +860,9 @@ private:
     }
 };
 
-class InputsEmbedderInternVL : public InputsEmbedder::IInputsEmbedder {
+class InputsEmbedderInternVLChat : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderInternVL(
+    InputsEmbedderInternVLChat(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
@@ -973,7 +973,7 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
         m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
-        m_impl = std::make_shared<InputsEmbedderInternVL>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }

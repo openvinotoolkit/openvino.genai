@@ -44,7 +44,7 @@ private:
     friend class InputsEmbedderMiniCPM;
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderLLaVANext;
-    friend class InputsEmbedderInternVL;
+    friend class InputsEmbedderInternVLChat;
 };
 
 } // namespace ov::genai
