@@ -1,4 +1,3 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 openvino_genai
 librosa==0.10.2  # For Whisper
 pillow==11.0.0  # Image processing
