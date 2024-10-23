@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <openvino/openvino.hpp>
+#include <filesystem>
 #include <optional>
 #include <variant>
+#include <vector>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -17,6 +18,21 @@ using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
+struct WhisperDecodedResultChunk {
+    // start of chunk in seconds
+    float start_ts;
+
+    // end of chunk in seconds
+    // -1.0f if chunk started but model did not predict an ending timestamp
+    // can happen if audio is cut off in the middle of a word
+    float end_ts = -1.0f;
+    std::string text;
+};
+
+struct WhisperDecodedResults : public DecodedResults {
+    std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
+};
+
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
     class WhisperPipelineImplBase;
     std::unique_ptr<WhisperPipelineImplBase> m_impl;
@@ -26,30 +42,30 @@ class OPENVINO_GENAI_EXPORTS WhisperPipeline {
 
 public:
     /**
-     * @brief Constructs an WhisperSpeechRecognitionPipeline from xml/bin files, tokenizers and configuration in the
+     * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir.
      *
-     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+     * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
-     * @param plugin_config optional plugin_config
+     * @param properties optional properties
      */
-    WhisperPipeline(const std::string& model_path,
-                    const std::string& device = "CPU",
-                    const ov::AnyMap& plugin_config = {});
+    WhisperPipeline(const std::filesystem::path& models_path,
+                    const std::string& device,
+                    const ov::AnyMap& properties = {});
 
     /**
-     * @brief Constructs a WhisperPipeline when ov::genai::Tokenizer is initialized manually using file
-     * from the different dirs.
+     * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
+     * same dir. Accepts arbitrary list of optional properties.
      *
-     * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
-     * @param tokenizer manually initialized ov::genai::Tokenizer
+     * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
-     * @param plugin_config optional plugin_config
+     * @param properties optional properties
      */
-    WhisperPipeline(const std::string& model_path,
-                    const ov::genai::Tokenizer& tokenizer,
-                    const std::string& device = "CPU",
-                    const ov::AnyMap& plugin_config = {});
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    WhisperPipeline(const std::string& models_path,
+                    const std::string& device,
+                    Properties&&... properties)
+        : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     ~WhisperPipeline();
 
@@ -60,11 +76,11 @@ public:
      * sampling rate.
      * @param generation_config optional GenerationConfig
      * @param streamer optional streamer
-     * @return DecodedResults decoded resulting text transcription
+     * @return WhisperDecodedResults decoded resulting text transcription
      */
-    DecodedResults generate(const RawSpeechInput& raw_speech_input,
-                            OptionalWhisperGenerationConfig generation_config = std::nullopt,
-                            StreamerVariant streamer = std::monostate());
+    WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
+                                   OptionalWhisperGenerationConfig generation_config = std::nullopt,
+                                   StreamerVariant streamer = std::monostate());
 
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
@@ -73,14 +89,14 @@ public:
      *
      * @param raw_speech_input raw speech input
      * @param properties properties
-     * @return DecodedResults decoded resulting text transcription
+     * @return WhisperDecodedResults decoded resulting text transcription
      */
     template <typename... Properties>
-    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(const RawSpeechInput& raw_speech_input,
-                                                                       Properties&&... properties) {
+    util::EnableIfAllStringAny<WhisperDecodedResults, Properties...> generate(const RawSpeechInput& raw_speech_input,
+                                                                              Properties&&... properties) {
         return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }
-    DecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
+    WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
 
     ov::genai::Tokenizer get_tokenizer();
     WhisperGenerationConfig get_generation_config() const;

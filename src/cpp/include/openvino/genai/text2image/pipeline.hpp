@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <random>
+#include <filesystem>
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/properties.hpp"
@@ -59,7 +60,7 @@ public:
             EULER_DISCRETE
         };
 
-        static std::shared_ptr<Scheduler> from_config(const std::string& scheduler_config_path,
+        static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,
                                                       Type scheduler_type = AUTO);
 
         virtual ~Scheduler();
@@ -70,8 +71,8 @@ public:
         // SD XL: prompt2 and negative_prompt2
         // FLUX: prompt2 (prompt if prompt2 is not defined explicitly)
         // SD 3: prompt2, prompt3 (with fallback to prompt) and negative_prompt2, negative_prompt3
-        std::string prompt2, prompt3;
-        std::string negative_prompt, negative_prompt2, negative_prompt3;
+        std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
+        std::string negative_prompt, negative_prompt_2, negative_prompt_3;
 
         size_t num_images_per_prompt = 1;
 
@@ -97,16 +98,16 @@ public:
         }
     };
 
-    explicit Text2ImagePipeline(const std::string& root_dir);
+    explicit Text2ImagePipeline(const std::filesystem::path& models_path);
 
-    Text2ImagePipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties = {});
+    Text2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    Text2ImagePipeline(const std::string& root_dir,
-                  const std::string& device,
-                  Properties&&... properties)
-        : Text2ImagePipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    Text2ImagePipeline(const std::filesystem::path& models_path,
+                       const std::string& device,
+                       Properties&&... properties)
+        : Text2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(
@@ -165,12 +166,12 @@ private:
 // Generation config properties
 //
 
-static constexpr ov::Property<std::string> prompt2{"prompt2"};
-static constexpr ov::Property<std::string> prompt3{"prompt3"};
+static constexpr ov::Property<std::string> prompt_2{"prompt_2"};
+static constexpr ov::Property<std::string> prompt_3{"prompt_3"};
 
 static constexpr ov::Property<std::string> negative_prompt{"negative_prompt"};
-static constexpr ov::Property<std::string> negative_prompt2{"negative_prompt2"};
-static constexpr ov::Property<std::string> negative_prompt3{"negative_prompt3"};
+static constexpr ov::Property<std::string> negative_prompt_2{"negative_prompt_2"};
+static constexpr ov::Property<std::string> negative_prompt_3{"negative_prompt_3"};
 
 static constexpr ov::Property<size_t> num_images_per_prompt{"num_images_per_prompt"};
 static constexpr ov::Property<float> guidance_scale{"guidance_scale"};

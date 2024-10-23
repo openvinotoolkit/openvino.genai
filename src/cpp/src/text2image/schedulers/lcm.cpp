@@ -7,14 +7,14 @@
 #include <iterator>
 
 #include "text2image/schedulers/lcm.hpp"
-#include "utils.hpp"
 #include "text2image/numpy_utils.hpp"
 
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
 
-LCMScheduler::Config::Config(const std::string scheduler_config_path) {
+LCMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 
@@ -40,14 +40,14 @@ LCMScheduler::Config::Config(const std::string scheduler_config_path) {
     read_json_param(data, "timestep_spacing", timestep_spacing);
 }
 
-LCMScheduler::LCMScheduler(const std::string scheduler_config_path) :
+LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path) :
     LCMScheduler(Config(scheduler_config_path)) {
 }
 
 LCMScheduler::LCMScheduler(const Config& scheduler_config)
     : m_config(scheduler_config),
       m_seed(42),
-      m_gen(100, std::mt19937(m_seed)),
+      m_gen(m_seed),
       m_normal(0.0f, 1.0f) {
 
     m_sigma_data = 0.5f; // Default: 0.5
@@ -191,7 +191,7 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
 
     if (inference_step != m_num_inference_steps - 1) {
         for (std::size_t i = 0; i < batch_size * latent_size; ++i) {
-            float gen_noise = m_normal(m_gen[i / latent_size]);
+            float gen_noise = m_normal(m_gen);
             prev_sample_data[i] = alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * gen_noise;
         }
     } else {

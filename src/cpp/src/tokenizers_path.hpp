@@ -22,9 +22,10 @@ namespace {
 // and unsets in destructor. Does nothing if ENVIRONMENT_VARIABLE_NAME
 // was already defined.
 class ScopedVar {
-public:
     bool was_already_set{false};
+public:
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
+
     explicit ScopedVar(const std::string& environment_variable_value) {
 #ifdef _WIN32
         char* value = nullptr;

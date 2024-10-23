@@ -37,8 +37,13 @@ void Text2ImagePipeline::GenerationConfig::update_generation_config(const ov::An
 
     // override whole generation config first
     read_anymap_param(properties, SD_GENERATION_CONFIG, *this);
+
     // then try per-parameter values
+    read_anymap_param(properties, "prompt_2", prompt_2);
+    read_anymap_param(properties, "prompt_3", prompt_3);
     read_anymap_param(properties, "negative_prompt", negative_prompt);
+    read_anymap_param(properties, "negative_prompt_2", negative_prompt_2);
+    read_anymap_param(properties, "negative_prompt_3", negative_prompt_3);
     read_anymap_param(properties, "num_images_per_prompt", num_images_per_prompt);
     read_anymap_param(properties, "random_generator", random_generator);
     read_anymap_param(properties, "guidance_scale", guidance_scale);
@@ -58,7 +63,7 @@ void Text2ImagePipeline::GenerationConfig::validate() const {
 // Text2ImagePipeline
 //
 
-Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir) {
+Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" || 
@@ -71,7 +76,7 @@ Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir) {
     }
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties) {
+Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" ||

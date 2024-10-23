@@ -5,7 +5,7 @@
 
 #include <fstream>
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 
 #include "text2image/schedulers/lcm.hpp"
 #include "text2image/schedulers/lms_discrete.hpp"
@@ -15,7 +15,7 @@
 namespace ov {
 namespace genai {
 
-std::shared_ptr<Text2ImagePipeline::Scheduler> Text2ImagePipeline::Scheduler::from_config(const std::string& scheduler_config_path, Type scheduler_type) {
+std::shared_ptr<Text2ImagePipeline::Scheduler> Text2ImagePipeline::Scheduler::from_config(const std::filesystem::path& scheduler_config_path, Type scheduler_type) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 

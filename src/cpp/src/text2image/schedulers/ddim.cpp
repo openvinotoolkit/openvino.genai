@@ -7,13 +7,12 @@
 #include <iterator>
 
 #include "text2image/schedulers/ddim.hpp"
-#include "utils.hpp"
 #include "text2image/numpy_utils.hpp"
 
 namespace ov {
 namespace genai {
 
-DDIMScheduler::Config::Config(const std::string& scheduler_config_path) {
+DDIMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 
@@ -37,7 +36,7 @@ DDIMScheduler::Config::Config(const std::string& scheduler_config_path) {
     read_json_param(data, "rescale_betas_zero_snr", rescale_betas_zero_snr);
 }
 
-DDIMScheduler::DDIMScheduler(const std::string scheduler_config_path) 
+DDIMScheduler::DDIMScheduler(const std::filesystem::path& scheduler_config_path) 
     : DDIMScheduler(Config(scheduler_config_path)) {
 }
 

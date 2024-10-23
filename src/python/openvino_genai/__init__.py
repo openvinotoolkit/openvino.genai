@@ -11,14 +11,21 @@ from .__version__ import __version__
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
 
-from .py_generate_pipeline import (
+from .py_openvino_genai import (
     ContinuousBatchingPipeline,
     DecodedResults,
     EncodedResults,
     GenerationConfig,
     GenerationResult,
+    Adapter,
+    AdapterConfig,
+    CLIPTextModel,
+    CLIPTextModelWithProjection,
+    UNet2DConditionModel,
+    AutoencoderKL,
     LLMPipeline, 
-    VLMPipeline, 
+    VLMPipeline,
+    Text2ImagePipeline,
     PerfMetrics,
     RawPerfMetrics,
     SchedulerConfig,
@@ -30,4 +37,8 @@ from .py_generate_pipeline import (
     WhisperPipeline,
     CacheEvictionConfig,
     AggregationMode,
+    Generator,
+    CppStdGenerator,
+    draft_model
+
 )

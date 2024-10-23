@@ -15,8 +15,8 @@ endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/b32fbde7d98d13c34784c332c4a24a6f92c76e38.tar.gz
-        URL_HASH SHA256=7cc25ddbc438a5c874d404e100b4eccd8a331c195417f5487c48aebcf4b9e7fb)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/86dfb939b5c2beb7fabddae2df386be4e7fb9507.tar.gz
+        URL_HASH SHA256=c222e2407316a573561bd74dfd1cd7b34b359f5481ac59529b3de355162ef9f7)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -35,6 +35,15 @@ function(ov_genai_build_jinja2cpp)
         option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
+
+        if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
+            target_compile_options(jinja2cpp PRIVATE -Wno-undef)
+        endif()
+        if(SUGGEST_OVERRIDE_SUPPORTED)
+            target_compile_options(jinja2cpp PRIVATE -Wno-suggest-override)
+        endif()
+
+        target_compile_definitions(jinja2cpp PUBLIC JINJA2CPP_LINK_AS_SHARED=0)
     endif()
 endfunction()
 

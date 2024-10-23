@@ -6,8 +6,7 @@
 #include <cmath>
 #include <fstream>
 
-#include "utils.hpp"
-
+#include "json_utils.hpp"
 namespace {
 
 // https://gist.github.com/lorenzoriano/5414671
@@ -93,7 +92,7 @@ int64_t LMSDiscreteScheduler::_sigma_to_t(float sigma) const {
     return timestep;
 }
 
-LMSDiscreteScheduler::Config::Config(const std::string& scheduler_config_path) {
+LMSDiscreteScheduler::Config::Config(const std::filesystem::path& scheduler_config_path) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 
@@ -109,7 +108,7 @@ LMSDiscreteScheduler::Config::Config(const std::string& scheduler_config_path) {
     read_json_param(data, "steps_offset", steps_offset);
 }
 
-LMSDiscreteScheduler::LMSDiscreteScheduler(const std::string scheduler_config_path) 
+LMSDiscreteScheduler::LMSDiscreteScheduler(const std::filesystem::path& scheduler_config_path) 
     : LMSDiscreteScheduler(Config(scheduler_config_path)) {
 }
 

@@ -10,27 +10,51 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching_impl.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 #include "timer.hpp"
+#include "utils.hpp"
 #include "debug_utils.hpp"
 #include "cache_state_dumper.hpp"
 
 using namespace ov::genai;
 
-ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
+inline ov::genai::ModelDesc
+extract_draft_model_from_config(ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model("");
+    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+        config.erase(utils::DRAFT_MODEL_ARG_NAME);
+    }
+    return draft_model;
+}
+
+ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
-                                                        const ov::AnyMap& llm_plugin_config,
-                                                        const ov::AnyMap& tokenizer_plugin_config) {
-    m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, llm_plugin_config, tokenizer_plugin_config);
+                                                        const ov::AnyMap& properties,
+                                                        const ov::AnyMap& tokenizer_properties) {
+    auto properties_without_draft_model = properties;
+    auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
+    if (draft_model.models_path.empty()) {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, properties, tokenizer_properties);
+    } else {
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, properties_without_draft_model, draft_model, tokenizer_properties);
+    }
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
-    const std::string& model_path,
+    const std::filesystem::path& models_path,
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
-    m_impl = std::make_shared<ContinuousBatchingImpl>(model_path, tokenizer, scheduler_config, device, plugin_config);
+    const ov::AnyMap& properties) {
+    auto properties_without_draft_model = properties;
+    auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
+    if (draft_model.models_path.empty()) {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, tokenizer, scheduler_config, device, properties);
+    } else {
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, properties_without_draft_model, draft_model);
+    }
 }
 
 ov::genai::Tokenizer ContinuousBatchingPipeline::get_tokenizer() {

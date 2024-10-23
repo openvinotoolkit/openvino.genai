@@ -8,8 +8,7 @@
 #include "text2image/schedulers/ischeduler.hpp"
 #include "openvino/genai/text2image/pipeline.hpp"
 
-#include "utils.hpp"
-
+#include "json_utils.hpp"
 namespace {
 
 void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1) {
@@ -26,8 +25,8 @@ void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_bat
     ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
 }
 
-const std::string get_class_name(const std::string& root_dir) {
-    const std::string model_index_path = root_dir + "/model_index.json";
+const std::string get_class_name(const std::filesystem::path& root_dir) {
+    const std::filesystem::path model_index_path = root_dir / "model_index.json";
     std::ifstream file(model_index_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
@@ -71,7 +70,9 @@ public:
 protected:
     virtual void initialize_generation_config(const std::string& class_name) = 0;
 
-    virtual void check_inputs(const int height, const int width) const = 0;
+    virtual void check_image_size(const int height, const int width) const = 0;
+
+    virtual void check_inputs(const GenerationConfig& generation_config) const = 0;
 
     std::shared_ptr<IScheduler> m_scheduler;
     GenerationConfig m_generation_config;

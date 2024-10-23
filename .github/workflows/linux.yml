@@ -8,6 +8,8 @@ on:
       - master
       - 'releases/**'
 
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
 concurrency:
   # github.ref is not unique in post-commit
   group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-linux
@@ -17,8 +19,6 @@ env:
   PYTHON_VERSION: '3.9'
   OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   OV_TARBALL: ''
-
-permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
   openvino_download:
@@ -78,7 +78,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Clone OpenVINO
         uses: actions/checkout@v4
@@ -193,7 +193,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-16-cores
     env:
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
@@ -232,7 +232,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Install build dependencies
         run: |
@@ -259,16 +259,22 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pytest ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
       - name: Test bindings (wheel)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
-          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
+
+      - run: python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
+      - run: python -m pip install -U "optimum<1.23" --no-dependencies
+      - run: >
+            source ${OV_INSTALL_DIR}/setupvars.sh
+            && python -m pytest ./tests/python_tests/test_vlm_api.py
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -280,7 +286,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-16-cores
     env:
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
@@ -319,7 +325,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Install build dependencies
         run: |
@@ -341,21 +347,21 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --target py_openvino_genai -j
 
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
       - name: Test bindings (wheel)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
-          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -408,7 +414,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Install build dependencies
         run: |
@@ -433,9 +439,10 @@ jobs:
       - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
       - name: Install samples
         run: |
@@ -459,11 +466,23 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
 
+      - name: Test C++ samples (whisper_speech_recognition)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+
       - name: Test python samples (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+
+      - name: Test python samples (whisper_speech_recognition)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${OV_INSTALL_DIR}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
 
   Overall_Status:
     name: ci/gha_overall_status_linux

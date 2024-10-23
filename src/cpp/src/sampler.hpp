@@ -30,6 +30,8 @@ inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t
     return false;
 }
 
+std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
+
 struct SamplerOutput {
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
@@ -41,7 +43,7 @@ struct SamplerOutput {
 class Sampler {
     class GroupBeamSearcher;
 
-    Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1);
+    Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits) const;
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
@@ -56,11 +58,18 @@ class Sampler {
     Tokenizer m_tokenizer;
 
 public:
+    Sampler() = default;
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
-    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
+    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
-    void clear_beam_search_info(uint64_t request_id);
+
+    void clear_request_info(uint64_t request_id);
+
+    LogitProcessor& get_logit_processor(uint64_t request_id);
+    void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);
+
+    std::vector<int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
 };
 
 class Sampler::GroupBeamSearcher {
@@ -105,5 +114,6 @@ public:
 
     void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
     void finalize(SamplerOutput& sampler_output);
+    std::vector<int32_t> get_beam_idxs();
 };
 }

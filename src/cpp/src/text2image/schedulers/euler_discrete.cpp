@@ -9,12 +9,12 @@
 #include <random>
 
 #include "text2image/numpy_utils.hpp"
-#include "utils.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
 
-EulerDiscreteScheduler::Config::Config(const std::string& scheduler_config_path) {
+EulerDiscreteScheduler::Config::Config(const std::filesystem::path& scheduler_config_path) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 
@@ -40,7 +40,7 @@ EulerDiscreteScheduler::Config::Config(const std::string& scheduler_config_path)
     read_json_param(data, "use_beta_sigmas", use_beta_sigmas);
 }
 
-EulerDiscreteScheduler::EulerDiscreteScheduler(const std::string scheduler_config_path)
+EulerDiscreteScheduler::EulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
     : EulerDiscreteScheduler(Config(scheduler_config_path)) {}
 
 EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) : m_config(scheduler_config) {
@@ -100,12 +100,15 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
         "support.");
 
     m_sigmas.push_back(0);
+
+    m_step_index = -1;
 }
 
 void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps) {
     // TODO: support `timesteps` and `sigmas` inputs
     m_timesteps.clear();
     m_sigmas.clear();
+    m_step_index = -1;
 
     m_num_inference_steps = num_inference_steps;
     std::vector<float> sigmas;
