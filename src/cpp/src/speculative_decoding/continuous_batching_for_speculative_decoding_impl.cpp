@@ -50,8 +50,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
 
 GeneratedRequests
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_requests() {
-    _pull_awaiting_requests();
-
     GeneratedRequests result;
     for (const auto& request : m_requests) {
         const auto& request_id = request->get_request_id();
@@ -197,7 +195,6 @@ UpdateRequestResult
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_request_by_candidate(
     uint64_t request_id,
     const GeneratedSequences& candidates) {
-    _pull_awaiting_requests();
 
     for (auto& request : m_requests) {
         if (request->get_request_id() != request_id) {
@@ -218,8 +215,6 @@ UpdateRequestResult
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_request(uint64_t request_id,
                                                                                          const GeneratedSequences& candidates,
                                                                                          bool is_update_logit_processor) {
-    _pull_awaiting_requests();
-
     UpdateRequestResult result{0, 0};
     for (auto& request : m_requests) {
         if (request_id != request->get_request_id()) {
