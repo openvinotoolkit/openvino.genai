@@ -98,7 +98,7 @@ def run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
         metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=audio_id)
 
 
-def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     iter_data_list = []
     input_audio_file_list = model_utils.get_audio_param_from_media_file(args)
     audios_file_list = []
