@@ -20,7 +20,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
 
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(SequenceGroup::Ptr request) {
-    
+    std::cout << request->get_request_id() << std::endl;
     for (const auto& sequence : request->get_sequences()) {
         m_scheduler->free_sequence(sequence->get_id());
     }
@@ -266,8 +266,13 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         const size_t num_processed_tokens = request->get_num_processed_tokens(),
                      prompt_len = request->get_prompt_len(),
                      updated_context_len = min_candidate_len + prompt_len;
-        if (num_processed_tokens > 0)
+        if (num_processed_tokens > 0) {
             request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt);
+            std::cout << "num_processed_tokens: " << num_processed_tokens << "result.removed_tokens_cnt: " << result.removed_tokens_cnt << std::endl;
+            if (num_processed_tokens < result.removed_tokens_cnt) {
+                std::cout << "Warning: number of processed tokens is less than removed tokens" << std::endl;
+            }
+        }
         request->set_num_validated_tokens(result.inserted_tokens_cnt);
         request->pause_generation(false);
         break;
