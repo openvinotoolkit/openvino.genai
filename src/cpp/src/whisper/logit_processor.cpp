@@ -35,7 +35,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
     float* logits_data = logits.data<float>() + batch_offset + sequence_offset;
 
-    // supress<|notimestamps|>
+    // suppress<|notimestamps|>
     logits_data[config.no_timestamps_token_id] = -std::numeric_limits<float>::infinity();
 
     size_t timestamp_begin = config.no_timestamps_token_id + 1;
@@ -59,7 +59,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
         }
     }
 
-    // filter generated timestaps
+    // filter generated timestamps
     std::vector<int64_t> timestamps;
     for (const auto token : generated_tokens) {
         if (token >= timestamp_begin) {

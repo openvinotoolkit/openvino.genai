@@ -94,7 +94,7 @@ BufferPtr read_file_helper(const std::filesystem::path& filename) {
     auto buffer = std::make_shared<Buffer>(filesize);
     file.seekg(0, std::ios::beg);
     // TODO: Use mmapped AlignedBuffer as ov::Core::read_model can do, necessary functionality is not available in public OV API.
-    // LoRA files do not usuall have huge size in comparison to the base models, but it can vary depending on adapter,
+    // LoRA files do not usually have huge size in comparison to the base models, but it can vary depending on adapter,
     // and using mmap will help to optimize memory consumption and could be critical
     // when the application at the edge of available memory that is not really uncommon for applications dealing with LLMs.
     file.read(&(*buffer)[0], filesize);
@@ -160,7 +160,7 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
         auto type = safetensors_to_ov_element_type(tensor.dtype);
         auto constant =
             std::make_shared<v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
-        constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destoyed
+        constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
         tensors[name] = constant;
     }
     return tensors;
@@ -244,7 +244,7 @@ using LoRAWeightByNodeGetter = std::function<std::optional<LoRANode>(NodePtr)>;
 // the ranks from all applicable LoRA tensors (if there are multiple LoRA adapters).
 struct LoRAParameters {
     ov::Dimension rank;         // accumulated LoRA rank, could be dynamic if rank is not known or DYNAMIC mode is applied
-    ov::element::Type type;     // element type of a tensor that will be applied to the model, negotiated based on multple LoRA adapters
+    ov::element::Type type;     // element type of a tensor that will be applied to the model, negotiated based on multiple LoRA adapters
     bool fine_grained_alpha;    // use 1D tensor of the same rank for alpha instead of a scalar to blend multiple weighted LoRAs
     // TODO: flag to have various alphas over the batch
 };
@@ -352,7 +352,7 @@ struct LoRAParametersByWeightGetter {
                 }
             });
             if(size == 0) {
-                // as LoRA adapters with 0 rank cannot exist, 0 menas there are no adapters for a given node
+                // as LoRA adapters with 0 rank cannot exist, 0 means there are no adapters for a given node
                 return std::nullopt;
             }
             rank = size;
@@ -415,7 +415,7 @@ struct LoRAWeightStateGetter {
             deduce_input_output_dims(node, input_dim, output_dim);
 
             std::string name = node->get_friendly_name();
-            // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastrcuture independently each time (not a recommended approach).
+            // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
             // TODO: Check for name collisions searching for existing variables with the same names.
             std::string variable_id_prefix = "lora_state_" + std::to_string(model->get_sinks().size()) + name;
             LoRANode result;
@@ -621,7 +621,7 @@ public:
             }
             request.set_output_tensor(i, outputs[i]);
         }
-        request.infer();    // TODO: Consider using async to increase througput, requies more complicated archestration
+        request.infer();    // TODO: Consider using async to increase throughput, requires more complicated archestration
     }
 
 private:
@@ -635,7 +635,7 @@ private:
 // This is one-way LoRA fusion that cannot be undone.
 // By default it uses CPU plugin to modify the base model weights.
 // TODO: This transformation unpacks potentially compressed to f16/bf16 weights to f32,
-// we should pack it back into the original precsion to maintain the same wieght size.
+// we should pack it back into the original precision to maintain the same weight size.
 // But it will work well if all plugins equally support fp-compressed weights and can unpack them on-line.
 class LoRAFuseTransform : public LoRATransformBase {
 
@@ -670,7 +670,7 @@ public:
             signature_push_back(signature, multiplier);
         }
 
-        // TODO: In case when comressed repacking of newly created weights is retained,
+        // TODO: In case when compressed repacking of newly created weights is retained,
         // replace weights_input by weigths_constant to keep decompression Convert in the model.
         auto consumers = weights_input.get_target_inputs();
 
@@ -688,12 +688,12 @@ public:
             fusers.insert(signature, weights_model);
         }
 
-        // Newly created contants in the next line are not mmaped unlike original weights, so it will inflate required memory
+        // Newly created constants in the next line are not mmaped unlike original weights, so it will inflate required memory
         // eventually allocating up to 2x of the base model size.
         // 2X is due to usually applied compression in the base model that is not retained in the current version of this code.
         // But even if the compression is used, then still a copy of all weights that affected by the LoRA adapters are allocated in memory.
         // FIXME: Provide a way for postponed weight repacking that will be triggered by the plugin in compile_model call for the base model.
-        // Constant sub-expression can be a solution, but it requres improvements inside plugins, because currently it works extremely slow.
+        // Constant sub-expression can be a solution, but it requires improvements inside plugins, because currently it works extremely slow.
         auto replacement_const = std::make_shared<v0::Constant>(weights_input.get_element_type(), weights_input.get_shape());
 
         ov::TensorVector outputs{replacement_const->get_tensor_view()};
@@ -1039,7 +1039,7 @@ struct AdapterControllerImpl {
         for(const auto& input: inputs) {
             signature +=
                 std::string("(") +
-                    // Shape is set to be dynamic because it doesn't mater for signature as it is completelly determined by the corresponding model
+                    // Shape is set to be dynamic because it doesn't matter for signature as it is completely determined by the corresponding model
                     "(" + get_tensor_signature(outputs.alpha.get_element_type(), ov::PartialShape::dynamic(1)) + ")" +
                     "(" + get_tensor_signature(outputs.A.get_element_type(), ov::PartialShape::dynamic(2)) + ")" +
                     "(" + get_tensor_signature(outputs.B.get_element_type(), ov::PartialShape::dynamic(2)) + ")" +
@@ -1225,7 +1225,7 @@ struct AdapterControllerImpl {
 AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device)
 {
     // If AdapterConfig::MODE_AUTO is used, then set real mode depending on the device capabilities
-    // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapaters
+    // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapters
     if (config.get_mode() == AdapterConfig::MODE_AUTO) {
         static const std::map<std::string, AdapterConfig::Mode> default_modes {
             {"CPU", AdapterConfig::MODE_DYNAMIC},
@@ -1328,7 +1328,7 @@ AdapterConfig& AdapterConfig::set_alpha(const Adapter& adapter, float alpha) {
 float AdapterConfig::get_alpha(const Adapter& adapter) const {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adapters only");
     return alphas[it - adapters.begin()];
 }
 

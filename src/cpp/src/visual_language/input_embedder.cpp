@@ -771,7 +771,7 @@ private:
 
         OPENVINO_ASSERT(
             patch_seq_len == height * width,
-            "Patch sequense length does not match the specified height and width"
+            "Patch sequence length does not match the specified height and width"
         );
 
         // Reshape tensor data and permute dimensions

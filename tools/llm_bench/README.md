@@ -161,7 +161,7 @@ For example, `--load_config config.json` as following will result in streams.num
 
 ## 6. Execution on CPU device
 
-OpenVINO is by default bult with [oneTBB](https://github.com/oneapi-src/oneTBB/) threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. When running LLM pipeline on CPU device, there is threading overhead in the switching between inference on CPU with OpenVINO (oneTBB) and postprocessing (For example: greedy search or beam search) with Torch (OpenMP).
+OpenVINO is by default built with [oneTBB](https://github.com/oneapi-src/oneTBB/) threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. When running LLM pipeline on CPU device, there is threading overhead in the switching between inference on CPU with OpenVINO (oneTBB) and postprocessing (For example: greedy search or beam search) with Torch (OpenMP).
 
 **Alternative solutions**
 1. Use --genai option which uses OpenVINO genai API instead of optimum-intel API. In this case postprocessing is executed with OpenVINO genai API.

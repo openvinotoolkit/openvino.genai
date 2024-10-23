@@ -2,7 +2,7 @@
 
 This tests aim to validate support for vanilla and continuous batching GenAI APIs.
 
-## Setup environemnt
+## Setup environment
 
 In order to run tests first of all build or install OpenVINO GenAI library, follow instructions [GenAI Library README](../../src/README.md).
 
