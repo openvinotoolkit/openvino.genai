@@ -12,7 +12,7 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported. `numpy`, `openvino`, and `openvino-genai` are required for python deployment.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported. [../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios.
 Download assisting and main model to run speculative decoding sample.
 
 ```sh
