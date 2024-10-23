@@ -16,7 +16,7 @@ import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
 
-
+DEFAULT_TORCH_THREAD_NUMS = 16
 mem_consumption = MemConsumption()
 
 
@@ -136,6 +136,7 @@ def get_argprser():
         action='store_true',
         help='Stop the generation even output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
     )
+    parser.add_argument('--set_torch_thread', default=0, type=num_infer_count_type, help='Set the number of torch thread')
 
     return parser.parse_args()
 
@@ -171,10 +172,22 @@ def main():
                 log.warning("It is recommended to set the environment variable OMP_WAIT_POLICY to PASSIVE, "
                             "so that OpenVINO inference can use all CPU resources without waiting.")
             original_torch_thread_nums = torch.get_num_threads()
-            if model_args['num_beams'] > 1:
-               torch.set_num_threads(int(original_torch_thread_nums / 2))
+            if args.set_torch_thread > 0:
+                torch_thread = args.set_torch_thread
+                if torch_thread > original_torch_thread_nums:
+                    log.warning(f'Setting torch thread num: {torch_thread} is greater than '
+                                f'the original torch threads: {original_torch_thread_nums}, '
+                                f'the number of torch thread will be set to {original_torch_thread_nums}.')
+                    torch_thread = original_torch_thread_nums
+                torch.set_num_threads(int(torch_thread))
             else:
-               torch.set_num_threads(1)
+                if model_args['num_beams'] > 1:
+                    torch.set_num_threads(int(original_torch_thread_nums / 2))
+                else:
+                    if original_torch_thread_nums > DEFAULT_TORCH_THREAD_NUMS:
+                        torch.set_num_threads(DEFAULT_TORCH_THREAD_NUMS)
+                    else:
+                        torch.set_num_threads(int(DEFAULT_TORCH_THREAD_NUMS / 2))
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
