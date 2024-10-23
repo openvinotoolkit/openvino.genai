@@ -5,6 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 from transformers import set_seed
 import torch
+import openvino_genai
 
 from .registry import register_evaluator, BaseEvaluator
 
@@ -26,6 +27,17 @@ default_data = {
 }
 
 
+class Generator(openvino_genai.Generator):
+    def __init__(self, seed, rng, mu=0.0, sigma=1.0):
+        openvino_genai.Generator.__init__(self)
+        self.mu = mu
+        self.sigma = sigma
+        self.rng = rng
+
+    def next(self):
+        return torch.normal(torch.tensor(self.mu), self.sigma, generator=self.rng)
+
+
 @register_evaluator("text-to-image")
 class Text2ImageEvaluator(BaseEvaluator):
     def __init__(
@@ -41,6 +53,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         num_samples=None,
         gen_image_fn=None,
         seed=42,
+        is_genai=False,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -57,12 +70,18 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.similarity = ImageSimilarity(similarity_model_id)
         self.last_cmp = None
         self.gt_dir = os.path.dirname(gt_data)
+        self.generation_fn = gen_image_fn
+        self.is_genai = is_genai
+
         if base_model:
             self.gt_data = self._generate_data(
                 base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
             )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+
+    def get_generation_fn(self):
+        return self.generation_fn
 
     def dump_gt(self, csv_name: str):
         self.gt_data.to_csv(csv_name)
@@ -99,13 +118,15 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
+        model.resolution = self.resolution
         if hasattr(model, "reshape") and self.resolution is not None:
-            model.reshape(
-                batch_size=1,
-                height=self.resolution[0],
-                width=self.resolution[1],
-                num_images_per_prompt=1,
-            )
+            if gen_image_fn is None:
+                model.reshape(
+                    batch_size=1,
+                    height=self.resolution[0],
+                    width=self.resolution[1],
+                    num_images_per_prompt=1,
+                )
 
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
             output = model(
@@ -118,7 +139,7 @@ class Text2ImageEvaluator(BaseEvaluator):
             )
             return output.images[0]
 
-        gen_image_fn = gen_image_fn or default_gen_image_fn
+        generation_fn = gen_image_fn or default_gen_image_fn
 
         if self.test_data:
             if isinstance(self.test_data, str):
@@ -144,13 +165,16 @@ class Text2ImageEvaluator(BaseEvaluator):
 
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
+
+        print(gen_image_fn)
         for i, prompt in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             set_seed(self.seed)
-            image = gen_image_fn(
+            rng = rng.manual_seed(self.seed)
+            image = generation_fn(
                 model,
                 prompt,
                 self.num_inference_steps,
-                generator=rng.manual_seed(self.seed),
+                generator=Generator(self.seed, rng) if self.is_genai else rng
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             image.save(image_path)
