@@ -208,7 +208,7 @@ private:
         // 1. To reduce discrepancy between ragged dimensions (context lengths) in Attention module
         //    we can slice prompt on chunks and schedule only portion of each prompt instead of
         //    greedy scheduling of prompt with higher priority
-        // 2. The machanism below performs greedy scheduling of high priority prompts
+        // 2. The mechanism below performs greedy scheduling of high priority prompts
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];

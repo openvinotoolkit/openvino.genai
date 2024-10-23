@@ -112,7 +112,7 @@ def get_chat_templates():
 
     skipped_models = {
         # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
-        # Need to enable and unskip, since it's preset in continious batching and has >100 000 downloads.
+        # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
         "openchat/openchat-3.5-0106",
         
         # These models fail even on HF so no need to check if applying chat matches.

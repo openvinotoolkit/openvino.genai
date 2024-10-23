@@ -9,7 +9,7 @@
 namespace ov::genai {
 struct SchedulerConfig {
     // a maximum number of tokens to batch
-    // (in constrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
+    // (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
     // TODO: benchmark this value and understand a required value to ensure inference is not memory bound
     std::size_t max_num_batched_tokens = 256;
 

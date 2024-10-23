@@ -36,7 +36,7 @@ class ModelRunner {
 public:
     /**
      * Constructs the ModelRunner.
-     * @param request The ov::InferRequest for the LLM to be inferred in the continous batching mode.
+     * @param request The ov::InferRequest for the LLM to be inferred in the continuous batching mode.
      * @param scheduler_config Configuration struct for the scheduler that is to be used with this ModelRunner.
      * @param num_decoder_layers Number of decoder attention layers in the LLM corresponding to the request.
      * @param collect_attention_scores If true, then after each `forward` call the ModelRunner will collect and make available the per-token attention

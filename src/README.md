@@ -173,7 +173,7 @@ int main(int argc, char* argv[]) {
         // false means continue generation.
         return false;
     };
-    std::cout << pipe.generate("The Sun is yellow bacause", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
 }
 ```
 
@@ -190,7 +190,7 @@ public:
     bool put(int64_t token) {
         // Custom decoding/tokens processing logic.
 
-        // Returns a flag whether generation should be stoped, if true generation stops.
+        // Returns a flag whether generation should be stopped, if true generation stops.
         return false;
     };
 
@@ -220,7 +220,7 @@ class CustomStreamer(ov_genai.StreamerBase):
     def put(self, token_id) -> bool:
         # Custom decoding/tokens processing logic.
 
-        # Returns a flag whether generation should be stoped, if true generation stops.
+        # Returns a flag whether generation should be stopped, if true generation stops.
         return False
 
     def end(self):
