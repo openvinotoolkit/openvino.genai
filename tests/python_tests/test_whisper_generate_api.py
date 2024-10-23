@@ -67,7 +67,9 @@ def read_whisper_model(params, **tokenizer_kwargs):
         model_id,
         path,
         opt_pipe,
-        ov_genai.WhisperPipeline(path, "CPU", config={"ENABLE_MMAP": False}),
+        ov_genai.WhisperPipeline(
+            path, 'CPU', **{'ENABLE_MMAP': False}
+        ),
     )
 
 
