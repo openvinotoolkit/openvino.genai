@@ -15,9 +15,9 @@ Users can change the sample code and play with the following generation paramete
 - (SD 1.x, 2.x only) Add negative prompt when guidance scale > 1
 - Apply multiple different LoRA adapters and mix them with different blending coefficients
 
-## Install OpenVINO™ GenAI and its dependencies
+## Setup OpenVINO™
 
-The instruction is provided in the [`README`](../../../README.md).
+Setup OpenVINO™ according to [`instruction`](../../cpp/README.md).
 
 ## Download and convert the models and tokenizers
 
@@ -32,7 +32,8 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 ## Run
 
-`main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"`
+`pip install --upgrade-strategy eager -r ../../deployment-requirements.txt`
+`python main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"`
 
 ### Examples
 
@@ -51,7 +52,7 @@ Here is an example how to run the sample with a single adapter. First download a
 
 Then run `lora.py`:
 
-`lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7`
+`python lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7`
 
 The sample generates two images with and without adapters applied using the same prompt:
    - `lora.bmp` with adapters applied
