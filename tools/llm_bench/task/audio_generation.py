@@ -21,7 +21,7 @@ def streamer(word: str) -> bool:
 
 
 def run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
-                               iter_data_list, mem_consumption, processor):
+                                iter_data_list, mem_consumption, processor):
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
@@ -128,7 +128,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         for idx, audio_file in enumerate(audio_list):
             raw_speech = model_utils.read_wav(audio_file['media'], processor.feature_extractor.sampling_rate)
             run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, audio_idx_list[idx],
-                                       iter_data_list, mem_consumption, processor)
+                                        iter_data_list, mem_consumption, processor)
     metrics_print.print_average(iter_data_list, audio_idx_list, 1, True)
 
     return iter_data_list, pretrain_time
