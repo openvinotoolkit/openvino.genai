@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <random>
+#include <filesystem>
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/properties.hpp"
@@ -59,7 +60,7 @@ public:
             EULER_DISCRETE
         };
 
-        static std::shared_ptr<Scheduler> from_config(const std::string& scheduler_config_path,
+        static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,
                                                       Type scheduler_type = AUTO);
 
         virtual ~Scheduler();
@@ -97,16 +98,16 @@ public:
         }
     };
 
-    explicit Text2ImagePipeline(const std::string& root_dir);
+    explicit Text2ImagePipeline(const std::filesystem::path& models_path);
 
-    Text2ImagePipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties = {});
+    Text2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    Text2ImagePipeline(const std::string& root_dir,
-                  const std::string& device,
-                  Properties&&... properties)
-        : Text2ImagePipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    Text2ImagePipeline(const std::filesystem::path& models_path,
+                       const std::string& device,
+                       Properties&&... properties)
+        : Text2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(

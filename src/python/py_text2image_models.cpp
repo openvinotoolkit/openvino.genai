@@ -2,21 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
+
 #include "openvino/genai/text2image/pipeline.hpp"
 
 #include "py_utils.hpp"
 
 namespace py = pybind11;
-namespace utils = ov::genai::pybind::utils;
+namespace pyutils = ov::genai::pybind::utils;
 
 void init_clip_text_model(py::module_& m) {
     auto clip_text_model = py::class_<ov::genai::CLIPTextModel>(m, "CLIPTextModel", "CLIPTextModel class.")
         .def(py::init([](
-            const std::string& root_dir
+            const std::filesystem::path& root_dir
         ) {
             return std::make_unique<ov::genai::CLIPTextModel>(root_dir);
         }),
@@ -26,11 +29,11 @@ void init_clip_text_model(py::module_& m) {
             root_dir (str): Model root directory.
         )")
         .def(py::init([](
-            const std::string& root_dir,
+            const std::filesystem::path& root_dir,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -72,9 +75,9 @@ void init_clip_text_model(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -85,7 +88,7 @@ void init_clip_text_model(py::module_& m) {
 void init_unet2d_condition_model(py::module_& m) {
     auto unet2d_condition_model = py::class_<ov::genai::UNet2DConditionModel>(m, "UNet2DConditionModel", "UNet2DConditionModel class.")
         .def(py::init([](
-            const std::string& root_dir
+            const std::filesystem::path& root_dir
         ) {
             return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir);
         }),
@@ -95,11 +98,11 @@ void init_unet2d_condition_model(py::module_& m) {
             root_dir (str): Model root directory.
         )")
         .def(py::init([](
-            const std::string& root_dir,
+            const std::filesystem::path& root_dir,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::UNet2DConditionModel>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -122,7 +125,7 @@ void init_unet2d_condition_model(py::module_& m) {
 
     py::class_<ov::genai::UNet2DConditionModel::Config>(unet2d_condition_model, "Config", "This class is used for storing UNet2DConditionModel config.")
         .def(py::init([](
-            const std::string& config_path
+            const std::filesystem::path& config_path
         ) {
             return std::make_unique<ov::genai::UNet2DConditionModel::Config>(config_path);
         }))
@@ -139,13 +142,13 @@ void init_unet2d_condition_model(py::module_& m) {
     unet2d_condition_model.def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states);
     unet2d_condition_model.def(
             "compile", 
-            [](ov::genai::UNet2DConditionModel& self, 
+            [](ov::genai::UNet2DConditionModel& self,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -156,7 +159,7 @@ void init_unet2d_condition_model(py::module_& m) {
 void init_autoencoder_kl(py::module_& m) {
     auto autoencoder_kl = py::class_<ov::genai::AutoencoderKL>(m, "AutoencoderKL", "AutoencoderKL class.")
         .def(py::init([](
-            const std::string& root_dir
+            const std::filesystem::path& root_dir
         ) {
             return std::make_unique<ov::genai::AutoencoderKL>(root_dir);
         }),
@@ -166,11 +169,11 @@ void init_autoencoder_kl(py::module_& m) {
             root_dir (str): Root directory.
         )")
         .def(py::init([](
-            const std::string& root_dir,
+            const std::filesystem::path& root_dir,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -193,7 +196,7 @@ void init_autoencoder_kl(py::module_& m) {
 
     py::class_<ov::genai::AutoencoderKL::Config>(autoencoder_kl, "Config", "This class is used for storing AutoencoderKL config.")
         .def(py::init([](
-            const std::string& config_path
+            const std::filesystem::path& config_path
         ) {
             return std::make_unique<ov::genai::AutoencoderKL::Config>(config_path);
         }))
@@ -207,13 +210,13 @@ void init_autoencoder_kl(py::module_& m) {
     autoencoder_kl.def("infer", &ov::genai::AutoencoderKL::infer);
     autoencoder_kl.def(
             "compile", 
-            [](ov::genai::AutoencoderKL& self, 
+            [](ov::genai::AutoencoderKL& self,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done"
+            py::arg("device"), "device on which inference will be done"
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
@@ -224,7 +227,7 @@ void init_autoencoder_kl(py::module_& m) {
 void init_clip_text_model_with_projection(py::module_& m) {
     auto clip_text_model_with_projection = py::class_<ov::genai::CLIPTextModelWithProjection>(m, "CLIPTextModelWithProjection", "CLIPTextModelWithProjection class.")
         .def(py::init([](
-            const std::string& root_dir
+            const std::filesystem::path& root_dir
         ) {
             return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir);
         }),
@@ -234,11 +237,11 @@ void init_clip_text_model_with_projection(py::module_& m) {
             root_dir (str): Model root directory.
         )")
         .def(py::init([](
-            const std::string& root_dir,
+            const std::filesystem::path& root_dir,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  utils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
         py::arg("device"), "Device on which inference will be done",
@@ -261,7 +264,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
 
     py::class_<ov::genai::CLIPTextModelWithProjection::Config>(clip_text_model_with_projection, "Config", "This class is used for storing CLIPTextModelWithProjection config.")
         .def(py::init([](
-            const std::string& config_path
+            const std::filesystem::path& config_path
         ) {
             return std::make_unique<ov::genai::CLIPTextModelWithProjection::Config>(config_path);
         }))
@@ -279,13 +282,12 @@ void init_clip_text_model_with_projection(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                self.compile(device,  utils::kwargs_to_any_map(kwargs));
+                self.compile(device,  pyutils::kwargs_to_any_map(kwargs));
             },
-            py::arg("device") = "CPU", "device on which inference will be done",
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )");
 }
-

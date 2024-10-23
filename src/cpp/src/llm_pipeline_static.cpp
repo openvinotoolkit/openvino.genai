@@ -201,8 +201,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
     model->reshape(new_shapes);
 }
 
-void fill_tensor(ov::Tensor tensor, int64_t fill_val, size_t offset = 0u) {
-    int64_t* tensor_data = tensor.data<int64_t>();
+template <typename T>
+void fill_tensor(ov::Tensor tensor, T fill_val, size_t offset = 0u) {
+    T* tensor_data = tensor.data<T>();
     std::fill(tensor_data + offset, tensor_data + tensor.get_size(), fill_val);
 }
 
@@ -265,6 +266,10 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
+    // NB: Empty config for devices != NPU
+    if (!npudesc.has_value()) {
+        return { };
+    }
     auto config = get_default_common_config(model);
     if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
         config.emplace("NPUW_PARALLEL_COMPILE", "YES");
@@ -277,7 +282,12 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
     return config;
 }
 
-ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
+ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
+                                       const std::optional<NPUDesc>& npudesc) {
+    // NB: Empty config for devices != NPU
+    if (!npudesc.has_value()) {
+        return { };
+    }
     auto config = get_default_common_config(model);
     config.emplace("NPUW_FUNCALL_ASYNC", "YES");
     config.emplace("NPUW_PARALLEL_COMPILE", "YES");
@@ -334,13 +344,13 @@ namespace ov {
 namespace genai {
 
 StaticLLMPipeline::StaticLLMPipeline(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
-                        utils::from_config_json_if_exists(path)) {
-    auto pipeline_config = config;
+                        utils::from_config_json_if_exists(models_path)) {
+    auto properties = config;
     /* NB: Static LLM pipeline consists of two models,
        first to process the input prompt (prefill),
        second to use in generation loop (kvcache)
@@ -353,27 +363,27 @@ StaticLLMPipeline::StaticLLMPipeline(
         2. When both models are directly imported from provided prefill
            and generation precompiled blobs, that is "USE_BLOBS=YES" way.
     */
-    const auto use_blobs = pop_or_default(pipeline_config, "USE_BLOBS", false);
+    const auto use_blobs = pop_or_default(properties, "USE_BLOBS", false);
     if (!use_blobs) {
-        setupAndCompileModels(path, device, pipeline_config);
+        setupAndCompileModels(models_path, device, properties);
     } else {
-        setupAndImportModels(path, device, pipeline_config);
+        setupAndImportModels(models_path, device, properties);
     }
     // Initialize tensors
     prepare_for_new_conversation();
 };
 
 StaticLLMPipeline::StaticLLMPipeline(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& config
-) : StaticLLMPipeline(path, path.string(), device, config) {
+    const ov::AnyMap& properties
+) : StaticLLMPipeline(models_path, Tokenizer(models_path), device, properties) {
 }
 
 void StaticLLMPipeline::setupAndCompileModels(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    ov::AnyMap& pipeline_config) {
+    ov::AnyMap& properties) {
     /* Initialization assumes multiple steps if user passes "USE_BLOBS=NO":
         1) Read the template model - this will be kvcache model
         2) Expose KV-cache input and output layers from kvcache model
@@ -390,7 +400,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     auto npudesc = extract_npu_descriptor(core);
 
     // (1) Read the template model - this will be kvcache model
-    m_kvcache_model = core.read_model(path / "openvino_model.xml");
+    m_kvcache_model = core.read_model((models_path / "openvino_model.xml").string());
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
     // (3) Align u4 ZP constants
@@ -403,37 +413,39 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
     // (7) Reshape both models to static shape
-    const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
-    const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
-    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
+    const uint32_t kMaxPromptLen = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(models_path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (8) Compile both model
     auto prefill_config = pop_or_default(
-        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
+        properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     auto generate_config = pop_or_default(
-        pipeline_config, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
+        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc)
     );
-    merge_config_with(prefill_config, pipeline_config);
-    merge_config_with(generate_config, pipeline_config);
+    merge_config_with(prefill_config, properties);
+    merge_config_with(generate_config, properties);
     // FIXME: Drop CACHE_DIR option if NPUW is enabled
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
+    // NB: If NPU specified but not available - fallback to CPU
+    const auto target_device = (device == "NPU" && !npudesc.has_value()) ? "CPU" : device;
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, device, generate_config
+        m_kvcache_model, target_device, generate_config
     ).create_infer_request();
     m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
+        m_prefill_model, target_device, prefill_config
     ).create_infer_request();
 }
 
 void StaticLLMPipeline::setupAndImportModels(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    ov::AnyMap& pipeline_config) {
+    ov::AnyMap& properties) {
     /* To initialize pipeline in case when user passes "USE_BLOBS=YES",
        next steps are required:
         1) Check that neither MAX_PROMPT_LEN nor MIN_RESPONSE_LEN is
@@ -446,15 +458,15 @@ void StaticLLMPipeline::setupAndImportModels(
     ov::Core core;
 
     auto import_blob = [this,
-                        &path,
-                        &pipeline_config,
+                        &models_path,
+                        &properties,
                         &core,
                         &device](const std::string& model_name,
                                  ov::AnyMap& model_config) {
         auto blob_path = pop_or_default(model_config, "BLOB_PATH", std::string{});
 
         if (blob_path.empty()) {
-            blob_path = (path /
+            blob_path = (models_path /
                 (std::string("openvino_") + model_name + ".blob")).string();
         }
 
@@ -463,7 +475,7 @@ void StaticLLMPipeline::setupAndImportModels(
                 + blob_path);
         }
 
-        merge_config_with(model_config, pipeline_config);
+        merge_config_with(model_config, properties);
 
         std::fstream fs(blob_path, std::ios::in | std::ios::binary);
 
@@ -484,17 +496,17 @@ void StaticLLMPipeline::setupAndImportModels(
 
     // (1) Check that neither MAX_PROMPT_LEN nor MIN_RESPONSE_LEN is
     //     exposed in the config
-    if (pipeline_config.count("MAX_PROMPT_LEN") ||
-        pipeline_config.count("MIN_RESPONSE_LEN")) {
+    if (properties.count("MAX_PROMPT_LEN") ||
+        properties.count("MIN_RESPONSE_LEN")) {
         OPENVINO_THROW("Neither \"MAX_PROMPT_LEN\" nor \"MIN_RESPONSE_LEN\""
            " can be specified in \"USE_BLOBS=YES\" configuration!");
     }
     // (2) Import prefill model from model directory or specified path
-    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", ov::AnyMap());
+    auto prefill_config = pop_or_default(properties, "PREFILL_CONFIG", ov::AnyMap());
     auto prefill_model = import_blob("prefill", prefill_config);
     m_prefill_request = prefill_model.create_infer_request();
     // (3) Import generate model from model directory or specified path
-    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", ov::AnyMap());
+    auto generate_config = pop_or_default(properties, "GENERATE_CONFIG", ov::AnyMap());
     auto generate_model = import_blob("generate", generate_config);
     m_kvcache_request = generate_model.create_infer_request();
     // (4) Fill in m_kvcache_desc
@@ -517,10 +529,10 @@ void StaticLLMPipeline::finish_chat() {
 };
 
 void StaticLLMPipeline::prepare_for_new_conversation() {
-    fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
-    fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
-    fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
-    fill_tensor(m_kvcache_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("position_ids"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_kvcache_request.get_tensor("attention_mask"), 0u);
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
@@ -645,7 +657,7 @@ EncodedResults StaticLLMPipeline::generate(
     copy_with_offset(input_ids, offset, padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
-    fill_tensor(padded_attention_mask, 1u, offset);
+    fill_tensor<int64_t>(padded_attention_mask, 1u, offset);
 
     auto padded_position_ids = m_prefill_request.get_tensor("position_ids");
     auto* padded_pos_data = padded_position_ids.data<int64_t>();
@@ -680,6 +692,8 @@ EncodedResults StaticLLMPipeline::generate(
 
         const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
         auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+        fill_tensor<ov::float16>(kvcache_in_tensor, 0);
+
         auto kvcache_in_slice = make_tensor_slice(
             kvcache_in_tensor, m_kvcache_desc.dim, 0u, m_kvcache_desc.num_stored_tokens
         );
