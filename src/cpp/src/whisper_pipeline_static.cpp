@@ -278,7 +278,7 @@ namespace ov {
 namespace genai {
 
 WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& models_path,
-                                                              const ov::AnyMap& plugin_config)
+                                                              const ov::AnyMap& properties)
     : WhisperPipelineImplBase{models_path} {
     ov::Core core = utils::singleton_core();
 
