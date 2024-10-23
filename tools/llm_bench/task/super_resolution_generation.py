@@ -78,6 +78,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
     iter_data_list = []
+    json_data_list = []
     tm_list = []
     input_image_list = model_utils.get_image_param_from_prompt_file(args)
     if len(input_image_list) > 0:
@@ -125,5 +126,4 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id, mem_consumption)
             tm_list.clear()
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
-
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, json_data_list

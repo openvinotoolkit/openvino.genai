@@ -397,6 +397,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
+    json_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
     input_text_list = model_utils.get_prompts(args)
     if args['prompt_index'] is None:
@@ -438,4 +439,4 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, json_data_list

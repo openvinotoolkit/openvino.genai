@@ -93,6 +93,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     pipe, pretrain_time = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
     iter_data_list = []
+    json_data_list = []
     input_image_list = model_utils.get_image_param_from_prompt_file(args)
     if framework == "ov":
         stable_diffusion_hook.new_text_encoder(pipe)
@@ -125,4 +126,4 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
                 run_image_generation(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption)
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, json_data_list
