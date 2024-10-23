@@ -15,7 +15,7 @@
 #include "py_utils.hpp"
 
 namespace py = pybind11;
-namespace utils = ov::genai::pybind::utils;
+namespace pyutils = ov::genai::pybind::utils;
 
 
 auto vlm_generate_docstring = R"(
@@ -63,20 +63,16 @@ py::object call_vlm_generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
     const ov::genai::GenerationConfig& generation_config,
-    const utils::PyBindStreamerVariant& py_streamer,
+    const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    auto updated_config = *ov::genai::pybind::utils::update_config_from_kwargs(generation_config, kwargs);
-    ov::genai::StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
+    auto updated_config = *pyutils::update_config_from_kwargs(generation_config, kwargs);
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
 
     return py::cast(pipe.generate(prompt, images, updated_config, streamer));
 }
 
-py::object call_vlm_generate(
-    ov::genai::VLMPipeline& pipe,
-    const std::string& prompt,
-    const py::kwargs& kwargs
-) {
+ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
     ov::AnyMap params = {};
 
     for (const auto& item : kwargs) {
@@ -84,22 +80,36 @@ py::object call_vlm_generate(
         py::object value = py::cast<py::object>(item.second);
 
         if (key == "images") {
-            params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(item.second)))});
+            params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(value)))});
         } else if (key == "image") {
-            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(item.second)))});
+            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(value)))});
         } else if (key == "generation_config") {
-            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(item.second)))});
+            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(value)))});
         } else if (key == "streamer") {
-            auto py_streamer = py::cast<utils::PyBindStreamerVariant>(value);
-            params.insert({ov::genai::streamer(std::move(ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer)))});
+            auto py_streamer = py::cast<pyutils::PyBindStreamerVariant>(value);
+            params.insert({ov::genai::streamer(std::move(pyutils::pystreamer_to_streamer(py_streamer)))});
 
-        } else {
-            throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
+        } 
+        else {
+            if (allow_compile_properties) {
+                // convert arbitrary objects to ov::Any
+                // not supported properties are not checked, as these properties are passed to compile(), which will throw exception in case of unsupported property
+                if (pyutils::py_object_is_any_map(value)) {
+                    auto map = pyutils::py_object_to_any_map(value);
+                    params.insert(map.begin(), map.end());
+                } else {
+                    params[key] = pyutils::py_object_to_any(value);
+                }
+            }
+            else {
+                // generate doesn't run compile(), so only VLMPipeline specific properties are allowed
+                throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
                                         "Use help(openvino_genai.VLMPipeline.generate) to get list of acceptable parameters."));
+            }
         }
     }
 
-    return py::cast(pipe.generate(prompt, params));
+    return params;
 }
 
 void init_vlm_pipeline(py::module_& m) {
@@ -107,18 +117,18 @@ void init_vlm_pipeline(py::module_& m) {
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
-            const std::map<std::string, py::object>& config
+            const py::kwargs& kwargs
         ) {
-            ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, utils::properties_to_any_map(config));
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, vlm_kwargs_to_any_map(kwargs, true));
         }),
         py::arg("models_path"), "folder with exported model files",
-        py::arg("device"), "device on which inference will be done",
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map"
+        py::arg("device"), "device on which inference will be done"
         R"(
             VLMPipeline class constructor.
             models_path (str): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            kwargs: Device properties
         )")
 
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
@@ -132,7 +142,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const std::string& prompt,
                 const std::vector<ov::Tensor>& images,
                 const ov::genai::GenerationConfig& generation_config,
-                const utils::PyBindStreamerVariant& streamer,
+                const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) {
                 return call_vlm_generate(pipe, prompt, images, generation_config, streamer, kwargs);
@@ -146,10 +156,10 @@ void init_vlm_pipeline(py::module_& m) {
         .def(
             "generate",
             [](ov::genai::VLMPipeline& pipe,
-                const std::string& prompt,
-                const py::kwargs& kwargs
+               const std::string& prompt,
+               const py::kwargs& kwargs
             ) {
-                return call_vlm_generate(pipe, prompt, kwargs);
+                return py::cast(pipe.generate(prompt, vlm_kwargs_to_any_map(kwargs, false)));
             },
             py::arg("prompt"), "Input string",
             (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()

@@ -51,7 +51,7 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
-          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_generate_pipeline --parallel
+          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_openvino_genai --parallel
 
       - name: Create virtual environment
         run: python3 -m venv openvino_lcm_cpp
@@ -114,7 +114,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
-          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_generate_pipeline --parallel
+          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_openvino_genai --parallel
 
       - name: Install python dependencies
         run: |
@@ -136,9 +136,9 @@ jobs:
         run: |
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
           python .\samples\python\text2image\main.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
-          PATH: ${{ env.build_dir }}\openvino_genai
           PYTHONPATH: ${{ env.build_dir }}
   
   Overall_Status:
