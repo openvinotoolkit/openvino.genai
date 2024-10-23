@@ -74,6 +74,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.is_genai = is_genai
 
         if base_model:
+            base_model.resolution = self.resolution
             self.gt_data = self._generate_data(
                 base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
             )
@@ -87,6 +88,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.gt_data.to_csv(csv_name)
 
     def score(self, model, gen_image_fn=None):
+        model.resolution = self.resolution
         predictions = self._generate_data(
             model, gen_image_fn, os.path.join(self.gt_dir, "target")
         )
@@ -118,7 +120,6 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        model.resolution = self.resolution
         if hasattr(model, "reshape") and self.resolution is not None:
             if gen_image_fn is None:
                 model.reshape(
