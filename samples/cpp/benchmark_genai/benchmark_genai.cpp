@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) try {
     }
 
     std::string prompt = result["prompt"].as<std::string>();
-    const std::string model_path = result["model"].as<std::string>();
+    const std::string models_path = result["model"].as<std::string>();
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
 
-    ov::genai::LLMPipeline pipe(model_path, device);
+    ov::genai::LLMPipeline pipe(models_path, device);
     
     for (size_t i = 0; i < num_warmup; i++)
         pipe.generate(prompt, config);

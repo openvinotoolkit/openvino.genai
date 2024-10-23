@@ -24,6 +24,10 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
+py::list handle_utf8(const std::vector<std::string>& decoded_res);
+
+py::str handle_utf8(const std::string& text);
+
 ov::Any py_object_to_any(const py::object& py_obj);
 
 bool py_object_is_any_map(const py::object& py_obj);
@@ -32,10 +36,12 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 
 std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties);
 
+ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs);
+
 std::string ov_tokenizers_module_path();
 
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
 
-ov::genai::StreamerVariant pystreamer_to_streamer(const utils::PyBindStreamerVariant& py_streamer);
+ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
 
 }  // namespace ov::genai::pybind::utils

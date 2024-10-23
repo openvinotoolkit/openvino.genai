@@ -3,17 +3,18 @@
 
 #pragma once
 
+#include <filesystem>
 #include <vector>
 #include <string>
 #include <memory>
-
-#include "openvino/genai/visibility.hpp"
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
+
+#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
@@ -21,26 +22,26 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS UNet2DConditionModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 4;
         size_t sample_size = 0;
         std::vector<size_t> block_out_channels = { 320, 640, 1280, 1280 };
         int time_cond_proj_dim = -1;
 
-        explicit Config(const std::string& config_path);
+        explicit Config(const std::filesystem::path& config_path);
     };
 
-    explicit UNet2DConditionModel(const std::string root_dir);
+    explicit UNet2DConditionModel(const std::filesystem::path& root_dir);
 
-    UNet2DConditionModel(const std::string& root_dir,
+    UNet2DConditionModel(const std::filesystem::path& root_dir,
                          const std::string& device,
                          const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    UNet2DConditionModel(const std::string& root_dir,
-                  const std::string& device,
-                  Properties&&... properties)
+    UNet2DConditionModel(const std::filesystem::path& root_dir,
+                         const std::string& device,
+                         Properties&&... properties)
         : UNet2DConditionModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     UNet2DConditionModel(const UNet2DConditionModel&);

@@ -3,34 +3,50 @@
 
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
-#include "paged_attention_transformations.hpp"
 #include "utils.hpp"
+#include "utils/paged_attention_transformations.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
-    const std::string& models_path,
+    const std::filesystem::path& models_path,
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
+    const ov::AnyMap& properties) {
     m_tokenizer = tokenizer;
+
     ov::Core core;
 
-    auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
-    core.set_property(core_plugin_config);
+    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+    core.set_property(core_properties);
 
     // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
+    std::shared_ptr<ov::Model> model = core.read_model((models_path / "openvino_model.xml").string());
 
-    DeviceConfig device_config(core, scheduler_config, device, compile_plugin_config);
+    DeviceConfig device_config(core, scheduler_config, device, compile_properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
-    apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), compile_plugin_config).create_infer_request();
+    init(model, scheduler_config, compile_properties, device_config, core);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+    m_awaiting_requests.clear();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
+    std::shared_ptr<ov::Model> model,
+    const SchedulerConfig& scheduler_config,
+    const ov::AnyMap& properties,
+    const DeviceConfig& device_config,
+    ov::Core& core) {
+    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), properties).create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
@@ -62,9 +78,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     }
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
     m_sampler->set_seed(m_generation_config.rng_seed);
+};
 
-    // read default generation config
-}
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
@@ -109,17 +124,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     step_timer.start();
 
     // Pull awaiting requests
-    {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
-        m_awaiting_requests.clear();
-    }
+    _pull_awaiting_requests();
 
     m_pipeline_metrics.requests = m_requests.size();
+
     Scheduler::Output scheduler_output;
     {
         static ManualTimer timer("scheduling");
         timer.start();
+        m_scheduler->clean_empty_blocks(m_requests);
         scheduler_output = m_scheduler->schedule(m_requests);
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
@@ -190,7 +203,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("sample");
         timer.start();
-        sampler_output = m_sampler->sample(m_requests, logits);
+        sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
         timer.end();
     }
 
@@ -266,7 +279,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                     m_scheduler->free_sequence(sequence->get_id());
                 }
             }
-            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_sampler->clear_request_info(request->get_request_id());
         }
         m_requests.clear();
     };
@@ -320,51 +333,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     return results;
 }
 
-std::vector<GenerationResult>
-ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<std::string>& prompts,
-                                                             std::vector<ov::genai::GenerationConfig> sampling_params,
-                                                             const StreamerVariant& streamer) {
-    std::vector<ov::Tensor> input_ids;
-    static ManualTimer timer("tokenize");
-    if (m_is_chat_conversation) {
-        OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
-        m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
-        constexpr bool add_generation_prompt = true;
-        std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        timer.start();
-        // ov::genai::add_special_tokens(false) is aligned with stateful pipeline
-        input_ids.push_back(m_tokenizer.encode(history, ov::genai::add_special_tokens(false)).input_ids);
-        timer.end();
-    } else {
-        input_ids.reserve(prompts.size());
-        for (const std::string& prompt : prompts) {
-            timer.start();
-            input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
-            timer.end();
-        }
-    }
-    std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
-    std::vector<GenerationResult> decoded;
-    decoded.reserve(encoded.size());
-    for (EncodedGenerationResult& res : encoded) {
-        std::vector<std::string> generated;
-        generated.reserve(res.m_generation_ids.size());
-        for (size_t idx = 0; idx < res.m_generation_ids.size(); ++idx) {
-            generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
-            if (m_is_chat_conversation && 0 == idx) {
-                m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
-            }
-        }
-        decoded.push_back(GenerationResult{
-            res.m_request_id,
-            std::move(generated),
-            std::move(res.m_scores),
-            res.m_status
-        });
-    }
-    return decoded;
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
@@ -375,7 +343,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
                     m_scheduler->free_sequence(sequence->get_id());
                 }
             }
-            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_sampler->clear_request_info(request->get_request_id());
             requests_iterator = m_requests.erase(requests_iterator);
         } else {
             requests_iterator++;
@@ -440,4 +408,5 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
         seq_group_ptr->register_token_eviction(num_blocks_evicted * sched_config.block_size);
     }
 }
+
 }

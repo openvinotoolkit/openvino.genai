@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -17,7 +18,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig {
 public:
     WhisperGenerationConfig() = default;
-    explicit WhisperGenerationConfig(const std::string& json_path);
+    explicit WhisperGenerationConfig(const std::filesystem::path& json_path);
 
     // Generic
 
@@ -47,9 +48,6 @@ public:
 
     // No timestamps token id.
     int64_t no_timestamps_token_id = 50363;
-
-    // Begin timestamps token id.
-    int64_t begin_timestamps_token_id = 50364;
 
     size_t max_initial_timestamp_index = 50;
 
@@ -114,7 +112,6 @@ static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
 static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
 static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
-static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};

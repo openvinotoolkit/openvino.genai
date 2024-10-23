@@ -17,6 +17,8 @@
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 
 namespace ov {
 namespace genai {
@@ -56,39 +58,39 @@ public:
     bool m_is_cache_empty = true;
     std::optional<int32_t> m_selected_beam = std::nullopt;
     ChatHistory m_history;
-    std::string m_templated_chat_history = "";
+    std::string m_templated_chat_history = {};
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
         const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
-    ): LLMPipelineImplBase(tokenizer),
+    ) : LLMPipelineImplBase(tokenizer),
        m_model_runner(request) {
        GenerationConfig default_config;
        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
     }
 
     StatefulLLMPipeline(
-        const std::filesystem::path& model_path,
+        const std::filesystem::path& models_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ):
-        LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
+    ) : LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(models_path))
     {
         ov::Core core;
-        if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
+        if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
-            auto model = core.read_model(model_path / "openvino_model.xml");
-            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
+            auto model = core.read_model(models_path / "openvino_model.xml");
+            m_generation_config.adapters.set_tensor_name_prefix("base_model.model.model.");
+            m_adapter_controller = AdapterController(model, m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
             core.set_property(core_plugin_config);
-            auto model = core.read_model(model_path / "openvino_model.xml");
+            auto model = core.read_model(models_path / "openvino_model.xml");
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
         }
@@ -99,10 +101,10 @@ public:
     }
 
     StatefulLLMPipeline(
-        const std::filesystem::path& model_path,
+        const std::filesystem::path& models_path,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    ) : StatefulLLMPipeline{models_path, Tokenizer(models_path.string()), device, plugin_config} {}
 
     DecodedResults generate(
         StringInputs inputs,
@@ -133,12 +135,11 @@ public:
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
                 // Do not add special tokens in chat scenario to be aligned with HF.
-                bool add_special_tokens = false;  
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
@@ -316,8 +317,8 @@ public:
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
-            m_history = {};
-            m_templated_chat_history = "";
+            m_history.clear();
+            m_templated_chat_history.clear();
         }
     }
 };
@@ -367,6 +368,20 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
+std::pair<std::string, Any> draft_model(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const ov::AnyMap& properties) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    }
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(models_path, device, plugin_config, scheduler_config) };
+}
+
 }  // namespace genai
 }  // namespace ov
 
@@ -389,16 +404,16 @@ public:
         const ov::InferRequest& request,
         const Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config
-    ): LLMPipelineImplBase{dont_construct()}, m_impl{"", {}} {}
+    ): LLMPipelineImplBase{dont_construct()}, m_impl{{}, {}, {}} {}
 
     ContinuousBatchingAdapter(
-        const std::filesystem::path& model_path,
+        const std::filesystem::path& models_path,
         const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{tokenizer}, m_impl{
-        model_path.string(),
+        models_path.string(),
         tokenizer,
         scheduler_config,
         device,
@@ -406,12 +421,12 @@ public:
     } {}
 
     ContinuousBatchingAdapter(
-        const std::filesystem::path& model_path,
+        const std::filesystem::path& models_path,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{Tokenizer(model_path.string())}, m_impl{
-        model_path.string(),
+    ): LLMPipelineImplBase{Tokenizer(models_path.string())}, m_impl{
+        models_path.string(),
         m_tokenizer,
         scheduler_config,
         device,
@@ -530,28 +545,28 @@ ov::genai::LLMPipeline::LLMPipeline(
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& model_path,
+    const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& plugin_config
+    const ov::AnyMap& properties
 ){
     auto start_time = std::chrono::steady_clock::now();
-    if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end()) {
-        auto config_without_scheduler_config = plugin_config;
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
+        auto config_without_scheduler_config = properties;
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
-        auto& scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, scheduler_config, device, config_without_scheduler_config);
+        auto& scheduler_config = properties.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, config_without_scheduler_config);
     } else if ("NPU" == device) {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
+        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& config
 ){
@@ -560,11 +575,11 @@ ov::genai::LLMPipeline::LLMPipeline(
         auto config_without_scheduler_config = config;
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
         auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, scheduler_config, device, config_without_scheduler_config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, config_without_scheduler_config);
     } else if ("NPU" == device) {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
+        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, config);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();

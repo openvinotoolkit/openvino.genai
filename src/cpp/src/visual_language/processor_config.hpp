@@ -12,7 +12,7 @@ namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
 /// change VisionEncoder's behavior. Corresponds to
 /// preprocessor_config.json.
-class OPENVINO_GENAI_EXPORTS ProcessorConfig {
+class ProcessorConfig {
 public:
     size_t image_size = 980;
     /// @brief Dimensions of the smaller, non-overlapping patches that the
@@ -41,6 +41,9 @@ public:
     size_t crop_size_height = 336;
     size_t crop_size_width = 336;
     size_t size_shortest_edge = 336;
+
+    // llava-next specific config params
+    std::vector<std::pair<int, int>> image_grid_pinpoints{{336, 672}, {672, 336}, {672, 672}, {1008, 336}, {336, 1008}};
 
     /// @brief Default constructor
     ProcessorConfig() = default;

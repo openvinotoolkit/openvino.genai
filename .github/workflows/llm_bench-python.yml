@@ -3,10 +3,6 @@
 
 name: llm_bench Python Test
 
-env:
-  LLM_BENCH_PYPATH: tools/llm_bench
-  WWB_PATH: tools/who_what_benchmark
-
 on:
   push:
     branches: [ "master" ]
@@ -21,16 +17,22 @@ on:
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
+concurrency:
+  # github.ref is not unique in post-commit
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-llm-bench-python
+  cancel-in-progress: true
+
+env:
+  LLM_BENCH_PYPATH: tools/llm_bench
+  WWB_PATH: tools/who_what_benchmark
+
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10"]
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -47,6 +49,7 @@ jobs:
       run: |
         # stop the build if there are Python syntax errors or undefined names
         python -m flake8 ${{ env.LLM_BENCH_PYPATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
+        python -m flake8 ${{ env.WWB_PATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
     - name: Create code style diff for samples
       if: failure()
       run: |
@@ -59,9 +62,10 @@ jobs:
         path: llm.bench_diff.diff
     - name: Test native pytorch model on Linux
       run: |
-        export GIT_LFS_SKIP_SMUDGE=0
         git clone --depth 1 https://huggingface.co/katuni4ka/tiny-random-qwen
         python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
+      env:
+        GIT_LFS_SKIP_SMUDGE: 0
     - name: Test tiny-random-baichuan2 on Linux
       run: |
         optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16

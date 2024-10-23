@@ -15,6 +15,24 @@
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
 
+py::str handle_utf8(const std::string& text) {
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an exception
+    PyObject* py_s = PyUnicode_DecodeUTF8(text.data(), text.length(), "replace");
+    return py::reinterpret_steal<py::object>(py_s);
+}
+
+py::list handle_utf8(const std::vector<std::string>& decoded_res) {
+    py::list res;
+    for (const auto s: decoded_res) {
+        py::str r = handle_utf8(s);
+        res.append(r);
+    }
+    return res;
+}
+
 bool py_object_is_any_map(const py::object& py_obj) {
     if (!py::isinstance<py::dict>(py_obj)) {
         return false;
@@ -152,6 +170,24 @@ std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string,
     return properties_to_cpp;
 }
 
+
+ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
+    ov::AnyMap params = {};
+
+    for (const auto& item : kwargs) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+        if (utils::py_object_is_any_map(value)) {
+            auto map = utils::py_object_to_any_map(value);
+            params.insert(map.begin(), map.end());
+        } else {
+            params[key] = utils::py_object_to_any(value);
+        }
+
+    }
+    return params;
+}
+
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
     std::filesystem::path from_relative = tokenizers_relative_to_genai();
@@ -161,10 +197,10 @@ std::string ov_tokenizers_module_path() {
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
-ov::genai::StreamerVariant pystreamer_to_streamer(const utils::PyBindStreamerVariant& py_streamer) {
+ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
-    std::visit(utils::overloaded {
+    std::visit(overloaded {
     [&streamer](const std::function<bool(py::str)>& py_callback){
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
@@ -183,7 +219,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const utils::PyBindStreamerVar
 }
 
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs) {
-    if(!config.has_value() && kwargs.empty())
+    if (!config.has_value() && kwargs.empty())
         return std::nullopt;
 
     ov::genai::GenerationConfig res_config;

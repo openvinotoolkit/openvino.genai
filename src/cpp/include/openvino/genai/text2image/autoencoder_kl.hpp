@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <vector>
 #include <string>
 
@@ -18,25 +19,25 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS AutoencoderKL {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 3;
         size_t latent_channels = 4;
         size_t out_channels = 3;
         float scaling_factor = 0.18215f;
         std::vector<size_t> block_out_channels = { 64 };
 
-        explicit Config(const std::string& config_path);
+        explicit Config(const std::filesystem::path& config_path);
     };
 
-    explicit AutoencoderKL(const std::string& root_dir);
+    explicit AutoencoderKL(const std::filesystem::path& root_dir);
 
-    AutoencoderKL(const std::string& root_dir,
+    AutoencoderKL(const std::filesystem::path& root_dir,
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    AutoencoderKL(const std::string& root_dir,
+    AutoencoderKL(const std::filesystem::path& root_dir,
                   const std::string& device,
                   Properties&&... properties)
         : AutoencoderKL(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
