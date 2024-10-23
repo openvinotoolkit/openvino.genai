@@ -47,7 +47,6 @@ def test_image_model_types(model_id, model_type, backend):
         wwb_args.append("--genai")
 
     result = run_wwb(wwb_args)
-    print(f"WWB result: {result}, {result.stderr}")
 
     try:
         os.remove(GT_FILE)
