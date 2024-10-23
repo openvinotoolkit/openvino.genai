@@ -32,7 +32,7 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 ## Run
 
-`python main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"`
+`main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"`
 
 ### Examples
 
@@ -51,7 +51,7 @@ Here is an example how to run the sample with a single adapter. First download a
 
 Then run `lora.py`:
 
-`python lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7`
+`lora.py ./dreamlike_anime_1_0_ov/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7`
 
 The sample generates two images with and without adapters applied using the same prompt:
    - `lora.bmp` with adapters applied
