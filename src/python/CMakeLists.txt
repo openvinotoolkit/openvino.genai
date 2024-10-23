@@ -36,7 +36,7 @@ if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
     # RPATH for wheel is mandatory to find openvino_genai library. It
     # must be forced because GenAI may be built with OpenVINO targeting
     # archive. Such OpenVINO configurations sets
-    # CMAKE_SKIP_INSTALL_RPATH to ON because it relyes on setupvars.sh.
+    # CMAKE_SKIP_INSTALL_RPATH to ON because it relies on setupvars.sh.
     set(CMAKE_SKIP_INSTALL_RPATH OFF)
 endif()
 # setting RPATH / LC_RPATH depending on platform

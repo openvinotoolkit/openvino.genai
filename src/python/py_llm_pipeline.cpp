@@ -90,13 +90,55 @@ extern char generation_config_docstring[];
 
 void init_llm_pipeline(py::module_& m) {
     py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")
+        // init(model_path, tokenizer, device, config, kwargs) should be defined before init(model_path, device, config, kwargs) 
+        // to prevent tokenizer treated as kwargs argument
+        .def(py::init([](
+            const std::filesystem::path& models_path,
+            const Tokenizer& tokenizer,
+            const std::string& device,
+            const std::map<std::string, py::object>& config,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            if (config.size()) {
+                PyErr_WarnEx(PyExc_DeprecationWarning, 
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                         1);
+                auto config_properties = pyutils::properties_to_any_map(config);
+                properties.insert(config_properties.begin(), config_properties.end());
+            }
+            return std::make_unique<LLMPipeline>(models_path, tokenizer, device, properties);
+        }),
+        py::arg("models_path"),
+        py::arg("tokenizer"),
+        py::arg("device"),
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
+        R"(
+            LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
+            models_path (str): Path to the model file.
+            tokenizer (openvino_genai.Tokenizer): tokenizer object.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+            kwargs: Device properties.
+        )")
+
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
-            const std::map<std::string, py::object>& config
+            const std::map<std::string, py::object>& config,
+            const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(models_path, device, pyutils::properties_to_any_map(config));
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            if (config.size()) {
+                PyErr_WarnEx(PyExc_DeprecationWarning, 
+                         "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                         1);
+                auto config_properties = pyutils::properties_to_any_map(config);
+                properties.insert(config_properties.begin(), config_properties.end());
+            }
+            return std::make_unique<LLMPipeline>(models_path, device, properties);
         }),
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device"), "device on which inference will be done",
@@ -106,64 +148,7 @@ void init_llm_pipeline(py::module_& m) {
             models_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
-        )")
-
-        .def(py::init([](
-            const std::filesystem::path& models_path,
-            const std::string& device,
-            const py::kwargs& kwargs
-        ) {
-            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
-        }),
-        py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
-        py::arg("device"), "device on which inference will be done",
-        R"(
-            LLMPipeline class constructor.
-            models_path (str): Path to the model file.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
-        )")
-
-        .def(py::init([](
-            const std::filesystem::path& models_path,
-            const Tokenizer& tokenizer,
-            const std::string& device,
-            const std::map<std::string, py::object>& config
-        ) {
-            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(models_path, tokenizer, device, pyutils::properties_to_any_map(config));
-        }),
-        py::arg("models_path"),
-        py::arg("tokenizer"),
-        py::arg("device"),
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
-        R"(
-            LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
-            models_path (str): Path to the model file.
-            tokenizer (openvino_genai.Tokenizer): tokenizer object.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
-        )")
-
-        .def(py::init([](
-            const std::filesystem::path& models_path,
-            const Tokenizer& tokenizer,
-            const std::string& device,
-            const py::kwargs& kwargs
-        ) {
-            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(models_path, tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
-        }),
-        py::arg("models_path"),
-        py::arg("tokenizer"),
-        py::arg("device"),
-        R"(
-            LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
-            models_path (str): Path to the model file.
-            tokenizer (openvino_genai.Tokenizer): tokenizer object.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+            kwargs: Device properties.
         )")
 
         .def(

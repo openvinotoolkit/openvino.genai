@@ -9,7 +9,7 @@ namespace genai {
 
 /** 
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
- *  enabled or diabled depending on stateful value.
+ *  enabled or disabled depending on stateful value.
  * 
  *  +--------------+
  *  |  DefaultMode |

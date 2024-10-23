@@ -64,7 +64,9 @@ std::string _convert_unet_lora_key(const std::string& key) {
     diffusers_name = std::regex_replace(diffusers_name, std::regex("input\\.blocks"), "down_blocks");
     diffusers_name = std::regex_replace(diffusers_name, std::regex("down\\.blocks"), "down_blocks");
     diffusers_name = std::regex_replace(diffusers_name, std::regex("middle\\.block"), "mid_block");
+    diffusers_name = std::regex_replace(diffusers_name, std::regex("mid\\.block"), "mid_block");
     diffusers_name = std::regex_replace(diffusers_name, std::regex("output\\.blocks"), "up_blocks");
+    diffusers_name = std::regex_replace(diffusers_name, std::regex("up\\.blocks"), "up_blocks");
     diffusers_name = std::regex_replace(diffusers_name, std::regex("transformer\\.blocks"), "transformer_blocks");
     // Original patterns in HF are different for the next block, because 'lora' suffix is already processed
     diffusers_name = std::regex_replace(diffusers_name, std::regex("to\\.q"), "to_q");

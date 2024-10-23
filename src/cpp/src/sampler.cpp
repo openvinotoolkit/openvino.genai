@@ -4,7 +4,7 @@
 #include "sampler.hpp"
 
 namespace ov::genai {
-// Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
+// Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
         return {haystack.begin(), haystack.end()};
@@ -94,7 +94,7 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
     Every token is wrapped with prefix tokens to ensure tokenizer doesn't remove prefix whitespace of the actual token.
     After that all tokens are decoded and prefix is removed from the decoded text, so we end up with decoded token.
     Its characters are compared to the stop_string character at a current_position 
-    (position of a character in the stop_string counting from the last one) - at the begining position is 0.
+    (position of a character in the stop_string counting from the last one) - at the beginning position is 0.
     When characters match we increase current_position and check if we have a full match already, if not we continue.
     If we have already matched some characters (current_position > 0) and next character is not matching 
     before we reach the full match, then we reset current_position to 0. 
@@ -294,12 +294,12 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, Sa
 
             // need to insert candidate to a sequence group
             Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(candidate.m_sequence);
-            // and finish immidiately
+            // and finish immediately
             forked_sequence->set_status(SequenceStatus::FINISHED);
             // Setting stop since this function is used when sequence generated eos token
             forked_sequence->set_finish_reason(GenerationFinishReason::STOP);
 
-            // TODO: make it more simplier
+            // TODO: make it simpler
             // currently, we finish sequence and then fork it in current code
             {
                 for (size_t i = 0; i < group.min_heap.size(); ++i) {
@@ -524,7 +524,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
     else
         multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
 
-    // std::discrete_distribution returns corrupted results when applied to log probabilies
+    // std::discrete_distribution returns corrupted results when applied to log probabilities
     // which result returning NAN only logprobs.
     // so log() is applied after this line
     auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
@@ -880,7 +880,7 @@ void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfi
         return;
     }
     default:
-        OPENVINO_THROW("Beam search internal error: unkown mode");
+        OPENVINO_THROW("Beam search internal error: unknown mode");
     }
 }
 }

@@ -22,7 +22,7 @@ public:
     /// @brief A recommended size to resize an input image.
     /// llava calls it crop_size[height, width].
     size_t scale_resolution = 448;
-    /// @brief Maximum allowed number of intput image slices.
+    /// @brief Maximum allowed number of input image slices.
     /// 0 disables slicing.
     /// llava has image_grid_pinpoints instead.
     size_t max_slice_nums = 0;

@@ -95,7 +95,7 @@ class IterableStreamer(openvino_genai.StreamerBase):
             pass
         elif len(text) > self.print_len:
             # It is possible to have a shorter text after adding new token.
-            # Print to output only if text lengh is increaesed.
+            # Print to output only if text length is increaesed.
             word = text[self.print_len:]
             self.print_len = len(text)
         self.put_word(word)        
