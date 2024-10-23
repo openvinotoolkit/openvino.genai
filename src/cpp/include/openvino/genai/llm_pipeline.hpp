@@ -256,7 +256,7 @@ public:
     /**
     * @brief start chat with keeping history in kv cache.
     * Turns on keeping KV cache between generate calls and automatic applying of chat templates.
-    * In case if beam search is used, KV cache is kept fot the generated sequence with maximal scores.
+    * In case if beam search is used, KV cache is kept for the generated sequence with maximal scores.
     *
     * @param system_message optional system message.
     */
@@ -298,7 +298,7 @@ inline std::pair<std::string, Any> draft_model(
 
 /**
 * @brief scheduler_config property serves to activate continuous batching pipeline.
-* Create SchedulerConfig and fill it with sutable values. Copy or move it to plugin_config.
+* Create SchedulerConfig and fill it with suitable values. Copy or move it to plugin_config.
 * And create LLMPipeline instance with this config.
 */
 static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};

@@ -108,7 +108,7 @@ namespace ov::genai {
                 }
                 if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
                     // New sequence to track - will simulate that the tokens comprising the sequence were added one-by-one
-                    // from the standpoint of the occurence tracker
+                    // from the standpoint of the occurrence tracker
                     std::size_t new_scores_size = hh_score.get_size();
                     std::vector<std::size_t> counter(new_scores_size);
                     std::generate(counter.begin(), counter.begin() + new_scores_size,
@@ -119,13 +119,13 @@ namespace ov::genai {
                 size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
                 size_t num_new_tokens = hh_score.get_size() - accumulated_scores_for_current_decoder_layer.size();
                 if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
-                    // Increment occurence counts of all currently tracked cache blocks
+                    // Increment occurrence counts of all currently tracked cache blocks
                     auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
                     for (auto it = counter_for_current_decoder_layer.begin();
                          it != counter_for_current_decoder_layer.end(); it++) {
                         *it += num_new_tokens;
                     }
-                    // Add occurence counts for new tokens like above
+                    // Add occurrence counts for new tokens like above
                     counter_for_current_decoder_layer.resize(hh_score.get_size());
                     for (size_t i = 0; i < num_new_tokens; i++) {
                         auto idx = old_size_in_tokens + i;

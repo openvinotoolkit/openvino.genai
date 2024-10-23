@@ -481,7 +481,7 @@ public:
         } catch (const std::exception& error) {
             OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
                            "Please apply template manually to your prompt before calling generate. "
-                           "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+                           "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         }
     }
 
