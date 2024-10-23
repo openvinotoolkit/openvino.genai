@@ -100,35 +100,33 @@ def run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
 
 def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     iter_data_list = []
-    input_audio_prompt_list = model_utils.get_audio_param_from_prompt_file(args)
-    audios_prompt_list = []
-    if len(input_audio_prompt_list) > 0:
-        for audio_prompt in input_audio_prompt_list:
-            if args['prompt'] is None and args['prompt_file'] is None:
-                raise RuntimeError('==Failure image is empty ==')
-            elif args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                audio_prompt['prompt'] = os.path.join(os.path.dirname(args['prompt_file'][0]), audio_prompt['prompt'].replace('./', ''))
-            audio_prompt['prompt'] = Path(audio_prompt['prompt'])
-            audios_prompt_list.append(audio_prompt)
+    input_audio_file_list = model_utils.get_audio_param_from_media_file(args)
+    audios_file_list = []
+    if len(input_audio_file_list) > 0:
+        for audio_file in input_audio_file_list:
+            if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
+                audio_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), audio_file['media'].replace('./', ''))
+            audio_file['media'] = Path(audio_file['media'])
+            audios_file_list.append(audio_file)
     if args['prompt_index'] is None:
-        audio_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_prompt_list)]
-        audio_list = audios_prompt_list
+        audio_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_file_list)]
+        audio_list = audios_file_list
     else:
         audio_idx_list = []
         audio_list = []
         for i in args['prompt_index']:
-            if 0 <= i < len(audios_prompt_list):
-                audio_list.append(audios_prompt_list[i])
+            if 0 <= i < len(audios_file_list):
+                audio_list.append(audios_file_list[i])
                 audio_idx_list.append(i)
     if len(audio_list) == 0:
         raise RuntimeError('==Failure audio list is empty ==')
-    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {audio_idx_list}')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, audio file nums: {len(input_audio_file_list)}, audio idx: {audio_idx_list}')
     ov_model, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2txt_model(model_path, device, **args)
     pipe = ov_model
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
-        for idx, audio_prompt in enumerate(audio_list):
-            raw_speech = model_utils.read_wav(audio_prompt['prompt'], processor.feature_extractor.sampling_rate)
+        for idx, audio_file in enumerate(audio_list):
+            raw_speech = model_utils.read_wav(audio_file['media'], processor.feature_extractor.sampling_rate)
             run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_idx_list[idx],
                                        iter_data_list, mem_consumption, processor)
     metrics_print.print_average(iter_data_list, audio_idx_list, 1, True)

@@ -47,6 +47,7 @@ def get_argprser():
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
     parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None,
                         help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
+    parser.add_argument('--media', default=None, help='one media file')
     parser.add_argument(
         '-ic',
         '--infer_count',

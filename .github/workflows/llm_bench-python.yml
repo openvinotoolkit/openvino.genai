@@ -77,7 +77,7 @@ jobs:
     - name: Test whisper-tiny on Linux
       run: |
         optimum-cli export openvino --trust-remote-code --model openai/whisper-base ./ov_models/whisper-base
-        python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-base -pf ./tools/llm_bench/prompts/multimodal/whisper-tiny-stateful.jsonl -d cpu -n 1 --genai
+        python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-base --media ./tools/llm_bench/prompts/multimodal/audio/data_3283_1447_000/3283_1447_000000.flac -d cpu -n 1 --genai
     - name: WWB Tests
       run: |
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt

@@ -98,40 +98,40 @@ def get_image_param_from_prompt_file(args):
     return image_param_list
 
 
-def get_audio_param_from_prompt_file(args):
+def get_audio_param_from_media_file(args):
     audio_param_list = []
-    if args['prompt'] is None and args['prompt_file'] is None:
-        raise RuntimeError('== prompt and prompt file is empty ==')
-    elif args['prompt'] is not None and args['prompt_file'] is not None:
-        raise RuntimeError('== prompt and prompt file should not exist together ==')
+    if args['media'] is None and args['prompt_file'] is None:
+        raise RuntimeError('== media and prompt file is empty ==')
+    elif args['media'] is not None and args['prompt_file'] is not None:
+        raise RuntimeError('== media and prompt file should not exist together ==')
     else:
-        if args['prompt'] is not None:
-            if args['prompt'] != '':
-                audio_param_list.append({'prompt' : args['prompt']})
+        if args['media'] is not None:
+            if args['media'] != '':
+                audio_param_list.append({'media' : args['media']})
             else:
-                raise RuntimeError('== prompt should not be empty string ==')
+                raise RuntimeError('== media path should not be empty string ==')
         else:
-            input_prompt_list = args['prompt_file']
-            for input_prompt in input_prompt_list:
-                if input_prompt.endswith('.jsonl'):
-                    if os.path.exists(input_prompt):
-                        log.info(f'Read prompts from {input_prompt}')
-                        with open(input_prompt, 'r', encoding='utf-8') as f:
+            input_media_list = args['prompt_file']
+            for input_media in input_media_list:
+                if input_media.endswith('.jsonl'):
+                    if os.path.exists(input_media):
+                        log.info(f'Read prompts from {input_media}')
+                        with open(input_media, 'r', encoding='utf-8') as f:
                             for line in f:
                                 audio_param = {}
                                 data = json.loads(line)
                                 if 'media' in data:
                                     if data['media'] != '':
-                                        audio_param['prompt'] = data['media']
+                                        audio_param['media'] = data['media']
                                     else:
-                                        raise RuntimeError(f'== prompt should not be empty string in prompt file:{input_prompt} ==')
+                                        raise RuntimeError(f'== media path should not be empty string in media file:{input_media} ==')
                                 else:
-                                    raise RuntimeError(f'== key word "media" does not exist in prompt file:{input_prompt} ==')
+                                    raise RuntimeError(f'== key word "media" does not exist in media file:{input_media} ==')
                                 audio_param_list.append(audio_param)
                     else:
-                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
+                        raise RuntimeError(f'== The media file:{input_media} does not exist ==')
                 else:
-                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
+                    raise RuntimeError(f'== The media file:{input_media} should be ended with .jsonl ==')
     return audio_param_list
 
 
@@ -175,6 +175,7 @@ def analyze_args(args):
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
+    model_args['media'] = args.media
 
     has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:
