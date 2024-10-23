@@ -30,6 +30,9 @@ class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBat
 protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
     SpeculativeDecodingMetrics m_sd_metrics;
+    // Since we have two pipelines and multistepping where each step attepts to pull new requests
+    // we allow pulling new requests only in-between the steps to maintain coherence between the pipelines
+    std::mutex m_awaiting_requests_mutex;
     
 public:
     SpeculativeDecodingImpl(const std::filesystem::path& main_models_path,

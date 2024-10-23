@@ -82,6 +82,7 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  ov::genai::GenerationConfig sampling_params) {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};                                                                
     m_draft_pipeline->add_request(request_id, input_ids, sampling_params);
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
@@ -112,6 +113,8 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
+    // this blocks adding new requests during step as it may break coherence between main and draft models
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     // generate candidates by draft model
     ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
     draft_timer.start();
