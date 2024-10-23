@@ -5,8 +5,6 @@ import pytest
 import logging
 import tempfile
 
-from optimum.intel import OVPipelineForText2Image
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,9 +69,9 @@ def test_image_model_types(model_id, model_type, backend):
 )
 def test_image_model_genai(model_id, model_type):
     GT_FILE = "test_sd.json"
-    MODEL_PATH = "test_model"#tempfile.TemporaryDirectory().name
+    MODEL_PATH = tempfile.TemporaryDirectory().name
 
-    result = subprocess.run(["optimum-cli", "export", 
+    result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
                              MODEL_PATH], capture_output=True, text=True)
     assert result.returncode == 0
@@ -119,6 +117,7 @@ def test_image_model_genai(model_id, model_type):
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
     assert "## Reference text" not in result.stderr
+
 
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
