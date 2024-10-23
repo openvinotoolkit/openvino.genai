@@ -279,7 +279,7 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     return ov_model, from_pretrained_time
 
 
-def create_genai_speech_2txt_model(model_path, device, **kwargs):
+def create_genai_speech_2_txt_model(model_path, device, **kwargs):
     import openvino_genai as ov_genai
     if kwargs.get("genai", False) is False:
         raise RuntimeError('==Failure the command line does not set --genai ==')
