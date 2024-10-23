@@ -878,15 +878,12 @@ public:
             EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
             ov::Tensor image_embeds = encoded_image.resized_source;
             
-            std::string image_token = m_vlm_config.im_start;
             std::string image_start_token = m_vlm_config.image_start_token;
             std::string image_context_token = m_vlm_config.image_context_token;
             std::string image_end_token = m_vlm_config.image_end_token;
 
             const size_t num_patches = image_embeds.get_shape().at(0);
             const size_t num_image_tokens = image_embeds.get_shape().at(1);
-
-            std::string formatted_prompt = image_token + "\n" + prompt;
             
             std::string concated_image_tokens;
             concated_image_tokens += image_start_token;
@@ -895,10 +892,7 @@ public:
             }
             concated_image_tokens += image_end_token;
 
-            size_t pos = formatted_prompt.find(image_token);
-            if (pos != std::string::npos) {
-                formatted_prompt.replace(pos, image_token.length(), concated_image_tokens);
-            }
+            std::string formatted_prompt = concated_image_tokens + "\n" + prompt;
             
             ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt);
             ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
