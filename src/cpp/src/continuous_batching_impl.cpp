@@ -148,8 +148,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     if (scheduler_output.m_total_num_scheduled_tokens == 0) {
         for (size_t i = 0; i < m_requests.size(); ++i) {
             SequenceGroup::Ptr sequence_group = m_requests[i];
-            sequence_group->set_out_of_memory();
-            sequence_group->notify_handle();
+            if (!sequence_group->is_waiting()) {
+                sequence_group->set_out_of_memory();
+                sequence_group->notify_handle();
+            }
         }
         _free_non_running_requests();
         return;
