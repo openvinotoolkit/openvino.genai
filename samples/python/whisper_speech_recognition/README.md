@@ -16,9 +16,7 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 ## Prepare audio file
 
 Download example audio file:
-```sh
-wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
-```
+`https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav`
 
 Or you can use the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
 
@@ -34,7 +32,7 @@ python recorder.py
 `whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
 
 Output:
-```sh
+```
  How are you doing today?
 timestamps: [0, 2] text:  How are you doing today?
 ```
