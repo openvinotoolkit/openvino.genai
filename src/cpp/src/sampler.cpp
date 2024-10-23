@@ -719,7 +719,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         size_t max_num_sampled_token = sampling_params.max_new_tokens - generated_and_verified_len;
                         if (max_num_sampled_token == 0) {
                             stop_sample_tokens(running_sequence, token_offset, max_num_sampled_token, max_removed_tokens_per_request);
-                            continue;
+                            break;
                         }
                         
                         // do sampling only for token validation/generation.
