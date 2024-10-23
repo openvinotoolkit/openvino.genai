@@ -626,8 +626,6 @@ stop_sample_tokens(Sequence::Ptr running_sequence,
                    size_t& max_removed_tokens_per_request) {
     running_sequence->remove_last_tokens(token_idx);
     max_removed_tokens_per_request = std::max(max_removed_tokens_per_request, token_idx);
-    // running_sequence->set_status(SequenceStatus::FINISHED);
-    // running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
 }
 
 void
