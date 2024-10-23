@@ -15,8 +15,7 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 ## Prepare audio file
 
-Download example audio file:
-`https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav`
+Download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 
 Or you can use the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
 

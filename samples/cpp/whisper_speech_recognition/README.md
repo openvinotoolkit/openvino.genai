@@ -17,8 +17,7 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 Prepare audio file in wav format with sampling rate 16k Hz.
 
-You can download example audio file:
-`https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav`
+You can download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 
 ## Run
 
