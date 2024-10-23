@@ -121,13 +121,13 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(audio_list) == 0:
         raise RuntimeError('==Failure audio list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, audio file nums: {len(input_audio_file_list)}, audio idx: {audio_idx_list}')
-    ov_model, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2txt_model(model_path, device, **args)
+    ov_model, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2_txt_model(model_path, device, **args)
     pipe = ov_model
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
         for idx, audio_file in enumerate(audio_list):
             raw_speech = model_utils.read_wav(audio_file['media'], processor.feature_extractor.sampling_rate)
-            run_speech_2txt_generation(raw_speech, pipe, args, num, md5_list, audio_idx_list[idx],
+            run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, audio_idx_list[idx],
                                        iter_data_list, mem_consumption, processor)
     metrics_print.print_average(iter_data_list, audio_idx_list, 1, True)
 
