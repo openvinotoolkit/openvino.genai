@@ -14,21 +14,10 @@
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
 #include "whisper/whisper_models.hpp"
-
 #include "whisper_pipeline_base.hpp"
 #include "whisper_pipeline_static.hpp"
 
-// FIXME: Remove these duplicates
 namespace {
-ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& models_path) {
-    auto config_file_path = models_path / "generation_config.json";
-    if (std::filesystem::exists(config_file_path)) {
-        return ov::genai::WhisperGenerationConfig((config_file_path).string());
-    } else {
-        return ov::genai::WhisperGenerationConfig{};
-    }
-}
-
 ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
     if (config_map.count("generation_config")) {
         return config_map.at("generation_config").as<ov::genai::WhisperGenerationConfig>();
@@ -42,26 +31,23 @@ namespace ov {
 namespace genai {
 
 class WhisperPipeline::WhisperPipelineStatefulImpl : public WhisperPipeline::WhisperPipelineImplBase {
-private:
-    ov::genai::WhisperConfig m_model_config;
 public:
     ov::genai::WhisperInitializedModels m_models;
 
     WhisperPipelineStatefulImpl(const std::filesystem::path& models_path,
                                 const std::string& device,
                                 const ov::AnyMap& properties)
-        : WhisperPipelineImplBase(from_config_json_if_exists(models_path),
-                                  Tokenizer(models_path),
-                                  WhisperFeatureExtractor{(models_path / "preprocessor_config.json")}) {
+        : WhisperPipelineImplBase{models_path} {
         ov::Core core = utils::singleton_core();
         auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
         core.set_property(core_properties);
 
         m_models.encoder =
             core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties)
-                               .create_infer_request();
-        m_models.decoder = core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
-                               .create_infer_request();
+                .create_infer_request();
+        m_models.decoder =
+            core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
+                .create_infer_request();
         m_models.decoder_with_past =
             core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties)
                 .create_infer_request();
@@ -72,9 +58,9 @@ public:
         }
     }
 
-    DecodedResults generate(const RawSpeechInput& raw_speech_input,
-                            OptionalWhisperGenerationConfig generation_config,
-                            StreamerVariant streamer) override {
+    WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
+                                   OptionalWhisperGenerationConfig generation_config,
+                                   StreamerVariant streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         config.validate();
@@ -117,7 +103,6 @@ public:
             result.chunks = chunks;
         }
 
-
         m_models.decoder_with_past.reset_state();
 
         auto& metrics = result.perf_metrics;
@@ -139,7 +124,7 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
                                             const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
     if (device == "NPU") {
-        m_impl = std::make_unique<StaticWhisperPipeline>(models_path, device, properties);
+        m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties);
     } else {
         m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties);
     }
