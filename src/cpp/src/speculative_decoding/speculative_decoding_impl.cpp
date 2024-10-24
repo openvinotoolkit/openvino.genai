@@ -140,7 +140,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
 
-    // finish draft request if the generation was complited
+    // finish draft request if the generation was completed
     for (const auto& draft_request : draft_generated_requests) {
         auto request_id = draft_request.first;
         if (!main_generated_requests.count(request_id)) {

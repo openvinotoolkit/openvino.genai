@@ -22,7 +22,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
 
-// Inmutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
+// Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
 class OPENVINO_GENAI_EXPORTS Adapter {
     class Impl;
     std::shared_ptr<Impl> m_pimpl;

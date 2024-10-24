@@ -59,7 +59,7 @@ auto encoded_results_docstring = R"(
 )";
 
 auto streamer_base_docstring =  R"(
-    Base class for streamers. In order to use inherit from from this class and inplement put, and methods.
+    Base class for streamers. In order to use inherit from from this class and implement put, and methods.
 )";
 
 class ConstructableStreamer: public StreamerBase {
@@ -107,7 +107,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
 
     py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
-        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stoped, if return true generation stops")
+        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops")
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     init_tokenizer(m);

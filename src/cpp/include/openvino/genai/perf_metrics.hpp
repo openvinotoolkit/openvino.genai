@@ -44,7 +44,7 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
 };
 
 /**
-* @brief Structure to store mean and standart deviation values.
+* @brief Structure to store mean and standard deviation values.
 */
 struct OPENVINO_GENAI_EXPORTS MeanStdPair {
     float mean;
@@ -68,7 +68,7 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
  * - Number of tokens in the input prompt
  *
  * Preverable way to access values is via get functions. Getters calculate mean and std values from raw_metrics are return pairs.
- * If mean and std were already calcualted getters return cached values.
+ * If mean and std were already calculated getters return cached values.
  * @param get_load_time Returns the load time in milliseconds.
  * @param get_num_generated_tokens Returns the number of generated tokens.
  * @param get_num_input_tokens Returns the number of tokens in the input prompt.

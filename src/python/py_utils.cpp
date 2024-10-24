@@ -232,8 +232,8 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
 
         if (item.second.is_none()) {
             // Even if argument key name does not fit GenerationConfig name 
-            // it's not an eror if it's not defined. 
-            // Some HF configs can have parameters for methods currenly unsupported in ov_genai
+            // it's not an error if it's not defined. 
+            // Some HF configs can have parameters for methods currently unsupported in ov_genai
             // but if their values are not set / None, then this should not block 
             // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
             return res_config;
