@@ -26,7 +26,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
     ov::Tensor image = pipe.generate(prompt,
-        // ov::genai::image(rgb),
+        ov::genai::image(rgb),
         ov::genai::width(width),
         ov::genai::height(height),
         ov::genai::num_inference_steps(20),

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #define STB_IMAGE_IMPLEMENTATION
+
 #include "stb_image.h"
 #include "load_image.hpp"
 
@@ -45,7 +46,7 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
             if (channels * height * width != bytes) {
                 throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
             }
-            std::free(image);
+            stbi_image_free(image);
             image = nullptr;
         }
         bool is_equal(const SharedImageAllocator& other) const noexcept {return this == &other;}

@@ -252,22 +252,12 @@ void LCMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
-    std::cout << "latent_timestep " << latent_timestep << std::endl;
-    std::cout << "sqrt_alpha_prod " << sqrt_alpha_prod << std::endl;
-    std::cout << "sqrt_one_minus_alpha_prod " << sqrt_one_minus_alpha_prod << std::endl;
-
     float * init_latent_data = init_latent.data<float>();
     const float * noise_data = noise.data<const float>();
 
-    std::cout << "latents : ";
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        static int a = 0;
-        if (a++ < 30) {
-            std::cout << init_latent_data[i] << " ";
-        }
         init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
     }
-    std::cout << std::endl;
 }
 
 } // namespace genai

@@ -145,55 +145,14 @@ public:
         ov::Tensor latent(ov::element::f32, {});
 
         if (initial_image) {
-            ov::Tensor preprocessed(ov::element::f32, initial_image.get_shape());
-
-            std::cout << "original image (middle) : ";
-            for (size_t i = 0; i < initial_image.get_size(); ++i) {
-                if (i >= 512 * 256 *3 + 256*3 && i < 512 * 256 *3 + 256*3 + 30)
-                    std::cout << (float)initial_image.data<uint8_t>()[i] << " ";
-            }
-            std::cout << std::endl;
-
-            std::cout << "preprocessed : ";
-            for (size_t i = 0; i < preprocessed.get_size(); ++i) {
-                preprocessed.data<float>()[i] = initial_image.data<uint8_t>()[i] * 2.0f / 255.0f - 1.0f;
-                if (i >= 512 * 256 *3 + 256*3 && i < 512 * 256 *3 + 256*3 + 30)
-                    std::cout << preprocessed.data<float>()[i] << " ";
-            }
-            std::cout << std::endl;
-
-            std::cout << "preprocessed shape " << preprocessed.get_shape() << std::endl;
-            latent = m_vae->encode(preprocessed);
-
-            std::cout << "encoded : ";
-            for (size_t i = 0; i < latent.get_size(); ++i) {
-                if (i < 40)
-                    std::cout << latent.data<float>()[i] << " ";
-            }
-            std::cout << std::endl;
-
-            std::cout << "original_samples (mul by scale) : ";
-            for (size_t i = 0; i < latent.get_size(); ++i) {
-                latent.data<float>()[i] *= m_vae->get_config().scaling_factor;
-                if (i < 40)
-                    std::cout << latent.data<float>()[i] << " ";
-            }
-            std::cout << std::endl;
+            latent = m_vae->encode(initial_image);
 
             ov::Tensor noise(latent.get_element_type(), latent.get_shape());
             std::generate_n(noise.data<float>(), noise.get_size(), [&]() -> float {
                 return generation_config.random_generator->next();
             });
 
-            // add noise
             m_scheduler->add_noise(latent, noise);
-
-            std::cout << "noisy_samples : ";
-            for (size_t i = 0; i < latent.get_size(); ++i) {
-                if (i < 40)
-                    std::cout << (float)latent.data<float>()[i] << " ";
-            }
-            std::cout << std::endl;
         } else {
             latent.set_shape(latent_shape);
 

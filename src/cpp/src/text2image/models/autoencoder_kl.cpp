@@ -150,19 +150,20 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
     ppp.input().tensor().set_layout("NHWC");
     ppp.input().model().set_layout("NCHW");
 
-    // ppp.input().tensor()
-    //     .set_element_type(ov::element::u8);
+    ppp.input().tensor()
+        .set_element_type(ov::element::u8);
 
-    // ppp.input().preprocess()
-    //     .convert_element_type(ov::element::f32)
-    //     .scale(255.0f / 2.0f)
-    //     .mean(1.0f);
+    ppp.input().preprocess()
+        .convert_layout()
+        .convert_element_type(ov::element::f32)
+        .scale(255.0f / 2.0f)
+        .mean(1.0f);
 
-    // // apply m_config.scaling_factor as last step
-    // ppp.output().postprocess().custom([scaling_factor=m_config.scaling_factor](const ov::Output<ov::Node>& port) {
-    //     auto c_scaling_factor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scaling_factor);
-    //     return std::make_shared<ov::op::v1::Multiply>(port, c_scaling_factor);
-    // });
+    // apply m_config.scaling_factor as last step
+    ppp.output().postprocess().custom([scaling_factor=m_config.scaling_factor](const ov::Output<ov::Node>& port) {
+        auto c_scaling_factor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scaling_factor);
+        return std::make_shared<ov::op::v1::Multiply>(port, c_scaling_factor);
+    });
 
     ppp.build();
 }
