@@ -15,6 +15,16 @@
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
 
+
+#include "openvino/pass/pattern/matcher.hpp"
+#include "openvino/pass/pattern/op/wrap_type.hpp"
+#include "openvino/pass/graph_rewrite.hpp"
+#include "openvino/pass/manager.hpp"
+#include "openvino/op/range.hpp"
+#include "openvino/op/greater.hpp"
+#include "openvino/op/convert.hpp"
+#include "openvino/op/parameter.hpp"
+
 namespace {
 
 template <typename T>
@@ -326,6 +336,65 @@ bool check_decoder_model_compatibility(const std::shared_ptr<ov::Model>& decoder
     return false;
 }
 
+void add_attention_mask_input_for_decoder(std::shared_ptr<ov::Model> model) {
+    using namespace ov::pass::pattern;
+    using namespace ov::op;
+    class AttentionMaskInput : public ov::pass::MatcherPass {
+    public:
+        OPENVINO_RTTI("AttentionMaskInput");
+
+        AttentionMaskInput(std::shared_ptr<ov::Model> model) {
+            auto range = wrap_type<v4::Range>();
+            auto convert = wrap_type<v0::Convert>({range});
+            auto convert1 = wrap_type<v0::Convert>({convert});
+            auto greater = wrap_type<v1::Greater>({convert1, any_input()});
+            auto convert2 = wrap_type<v0::Convert>({greater});
+
+            register_matcher(std::make_shared<Matcher>(convert2, this->get_type_info().name), [model](Matcher& m) {
+                auto node = m.get_match_root();
+                auto attention_mask = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1});
+                attention_mask->get_output_tensor(0).set_names({"attention_mask"});
+                model->add_parameters({attention_mask});
+                ov::replace_node(node, attention_mask);
+                return false;
+            });
+        }
+    };
+
+    ov::pass::Manager pm;
+    pm.register_pass<AttentionMaskInput>(model);
+    pm.run_passes(model);
+}
+
+void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
+    using namespace ov::pass::pattern;
+    using namespace ov::op;
+    class AttentionMaskInput : public ov::pass::MatcherPass {
+    public:
+        OPENVINO_RTTI("AttentionMaskInput");
+
+        AttentionMaskInput(std::shared_ptr<ov::Model> model) {
+            auto range = wrap_type<v4::Range>();
+            auto convert1 = wrap_type<v0::Convert>({range});
+            auto greater = wrap_type<v1::Greater>({convert1, any_input()});
+            auto convert2 = wrap_type<v0::Convert>({greater});
+
+            register_matcher(std::make_shared<Matcher>(convert2, this->get_type_info().name), [model](Matcher& m) {
+                auto node = m.get_match_root();
+                auto attention_mask = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1});
+                attention_mask->get_output_tensor(0).set_names({"attention_mask"});
+                model->add_parameters({attention_mask});
+                ov::replace_node(node, attention_mask);
+                return false;
+            });
+        }
+    };
+
+    ov::pass::Manager pm;
+    pm.register_pass<AttentionMaskInput>(model);
+    pm.run_passes(model);
+}
+
 }  // namespace
 
 namespace ov {
@@ -339,6 +408,9 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml");
     auto decoder_model = core.read_model(models_path / "openvino_decoder_model.xml");
     auto decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml");
+
+    add_attention_mask_input_for_decoder(decoder_model);
+    add_attention_mask_input(decoder_with_past_model);
 
     // TODO: Support models produced by optimum-cli
     if (!check_decoder_model_compatibility(decoder_model)) {
