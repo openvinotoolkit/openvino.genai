@@ -160,27 +160,58 @@ void init_unet2d_condition_model(py::module_& m) {
 void init_autoencoder_kl(py::module_& m) {
     auto autoencoder_kl = py::class_<ov::genai::AutoencoderKL>(m, "AutoencoderKL", "AutoencoderKL class.")
         .def(py::init([](
-            const std::filesystem::path& root_dir
+            const std::filesystem::path& vae_decoder_path
         ) {
-            return std::make_unique<ov::genai::AutoencoderKL>(root_dir);
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_decoder_path);
         }),
-        py::arg("root_dir"), "Root directory", 
+        py::arg("vae_decoder_path"), "VAE decoder directory", 
         R"(
-            AutoencoderKL class
-            root_dir (str): Root directory.
+            AutoencoderKL class initialized only with decoder model.
+            vae_decoder_path (str): VAE decoder directory.
         )")
         .def(py::init([](
-            const std::filesystem::path& root_dir,
+            const std::filesystem::path& vae_encoder_path,
+            const std::filesystem::path& vae_decoder_path
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_encoder_path, vae_decoder_path);
+        }),
+        py::arg("vae_encoder_path"), "VAE encoder directory",
+        py::arg("vae_decoder_path"), "VAE decoder directory",
+        R"(
+            AutoencoderKL class initialized with both encoder and decoder models.
+            vae_encoder_path (str): VAE encoder directory.
+            vae_decoder_path (str): VAE decoder directory.
+        )")
+        .def(py::init([](
+            const std::filesystem::path& vae_decoder_path,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::AutoencoderKL>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_decoder_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
-        py::arg("root_dir"), "Root directory", 
+        py::arg("vae_decoder_path"), "Root directory", 
         py::arg("device"), "Device on which inference will be done",
         R"(
-            AutoencoderKL class
-            root_dir (str): Root directory.
+            AutoencoderKL class initialized only with decoder model.
+            vae_decoder_path (str): VAE decoder directory.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const std::filesystem::path& vae_encoder_path,
+            const std::filesystem::path& vae_decoder_path,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_encoder_path, vae_decoder_path, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("vae_encoder_path"), "VAE encoder directory",
+        py::arg("vae_decoder_path"), "VAE decoder directory",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            AutoencoderKL class initialized only with both encoder and decoder models.
+            vae_encoder_path (str): VAE encoder directory.
+            vae_decoder_path (str): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -191,8 +222,8 @@ void init_autoencoder_kl(py::module_& m) {
         }),
         py::arg("model"), "AutoencoderKL model"
         R"(
-            AutoencoderKL class
-            model (AutoencoderKL): AutoencoderKL model
+            AutoencoderKL class.
+            model (AutoencoderKL): AutoencoderKL model.
         )");
 
     py::class_<ov::genai::AutoencoderKL::Config>(autoencoder_kl, "Config", "This class is used for storing AutoencoderKL config.")
@@ -208,8 +239,6 @@ void init_autoencoder_kl(py::module_& m) {
         .def_readwrite("block_out_channels", &ov::genai::AutoencoderKL::Config::block_out_channels);
 
     autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape);
-    autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode);
-    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode);
     autoencoder_kl.def(
             "compile", 
             [](ov::genai::AutoencoderKL& self,
@@ -224,6 +253,8 @@ void init_autoencoder_kl(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )");
+    autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode);
+    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode);
     autoencoder_kl.def("get_config", &ov::genai::AutoencoderKL::get_config);
     autoencoder_kl.def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);
 }
