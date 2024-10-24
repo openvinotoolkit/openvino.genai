@@ -118,6 +118,7 @@ TEST(GenerationConfigTest, invalid_static_spec_decoding) {
     GenerationConfig config = speculative_decoding_greedy();
     config.num_assistant_tokens = 5;
     config.assistant_confidence_threshold = 0.2;
+    config.candidates_matching_type = ov::genai::CandidatesMathingType::ASSISTANT_GENERATION;
     EXPECT_THROW(config.validate(), ov::Exception);
 }
 
@@ -125,6 +126,7 @@ TEST(GenerationConfigTest, valid_static_spec_decoding) {
     GenerationConfig config = speculative_decoding_greedy();
     config.num_assistant_tokens = 5;
     config.assistant_confidence_threshold = 0;
+    config.candidates_matching_type = ov::genai::CandidatesMathingType::SPECULATIVE_DECODING;
     EXPECT_NO_THROW(config.validate());
 }
 
@@ -132,6 +134,7 @@ TEST(GenerationConfigTest, invalid_dynamic_spec_decoding) {
     GenerationConfig config = speculative_decoding_greedy();
     config.num_assistant_tokens = 5;
     config.assistant_confidence_threshold = 0.5;
+    config.candidates_matching_type = ov::genai::CandidatesMathingType::ASSISTANT_GENERATION;
     EXPECT_THROW(config.validate(), ov::Exception);
 }
 
@@ -139,5 +142,6 @@ TEST(GenerationConfigTest, valid_dynamic_spec_decoding) {
     GenerationConfig config = speculative_decoding_greedy();
     config.assistant_confidence_threshold = 0.5;
     config.num_assistant_tokens = 0;
+    config.candidates_matching_type = ov::genai::CandidatesMathingType::SPECULATIVE_DECODING;
     EXPECT_NO_THROW(config.validate());
 }

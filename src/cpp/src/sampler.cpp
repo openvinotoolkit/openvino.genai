@@ -659,7 +659,6 @@ bool Sampler::validate_candidate(
     bool& is_extend_sequence,
     size_t& max_removed_tokens,
     ov::genai::CandidatesMathingType token_matching_type) {
-    OPENVINO_ASSERT(token_matching_type != ov::genai::CandidatesMathingType::NONE);
     OPENVINO_ASSERT(token_idx > 0);
 
     const auto& generated_tokens = running_sequence->get_generated_ids();
