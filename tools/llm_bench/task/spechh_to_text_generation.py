@@ -15,11 +15,6 @@ import llm_bench_utils.gen_output_data as gen_output_data
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 
-def streamer(word: str) -> bool:
-    print(word, end="")
-    return False
-
-
 def run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
                                 iter_data_list, mem_consumption, processor):
     result_md5_list = []
@@ -35,8 +30,7 @@ def run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, audio_id,
         # 'task' and 'language' parameters are supported for multilingual models only
         language="<|en|>",
         task="transcribe",
-        return_timestamps=True,
-        streamer=streamer,
+        return_timestamps=True
     )
     end = time.perf_counter()
     tm_list = np.array(result_text.perf_metrics.raw_metrics.m_durations) / 1000 / 1000

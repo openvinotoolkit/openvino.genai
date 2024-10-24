@@ -286,9 +286,7 @@ def create_genai_speech_2_txt_model(model_path, device, **kwargs):
     if is_genai_available(log_msg=True) is False:
         raise RuntimeError('==Failure genai is not enable ==')
     start = time.perf_counter()
-    genai_pipe = ov_genai.WhisperPipeline(
-        str(model_path), device=device.upper()
-    )
+    genai_pipe = ov_genai.WhisperPipeline(model_path, device.upper())
     end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
