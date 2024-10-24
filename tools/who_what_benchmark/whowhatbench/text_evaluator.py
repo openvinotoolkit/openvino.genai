@@ -121,6 +121,7 @@ class TextEvaluator(BaseEvaluator):
         self.generation_config = generation_config
         self.generation_config_base = generation_config
         self.seqs_per_request = seqs_per_request
+        self.generation_fn = gen_answer_fn
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
 
@@ -150,6 +151,9 @@ class TextEvaluator(BaseEvaluator):
             self.divergency = TextDivergency(tokenizer)
 
         self.last_cmp = None
+
+    def get_generation_fn(self):
+        return self.generation_fn
 
     def dump_gt(self, csv_name: str):
         self.gt_data.to_csv(csv_name)
