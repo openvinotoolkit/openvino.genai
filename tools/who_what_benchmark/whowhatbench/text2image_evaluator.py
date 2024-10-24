@@ -35,7 +35,7 @@ class Generator(openvino_genai.Generator):
         self.rng = rng
 
     def next(self):
-        return torch.normal(torch.tensor(self.mu), self.sigma, generator=self.rng)
+        return torch.normal(torch.tensor(self.mu), self.sigma, generator=self.rng).item()
 
 
 @register_evaluator("text-to-image")
@@ -167,7 +167,6 @@ class Text2ImageEvaluator(BaseEvaluator):
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-        print(gen_image_fn)
         for i, prompt in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)

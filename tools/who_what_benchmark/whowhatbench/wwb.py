@@ -314,6 +314,12 @@ def parse_args():
         default=4,
         help="Text-to-image specific parameter that defines the number of denoising steps.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Text-to-image specific parameter that defines the seed value.",
+    )
 
     return parser.parse_args()
 
@@ -419,7 +425,8 @@ def get_evaluator(base_model, args):
                 resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
                 gen_image_fn=genai_gen_image if args.genai else None,
-                is_genai=args.genai
+                is_genai=args.genai,
+                seed=args.seed,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")

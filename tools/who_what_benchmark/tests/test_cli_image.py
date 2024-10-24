@@ -11,9 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 def run_wwb(args):
-    logger.info(" ".join(["wwb"] + args))
+    logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
+    print(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     return result
 
 
@@ -47,6 +48,7 @@ def test_image_model_types(model_id, model_type, backend):
         wwb_args.append("--genai")
 
     result = run_wwb(wwb_args)
+    print(result.stderr, result.stdout)
 
     try:
         os.remove(GT_FILE)
