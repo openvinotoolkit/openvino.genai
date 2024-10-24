@@ -15,7 +15,7 @@ import llm_bench_utils.output_json
 import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
-import task.spechh_to_text_generation as bench_speech
+import task.speech_to_text_generation as bench_speech
 
 
 mem_consumption = MemConsumption()
