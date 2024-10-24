@@ -20,7 +20,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
 
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(SequenceGroup::Ptr request) {
-    
     for (const auto& sequence : request->get_sequences()) {
         m_scheduler->free_sequence(sequence->get_id());
     }
@@ -270,11 +269,21 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         // update request context information to provide correct scheduling phase
         const size_t num_processed_tokens = request->get_num_processed_tokens(),
                      prompt_len = request->get_prompt_len(),
-                     updated_context_len = min_candidate_len + prompt_len;
-        if (num_processed_tokens > 0)
+                     updated_context_len = min_candidate_len + prompt_len,
+                     max_new_tokens = request->get_sampling_parameters().max_new_tokens;
+        size_t generated_len = num_processed_tokens - prompt_len + 1;
+        if (num_processed_tokens > 0) {
             request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt);
+            generated_len -= result.removed_tokens_cnt;
+        }
         request->set_num_validated_tokens(result.inserted_tokens_cnt);
         request->pause_generation(false);
+        generated_len += result.inserted_tokens_cnt;
+
+        // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
+        if (!m_is_validation_mode_enabled && generated_len >= max_new_tokens - 1) {
+            request->pause_generation(true);
+        }
         break;
     }
 
@@ -308,9 +317,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
                 request->pause_generation(true);
-            } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt) {
+            } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt && sampling_params.assistant_confidence_threshold == 0.f) {
                 request->pause_generation(true);
-            } else if (request->get_num_processed_tokens() - request->get_prompt_len() + 1 >= sampling_params.max_new_tokens - 1) {
+            } else if ((request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= sampling_params.max_new_tokens - 1) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

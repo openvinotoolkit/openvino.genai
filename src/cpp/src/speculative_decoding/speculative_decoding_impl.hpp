@@ -30,6 +30,9 @@ class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBat
 protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
     SpeculativeDecodingMetrics m_sd_metrics;
+    // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
+    std::mutex m_draft_generations_mutex;
+    std::map<uint64_t, GenerationHandle> m_draft_generations;
     
 public:
     SpeculativeDecodingImpl(const std::filesystem::path& main_models_path,
