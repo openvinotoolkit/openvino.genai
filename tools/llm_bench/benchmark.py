@@ -181,13 +181,14 @@ def main():
                     torch_thread = original_torch_thread_nums
                 torch.set_num_threads(int(torch_thread))
             else:
+                half_nums_of_torch_threads = original_torch_thread_nums / 2
                 if model_args['num_beams'] > 1:
-                    torch.set_num_threads(int(original_torch_thread_nums / 2))
+                    torch.set_num_threads(int(half_nums_of_torch_threads))
                 else:
-                    if original_torch_thread_nums > DEFAULT_TORCH_THREAD_NUMS:
+                    if half_nums_of_torch_threads > DEFAULT_TORCH_THREAD_NUMS:
                         torch.set_num_threads(DEFAULT_TORCH_THREAD_NUMS)
                     else:
-                        torch.set_num_threads(int(DEFAULT_TORCH_THREAD_NUMS / 2))
+                        torch.set_num_threads(int(half_nums_of_torch_threads))
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
