@@ -211,6 +211,7 @@ void init_autoencoder_kl(py::module_& m) {
 
     autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape);
     autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode);
+    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode);
     autoencoder_kl.def(
             "compile", 
             [](ov::genai::AutoencoderKL& self,

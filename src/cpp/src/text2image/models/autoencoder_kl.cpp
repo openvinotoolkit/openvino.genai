@@ -160,7 +160,7 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
         .mean(1.0f);
 
     // apply m_config.scaling_factor as last step
-    ppp.output().postprocess().custom([scaling_factor=m_config.scaling_factor](const ov::Output<ov::Node>& port) {
+    ppp.output().postprocess().custom([scaling_factor = m_config.scaling_factor](const ov::Output<ov::Node>& port) {
         auto c_scaling_factor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scaling_factor);
         return std::make_shared<ov::op::v1::Multiply>(port, c_scaling_factor);
     });

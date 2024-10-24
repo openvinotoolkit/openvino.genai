@@ -25,7 +25,6 @@ public:
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 4;
         size_t sample_size = 0;
-        std::vector<size_t> block_out_channels = { 320, 640, 1280, 1280 };
         int time_cond_proj_dim = -1;
 
         explicit Config(const std::filesystem::path& config_path);
@@ -47,8 +46,6 @@ public:
     UNet2DConditionModel(const UNet2DConditionModel&);
 
     const Config& get_config() const;
-
-    size_t get_vae_scale_factor() const;
 
     UNet2DConditionModel& reshape(int batch_size, int height, int width, int tokenizer_model_max_length);
 
