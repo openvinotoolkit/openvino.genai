@@ -51,7 +51,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  *        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
  *        likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
  *        `length_penalty` < 0.0 encourages shorter sequences.
- * @param num_return_sequences the number of sequences to return for grouped beam search decoding per batch element. num_return_sequences must be less or equel to num_beams.
+ * @param num_return_sequences the number of sequences to return for grouped beam search decoding per batch element. num_return_sequences must be less or equal to num_beams.
  * @param no_repeat_ngram_size if set to int > 0, all ngrams of that size can only occur once.
  * @param stop_criteria controls the stopping condition for grouped beam search. It accepts the following values:
  *        "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an

@@ -161,8 +161,8 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                 output_info = ''
                 if avg_input_size > 0:
                     output_info += f' Input token size: {avg_input_size},'
-                prompt_dict[p_idx] = '\n{}{} 1st token lantency: {}, ' \
-                    '2nd token lantency: {}, 2nd tokens throughput: {}' \
+                prompt_dict[p_idx] = '\n{}{} 1st token latency: {}, ' \
+                    '2nd token latency: {}, 2nd tokens throughput: {}' \
                     .format(prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
             else:
                 prompt_dict[p_idx] = '\n{} 1st step of unet latency: {}, ' \

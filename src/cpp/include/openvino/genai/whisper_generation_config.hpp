@@ -75,10 +75,10 @@ public:
     // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     bool return_timestamps = false;
 
-    // A list containing tokens that will be supressed at the beginning of the sampling process.
+    // A list containing tokens that will be suppressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
 
-    // A list containing the non-speech tokens that will be supressed during generation.
+    // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.

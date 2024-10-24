@@ -24,7 +24,7 @@ TEST_P(TemperatureTransformTest, TransformResultEqualToReference) {
     auto transform = TemperatureLogitTransform(test_struct.temperature);
     transform.apply(logits);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, TemperatureTransformTestStruct::size); // temperature transfrom should not change buffer size
+    ASSERT_EQ(logits.m_size, TemperatureTransformTestStruct::size); // temperature transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
@@ -144,7 +144,7 @@ TEST_P(RepetitionPenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = RepetitionPenaltyTransform(test_struct.penalty);
     transform.apply(logits, test_struct.input_ids);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, RepetitionPenaltyTransformTestStruct::size); // penalty transfrom should not change buffer size
+    ASSERT_EQ(logits.m_size, RepetitionPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
@@ -203,7 +203,7 @@ TEST_P(FrequencyPenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = FrequencyPenaltyTransform(test_struct.penalty);
     transform.apply(logits, test_struct.input_ids);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, FrequencyPenaltyTransformTestStruct::size); // penalty transfrom should not change buffer size
+    ASSERT_EQ(logits.m_size, FrequencyPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
@@ -262,7 +262,7 @@ TEST_P(PresencePenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = PresencePenaltyTransform(test_struct.penalty);
     transform.apply(logits, test_struct.input_ids);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, PresencePenaltyTransformTestStruct::size); // penalty transfrom should not change buffer size
+    ASSERT_EQ(logits.m_size, PresencePenaltyTransformTestStruct::size); // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
@@ -319,7 +319,7 @@ TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = EOSPenaltyTransform(test_struct.stop_token_ids, std::numeric_limits<size_t>::max());
     transform.apply(logits);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, EOSPenaltyTransformTestStruct::size); // penalty transfrom should not change buffer size
+    ASSERT_EQ(logits.m_size, EOSPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
