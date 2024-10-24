@@ -255,6 +255,7 @@ std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pr
 }
 
 void LMSDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
+    // use https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_ddim.py#L474
     OPENVINO_THROW("Not implemented");
 }
 

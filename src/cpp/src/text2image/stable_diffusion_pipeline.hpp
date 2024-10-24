@@ -135,7 +135,7 @@ public:
         m_vae->compile(device, properties);
     }
 
-    ov::Tensor prepare_latents(const GenerationConfig& generation_config) const {
+    ov::Tensor prepare_latents(const GenerationConfig& generation_config) const override {
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
 

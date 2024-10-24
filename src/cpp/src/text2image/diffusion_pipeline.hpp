@@ -63,6 +63,8 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
+    virtual ov::Tensor prepare_latents(const GenerationConfig& generation_config) const = 0;
+
     virtual ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties) = 0;
 
     virtual ~DiffusionPipeline() = default;

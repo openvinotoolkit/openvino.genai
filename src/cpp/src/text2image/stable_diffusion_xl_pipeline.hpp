@@ -46,7 +46,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -106,7 +106,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -125,7 +125,7 @@ public:
         : m_clip_text_encoder(std::make_shared<CLIPTextModel>(clip_text_model)),
           m_clip_text_encoder_with_projection(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_with_projection)),
           m_unet(std::make_shared<UNet2DConditionModel>(unet)),
-          m_vae_decoder(std::make_shared<AutoencoderKL>(vae_decoder)) { }
+          m_vae(std::make_shared<AutoencoderKL>(vae_decoder)) { }
 
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
@@ -134,14 +134,44 @@ public:
         m_clip_text_encoder->reshape(batch_size_multiplier);
         m_clip_text_encoder_with_projection->reshape(batch_size_multiplier);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
-        m_vae_decoder->reshape(num_images_per_prompt, height, width);
+        m_vae->reshape(num_images_per_prompt, height, width);
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         m_clip_text_encoder->compile(device, properties);
         m_clip_text_encoder_with_projection->compile(device, properties);
         m_unet->compile(device, properties);
-        m_vae_decoder->compile(device, properties);
+        m_vae->compile(device, properties);
+    }
+
+    ov::Tensor prepare_latents(const GenerationConfig& generation_config) const override {
+        const auto& unet_config = m_unet->get_config();
+        const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
+
+        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
+                               generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
+        ov::Tensor initial_image = generation_config.image;
+        ov::Tensor latent(ov::element::f32, {});
+
+        if (initial_image) {
+            latent = m_vae->encode(initial_image);
+
+            ov::Tensor noise(latent.get_element_type(), latent.get_shape());
+            std::generate_n(noise.data<float>(), noise.get_size(), [&]() -> float {
+                return generation_config.random_generator->next();
+            });
+
+            m_scheduler->add_noise(latent, noise);
+        } else {
+            latent.set_shape(latent_shape);
+
+            // latents are multiplied by 'init_noise_sigma'
+            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
+                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
+            });
+        }
+
+        return latent;
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -328,7 +358,7 @@ public:
             denoised = it != scheduler_step_result.end() ? it->second : latent;
         }
 
-        return m_vae_decoder->decode(denoised);
+        return m_vae->decode(denoised);
     }
 
 private:
@@ -375,7 +405,7 @@ private:
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_with_projection;
     std::shared_ptr<UNet2DConditionModel> m_unet;
-    std::shared_ptr<AutoencoderKL> m_vae_decoder;
+    std::shared_ptr<AutoencoderKL> m_vae;
 };
 
 }  // namespace genai
