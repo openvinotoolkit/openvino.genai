@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
-from pathlib import Path
 from PIL import Image
 import hashlib
 import logging as log

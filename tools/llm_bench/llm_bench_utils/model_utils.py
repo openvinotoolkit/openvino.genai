@@ -31,20 +31,20 @@ def get_param_from_file(args, input_key):
             else:
                 raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            input_data_list = args['prompt_file']
+            input_prompt_list = args['prompt_file']
             is_json_data = True
-            for input_data in input_data_list:
-                if input_data.endswith('.jsonl'):
-                    if os.path.exists(input_data):
-                        log.info(f'Read prompts from {input_data}')
-                        with open(input_data, 'r', encoding='utf-8') as f:
+            for input_prompt in input_prompt_list:
+                if input_prompt.endswith('.jsonl'):
+                    if os.path.exists(input_prompt):
+                        log.info(f'Read prompts from {input_prompt}')
+                        with open(input_prompt, 'r', encoding='utf-8') as f:
                             for line in f:
                                 data = json.loads(line)
                                 data_list.append(data)
                     else:
-                        raise RuntimeError(f'== The file:{input_data} does not exist ==')
+                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
                 else:
-                    raise RuntimeError(f'== The file:{input_data} should be ended with .jsonl ==')
+                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
     return data_list, is_json_data
 
 

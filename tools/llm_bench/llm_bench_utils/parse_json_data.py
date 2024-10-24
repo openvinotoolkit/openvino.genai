@@ -10,9 +10,9 @@ def parse_text_json_data(json_data_list):
             if json_data['prompt'] != '':
                 text_param_list.append(json_data['prompt'])
             else:
-                raise RuntimeError(f'== prompt should not be empty string ==')
+                raise RuntimeError('== prompt should not be empty string ==')
         else:
-            raise RuntimeError(f'== key word "prompt" does not exist ==')
+            raise RuntimeError('== key word "prompt" does not exist ==')
     return text_param_list
 
 
@@ -26,7 +26,7 @@ def parse_image_json_data(json_data_list):
             else:
                 raise RuntimeError('== prompt should not be empty string ==')
         else:
-            raise RuntimeError(f'== key word "prompt" does not exist in prompt file ==')
+            raise RuntimeError('== key word "prompt" does not exist in prompt file ==')
         if 'width' in data:
             image_param['width'] = int(data['width'])
         if 'height' in data:
@@ -47,8 +47,8 @@ def parse_speech_json_data(json_data_list):
             if json_data['media'] != '':
                 speech_param['media'] = json_data['media']
             else:
-                raise RuntimeError(f'== media path should not be empty string ==')
+                raise RuntimeError('== media path should not be empty string ==')
             speech_param_list.append(speech_param)
         else:
-            raise RuntimeError(f'== key word "media" does not exist ==')
+            raise RuntimeError('== key word "media" does not exist ==')
     return speech_param_list
