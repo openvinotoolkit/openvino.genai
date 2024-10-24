@@ -10,6 +10,8 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/text2image/pipeline.hpp"
+
+#include "tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -183,6 +185,7 @@ void init_text2image_pipeline(py::module_& m) {
         .def(py::init([](
             const std::filesystem::path& models_path
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Text2ImagePipeline>(models_path);
         }),
         py::arg("models_path"), "folder with exported model files.", 
@@ -196,6 +199,7 @@ void init_text2image_pipeline(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Text2ImagePipeline>(models_path, device, text2image_kwargs_to_any_map(kwargs, true));
         }),
         py::arg("models_path"), "folder with exported model files.", 
