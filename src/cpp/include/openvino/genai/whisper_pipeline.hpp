@@ -37,8 +37,11 @@ struct WhisperDecodedResults : public DecodedResults {
  * @brief Automatic speech recognition pipeline
  */
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
+    class WhisperPipelineImplBase;
+    std::unique_ptr<WhisperPipelineImplBase> m_impl;
+
+    class StaticWhisperPipeline;
+    class WhisperPipelineStatefulImpl;
 
 public:
     /**
