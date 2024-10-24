@@ -7,4 +7,4 @@ numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.0  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.30.3
-torchvision==0.20.0  # For visual language models
+torchvision==0.17.2  # For visual language models
