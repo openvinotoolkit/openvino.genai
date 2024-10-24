@@ -37,10 +37,6 @@ extern "C" {
     #include "safetensors.h"
 }
 
-// If set to 1, the empty tensors will be used to switch LoRA adapter off.
-// FIXME: Fix the plugins and set to 1 permanently.
-#define EMPTY_TENSORS_SUPPORTED_IN_MATMUL 0
-
 // If set to 1, LoRA state tensors will have the original type of LoRA adapter come from safetensors file.
 // If there are multiple LoRA adapters are applied, then negotiation between them happens.
 // If set to 0, LoRA state etnsors are always have type f32.
@@ -367,17 +363,8 @@ struct LoRAParametersByWeightGetter {
 };
 
 
-// TODO: There is possible simplification if a new feature is implemented in OpenVINO:
-// move name from LoRAVarIDs to to LoRAIndices when the order of tensors in the model state in OV infer request will
-// be the same as the order of variables, remove LoRAVarsIDs in this case.
-
-struct LoRAIndices : public LoRAParts<size_t> {
-    std::string name;
-};
-
-struct LoRAVarIDs : public LoRAParts<ov::op::util::VariableInfo> {
-    std::string name;  // layer name where LoRA with given variables is attached
-};
+using LoRAIndices = LoRAParts<size_t>;
+using LoRAVarIDs = LoRAParts<ov::op::util::VariableInfo>;
 
 
 // Deduce expected LoRA input and output static dimensions based on a given node where LoRA is applied
@@ -398,15 +385,18 @@ void deduce_input_output_dims(NodePtr node, ov::Dimension& input_dim, ov::Dimens
 }
 
 
+using LoRAVarMap = std::map<std::string, LoRAVarIDs>;
+
+
 // Creates ReadValue and Assign nodes to inject LoRA tensors as variables for a given node but
 // doesn't connect them to the model returning as LoRANode instance.
 struct LoRAWeightStateGetter {
     LoRAParametersGetter params_getter;
     std::shared_ptr<ov::Model> model;
-    std::vector<LoRAVarIDs>& variable_ids;
+    LoRAVarMap& variable_ids;
     // TODO: Use variable indices instead of variable_id for faster search for a state tensor
 
-    LoRAWeightStateGetter (const LoRAParametersGetter& params_getter, std::shared_ptr<ov::Model> model, std::vector<LoRAVarIDs>& variable_ids) :
+    LoRAWeightStateGetter (const LoRAParametersGetter& params_getter, std::shared_ptr<ov::Model> model, LoRAVarMap& variable_ids) :
         params_getter(params_getter), model(model), variable_ids(variable_ids) {}
 
     std::optional<LoRANode> operator() (NodePtr node) const {
@@ -420,7 +410,6 @@ struct LoRAWeightStateGetter {
             std::string variable_id_prefix = "lora_state_" + std::to_string(model->get_sinks().size()) + name;
             LoRANode result;
             LoRAVarIDs var_ids;
-            var_ids.name = name;
 
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.A = model->get_variables().size();
@@ -446,7 +435,7 @@ struct LoRAWeightStateGetter {
                 variable_id_prefix + ".B"
             };
             result.B = add_variable(var_ids.B);
-            variable_ids.emplace_back(var_ids);
+            variable_ids.emplace(name, var_ids);
             return result;
         } else {
             return std::nullopt;
@@ -815,7 +804,8 @@ bool operator< (const Adapter& a, const Adapter& b) {
 
 
 struct AdapterControllerImpl {
-    std::vector<LoRAVarIDs> variable_ids;
+    LoRAVarMap variable_ids;
+    std::unordered_set<std::string> variable_names;
     AdapterConfig current_config;
     bool need_full_apply = true;
     InferRequestSignatureCache lora_state_evaluators;
@@ -890,6 +880,13 @@ struct AdapterControllerImpl {
 
         pm.run_passes(model);
         model->validate_nodes_and_infer_types();    // FIXME: For debugging purposes only
+
+        // Collect all variable names to quickly detect which state tensor belongs to this adapter controller later
+        for(const auto& var: variable_ids) {
+            variable_names.insert(var.second.A.variable_id);
+            variable_names.insert(var.second.B.variable_id);
+            variable_names.insert(var.second.alpha.variable_id);
+        }
     }
 
     static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
@@ -945,15 +942,14 @@ struct AdapterControllerImpl {
         } else if(diff) {
             if(diff.adapter) {
                 set_new_adapter_tensors(infer_request);
-            } else {
-                OPENVINO_ASSERT(diff.alpha);
+            } else if(diff.alpha)  {
                 set_new_adapter_alphas(infer_request);
             }
         }
     }
 
-    void force_full_apply(bool full_apply) {
-        need_full_apply = full_apply;
+    bool has_state_name(const std::string& name) {
+        return variable_names.count(name);
     }
 
     void set_new_adapter_alphas (ov::InferRequest& infer_request) {
@@ -988,12 +984,10 @@ struct AdapterControllerImpl {
         for(const auto& lora_var_ids : variable_ids) {
             // FIXME: Remove this mapping when the order of state will be the same as the order of variables
             LoRAIndices lora_indices;
-            lora_indices.alpha = state_name_to_index.at(lora_var_ids.alpha.variable_id);
-            lora_indices.A = state_name_to_index.at(lora_var_ids.A.variable_id);
-            lora_indices.B = state_name_to_index.at(lora_var_ids.B.variable_id);
-            lora_indices.name = lora_var_ids.name;  // TODO: Redundant?
-
-            set_lora_tensors(state, lora_var_ids, lora_indices, weight_getters);
+            lora_indices.alpha = state_name_to_index.at(lora_var_ids.second.alpha.variable_id);
+            lora_indices.A = state_name_to_index.at(lora_var_ids.second.A.variable_id);
+            lora_indices.B = state_name_to_index.at(lora_var_ids.second.B.variable_id);
+            set_lora_tensors(state, lora_var_ids.first, lora_var_ids.second, lora_indices, weight_getters);
         }
     }
 
@@ -1110,32 +1104,9 @@ struct AdapterControllerImpl {
     }
 
     LoRAParts<ov::Tensor> empty_adapters(const std::vector<LoRAWeight>& inputs, LoRAParts<ov::Tensor>& outputs) {
-        #if EMPTY_TENSORS_SUPPORTED_IN_MATMUL
-
         outputs.alpha.set_shape({1, 0});
         outputs.A.set_shape({0, outputs.A.get_shape()[1]});
         outputs.B.set_shape({outputs.B.get_shape()[0], 0});
-
-        #else
-
-        // TODO: As ov::Tensor lacks a convenient constructor to fill all elements with the same scalar value, do it via Constant that has such constructor
-        // FIXME: It's a huge overhead for setting just a scalar 0
-
-        ov::Shape
-            alpha_shape{1, 1},
-            A_shape{1, outputs.A.get_shape()[1]},
-            B_shape{outputs.B.get_shape()[0], 1};
-
-        outputs.alpha.set_shape(alpha_shape);
-        outputs.A.set_shape(A_shape);
-        outputs.B.set_shape(B_shape);
-        std::make_shared<v0::Constant>(outputs.alpha.get_element_type(), alpha_shape, 0)->get_tensor_view().copy_to(outputs.alpha);
-        // Element values for A and B don't matter as we are multiplying by 0 in alpha anyway
-        std::make_shared<v0::Constant>(outputs.A.get_element_type(), A_shape, 0)->get_tensor_view().copy_to(outputs.A);
-        std::make_shared<v0::Constant>(outputs.B.get_element_type(), B_shape, 0)->get_tensor_view().copy_to(outputs.B);
-
-        #endif
-
         return outputs;
     }
 
@@ -1191,13 +1162,13 @@ struct AdapterControllerImpl {
         return shape;
     }
 
-    void set_lora_tensors(std::vector<VariableState>& state, const LoRAVarIDs& lora_var_ids, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
+    void set_lora_tensors(std::vector<VariableState>& state, const std::string& name, const LoRAVarIDs& lora_var_ids, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
         LoRAParts<ov::Tensor> lora_state_tensors{
             ov::Tensor(lora_var_ids.alpha.data_type, dynamic_to_static(lora_var_ids.alpha.data_shape)),
             ov::Tensor(lora_var_ids.A.data_type, dynamic_to_static(lora_var_ids.A.data_shape)),
             ov::Tensor(lora_var_ids.B.data_type, dynamic_to_static(lora_var_ids.B.data_shape))
         };
-        auto new_tensors = prepare_lora_tensors(lora_indices.name, weight_getters, lora_state_tensors);
+        auto new_tensors = prepare_lora_tensors(name, weight_getters, lora_state_tensors);
 
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         state[lora_indices.A].set_state(new_tensors.A);
@@ -1269,8 +1240,8 @@ void AdapterController::apply(ov::InferRequest& request, const std::optional<Ada
 }
 
 
-void AdapterController::force_full_apply(bool full_apply) {
-    return m_pimpl->force_full_apply(full_apply);
+bool AdapterController::has_state_name(const std::string& name) {
+    return m_pimpl->has_state_name(name);
 }
 
 
