@@ -13,6 +13,7 @@
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
+using ov::genai::CandidatesMathingType;
 using ov::genai::StopCriteria;
 using ov::genai::GenerationConfig;
 
@@ -25,6 +26,15 @@ auto stop_criteria_docstring =  R"(
         "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
         "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
         "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
+)";
+
+auto candidates_matching_type_docstring =  R"(
+    StopCriteria controls the stopping condition for grouped beam search.
+    
+    The following values are possible:
+        "openvino_genai.CandidatesMathingType.SPECULATIVE_DECODING" matches candidates based on https://arxiv.org/pdf/2211.17192.
+        "openvino_genai.CandidatesMathingType.ASSISTANT_GENERATION" matches candidate ans sampled token exactly.
+        "openvino_genai.CandidatesMathingType.NONE" Disable speculative decoding case.
 )";
 
 } // namespace
@@ -75,6 +85,13 @@ void init_generation_config(py::module_& m) {
         .value("HEURISTIC", StopCriteria::HEURISTIC)
         .value("NEVER", StopCriteria::NEVER)
         .export_values();
+    
+    // Binding for CandidatesMathingType
+    py::enum_<CandidatesMathingType>(m, "StopCriteria", stop_criteria_docstring)
+        .value("SPECULATIVE_DECODING", CandidatesMathingType::SPECULATIVE_DECODING)
+        .value("ASSISTANT_GENERATION", CandidatesMathingType::ASSISTANT_GENERATION)
+        .value("NONE", CandidatesMathingType::NONE)
+        .export_values();
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
@@ -103,6 +120,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
+        .def_readwrite("candidates_matching_type", &GenerationConfig::candidates_matching_type)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
