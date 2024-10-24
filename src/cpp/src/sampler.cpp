@@ -548,27 +548,31 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     std::vector<int64_t> dropped_seq_ids;
     for (auto& running_sequence : sequence_group->get_running_sequences()) {
         const auto generated_len = running_sequence->get_generated_len();
-        if (sampling_params.max_new_tokens == generated_len) {
-            running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
-        } else if (sampling_params.max_new_tokens == generated_len || 
+        if (sampling_params.max_new_tokens <= generated_len || 
             is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // stop sequence by max_new_tokens or stop token (eos included)
+            running_sequence->set_status(SequenceStatus::FINISHED);
+
+            if (is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-        } else if (!sampling_params.stop_strings.empty()) {
-            int num_matched_last_tokens = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), sampling_params.stop_strings);
-            if (num_matched_last_tokens) {
-                if (!sampling_params.include_stop_str_in_output)
-                    running_sequence->remove_last_tokens(num_matched_last_tokens);
-                running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-            }
-        } else {
-            // there is not any stop reason
-            continue;
+        } else if (sampling_params.max_new_tokens == generated_len) {
+            running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
         }
         
-        // stop sequence by max_new_tokens or stop token (eos included)
-        running_sequence->set_status(SequenceStatus::FINISHED);
         dropped_seq_ids.push_back(running_sequence->get_id());
+        continue;
+    }
+
+    if (!sampling_params.stop_strings.empty()) {
+        int num_matched_last_tokens = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), sampling_params.stop_strings);
+        if (num_matched_last_tokens) {
+            if (!sampling_params.include_stop_str_in_output)
+                running_sequence->remove_last_tokens(num_matched_last_tokens);
+                running_sequence->set_status(SequenceStatus::FINISHED);
+                running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                dropped_seq_ids.push_back(running_sequence->get_id());
+            }
+        }
     }
     return dropped_seq_ids;
 }
