@@ -48,6 +48,9 @@ class Sampler {
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
+    bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
+                            bool& is_extend_sequence, size_t& max_removed_tokens, ov::genai::CandidatesMathingType token_matching_type);
+
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 

@@ -117,7 +117,8 @@ bool GenerationConfig::is_multinomial() const {
 }
 
 bool GenerationConfig::is_speculative_decoding() const {
-    return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
+    return (assistant_confidence_threshold > 0 || num_assistant_tokens > 0) &&
+           candidates_matching_type != CandidatesMathingType::NONE;
 }
 
 void GenerationConfig::validate() const {
@@ -164,6 +165,7 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
     }
     if (is_speculative_decoding()) {
+        OPENVINO_ASSERT(candidates_matching_type != CandidatesMathingType::NONE);
         if (assistant_confidence_threshold != 0.f) {
             OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually excluded in `GenerationConfig`");
         } else {

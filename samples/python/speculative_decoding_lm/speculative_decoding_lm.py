@@ -37,6 +37,8 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
     config.num_assistant_tokens = 5
+    config.candidates_matching_type = openvino_genai.CandidatesMathingType.SPECULATIVE_DECODING
+
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.

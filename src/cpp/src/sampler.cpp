@@ -652,26 +652,48 @@ align_all_sequence_len(SequenceGroup::Ptr& sequence_group,
     logit_processor.update_generated_len(min_generated_tokens);
 }
 
-bool
-validate_candidate(Sequence::Ptr running_sequence,
-                   size_t& token_idx,
-                   Token& sampled_token,
-                   bool& is_extend_sequence,
-                   size_t& max_removed_tokens) {
-    if (token_idx > 0) {
-        const auto& generated_tokens = running_sequence->get_generated_ids();
-        auto it = generated_tokens.rbegin();
-        std::advance(it, token_idx - 1);
-        // to validate candidates from assisting model and remove incorrect ones from generated sequence
-        if (*it != sampled_token.m_index) {
-            running_sequence->remove_last_tokens(token_idx);
-            max_removed_tokens = std::max(max_removed_tokens, token_idx);
-            is_extend_sequence = true;
-            return false;
-        } else {
-            sampled_token.m_index = *it;
-        }
+bool Sampler::validate_candidate(
+    Sequence::Ptr running_sequence,
+    size_t& token_idx,
+    Token& sampled_token,
+    bool& is_extend_sequence,
+    size_t& max_removed_tokens,
+    ov::genai::CandidatesMathingType token_matching_type) {
+    OPENVINO_ASSERT(token_matching_type != ov::genai::CandidatesMathingType::NONE);
+    OPENVINO_ASSERT(token_idx > 0);
+
+    const auto& generated_tokens = running_sequence->get_generated_ids();
+    auto it_token_id = generated_tokens.rbegin();
+    std::advance(it_token_id, token_idx - 1);
+
+    bool is_candidate_accepted = false;
+    if (token_matching_type == ov::genai::CandidatesMathingType::SPECULATIVE_DECODING) {
+        const auto& generated_log_probs = running_sequence->get_generated_log_probs();
+        auto it_log_prob = generated_log_probs.rbegin();
+        std::advance(it_log_prob, token_idx - 1);
+
+        float p_i = std::exp(*it_log_prob),
+                q_i = std::exp(sampled_token.m_log_prob),
+                probability_ratio = p_i / q_i;
+        
+        auto dist = std::uniform_int_distribution<>(0, 100); // equivalent to multinomial with number of trials == 1
+        float r_i = dist(rng_engine);
+        r_i /= 100;
+        is_candidate_accepted = r_i <= probability_ratio;
+    } else {
+        is_candidate_accepted = *it_token_id == sampled_token.m_index;
     }
+
+    // to validate candidates from assisting model and remove incorrect ones from generated sequence
+    if (!is_candidate_accepted) {
+        running_sequence->remove_last_tokens(token_idx);
+        max_removed_tokens = std::max(max_removed_tokens, token_idx);
+        is_extend_sequence = true;
+        return false;
+    } else {
+        sampled_token.m_index = *it_token_id;
+    }
+
     return true;
 
 }
@@ -759,8 +781,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         // flag to add sampled token to generated sequence or extend logit processors only
                         bool is_extend_sequence = token_offset == 0 || is_generate_n_tokens,
                              is_validation_passed = true;
-                        if (is_validation_mode_enabled && !is_generate_n_tokens) {
-                            is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id, is_extend_sequence, max_removed_tokens_per_request);
+                        if (is_validation_mode_enabled && !is_extend_sequence) {
+                            is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id,
+                                                                      is_extend_sequence, max_removed_tokens_per_request, sampling_params.candidates_matching_type);
                             // update log prob just while validation process
                             if (!is_extend_sequence) {
                                 OPENVINO_ASSERT(generated_and_verified_len < running_sequences[running_sequence_id]->get_generated_len());
