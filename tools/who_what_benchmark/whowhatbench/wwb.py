@@ -193,7 +193,7 @@ def load_prompts(args):
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="WWB CLI",
-        description="This sript generates answers for questions from csv file",
+        description="This script generates answers for questions from csv file",
     )
 
     parser.add_argument(
