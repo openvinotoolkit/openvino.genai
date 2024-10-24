@@ -247,31 +247,27 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
 }
 
 void LCMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
-    int64_t latent_timestep = m_timesteps.back();
-
-    // self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device)
-    // alphas_cumprod = self.alphas_cumprod.to(dtype=original_samples.dtype)
-    // timesteps = timesteps.to(original_samples.device)
-
-    // sqrt_alpha_prod = alphas_cumprod[timesteps] ** 0.5
-    // sqrt_alpha_prod = sqrt_alpha_prod.flatten()
-    // while len(sqrt_alpha_prod.shape) < len(original_samples.shape):
-    //     sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
-
-    // sqrt_one_minus_alpha_prod = (1 - alphas_cumprod[timesteps]) ** 0.5
-    // sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
-    // while len(sqrt_one_minus_alpha_prod.shape) < len(original_samples.shape):
-    //     sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+    int64_t latent_timestep = m_timesteps.front();
 
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
+    std::cout << "latent_timestep " << latent_timestep << std::endl;
+    std::cout << "sqrt_alpha_prod " << sqrt_alpha_prod << std::endl;
+    std::cout << "sqrt_one_minus_alpha_prod " << sqrt_one_minus_alpha_prod << std::endl;
+
     float * init_latent_data = init_latent.data<float>();
     const float * noise_data = noise.data<const float>();
 
+    std::cout << "latents : ";
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
+        static int a = 0;
+        if (a++ < 30) {
+            std::cout << init_latent_data[i] << " ";
+        }
         init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
     }
+    std::cout << std::endl;
 }
 
 } // namespace genai

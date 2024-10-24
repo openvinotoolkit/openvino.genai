@@ -39,6 +39,7 @@ void Text2ImagePipeline::GenerationConfig::update_generation_config(const ov::An
     read_anymap_param(properties, SD_GENERATION_CONFIG, *this);
 
     // then try per-parameter values
+    read_anymap_param(properties, "image", image);
     read_anymap_param(properties, "prompt_2", prompt_2);
     read_anymap_param(properties, "prompt_3", prompt_3);
     read_anymap_param(properties, "negative_prompt", negative_prompt);
@@ -117,10 +118,10 @@ Text2ImagePipeline Text2ImagePipeline::latent_consistency_model(
 
 Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
     const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModel& clip_text_model,
-        const CLIPTextModelWithProjection& clip_text_model_with_projection,
-        const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae_decoder) {
+    const CLIPTextModel& clip_text_model,
+    const CLIPTextModelWithProjection& clip_text_model_with_projection,
+    const UNet2DConditionModel& unet,
+    const AutoencoderKL& vae_decoder) {
     auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae_decoder);
 
     assert(scheduler != nullptr);

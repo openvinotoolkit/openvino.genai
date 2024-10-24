@@ -286,6 +286,8 @@ public:
             return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
         });
 
+        std::cout << latent_shape << std::endl;
+
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
             // concat the same latent twice along a batch dimension in case of CFG

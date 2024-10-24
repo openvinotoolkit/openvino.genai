@@ -66,7 +66,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", root_dir / "vae_encoder");
+            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -101,7 +101,7 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -145,7 +145,40 @@ public:
         ov::Tensor latent(ov::element::f32, {});
 
         if (initial_image) {
-            latent = m_vae->encode(initial_image);
+            ov::Tensor preprocessed(ov::element::f32, initial_image.get_shape());
+
+            std::cout << "original image (middle) : ";
+            for (size_t i = 0; i < initial_image.get_size(); ++i) {
+                if (i >= 512 * 256 *3 + 256*3 && i < 512 * 256 *3 + 256*3 + 30)
+                    std::cout << (float)initial_image.data<uint8_t>()[i] << " ";
+            }
+            std::cout << std::endl;
+
+            std::cout << "preprocessed : ";
+            for (size_t i = 0; i < preprocessed.get_size(); ++i) {
+                preprocessed.data<float>()[i] = initial_image.data<uint8_t>()[i] * 2.0f / 255.0f - 1.0f;
+                if (i >= 512 * 256 *3 + 256*3 && i < 512 * 256 *3 + 256*3 + 30)
+                    std::cout << preprocessed.data<float>()[i] << " ";
+            }
+            std::cout << std::endl;
+
+            std::cout << "preprocessed shape " << preprocessed.get_shape() << std::endl;
+            latent = m_vae->encode(preprocessed);
+
+            std::cout << "encoded : ";
+            for (size_t i = 0; i < latent.get_size(); ++i) {
+                if (i < 40)
+                    std::cout << latent.data<float>()[i] << " ";
+            }
+            std::cout << std::endl;
+
+            std::cout << "original_samples (mul by scale) : ";
+            for (size_t i = 0; i < latent.get_size(); ++i) {
+                latent.data<float>()[i] *= m_vae->get_config().scaling_factor;
+                if (i < 40)
+                    std::cout << latent.data<float>()[i] << " ";
+            }
+            std::cout << std::endl;
 
             ov::Tensor noise(latent.get_element_type(), latent.get_shape());
             std::generate_n(noise.data<float>(), noise.get_size(), [&]() -> float {
@@ -154,6 +187,13 @@ public:
 
             // add noise
             m_scheduler->add_noise(latent, noise);
+
+            std::cout << "noisy_samples : ";
+            for (size_t i = 0; i < latent.get_size(); ++i) {
+                if (i < 40)
+                    std::cout << (float)latent.data<float>()[i] << " ";
+            }
+            std::cout << std::endl;
         } else {
             latent.set_shape(latent_shape);
 
@@ -220,7 +260,7 @@ public:
             m_unet->set_hidden_states("timestep_cond", guidance_scale_embedding);
         }
 
-        const float strength = 0.8f; // used < 1.0f for image to image generation
+        const float strength = 0.4f; // used < 1.0f for image to image generation
         m_scheduler->set_timesteps(generation_config.num_inference_steps, strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 

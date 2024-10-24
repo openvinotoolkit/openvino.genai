@@ -3,18 +3,32 @@
 
 #include "openvino/genai/text2image/pipeline.hpp"
 
+#include "load_image.hpp"
 #include "imwrite.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
+    OPENVINO_ASSERT(argc == 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' '<IMAGE>'");
 
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";  // GPU, NPU can be used as well
 
+    std::vector<ov::Tensor> rgbs = utils::load_images(argv[3]);
+    ov::Tensor rgb = rgbs[0];
+    ov::Shape shape = rgb.get_shape();
+
+    size_t height = shape[1], width = shape[2];
+    width = (width / 8) * 8;
+    height = (height / 8) * 8;
+
+    rgb = ov::Tensor(rgb.get_element_type(), { shape[0], height, width, shape[3] }, rgb.data());
+
+    std::cout << "Input shape " << rgb.get_shape() << std::endl;
+
     ov::genai::Text2ImagePipeline pipe(models_path, device);
     ov::Tensor image = pipe.generate(prompt,
-        ov::genai::width(512),
-        ov::genai::height(512),
+        // ov::genai::image(rgb),
+        ov::genai::width(width),
+        ov::genai::height(height),
         ov::genai::num_inference_steps(20),
         ov::genai::num_images_per_prompt(1));
 

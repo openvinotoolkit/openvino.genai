@@ -75,13 +75,15 @@ public:
 
     ov::Tensor encode(ov::Tensor image);
 
+    Config get_config() const;
+
 private:
     void merge_vae_image_pre_processing() const;
     void merge_vae_image_post_processing() const;
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
-    std::shared_ptr<ov::Model> m_encoder_model, m_decoder_model;
+    std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 };
 
 } // namespace genai

@@ -46,13 +46,11 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path)
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
                              const std::filesystem::path& vae_decoder_path)
-    : m_config(vae_decoder_path / "config.json") {
+    : AutoencoderKL(vae_decoder_path) {
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
-    m_decoder_model = core.read_model((vae_decoder_path / "openvino_model.xml").string());
-    // apply VaeImageProcessor pre- and post-processing steps by merging them into the VAE encoder / decoder model
+    // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
     merge_vae_image_pre_processing();
-    merge_vae_image_post_processing();
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
@@ -140,6 +138,10 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
     return m_encoder_request.get_output_tensor();
 }
 
+AutoencoderKL::Config AutoencoderKL::get_config() const {
+    return m_config;
+}
+
 void AutoencoderKL::merge_vae_image_pre_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_encoder_model);
 
@@ -148,13 +150,19 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
     ppp.input().tensor().set_layout("NHWC");
     ppp.input().model().set_layout("NCHW");
 
-    ppp.input().preprocess()
-        .convert_element_type(ov::element::f32)
-        .scale(2.0f / 255.0f)
-        .mean(1.0f);
+    // ppp.input().tensor()
+    //     .set_element_type(ov::element::u8);
 
-    // apply m_config.scaling_factor as last step
-    ppp.input().preprocess().scale(m_config.scaling_factor);
+    // ppp.input().preprocess()
+    //     .convert_element_type(ov::element::f32)
+    //     .scale(255.0f / 2.0f)
+    //     .mean(1.0f);
+
+    // // apply m_config.scaling_factor as last step
+    // ppp.output().postprocess().custom([scaling_factor=m_config.scaling_factor](const ov::Output<ov::Node>& port) {
+    //     auto c_scaling_factor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scaling_factor);
+    //     return std::make_shared<ov::op::v1::Multiply>(port, c_scaling_factor);
+    // });
 
     ppp.build();
 }
