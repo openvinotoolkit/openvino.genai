@@ -241,7 +241,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
 
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
