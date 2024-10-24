@@ -276,8 +276,8 @@ ov::Tensor prepare_vis_position_ids(
 
 EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source{
-        int(img.get_shape().at(3)),
         int(img.get_shape().at(2)),
+        int(img.get_shape().at(1)),
         {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}
     };
     std::vector<std::vector<clip_image_u8>> imgs = ::slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);

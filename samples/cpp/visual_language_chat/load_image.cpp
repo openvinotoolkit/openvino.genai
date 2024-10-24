@@ -52,7 +52,7 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
     };
     return ov::Tensor(
         ov::element::u8,
-        ov::Shape{1, size_t(desired_channels), size_t(y), size_t(x)},
+        ov::Shape{1,  size_t(y), size_t(x), size_t(desired_channels)},
         SharedImageAllocator{image, desired_channels, y, x}
     );
 }
