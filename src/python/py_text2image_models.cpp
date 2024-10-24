@@ -134,14 +134,12 @@ void init_unet2d_condition_model(py::module_& m) {
         }))
         .def_readwrite("in_channels", &ov::genai::UNet2DConditionModel::Config::in_channels)
         .def_readwrite("sample_size", &ov::genai::UNet2DConditionModel::Config::sample_size)
-        .def_readwrite("block_out_channels", &ov::genai::UNet2DConditionModel::Config::block_out_channels)
         .def_readwrite("time_cond_proj_dim", &ov::genai::UNet2DConditionModel::Config::time_cond_proj_dim);
 
     unet2d_condition_model.def("get_config", &ov::genai::UNet2DConditionModel::get_config);
     unet2d_condition_model.def("reshape", &ov::genai::UNet2DConditionModel::reshape);
     unet2d_condition_model.def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters);
     unet2d_condition_model.def("infer", &ov::genai::UNet2DConditionModel::infer);
-    unet2d_condition_model.def("get_vae_scale_factor", &ov::genai::UNet2DConditionModel::get_vae_scale_factor);
     unet2d_condition_model.def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states);
     unet2d_condition_model.def(
             "compile", 
@@ -226,6 +224,8 @@ void init_autoencoder_kl(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )");
+    autoencoder_kl.def("get_config", &ov::genai::AutoencoderKL::get_config);
+    autoencoder_kl.def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);
 }
 
 void init_clip_text_model_with_projection(py::module_& m) {

@@ -81,7 +81,7 @@ AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
 
-    const size_t vae_scale_factor = std::pow(2, m_config.block_out_channels.size() - 1);
+    const size_t vae_scale_factor = get_vae_scale_factor();
 
     OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
             (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
@@ -140,6 +140,10 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
 
 AutoencoderKL::Config AutoencoderKL::get_config() const {
     return m_config;
+}
+
+size_t AutoencoderKL::get_vae_scale_factor() const {
+    return std::pow(2, m_config.block_out_channels.size() - 1);
 }
 
 void AutoencoderKL::merge_vae_image_pre_processing() const {

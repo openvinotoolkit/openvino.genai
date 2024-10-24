@@ -22,23 +22,25 @@ UNet2DConditionModel::Config::Config(const std::filesystem::path& config_path) {
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "sample_size", sample_size);
     read_json_param(data, "time_cond_proj_dim", time_cond_proj_dim);
-
-    file.close();
-
-    // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
-    std::filesystem::path vae_config_path = config_path.parent_path().parent_path() / "vae_decoder" / "config.json";
-    file.open(vae_config_path);
-    OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
-    data = nlohmann::json::parse(file);
-    read_json_param(data, "block_out_channels", block_out_channels);
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir) :
     m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model((root_dir / "openvino_model.xml").string());
+
     // compute VAE scale factor
-    m_vae_scale_factor = std::pow(2, m_config.block_out_channels.size() - 1);
+    {
+        // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
+        std::filesystem::path vae_config_path = root_dir.parent_path() / "vae_decoder" / "config.json";
+        std::ifstream file(vae_config_path);
+        OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
+        nlohmann::json data = nlohmann::json::parse(file);
+
+        std::vector<size_t> block_out_channels;
+        utils::read_json_param(data, "block_out_channels", block_out_channels);
+        m_vae_scale_factor = std::pow(2, block_out_channels.size() - 1);
+    }
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir,
@@ -59,10 +61,6 @@ UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = defaul
 
 const UNet2DConditionModel::Config& UNet2DConditionModel::get_config() const {
     return m_config;
-}
-
-size_t UNet2DConditionModel::get_vae_scale_factor() const {
-    return m_vae_scale_factor;
 }
 
 UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, int width, int tokenizer_model_max_length) {

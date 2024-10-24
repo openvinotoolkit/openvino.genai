@@ -137,7 +137,7 @@ public:
 
     ov::Tensor prepare_latents(const GenerationConfig& generation_config) const override {
         const auto& unet_config = m_unet->get_config();
-        const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
@@ -175,7 +175,7 @@ public:
 
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         if (generation_config.height < 0)
             generation_config.height = unet_config.sample_size * vae_scale_factor;
@@ -283,8 +283,9 @@ private:
 
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_unet != nullptr);
+        assert(m_vae != nullptr);
         const auto& unet_config = m_unet->get_config();
-        const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         m_generation_config.height = unet_config.sample_size * vae_scale_factor;
         m_generation_config.width = unet_config.sample_size * vae_scale_factor;
@@ -301,8 +302,8 @@ private:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_unet != nullptr);
-        const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
+        assert(m_vae != nullptr);
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
             (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
             vae_scale_factor);
