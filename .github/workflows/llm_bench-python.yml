@@ -77,9 +77,11 @@ jobs:
     - name: Test whisper-tiny on Linux
       run: |
         GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch main --single-branch https://huggingface.co/datasets/facebook/multilingual_librispeech
-        git lfs pull -I multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000.tar.gz
-        mkdir multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000
-        tar zxvf multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000.tar.gz -C multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/
+        cd multilingual_librispeech
+        git lfs pull -I /data/mls_polish/train/audio/3283_1447_000.tar.gz
+        mkdir data/mls_polish/train/audio/3283_1447_000
+        tar zxvf data/mls_polish/train/audio/3283_1447_000.tar.gz -C data/mls_polish/train/audio/3283_1447_000/
+        cd ..
         optimum-cli export openvino --trust-remote-code --model openai/whisper-base ./ov_models/whisper-base
         python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-base --media multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/3283_1447_000000.flac -d cpu -n 1 --genai
     - name: WWB Tests
