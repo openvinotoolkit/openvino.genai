@@ -69,13 +69,27 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     }
 
     m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+
     // and finally create model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     if (is_use_cache_eviction) {
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(),
+                                                       /* m_collect_attention_scores = */ true);
+        m_rotation_coefficient_stores.reserve(device_config.get_num_layers());
+        ov::Shape rotation_coefficient_store_shape{ device_config.get_head_size(), scheduler_config.block_size * scheduler_config.num_kv_blocks };
+        for (size_t i = 0; i < device_config.get_num_layers(); i++) {
+            ov::Tensor store(device_config.get_cache_precision(), rotation_coefficient_store_shape);
+            m_rotation_coefficient_stores.push_back(store);
+        }
+        m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(scheduler_config.block_size,
+                                                                                // TODO (vshampor): LUT size equal to max cache size in tokens
+                                                                                //  is overkill - find a way to pass the max sequence length instead
+                                                                                scheduler_config.block_size * scheduler_config.num_kv_blocks,
+                                                                                device_config.get_head_size());
     } else {
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
     }
+
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
     m_sampler->set_seed(m_generation_config.rng_seed);
 };
@@ -191,6 +205,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // evict unimportant blocks from KV cache, if requested
     if (sched_config.use_cache_eviction) {
         maybe_evict_cache_blocks(sched_config);
+        m_model_runner->set_cache_rotation_coefficients(m_next_step_rotation_coefficients);
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -387,6 +402,34 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
         cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
 
+
+        for (size_t i = 0; i < logical_blocks_to_evict.size(); i++) {
+            size_t num_blocks_before_eviction = m_scheduler->get_block_tables(seq_id)[i].size();
+            auto rotation_multipliers =
+                m_cache_rotation_calculator->get_rotation_multipliers(logical_blocks_to_evict[i],
+                                                                      num_blocks_before_eviction);
+            const auto& rotation_multipliers_cos = rotation_multipliers.first;
+            const auto& rotation_multipliers_sin = rotation_multipliers.second;
+            OPENVINO_ASSERT(rotation_multipliers_cos.size() == rotation_multipliers_sin.size());
+            const size_t num_kv_heads = m_rotation_coefficient_stores[i].get_shape()[0];
+            const size_t num_tokens = rotation_multipliers_cos.size() * 2;
+
+            ov::Tensor rotation_multipliers_tensor(m_rotation_coefficient_stores[i],
+                                                   ov::Coordinate{0, 0},
+                                                   ov::Coordinate{num_kv_heads, num_tokens});
+
+            // Fill the ROI tensor with rotation coefficient data - cos and sin coefficients are interleaved.
+            auto rotation_multipliers_tensor_data = rotation_multipliers_tensor.data<float>();
+            for (size_t head_idx = 0; head_idx < num_kv_heads; head_idx++) {
+                for (size_t pos_idx = 0; pos_idx < rotation_multipliers_cos.size(); pos_idx++) {
+                    size_t head_offset = head_idx * num_tokens;
+                    rotation_multipliers_tensor_data[head_offset + 2 * pos_idx] = rotation_multipliers_cos[head_idx][pos_idx];
+                    rotation_multipliers_tensor_data[head_offset + 2 * pos_idx + 1] = rotation_multipliers_sin[head_idx][pos_idx];
+                }
+            }
+            m_next_step_rotation_coefficients[i] = rotation_multipliers_tensor;
+        }
+
         m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
@@ -407,6 +450,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
         auto num_blocks_evicted = seq_group_ptr_and_num_blocks_evicted.second;
         seq_group_ptr->register_token_eviction(num_blocks_evicted * sched_config.block_size);
     }
+
 }
 
 }

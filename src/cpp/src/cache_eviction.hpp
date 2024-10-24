@@ -117,4 +117,68 @@ private:
     std::vector<std::vector<size_t>> m_cache_counter;
 };
 
+class CacheRotationCalculator {
+public:
+    CacheRotationCalculator(size_t block_size, size_t max_context_length, size_t kv_head_size, double rope_theta = 10000.0f) : m_block_size(block_size) {
+        size_t max_position_angle_multiplier = max_context_length / 2 + 1; // adding +1 here and below for good measure in case of odd dividends
+        size_t num_freqs = kv_head_size / 2 + 1;
+        m_rope_sin_lut.reserve(max_position_angle_multiplier);
+        m_rope_cos_lut.reserve(max_position_angle_multiplier);
+
+        for (size_t i = 0; i < max_position_angle_multiplier; i++) {
+            m_rope_sin_lut[i].reserve(num_freqs);
+            m_rope_cos_lut[i].reserve(num_freqs);
+            for (size_t j = 0; j < num_freqs; j++) {
+                double exponent = - static_cast<double>(2 * j) / kv_head_size;
+                double base_angle = std::pow(rope_theta,  exponent);
+                m_rope_sin_lut[i].push_back(-std::sin(i * base_angle)); // minus since we will be rotating by an inverse angle
+                m_rope_cos_lut[i].push_back(std::cos(i * base_angle));
+            }
+        }
+    };
+
+    using RotationCoefficientsPerToken = std::vector<std::vector<double>>;
+    std::pair<RotationCoefficientsPerToken, RotationCoefficientsPerToken> get_rotation_multipliers(const std::set<size_t>& evicted_block_logical_indices, size_t num_logical_blocks_before_eviction) {
+        std::pair<RotationCoefficientsPerToken, RotationCoefficientsPerToken> retval;
+        if (evicted_block_logical_indices.empty()) {
+            return retval;
+        }
+
+        ptrdiff_t current_rotation_delta_in_positions = 0;
+        std::vector<size_t> logical_block_space(num_logical_blocks_before_eviction);
+        std::iota(logical_block_space.begin(), logical_block_space.end(), 0);
+
+        std::vector<ptrdiff_t> rotation_deltas;
+        rotation_deltas.reserve(num_logical_blocks_before_eviction - evicted_block_logical_indices.size());
+
+        for (size_t logical_block_idx : logical_block_space) {
+            if (evicted_block_logical_indices.find(logical_block_idx) != evicted_block_logical_indices.end()) {
+                current_rotation_delta_in_positions += 1;
+            }
+            else {
+                if (current_rotation_delta_in_positions != 0) {
+                    rotation_deltas.push_back(current_rotation_delta_in_positions);
+                }
+            }
+        }
+
+        size_t num_tokens_to_rotate = rotation_deltas.size() * m_block_size;
+        retval.first.reserve(num_tokens_to_rotate);
+        retval.second.reserve(num_tokens_to_rotate);
+        for (ptrdiff_t delta : rotation_deltas) {
+            for (size_t i = 0; i < m_block_size; i++) {
+                retval.first.push_back(m_rope_cos_lut[delta]);
+                retval.second.push_back(m_rope_sin_lut[delta]);
+            }
+        }
+
+        return retval;
+    }
+
+private:
+    size_t m_block_size;
+    std::vector<std::vector<double>> m_rope_sin_lut;
+    std::vector<std::vector<double>> m_rope_cos_lut;
+};
+
 }
