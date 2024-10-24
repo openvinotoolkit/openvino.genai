@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
+#include "text2image/models/unet_inference_dynamic.hpp"
 
 #include <fstream>
 
@@ -95,9 +96,10 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
 
 UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
-    m_request = compiled_model.create_infer_request();
+
+    m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    m_impl->compile(m_model, device, properties);
+
     // release the original model
     m_model.reset();
 
@@ -105,23 +107,18 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
 }
 
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
-    OPENVINO_ASSERT(m_request, "UNet model must be compiled first");
-    m_request.set_tensor(tensor_name, encoder_hidden_states);
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
+    m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
 }
 
 void UNet2DConditionModel::set_adapters(const AdapterConfig& adapters) {
-    m_adapter_controller.apply(m_request, adapters);
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
+    m_impl->set_adapters(m_adapter_controller, adapters);
 }
 
 ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {
-    OPENVINO_ASSERT(m_request, "UNet model must be compiled first. Cannot infer non-compiled model");
-
-    m_request.set_tensor("sample", sample);
-    m_request.set_tensor("timestep", timestep);
-
-    m_request.infer();
-
-    return m_request.get_output_tensor();
+    OPENVINO_ASSERT(m_impl, "UNet model must be compiled first. Cannot infer non-compiled model");
+    return m_impl->infer(sample, timestep);
 }
 
 } // namespace genai
