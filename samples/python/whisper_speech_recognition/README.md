@@ -6,7 +6,7 @@ This example showcases inference of speech recognition Whisper Models. The appli
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported. [../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
@@ -28,7 +28,9 @@ python recorder.py
 
 ## Run the Whisper model
 
-`whisper_speech_recognition whisper-base sample.wav`
+[../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios: converting models and deployment.
+
+`python whisper_speech_recognition whisper-base sample.wav`
 
 Output: text transcription of `sample.wav`
 
