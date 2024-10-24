@@ -284,7 +284,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         m_requests.clear();
     };
 
-    bool continue_generation = true, step_throws_exception = false;
+    bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
             step();
