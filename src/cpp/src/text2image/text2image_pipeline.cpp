@@ -99,8 +99,8 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
-    const AutoencoderKL& vae_decoder) {
-    auto impl = std::make_shared<StableDiffusionPipeline>(clip_text_model, unet, vae_decoder);
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<StableDiffusionPipeline>(clip_text_model, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
@@ -112,8 +112,8 @@ Text2ImagePipeline Text2ImagePipeline::latent_consistency_model(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
-    const AutoencoderKL& vae_decoder) {
-    return stable_diffusion(scheduler, clip_text_model, unet, vae_decoder);
+    const AutoencoderKL& vae) {
+    return stable_diffusion(scheduler, clip_text_model, unet, vae);
 }
 
 Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
@@ -121,8 +121,8 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
     const CLIPTextModel& clip_text_model,
     const CLIPTextModelWithProjection& clip_text_model_with_projection,
     const UNet2DConditionModel& unet,
-    const AutoencoderKL& vae_decoder) {
-    auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae_decoder);
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
