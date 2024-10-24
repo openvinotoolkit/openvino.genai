@@ -142,6 +142,11 @@ public:
 
     void compile(const std::string& device, const ov::AnyMap& properties = {});
 
+    void compile(const std::string& text_encoder_device,
+        const std::string& unet_device,
+        const std::string& vae_device,
+        const ov::AnyMap& properties = {});
+
     // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
     ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 

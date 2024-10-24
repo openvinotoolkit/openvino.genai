@@ -130,9 +130,17 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
-        m_clip_text_encoder->compile(device, properties);
-        m_unet->compile(device, properties);
-        m_vae_decoder->compile(device, properties);
+        compile(device, device, device, properties);
+    }
+
+    void compile(const std::string& text_encoder_device,
+        const std::string& unet_device,
+        const std::string& vae_device,
+        const ov::AnyMap& properties = {}) override
+    {
+        m_clip_text_encoder->compile(text_encoder_device, properties);
+        m_unet->compile(unet_device, properties);
+        m_vae_decoder->compile(vae_device, properties);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,

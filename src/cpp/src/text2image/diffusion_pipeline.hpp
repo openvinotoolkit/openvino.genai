@@ -63,6 +63,11 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
+    virtual void compile(const std::string& text_encoder_device,
+                         const std::string& unet_device,
+                         const std::string& vae_device,
+                         const ov::AnyMap& properties = {}) = 0;
+
     virtual ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties) = 0;
 
     virtual ~DiffusionPipeline() = default;
