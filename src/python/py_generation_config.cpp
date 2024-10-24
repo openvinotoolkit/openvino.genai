@@ -44,6 +44,7 @@ char generation_config_docstring[] = R"(
     stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
     include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
     stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    echo:           if set to true, the model will echo the prompt in the output.
 
     Beam search specific parameters:
     num_beams:         number of beams for beam search. 1 disables beam search.
@@ -101,6 +102,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
+        .def_readwrite("echo", &GenerationConfig::echo)
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
