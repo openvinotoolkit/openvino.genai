@@ -19,6 +19,8 @@ Prepare audio file in wav format with sampling rate 16k Hz.
 
 ## Run
 
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+
 `whisper_speech_recognition whisper-base sample.wav`
 
 Output: text transcription of `sample.wav`

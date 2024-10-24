@@ -28,6 +28,8 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 ## Run
 
+[../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios: converting models and deployment.
+
 `python main.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"`
 
 ### Examples

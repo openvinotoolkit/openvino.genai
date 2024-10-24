@@ -28,7 +28,9 @@ python recorder.py
 
 ## Run the Whisper model
 
-`whisper_speech_recognition whisper-base sample.wav`
+[../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios: converting models and deployment.
+
+`python whisper_speech_recognition whisper-base sample.wav`
 
 Output: text transcription of `sample.wav`
 

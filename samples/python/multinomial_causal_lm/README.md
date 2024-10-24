@@ -17,7 +17,9 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 
 ## Run
 
-`multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
+[../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios: converting models and deployment.
+
+`python multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
 
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.

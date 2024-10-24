@@ -1,6 +1,6 @@
 # Text generation C++ sample that supports most popular models like LLaMA 3
 
-This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. It's only possible to change the device for inference to a differnt one, GPU for example, from the command line interface. The sample fearures `ov::genai::LLMPipeline` and configures it to use multiple beam grops. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. It's only possible to change the device for inference to a different one, GPU for example, from the command line interface. The sample fearures `ov::genai::LLMPipeline` and configures it to use multiple beam grops. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## Download and convert the model and tokenizers
 
@@ -14,6 +14,8 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 ```
 
 ## Run
+
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `beam_search_causal_lm TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
 

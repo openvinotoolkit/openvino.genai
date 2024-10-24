@@ -15,6 +15,8 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 
 ## Run
 
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+
 `greedy_causal_lm TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
 
 

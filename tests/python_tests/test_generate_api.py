@@ -35,7 +35,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     if 'do_sample' not in config:
         # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
@@ -113,7 +113,7 @@ def hf_ov_genai_tensors_comparison(
     if 'do_sample' not in config:
         # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
@@ -276,7 +276,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
-    # todo: with EARLY stop_criteria looks like HF return unvalid out with sentence<eos><unk><unk>
+    # todo: with EARLY stop_criteria looks like HF return invalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
     if (stop_criteria == StopCriteria.EARLY):
         pytest.skip()
@@ -509,7 +509,7 @@ def test_load_special_tokens_3_(model_tmp_path):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_load_special_tokens_3(model_tmp_path):
-    # both config.json is availabel and tokenizer_config.json available
+    # both config.json is available and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
     tok_config_json = {
     "added_tokens_decoder": {
