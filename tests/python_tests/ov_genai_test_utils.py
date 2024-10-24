@@ -112,7 +112,7 @@ def get_chat_templates():
 
     skipped_models = {
         # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
-        # Need to enable and unskip, since it's preset in continious batching and has >100 000 downloads.
+        # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
         "openchat/openchat-3.5-0106",
         
         # These models fail even on HF so no need to check if applying chat matches.
@@ -197,7 +197,7 @@ def read_model(params, **tokenizer_kwargs):
         path,
         tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(path, 'CPU', config={'ENABLE_MMAP': False}),
+        ov_genai.LLMPipeline(path, 'CPU', **{'ENABLE_MMAP': False}),
     )
 
 
@@ -252,4 +252,4 @@ def load_pipe(configs: List[Tuple], temp_path):
 def get_continuous_batching(path):
     scheduler_config = ov_genai.SchedulerConfig()
     scheduler_config.cache_size = 1
-    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', config={"scheduler_config": scheduler_config})
+    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', **{"scheduler_config": scheduler_config})

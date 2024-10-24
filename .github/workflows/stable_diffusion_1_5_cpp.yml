@@ -51,7 +51,7 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
-          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_generate_pipeline --parallel
+          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_openvino_genai --parallel
 
       - name: Create virtual environment
         run: python3 -m venv openvino_sd_cpp
@@ -125,7 +125,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.build_dir }}
-          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_generate_pipeline --parallel
+          cmake --build ${{ env.build_dir }} --config Release --target stable_diffusion lora_stable_diffusion py_openvino_genai --parallel
 
       - name: Create virtual environment
         run: python -m venv openvino_sd_cpp

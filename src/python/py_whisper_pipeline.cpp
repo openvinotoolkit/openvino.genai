@@ -25,7 +25,7 @@ using ov::genai::WhisperDecodedResults;
 using ov::genai::WhisperGenerationConfig;
 using ov::genai::WhisperPipeline;
 
-namespace utils = ov::genai::pybind::utils;
+namespace pyutils = ov::genai::pybind::utils;
 
 namespace {
 
@@ -99,10 +99,10 @@ auto whisper_generation_config_docstring = R"(
     is_multilingual:
     type: bool
 
-    begin_suppress_tokens: A list containing tokens that will be supressed at the beginning of the sampling process.
+    begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
     type: list[int]
 
-    suppress_tokens: A list containing the non-speech tokens that will be supressed during generation.
+    suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
     type: list[int]
 
     language: Language token to use for generation in the form of <|en|>.
@@ -141,8 +141,8 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
         if (item.second.is_none()) {
             // Even if argument key name does not fit GenerationConfig name
-            // it's not an eror if it's not defined.
-            // Some HF configs can have parameters for methods currenly unsupported in ov_genai
+            // it's not an error if it's not defined.
+            // Some HF configs can have parameters for methods currently unsupported in ov_genai
             // but if their values are not set / None, then this should not block
             // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
             return res_config;
@@ -194,7 +194,7 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
                                         const OptionalWhisperGenerationConfig& config,
-                                        const utils::PyBindStreamerVariant& py_streamer,
+                                        const pyutils::PyBindStreamerVariant& py_streamer,
                                         const py::kwargs& kwargs) {
     // whisper config should initialized from generation_config.json in case of only kwargs provided
     // otherwise it would be initialized with default values which is unexpected for kwargs use case
@@ -203,19 +203,11 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
+    StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
 }
 
-py::str handle_utf8_text(const std::string& text) {
-    // pybind11 decodes strings similar to Pythons's
-    // bytes.decode('utf-8'). It raises if the decoding fails.
-    // generate() may return incomplete Unicode points if max_new_tokens
-    // was reached. Replace such points with � instead of raising an exception
-    PyObject* py_s = PyUnicode_DecodeUTF8(text.data(), text.length(), "replace");
-    return py::reinterpret_steal<py::object>(py_s);
-}
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
@@ -250,7 +242,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readonly("start_ts", &WhisperDecodedResultChunk::start_ts)
         .def_readonly("end_ts", &WhisperDecodedResultChunk::end_ts)
         .def_property_readonly("text", [](WhisperDecodedResultChunk& chunk) {
-            return handle_utf8_text(chunk.text);
+            return pyutils::handle_utf8(chunk.text);
         });
 
     py::class_<WhisperDecodedResults, DecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
@@ -259,15 +251,14 @@ void init_whisper_pipeline(py::module_& m) {
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
         .def(py::init([](const std::filesystem::path& models_path,
                          const std::string& device,
-                         const std::map<std::string, py::object>& config) {
-                 ScopedVar env_manager(utils::ov_tokenizers_module_path());
-                 return std::make_unique<WhisperPipeline>(models_path, device, utils::properties_to_any_map(config));
+                         const py::kwargs& kwargs) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 return std::make_unique<WhisperPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
              }),
              py::arg("models_path"),
              "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
              py::arg("device"),
              "device on which inference will be done",
-             py::arg("config") = ov::AnyMap({}),
              "openvino.properties map",
              R"(
             WhisperPipeline class constructor.
@@ -280,7 +271,7 @@ void init_whisper_pipeline(py::module_& m) {
             [](WhisperPipeline& pipe,
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
-               const utils::PyBindStreamerVariant& streamer,
+               const pyutils::PyBindStreamerVariant& streamer,
                const py::kwargs& kwargs) {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },

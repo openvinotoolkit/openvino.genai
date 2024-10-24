@@ -717,7 +717,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat py_generate_pipeline -j
+          cmake --build ./build/ --config Release --target visual_language_chat py_openvino_genai -j
       - name: Install dependencies
         run: |
           source ./ov/setupvars.sh
@@ -799,15 +799,24 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
-      - name: Download and convert LLaVa-Next model and an image
+      - name: Download and convert LLaVa-Next model
         run: |
           source ./ov/setupvars.sh
           optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - LLaVa-Next
         run: >
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
+          <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
+      - name: Download and convert InternVL2 model
+        run: |
+          source ./ov/setupvars.sh
+          optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
+      - name: Run visual_language_chat C++ sample - InternVL2
+        run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
 

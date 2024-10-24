@@ -201,8 +201,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
     model->reshape(new_shapes);
 }
 
-void fill_tensor(ov::Tensor tensor, int64_t fill_val, size_t offset = 0u) {
-    int64_t* tensor_data = tensor.data<int64_t>();
+template <typename T>
+void fill_tensor(ov::Tensor tensor, T fill_val, size_t offset = 0u) {
+    T* tensor_data = tensor.data<T>();
     std::fill(tensor_data + offset, tensor_data + tensor.get_size(), fill_val);
 }
 
@@ -240,7 +241,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
 
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
@@ -265,6 +266,10 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
+    // NB: Empty config for devices != NPU
+    if (!npudesc.has_value()) {
+        return { };
+    }
     auto config = get_default_common_config(model);
     if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
         config.emplace("NPUW_PARALLEL_COMPILE", "YES");
@@ -277,7 +282,12 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
     return config;
 }
 
-ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
+ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
+                                       const std::optional<NPUDesc>& npudesc) {
+    // NB: Empty config for devices != NPU
+    if (!npudesc.has_value()) {
+        return { };
+    }
     auto config = get_default_common_config(model);
     config.emplace("NPUW_FUNCALL_ASYNC", "YES");
     config.emplace("NPUW_PARALLEL_COMPILE", "YES");
@@ -414,7 +424,7 @@ void StaticLLMPipeline::setupAndCompileModels(
         properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     auto generate_config = pop_or_default(
-        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
+        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc)
     );
     merge_config_with(prefill_config, properties);
     merge_config_with(generate_config, properties);
@@ -422,11 +432,13 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
+    // NB: If NPU specified but not available - fallback to CPU
+    const auto target_device = (device == "NPU" && !npudesc.has_value()) ? "CPU" : device;
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, device, generate_config
+        m_kvcache_model, target_device, generate_config
     ).create_infer_request();
     m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
+        m_prefill_model, target_device, prefill_config
     ).create_infer_request();
 }
 
@@ -517,10 +529,10 @@ void StaticLLMPipeline::finish_chat() {
 };
 
 void StaticLLMPipeline::prepare_for_new_conversation() {
-    fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
-    fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
-    fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
-    fill_tensor(m_kvcache_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("position_ids"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_kvcache_request.get_tensor("attention_mask"), 0u);
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
@@ -645,7 +657,7 @@ EncodedResults StaticLLMPipeline::generate(
     copy_with_offset(input_ids, offset, padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
-    fill_tensor(padded_attention_mask, 1u, offset);
+    fill_tensor<int64_t>(padded_attention_mask, 1u, offset);
 
     auto padded_position_ids = m_prefill_request.get_tensor("position_ids");
     auto* padded_pos_data = padded_position_ids.data<int64_t>();
@@ -680,6 +692,8 @@ EncodedResults StaticLLMPipeline::generate(
 
         const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
         auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+        fill_tensor<ov::float16>(kvcache_in_tensor, 0);
+
         auto kvcache_in_slice = make_tensor_slice(
             kvcache_in_tensor, m_kvcache_desc.dim, 0u, m_kvcache_desc.num_stored_tokens
         );
