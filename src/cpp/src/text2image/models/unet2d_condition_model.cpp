@@ -3,6 +3,7 @@
 
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
 #include "text2image/models/unet_inference_dynamic.hpp"
+#include "text2image/models/unet_inference_static_bs1.hpp"
 
 #include <fstream>
 
@@ -72,24 +73,7 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
     height /= m_vae_scale_factor;
     width /= m_vae_scale_factor;
 
-    std::map<std::string, ov::PartialShape> name_to_shape;
-
-    for (auto && input : m_model->inputs()) {
-        std::string input_name = input.get_any_name();
-        name_to_shape[input_name] = input.get_partial_shape();
-        if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
-        } else if (input_name == "sample") {
-            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
-        } else if (input_name == "time_ids" || input_name == "text_embeds") {
-            name_to_shape[input_name][0] = batch_size;
-        } else if (input_name == "encoder_hidden_states") {
-            name_to_shape[input_name][0] = batch_size;
-            name_to_shape[input_name][1] = tokenizer_model_max_length;
-        }
-    }
-
-    m_model->reshape(name_to_shape);
+    UNetInference::reshape(m_model, batch_size, height, width, tokenizer_model_max_length);
 
     return *this;
 }
@@ -97,7 +81,13 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
 UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
 
-    m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    if (device == "NPU") {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
+    }
+    else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    }
+
     m_impl->compile(m_model, device, properties);
 
     // release the original model
