@@ -12,7 +12,7 @@
 namespace ov {
 namespace genai {
 
-Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
+Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" || 
@@ -25,7 +25,7 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
     }
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
+Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" ||
@@ -38,12 +38,12 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
     }
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
+Image2ImagePipeline::Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
     : m_impl(impl) {
     assert(m_impl != nullptr);
 }
 
-Text2ImagePipeline Text2ImagePipeline::stable_diffusion(
+Image2ImagePipeline Image2ImagePipeline::stable_diffusion(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
@@ -52,26 +52,19 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion(
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
-    impl->initialize_generation_config("StableDiffusionPipeline");
 
-    return Text2ImagePipeline(impl);
+    return Image2ImagePipeline(impl);
 }
 
-Text2ImagePipeline Text2ImagePipeline::latent_consistency_model(
+Image2ImagePipeline Image2ImagePipeline::latent_consistency_model(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<StableDiffusionPipeline>(clip_text_model, unet, vae);
-
-    assert(scheduler != nullptr);
-    impl->set_scheduler(scheduler);
-    impl->initialize_generation_config("LatentConsistencyModelPipeline");
-
-    return Text2ImagePipeline(impl);
+    return stable_diffusion(scheduler, clip_text_model, unet, vae);
 }
 
-Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
+Image2ImagePipeline Image2ImagePipeline::stable_diffusion_xl(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModel& clip_text_model,
     const CLIPTextModelWithProjection& clip_text_model_with_projection,
@@ -81,32 +74,35 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
-    impl->initialize_generation_config("StableDiffusionXLPipeline");
 
-    return Text2ImagePipeline(impl);
+    return Image2ImagePipeline(impl);
 }
 
-ImageGenerationConfig Text2ImagePipeline::get_generation_config() const {
+ImageGenerationConfig Image2ImagePipeline::get_generation_config() const {
     return m_impl->get_generation_config();
 }
 
-void Text2ImagePipeline::set_generation_config(const ImageGenerationConfig& generation_config) {
+void Image2ImagePipeline::set_generation_config(const ImageGenerationConfig& generation_config) {
     m_impl->set_generation_config(generation_config);
 }
 
-void Text2ImagePipeline::set_scheduler(std::shared_ptr<Scheduler> scheduler) {
+void Image2ImagePipeline::set_scheduler(std::shared_ptr<Scheduler> scheduler) {
     m_impl->set_scheduler(scheduler);
 }
 
-void Text2ImagePipeline::reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) {
+void Image2ImagePipeline::reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) {
     m_impl->reshape(num_images_per_prompt, height, width, guidance_scale);
 }
 
-void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& properties) {
+void Image2ImagePipeline::compile(const std::string& device, const ov::AnyMap& properties) {
     m_impl->compile(device, properties);
 }
 
-ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
+    return m_impl->generate(positive_prompt, properties);
+}
+
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
     return m_impl->generate(positive_prompt, properties);
 }
 

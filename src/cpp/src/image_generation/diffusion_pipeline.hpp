@@ -6,6 +6,7 @@
 #include <fstream>
 
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "json_utils.hpp"
@@ -42,7 +43,7 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
 namespace ov {
 namespace genai {
 
-class Text2ImagePipeline::DiffusionPipeline {
+class DiffusionPipeline {
 public:
     ImageGenerationConfig get_generation_config() const {
         return m_generation_config;

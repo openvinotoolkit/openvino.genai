@@ -5,13 +5,16 @@
 
 #include <cstdint>
 #include <vector>
+#include <map>
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "openvino/genai/image_generation/scheduler.hpp"
+
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
 
-class IScheduler : public Text2ImagePipeline::Scheduler {
+class IScheduler : public Scheduler {
 public:
     virtual void set_timesteps(size_t num_inference_steps, float strength) = 0;
 

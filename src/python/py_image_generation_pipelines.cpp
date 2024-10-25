@@ -40,9 +40,9 @@ auto text2image_generate_docstring = R"(
     :param prompt: input prompt
     :type prompt: str
 
-    :param kwargs: arbitrary keyword arguments with keys corresponding to generate params. 
-    
-    Expected parameters list: 
+    :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+
+    Expected parameters list:
     prompt_2: str - second prompt,
     prompt_3: str - third prompt,
     negative_prompt: str - negative prompt,
@@ -172,7 +172,7 @@ void init_image_generation_pipelines(py::module_& m) {
 
     py::class_<ov::genai::Generator, ov::genai::PyGenerator, std::shared_ptr<ov::genai::Generator>>(m, "Generator", "This class is used for storing pseudo-random generator.")
         .def(py::init<>());
-    
+
     py::class_<ov::genai::CppStdGenerator, ov::genai::Generator, std::shared_ptr<ov::genai::CppStdGenerator>>(m, "CppStdGenerator", "This class wraps std::mt19937 pseudo-random generator.")
         .def(py::init([](
             uint32_t seed
@@ -197,7 +197,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
-            ov::genai::ImageGenerationConfig config, 
+            ov::genai::ImageGenerationConfig config,
             const py::kwargs& kwargs) {
             update_image_generation_config_from_kwargs(config, kwargs);
         });
@@ -209,21 +209,21 @@ void init_image_generation_pipelines(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Text2ImagePipeline>(models_path);
         }),
-        py::arg("models_path"), "folder with exported model files.", 
+        py::arg("models_path"), "folder with exported model files.",
         R"(
             Text2ImagePipeline class constructor.
             models_path (str): Path to the folder with exported model files.
         )")
 
         .def(py::init([](
-            const std::filesystem::path& models_path, 
+            const std::filesystem::path& models_path,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Text2ImagePipeline>(models_path, device, text2image_kwargs_to_any_map(kwargs, true));
         }),
-        py::arg("models_path"), "folder with exported model files.", 
+        py::arg("models_path"), "folder with exported model files.",
         py::arg("device"), "device on which inference will be done",
         R"(
             Text2ImagePipeline class constructor.
@@ -239,8 +239,8 @@ void init_image_generation_pipelines(py::module_& m) {
         .def("latent_consistency_model", &ov::genai::Text2ImagePipeline::latent_consistency_model)
         .def("stable_diffusion_xl", &ov::genai::Text2ImagePipeline::stable_diffusion_xl)
         .def(
-            "compile", 
-            [](ov::genai::Text2ImagePipeline& pipe, 
+            "compile",
+            [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
@@ -253,8 +253,8 @@ void init_image_generation_pipelines(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def(
-            "generate", 
-            [](ov::genai::Text2ImagePipeline& pipe, 
+            "generate",
+            [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& prompt,
                 const py::kwargs& kwargs
             ) {
@@ -264,16 +264,15 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
-    
-    auto text2image_scheduler = py::class_<ov::genai::Text2ImagePipeline::Scheduler>(text2image_pipeline, "Scheduler", "This class is used for storing scheduler configuration for Text2Image pipeline.")
-        .def(py::init<>());
 
-    py::enum_<ov::genai::Text2ImagePipeline::Scheduler::Type>(text2image_scheduler, "Type")
-        .value("AUTO", ov::genai::Text2ImagePipeline::Scheduler::Type::AUTO)
-        .value("LCM", ov::genai::Text2ImagePipeline::Scheduler::Type::LCM)
-        .value("LMS_DISCRETE", ov::genai::Text2ImagePipeline::Scheduler::Type::LMS_DISCRETE)
-        .value("DDIM", ov::genai::Text2ImagePipeline::Scheduler::Type::DDIM)
-        .value("EULER_DISCRETE", ov::genai::Text2ImagePipeline::Scheduler::Type::EULER_DISCRETE);
-    
-    text2image_scheduler.def("from_config", &ov::genai::Text2ImagePipeline::Scheduler::from_config);
+    auto text2image_scheduler = py::class_<ov::genai::Scheduler>(m, "Scheduler", "Scheduler for image generation pipelines.")
+        .def(py::init<>())
+        .def("from_config", &ov::genai::Scheduler::from_config);
+
+    py::enum_<ov::genai::Scheduler::Type>(text2image_scheduler, "Type")
+        .value("AUTO", ov::genai::Scheduler::Type::AUTO)
+        .value("LCM", ov::genai::Scheduler::Type::LCM)
+        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
+        .value("DDIM", ov::genai::Scheduler::Type::DDIM)
+        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE);
 }

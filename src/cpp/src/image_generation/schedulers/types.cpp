@@ -3,6 +3,8 @@
 
 #include "image_generation/schedulers/types.hpp"
 
+#include "openvino/core/except.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -40,17 +42,17 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Predic
 }
 
 template <>
-void read_json_param(const nlohmann::json& data, const std::string& name, Text2ImagePipeline::Scheduler::Type& param) {
+void read_json_param(const nlohmann::json& data, const std::string& name, Scheduler::Type& param) {
     if (data.contains(name) && data[name].is_string()) {
         std::string scheduler_type_str = data[name].get<std::string>();
         if (scheduler_type_str == "LCMScheduler")
-            param = Text2ImagePipeline::Scheduler::LCM;
+            param = Scheduler::LCM;
         else if (scheduler_type_str == "DDIMScheduler")
-            param = Text2ImagePipeline::Scheduler::DDIM;
+            param = Scheduler::DDIM;
         else if (scheduler_type_str == "LMSDiscreteScheduler")
-            param = Text2ImagePipeline::Scheduler::LMS_DISCRETE;
+            param = Scheduler::LMS_DISCRETE;
         else if (scheduler_type_str == "EulerDiscreteScheduler")
-            param = Text2ImagePipeline::Scheduler::EULER_DISCRETE;
+            param = Scheduler::EULER_DISCRETE;
         else if (!scheduler_type_str.empty()) {
             OPENVINO_THROW("Unsupported value for 'prediction_type' ", scheduler_type_str);
         }
@@ -119,17 +121,17 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Timest
 }  // namespace genai
 }  // namespace ov
 
-std::ostream& operator<<(std::ostream& os, const ov::genai::Text2ImagePipeline::Scheduler::Type& scheduler_type) {
+std::ostream& operator<<(std::ostream& os, const ov::genai::Scheduler::Type& scheduler_type) {
     switch (scheduler_type) {
-    case ov::genai::Text2ImagePipeline::Scheduler::Type::LCM:
+    case ov::genai::Scheduler::Type::LCM:
         return os << "LCMScheduler";
-    case ov::genai::Text2ImagePipeline::Scheduler::Type::LMS_DISCRETE:
+    case ov::genai::Scheduler::Type::LMS_DISCRETE:
         return os << "LMSDiscreteScheduler";
-    case ov::genai::Text2ImagePipeline::Scheduler::Type::DDIM:
+    case ov::genai::Scheduler::Type::DDIM:
         return os << "DDIMScheduler";
-    case ov::genai::Text2ImagePipeline::Scheduler::Type::EULER_DISCRETE:
+    case ov::genai::Scheduler::Type::EULER_DISCRETE:
         return os << "EulerDiscreteScheduler";
-    case ov::genai::Text2ImagePipeline::Scheduler::Type::AUTO:
+    case ov::genai::Scheduler::Type::AUTO:
         return os << "AutoScheduler";
     default:
         OPENVINO_THROW("Unsupported scheduler type value");

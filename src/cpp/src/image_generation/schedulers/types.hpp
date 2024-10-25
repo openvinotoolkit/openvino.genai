@@ -5,7 +5,7 @@
 
 #include <ostream>
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "openvino/genai/image_generation/scheduler.hpp"
 
 #include "json_utils.hpp"
 
@@ -54,7 +54,7 @@ template <>
 void read_json_param(const nlohmann::json& data, const std::string& name, PredictionType& param);
 
 template <>
-void read_json_param(const nlohmann::json& data, const std::string& name, Text2ImagePipeline::Scheduler::Type& param);
+void read_json_param(const nlohmann::json& data, const std::string& name, Scheduler::Type& param);
 
 template <>
 void read_json_param(const nlohmann::json& data, const std::string& name, TimestepSpacing& param);
@@ -72,4 +72,4 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Timest
 }  // namespace genai
 }  // namespace ov
 
-std::ostream& operator<<(std::ostream& os, const ov::genai::Text2ImagePipeline::Scheduler::Type& scheduler_type);
+std::ostream& operator<<(std::ostream& os, const ov::genai::Scheduler::Type& scheduler_type);

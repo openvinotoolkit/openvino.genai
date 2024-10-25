@@ -11,7 +11,7 @@
 namespace ov {
 namespace genai {
 
-class Text2ImagePipeline::StableDiffusionXLPipeline : public Text2ImagePipeline::DiffusionPipeline {
+class Text2ImagePipeline::StableDiffusionXLPipeline : public DiffusionPipeline {
 public:
     explicit StableDiffusionXLPipeline(const std::filesystem::path& root_dir) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
@@ -138,6 +138,8 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+
         m_clip_text_encoder->compile(device, properties);
         m_clip_text_encoder_with_projection->compile(device, properties);
         m_unet->compile(device, properties);
@@ -402,6 +404,9 @@ private:
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used when guidance scale < 1.0");
         OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
     }
+
+    friend class Text2ImagePipeline;
+    friend class Image2ImagePipeline;
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_with_projection;

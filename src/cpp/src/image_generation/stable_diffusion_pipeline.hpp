@@ -38,7 +38,7 @@ ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding
 
 }  // namespace
 
-class Text2ImagePipeline::StableDiffusionPipeline : public Text2ImagePipeline::DiffusionPipeline {
+class Text2ImagePipeline::StableDiffusionPipeline : public DiffusionPipeline {
 public:
     explicit StableDiffusionPipeline(const std::filesystem::path& root_dir) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
@@ -130,6 +130,8 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+
         m_clip_text_encoder->compile(device, properties);
         m_unet->compile(device, properties);
         m_vae->compile(device, properties);
@@ -336,6 +338,9 @@ private:
                 "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
         }
     }
+
+    friend class Text2ImagePipeline;
+    friend class Image2ImagePipeline;
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<UNet2DConditionModel> m_unet;
