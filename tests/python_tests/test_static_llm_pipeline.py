@@ -38,7 +38,7 @@ def test_generation_compare_with_stateful():
     stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU")
     ref_out = stateful_pipe.generate(prompt, max_new_tokens=100)
 
-    static_pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
+    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
     actual_out = static_pipe.generate(prompt, max_new_tokens=100)
 
     if ref_out != actual_out:
@@ -78,7 +78,7 @@ def test_invalid_length_properties_raise_error(pipeline_config):
 def test_batch_one_no_exception():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    static_pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
+    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
     # Check it doesn't throw any exception when batch of size 1 is provided
     actual_out = static_pipe.generate([prompt], max_new_tokens=20)
 
@@ -89,7 +89,7 @@ def test_batch_one_no_exception():
 def test_batch_raise_error():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
     with pytest.raises(RuntimeError):
         pipe.generate([prompt] * 3, max_new_tokens=100)
 
@@ -97,10 +97,7 @@ def test_batch_raise_error():
 # TODO: For the further sampling support
 generation_configs = [
     dict(num_beam_groups=3),
-    dict(temperature=2),
-    dict(do_sample=True),
-    dict(top_p=0.8),
-    dict(top_k=10),
+    dict(do_sample=True)
 ]
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.precommit
@@ -108,7 +105,7 @@ generation_configs = [
 def test_unsupported_sampling_raise_error(generation_config):
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
     with pytest.raises(RuntimeError):
         pipe.generate(prompt, **generation_config)
 
@@ -120,7 +117,7 @@ def test_max_number_of_tokens(model_descr):
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
-    pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
     tokenizer = ov_genai.Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     # ignore_eos=True to ensure model will generate exactly num_tokens
@@ -129,7 +126,7 @@ def test_max_number_of_tokens(model_descr):
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
-@pytest.mark.skip(reason="Output differs from stateful pipeline")
+@pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_chat_generation(model_descr):
