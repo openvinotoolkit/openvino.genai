@@ -5,7 +5,7 @@
 
 #include <ostream>
 
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "json_utils.hpp"
 

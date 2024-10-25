@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "text2image/schedulers/lms_discrete.hpp"
+#include "image_generation/schedulers/lms_discrete.hpp"
 
 #include <cmath>
 #include <fstream>

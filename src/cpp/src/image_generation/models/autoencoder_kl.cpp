@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/text2image/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/autoencoder_kl.hpp"
 
 #include <fstream>
 #include <memory>

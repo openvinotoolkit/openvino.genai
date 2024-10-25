@@ -7,8 +7,8 @@
 #include <list>
 #include <string>
 
-#include "text2image/schedulers/types.hpp"
-#include "text2image/schedulers/ischeduler.hpp"
+#include "image_generation/schedulers/types.hpp"
+#include "image_generation/schedulers/ischeduler.hpp"
 
 namespace ov {
 namespace genai {

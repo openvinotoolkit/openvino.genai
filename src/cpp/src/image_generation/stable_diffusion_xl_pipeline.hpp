@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "text2image/diffusion_pipeline.hpp"
+#include "image_generation/diffusion_pipeline.hpp"
 
 #include <ctime>
 #include <cassert>
@@ -144,7 +144,7 @@ public:
         m_vae->compile(device, properties);
     }
 
-    ov::Tensor prepare_latents(const GenerationConfig& generation_config) const override {
+    ov::Tensor prepare_latents(const ImageGenerationConfig& generation_config) const override {
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -176,7 +176,7 @@ public:
 
     ov::Tensor generate(const std::string& positive_prompt,
                         const ov::AnyMap& properties) override {
-        GenerationConfig generation_config = m_generation_config;
+        ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
         // Stable Diffusion pipeline
@@ -391,7 +391,7 @@ private:
             vae_scale_factor);
     }
 
-    void check_inputs(const GenerationConfig& generation_config) const override {
+    void check_inputs(const ImageGenerationConfig& generation_config) const override {
         check_image_size(generation_config.width, generation_config.height);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);

@@ -1,4 +1,4 @@
-#include "text2image/numpy_utils.hpp"
+#include "image_generation/numpy_utils.hpp"
 #include "openvino/core/except.hpp"
 
 namespace ov {

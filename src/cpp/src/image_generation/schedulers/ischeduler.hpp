@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 namespace ov {
 namespace genai {

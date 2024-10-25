@@ -1,16 +1,16 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include <fstream>
 
 #include "json_utils.hpp"
 
-#include "text2image/schedulers/lcm.hpp"
-#include "text2image/schedulers/lms_discrete.hpp"
-#include "text2image/schedulers/ddim.hpp"
-#include "text2image/schedulers/euler_discrete.hpp"
+#include "image_generation/schedulers/lcm.hpp"
+#include "image_generation/schedulers/lms_discrete.hpp"
+#include "image_generation/schedulers/ddim.hpp"
+#include "image_generation/schedulers/euler_discrete.hpp"
 
 namespace ov {
 namespace genai {

@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/text2image/unet2d_condition_model.hpp"
+#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 
 #include <fstream>
 

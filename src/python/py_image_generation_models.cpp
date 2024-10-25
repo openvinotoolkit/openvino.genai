@@ -9,7 +9,10 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/clip_text_model.hpp"
+#include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
+#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"

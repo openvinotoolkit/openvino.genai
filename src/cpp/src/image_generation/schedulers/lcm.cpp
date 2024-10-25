@@ -6,8 +6,8 @@
 #include <fstream>
 #include <iterator>
 
-#include "text2image/schedulers/lcm.hpp"
-#include "text2image/numpy_utils.hpp"
+#include "image_generation/schedulers/lcm.hpp"
+#include "image_generation/numpy_utils.hpp"
 
 #include "json_utils.hpp"
 

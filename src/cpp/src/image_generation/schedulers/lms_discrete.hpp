@@ -7,33 +7,29 @@
 #include <list>
 #include <string>
 
-#include "text2image/schedulers/types.hpp"
-#include "text2image/schedulers/ischeduler.hpp"
+#include "image_generation/schedulers/types.hpp"
+#include "image_generation/schedulers/ischeduler.hpp"
 
 namespace ov {
 namespace genai {
 
-class DDIMScheduler : public IScheduler {
+class LMSDiscreteScheduler : public IScheduler {
 public:
     struct Config {
         int32_t num_train_timesteps = 1000;
-        float beta_start = 0.0001f, beta_end = 0.02f;
+        float beta_start = 0.00085f, beta_end = 0.012f;
         BetaSchedule beta_schedule = BetaSchedule::SCALED_LINEAR;
-        std::vector<float> trained_betas = {};
-        bool clip_sample = true, set_alpha_to_one = true;
-        size_t steps_offset = 0;
         PredictionType prediction_type = PredictionType::EPSILON;
-        bool thresholding = false;
-        float dynamic_thresholding_ratio = 0.995f, clip_sample_range = 1.0f, sample_max_value = 1.0f;
-        TimestepSpacing timestep_spacing = TimestepSpacing::LEADING;
-        bool rescale_betas_zero_snr = false;
+        std::vector<float> trained_betas = {};
+        TimestepSpacing timestep_spacing = TimestepSpacing::LINSPACE;
+        size_t steps_offset = 0;
 
         Config() = default;
         explicit Config(const std::filesystem::path& scheduler_config_path);
     };
 
-    explicit DDIMScheduler(const std::filesystem::path& scheduler_config_path);
-    explicit DDIMScheduler(const Config& scheduler_config);
+    explicit LMSDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
+    explicit LMSDiscreteScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps, float strength) override;
 
@@ -50,11 +46,12 @@ public:
 private:
     Config m_config;
 
-    std::vector<float> m_alphas_cumprod;
-    float m_final_alpha_cumprod;
-
-    size_t m_num_inference_steps;
+    std::vector<float> m_alphas, m_betas, m_alphas_cumprod;
+    std::vector<float> m_sigmas, m_log_sigmas;
     std::vector<int64_t> m_timesteps;
+    std::list<std::vector<float>> m_derivative_list;
+
+    int64_t _sigma_to_t(float sigma) const;
 };
 
 } // namespace genai

@@ -9,7 +9,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -55,14 +55,15 @@ auto text2image_generate_docstring = R"(
     width: int - width of resulting images,
     num_inference_steps: int - number of inference steps,
     random_generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
+    adapters: LoRA adapters
 
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
 )";
 
 
-void update_text2image_config_from_kwargs(
-    ov::genai::Text2ImagePipeline::GenerationConfig& config,
+void update_image_generation_config_from_kwargs(
+    ov::genai::ImageGenerationConfig& config,
     const py::kwargs& kwargs) {
     for (const auto& item : kwargs) {
         std::string key = py::cast<std::string>(item.first);
@@ -161,7 +162,7 @@ void init_clip_text_model_with_projection(py::module_& m);
 void init_unet2d_condition_model(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
-void init_text2image_pipeline(py::module_& m) {
+void init_image_generation_pipelines(py::module_& m) {
 
     // init text2image models
     init_clip_text_model(m);
@@ -180,6 +181,26 @@ void init_text2image_pipeline(py::module_& m) {
         }))
         .def("next", &ov::genai::CppStdGenerator::next);
 
+    py::class_<ov::genai::ImageGenerationConfig>(m, "GenerationConfig", "This class is used for storing generation config for Text2Image pipeline.")
+        .def(py::init<>())
+        .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)
+        .def_readwrite("prompt_3", &ov::genai::ImageGenerationConfig::prompt_3)
+        .def_readwrite("negative_prompt", &ov::genai::ImageGenerationConfig::negative_prompt)
+        .def_readwrite("negative_prompt_2", &ov::genai::ImageGenerationConfig::negative_prompt_2)
+        .def_readwrite("negative_prompt_3", &ov::genai::ImageGenerationConfig::negative_prompt_3)
+        .def_readwrite("random_generator", &ov::genai::ImageGenerationConfig::random_generator)
+        .def_readwrite("guidance_scale", &ov::genai::ImageGenerationConfig::guidance_scale)
+        .def_readwrite("height", &ov::genai::ImageGenerationConfig::height)
+        .def_readwrite("width", &ov::genai::ImageGenerationConfig::width)
+        .def_readwrite("num_inference_steps", &ov::genai::ImageGenerationConfig::num_inference_steps)
+        .def_readwrite("num_images_per_prompt", &ov::genai::ImageGenerationConfig::num_images_per_prompt)
+        .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
+        .def("validate", &ov::genai::ImageGenerationConfig::validate)
+        .def("update_generation_config", [](
+            ov::genai::ImageGenerationConfig config, 
+            const py::kwargs& kwargs) {
+            update_image_generation_config_from_kwargs(config, kwargs);
+        });
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](
@@ -255,27 +276,4 @@ void init_text2image_pipeline(py::module_& m) {
         .value("EULER_DISCRETE", ov::genai::Text2ImagePipeline::Scheduler::Type::EULER_DISCRETE);
     
     text2image_scheduler.def("from_config", &ov::genai::Text2ImagePipeline::Scheduler::from_config);
-
-    auto text2image_generation_config = py::class_<ov::genai::Text2ImagePipeline::GenerationConfig>(text2image_pipeline, "GenerationConfig", "This class is used for storing generation config for Text2Image pipeline.")
-        .def(py::init<>())
-        .def_readwrite("prompt_2", &ov::genai::Text2ImagePipeline::GenerationConfig::prompt_2)
-        .def_readwrite("prompt_3", &ov::genai::Text2ImagePipeline::GenerationConfig::prompt_3)
-        .def_readwrite("negative_prompt", &ov::genai::Text2ImagePipeline::GenerationConfig::negative_prompt)
-        .def_readwrite("negative_prompt_2", &ov::genai::Text2ImagePipeline::GenerationConfig::negative_prompt_2)
-        .def_readwrite("negative_prompt_3", &ov::genai::Text2ImagePipeline::GenerationConfig::negative_prompt_3)
-        .def_readwrite("random_generator", &ov::genai::Text2ImagePipeline::GenerationConfig::random_generator)
-        .def_readwrite("guidance_scale", &ov::genai::Text2ImagePipeline::GenerationConfig::guidance_scale)
-        .def_readwrite("height", &ov::genai::Text2ImagePipeline::GenerationConfig::height)
-        .def_readwrite("width", &ov::genai::Text2ImagePipeline::GenerationConfig::width)
-        .def_readwrite("num_inference_steps", &ov::genai::Text2ImagePipeline::GenerationConfig::num_inference_steps)
-        .def_readwrite("num_images_per_prompt", &ov::genai::Text2ImagePipeline::GenerationConfig::num_images_per_prompt)
-        .def_readwrite("adapters", &ov::genai::Text2ImagePipeline::GenerationConfig::adapters)
-
-        .def("validate", &ov::genai::Text2ImagePipeline::GenerationConfig::validate)
-
-        .def("update_generation_config", [](
-        ov::genai::Text2ImagePipeline::GenerationConfig config, 
-        const py::kwargs& kwargs) {
-            update_text2image_config_from_kwargs(config, kwargs);
-        });
 }

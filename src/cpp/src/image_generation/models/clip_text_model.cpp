@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/text2image/clip_text_model.hpp"
+#include "openvino/genai/image_generation/clip_text_model.hpp"
 
 #include <fstream>
 

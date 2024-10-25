@@ -6,8 +6,8 @@
 #include <fstream>
 #include <iterator>
 
-#include "text2image/schedulers/ddim.hpp"
-#include "text2image/numpy_utils.hpp"
+#include "image_generation/schedulers/ddim.hpp"
+#include "image_generation/numpy_utils.hpp"
 
 namespace ov {
 namespace genai {

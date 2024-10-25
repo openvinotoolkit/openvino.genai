@@ -1,14 +1,14 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "text2image/schedulers/euler_discrete.hpp"
+#include "image_generation/schedulers/euler_discrete.hpp"
 
 #include <cassert>
 #include <fstream>
 #include <iterator>
 #include <random>
 
-#include "text2image/numpy_utils.hpp"
+#include "image_generation/numpy_utils.hpp"
 #include "json_utils.hpp"
 
 namespace ov {

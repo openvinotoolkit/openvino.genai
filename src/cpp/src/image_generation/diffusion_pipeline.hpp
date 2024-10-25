@@ -5,8 +5,8 @@
 
 #include <fstream>
 
-#include "text2image/schedulers/ischeduler.hpp"
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "image_generation/schedulers/ischeduler.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "json_utils.hpp"
 namespace {
@@ -44,11 +44,11 @@ namespace genai {
 
 class Text2ImagePipeline::DiffusionPipeline {
 public:
-    GenerationConfig get_generation_config() const {
+    ImageGenerationConfig get_generation_config() const {
         return m_generation_config;
     }
 
-    void set_generation_config(const GenerationConfig& generation_config) {
+    void set_generation_config(const ImageGenerationConfig& generation_config) {
         m_generation_config = generation_config;
         m_generation_config.validate();
     }
@@ -63,7 +63,7 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
-    virtual ov::Tensor prepare_latents(const GenerationConfig& generation_config) const = 0;
+    virtual ov::Tensor prepare_latents(const ImageGenerationConfig& generation_config) const = 0;
 
     virtual ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties) = 0;
 
@@ -74,10 +74,10 @@ protected:
 
     virtual void check_image_size(const int height, const int width) const = 0;
 
-    virtual void check_inputs(const GenerationConfig& generation_config) const = 0;
+    virtual void check_inputs(const ImageGenerationConfig& generation_config) const = 0;
 
     std::shared_ptr<IScheduler> m_scheduler;
-    GenerationConfig m_generation_config;
+    ImageGenerationConfig m_generation_config;
 };
 
 } // namespace genai
