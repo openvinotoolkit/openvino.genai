@@ -240,16 +240,14 @@ ov::AnyMap get_baseline_common_config() {
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE", "YES"},
         { "NPUW_WEIGHTS_BANK", "shared" },
-        { "NPUW_PMM", "NO" }
+        { "NPUW_PMM", "YES" },
+        { "NPUW_SLICE_OUT", "YES" }
     };
     return config;
 }
 
 ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_baseline_common_config();
-    if (is_cw_compressed(model)) {
-        config.emplace("NPUW_SLICE_OUT", "YES");
-    }
     const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
     if (npu_l0 && std::atoi(npu_l0) == 1) {
         config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
@@ -268,6 +266,8 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
     auto config = get_default_common_config(model);
     if (is_cw_compressed(model)) {
         config.emplace("NPUW_DQ", "YES");
+    } else {
+        config["NPUW_PMM"] = "NO";
     }
     if (npudesc.has_value() &&
         npudesc->arch == "4000" &&
