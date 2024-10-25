@@ -194,7 +194,7 @@ public:
                 ov::Tensor single_image{
                     ov::element::u8,
                     {1, reshaped_shape.at(1), reshaped_shape.at(2), reshaped_shape.at(3)},
-                    reshaped.data<uint8_t>() + batch_idx * reshaped_shape.at(1) * reshaped_shape.at(1) * reshaped_shape.at(1)
+                    reshaped.data<uint8_t>() + batch_idx * reshaped_shape.at(1) * reshaped_shape.at(2) * reshaped_shape.at(3)
                 };
                 EncodedImage encoded_image = m_vision_encoder.encode(single_image);
                 if (m_vlm_config.use_image_id) {
