@@ -42,17 +42,14 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 
 ### Compare Text-to-image models (Diffusers)
 ```sh
-# Collect ground truth from the baseline Hugging Face Transformer model 
-wwb --base-model microsoft/Phi-3-mini-4k-instruct --gt-data gt.csv --model-type text --hf
-
-# Convert model to Optimum-Intel (quantized to 8-bit by default)
-optimum-cli export openvino -m microsoft/Phi-3-mini-4k-instruct phi-3-openvino
-
-# Measure similarity metric for Optimum-OpenVINO inference backend
-wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text
-
-# Measure similarity metric for OpenVINO GenAI inference backend
-wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
+# Export FP16 model to OpenVINO
+optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
+# Export model with 8-bit quantized weights to OpenVINO
+optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
+# Collect the references
+wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type text-to-image
+# Compute the metric
+wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 ```
 
 ### API
@@ -127,18 +124,6 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 # Use --language parameter to control the language of prompts
 # Autodetection works for basic Chinese models 
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
-```
-
-### Example of Stable Diffusion comparison
-```sh
-# Export FP16 model
-optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
-# Export INT8 WOQ model
-optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
-# Collect the references
-wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type text-to-image
-# Compute the metric
-wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 ```
 
 ### Supported metrics
