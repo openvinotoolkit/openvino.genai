@@ -46,9 +46,11 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
 # Export model with 8-bit quantized weights to OpenVINO
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
-# Collect the references
+# Collect the references and save the mappling in the .json file. 
+# Reference images will be stored in the "reference" subfolder under the same path with .json.
 wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 # Compute the metric
+# Target images will be stored in the "target" subfolder under the same path with .json.
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 ```
 
