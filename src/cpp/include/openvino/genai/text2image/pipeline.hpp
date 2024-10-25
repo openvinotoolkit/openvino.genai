@@ -136,10 +136,10 @@ public:
     // creates SD3 pipeline from building blocks
     static Text2ImagePipeline stable_diffusion_3(
         const std::shared_ptr<Scheduler>& scheduler_type,
-        const CLIPTextModelWithProjection& clip_text_model,
-        const CLIPTextModelWithProjection& clip_text_model_with_projection,
-        const AutoencoderKL& vae_decoder,
-        const SD3Transformer2DModel& transformer);
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const SD3Transformer2DModel& transformer,
+        const AutoencoderKL& vae_decoder);
 
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);

@@ -26,6 +26,18 @@ void padding_right(const float* src, float* res, const ov::Shape src_size, const
     }
 }
 
+ov::Tensor tensor_batch_copy(const ov::Tensor input, const size_t num_images_per_prompt, size_t batch_size_multiplier){
+    ov::Shape repeated_shape = input.get_shape();
+    repeated_shape[0] *= num_images_per_prompt;
+    ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
+
+    for (size_t n = 0; n < num_images_per_prompt; ++n) {
+        batch_copy(input, tensor_repeated, 0, n);
+    }
+
+    return tensor_repeated;
+}
+
 }  // namespace
 
 namespace ov {
@@ -45,14 +57,14 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder");
+            m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_with_projection =
+            m_clip_text_encoder_2 =
                 std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder_2");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
@@ -61,7 +73,7 @@ public:
         // TODO:
         // const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
         // if (text_encoder_2 == "T5EncoderModel") {
-        //     m_clip_text_encoder_with_projection = std::make_shared<T5EncoderModel>(root_dir + "/text_encoder_3");
+        //     m_t5_encoder_model = std::make_shared<T5EncoderModel>(root_dir + "/text_encoder_3");
         // } else {
         //     OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         // }
@@ -96,7 +108,7 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder =
+            m_clip_text_encoder_1 =
                 std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
@@ -104,7 +116,7 @@ public:
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_with_projection =
+            m_clip_text_encoder_2 =
                 std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder_2", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
@@ -130,13 +142,13 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
     }
 
-    StableDiffusion3Pipeline(const CLIPTextModelWithProjection& clip_text_model,
-                             const CLIPTextModelWithProjection& clip_text_model_with_projection,
-                             const AutoencoderKL& vae_decoder,
-                             const SD3Transformer2DModel& transformer)
-        : m_clip_text_encoder(std::make_shared<CLIPTextModelWithProjection>(clip_text_model)),
-          m_clip_text_encoder_with_projection(
-              std::make_shared<CLIPTextModelWithProjection>(clip_text_model_with_projection)),
+    StableDiffusion3Pipeline(const CLIPTextModelWithProjection& clip_text_model_1,
+                             const CLIPTextModelWithProjection& clip_text_model_2,
+                             const SD3Transformer2DModel& transformer,
+                             const AutoencoderKL& vae_decoder
+                             )
+        : m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
+          m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
           m_vae_decoder(std::make_shared<AutoencoderKL>(vae_decoder)),
           m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {}
 
@@ -148,18 +160,18 @@ public:
 
         const size_t batch_size_multiplier =
             do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        m_clip_text_encoder->reshape(batch_size_multiplier);
-        m_clip_text_encoder_with_projection->reshape(batch_size_multiplier);
+        m_clip_text_encoder_1->reshape(batch_size_multiplier);
+        m_clip_text_encoder_2->reshape(batch_size_multiplier);
         m_vae_decoder->reshape(num_images_per_prompt, height, width);
         m_transformer->reshape(num_images_per_prompt * batch_size_multiplier,
                                height,
                                width,
-                               m_clip_text_encoder->get_config().max_position_embeddings);
+                               m_clip_text_encoder_1->get_config().max_position_embeddings);
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
-        m_clip_text_encoder->compile(device, properties);
-        m_clip_text_encoder_with_projection->compile(device, properties);
+        m_clip_text_encoder_1->compile(device, properties);
+        m_clip_text_encoder_2->compile(device, properties);
         m_vae_decoder->compile(device, properties);
         m_transformer->compile(device, properties);
     }
@@ -193,20 +205,30 @@ public:
         std::string prompt_2_str = !generation_config.prompt2.empty() ? generation_config.prompt2 : positive_prompt;
         std::string prompt_3_str = !generation_config.prompt3.empty() ? generation_config.prompt3 : positive_prompt;
 
-        ov::Tensor pooled_prompt_embed = m_clip_text_encoder->infer(positive_prompt, "", false);
-        size_t idx_hidden_state_1 = m_clip_text_encoder->get_config().num_hidden_layers + 1;
-        ov::Tensor prompt_embed = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
+        ov::Tensor pooled_prompt_embed_out = m_clip_text_encoder_1->infer(positive_prompt, "", false);
+        size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
+        ov::Tensor prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(13);
 
-        ov::Tensor pooled_prompt_2_embed = m_clip_text_encoder_with_projection->infer(prompt_2_str, "", false);
-        size_t idx_hidden_state_2 = m_clip_text_encoder_with_projection->get_config().num_hidden_layers + 1;
-        ov::Tensor prompt_2_embed = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
+        ov::Tensor pooled_prompt_2_embed_out = m_clip_text_encoder_2->infer(prompt_2_str, "", false);
+        size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
+        ov::Tensor prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(33);
+
+        ov::Tensor pooled_prompt_embed, prompt_embed, pooled_prompt_2_embed, prompt_2_embed;
+        if (generation_config.num_images_per_prompt == 1) {
+            pooled_prompt_embed = pooled_prompt_embed_out;
+            prompt_embed = prompt_embed_out;
+            pooled_prompt_2_embed = pooled_prompt_2_embed_out;
+            prompt_2_embed = prompt_2_embed_out;
+        } else {
+            pooled_prompt_embed = tensor_batch_copy(pooled_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            prompt_embed = tensor_batch_copy(prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            pooled_prompt_2_embed = tensor_batch_copy(pooled_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            prompt_2_embed = tensor_batch_copy(prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+        }
 
         // concatenate hidden_states from two encoders
         ov::Shape pr_emb_shape = prompt_embed.get_shape();
         ov::Shape pr_emb_2_shape = prompt_2_embed.get_shape();
-
-        std::cout << "pr_emb_shape" << pr_emb_shape << std::endl;
-        std::cout << "pr_emb_2_shape" << pr_emb_2_shape << std::endl;
 
         ov::Shape clip_prompt_embeds_shape = {pr_emb_shape[0], pr_emb_shape[1], pr_emb_shape[2] + pr_emb_2_shape[2]};
         ov::Tensor clip_prompt_embeds(prompt_embed.get_element_type(), clip_prompt_embeds_shape);
@@ -221,8 +243,6 @@ public:
         ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                            77,  // TODO: self.tokenizer.model_max_length
                                            transformer_config.joint_attention_dim};
-
-        std::cout << "t5_prompt_embed_shape" << t5_prompt_embed_shape << std::endl;
 
         std::vector<float> t5_prompt_embed(
             t5_prompt_embed_shape[0] * t5_prompt_embed_shape[1] * t5_prompt_embed_shape[2],
@@ -275,12 +295,25 @@ public:
         std::string negative_prompt_3_str =
             !generation_config.negative_prompt3.empty() ? generation_config.negative_prompt3 : negative_prompt_1_str;
 
-        ov::Tensor negative_pooled_prompt_embed = m_clip_text_encoder->infer(negative_prompt_1_str, "", false);
-        ov::Tensor negative_prompt_embed = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
+        ov::Tensor negative_pooled_prompt_embed_out = m_clip_text_encoder_1->infer(negative_prompt_1_str, "", false);
+        ov::Tensor negative_prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
 
-        ov::Tensor negative_pooled_prompt_2_embed =
-            m_clip_text_encoder_with_projection->infer(negative_prompt_2_str, "", false);
-        ov::Tensor negative_prompt_2_embed = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
+        ov::Tensor negative_pooled_prompt_2_embed_out =
+            m_clip_text_encoder_2->infer(negative_prompt_2_str, "", false);
+        ov::Tensor negative_prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
+
+        ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed, negative_prompt_2_embed;
+        if (generation_config.num_images_per_prompt == 1) {
+            negative_pooled_prompt_embed = negative_pooled_prompt_embed_out;
+            negative_prompt_embed = negative_prompt_embed_out;
+            negative_pooled_prompt_2_embed = negative_pooled_prompt_2_embed_out;
+            negative_prompt_2_embed = negative_prompt_2_embed_out;
+        } else {
+            negative_pooled_prompt_embed = tensor_batch_copy(negative_pooled_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            negative_prompt_embed = tensor_batch_copy(negative_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            negative_pooled_prompt_2_embed = tensor_batch_copy(negative_pooled_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            negative_prompt_2_embed = tensor_batch_copy(negative_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+        }
 
         // concatenate hidden_states from two encoders
         ov::Shape n_pr_emb_1_shape = negative_prompt_embed.get_shape();
@@ -385,41 +418,9 @@ public:
         m_scheduler->set_timesteps(generation_config.num_inference_steps);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
-
         // 4. Set model inputs
-        if (generation_config.num_images_per_prompt == 1) {
-            m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds_inp);
-            m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds_inp);
-        } else {
-            ov::Shape enc_shape = prompt_embeds_inp.get_shape();
-            enc_shape[0] *= generation_config.num_images_per_prompt;
-
-            ov::Tensor encoder_hidden_states_repeated(prompt_embeds_inp.get_element_type(), enc_shape);
-            for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                batch_copy(prompt_embeds_inp, encoder_hidden_states_repeated, 0, n);
-                if (batch_size_multiplier > 1) {
-                    batch_copy(prompt_embeds_inp, encoder_hidden_states_repeated,
-                        1, generation_config.num_images_per_prompt + n);
-                }
-            }
-
-            m_transformer->set_hidden_states("encoder_hidden_states", encoder_hidden_states_repeated);
-
-            ov::Shape pooled_pr_shape = pooled_prompt_embeds_inp.get_shape();
-            pooled_pr_shape[0] *= generation_config.num_images_per_prompt;
-
-            ov::Tensor pooled_pr_repeated(pooled_prompt_embeds_inp.get_element_type(), pooled_pr_shape);
-            for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                batch_copy(pooled_prompt_embeds_inp, pooled_pr_repeated, 0, n);
-                if (batch_size_multiplier > 1) {
-                    batch_copy(pooled_prompt_embeds_inp, pooled_pr_repeated,
-                        1, generation_config.num_images_per_prompt + n);
-                }
-            }
-
-            m_transformer->set_hidden_states("pooled_projections", pooled_pr_repeated);
-            // TODO: num_images_per_prompt>1
-        }
+        m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds_inp);
+        m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds_inp);
 
         // 5. Prepare latent variables
         size_t num_channels_latents = m_transformer->get_config().in_channels;
@@ -450,9 +451,14 @@ public:
                            generation_config.num_images_per_prompt,
                            generation_config.num_images_per_prompt);
 
-                timestep = ov::Tensor(ov::element::f32, {2});
+                size_t timestep_size = generation_config.num_images_per_prompt * batch_size_multiplier;
+                timestep = ov::Tensor(ov::element::f32, {timestep_size});
                 float* timestep_data = timestep.data<float>();
-                timestep_data[0] = timesteps[inference_step], timestep_data[1] = timesteps[inference_step];
+
+                for (size_t i = 0; i < timestep_size; ++i) {
+                    timestep_data[i] =  timesteps[inference_step];
+                }
+                // timestep_data[0] = timesteps[inference_step], timestep_data[1] = timesteps[inference_step];
 
             } else {
                 // just assign to save memory copy
@@ -528,8 +534,8 @@ private:
     }
 
     std::shared_ptr<SD3Transformer2DModel> m_transformer;
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder;
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_with_projection;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_1;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2;
     // TODO:
     // std::shared_ptr<T5EncoderModel> m_t5_encoder_model;
     std::shared_ptr<AutoencoderKL> m_vae_decoder;

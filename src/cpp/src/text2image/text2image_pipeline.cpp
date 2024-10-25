@@ -136,11 +136,11 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
 
 Text2ImagePipeline Text2ImagePipeline::stable_diffusion_3(
     const std::shared_ptr<Scheduler>& scheduler,
-    const CLIPTextModelWithProjection& clip_text_model,
-    const CLIPTextModelWithProjection& clip_text_model_with_projection,
-    const AutoencoderKL& vae_decoder,
-    const SD3Transformer2DModel& transformer){
-    auto impl = std::make_shared<StableDiffusion3Pipeline>(clip_text_model, clip_text_model_with_projection, vae_decoder, transformer);
+    const CLIPTextModelWithProjection& clip_text_model_1,
+    const CLIPTextModelWithProjection& clip_text_model_2,
+    const SD3Transformer2DModel& transformer,
+    const AutoencoderKL& vae_decoder){
+    auto impl = std::make_shared<StableDiffusion3Pipeline>(clip_text_model_1, clip_text_model_2, transformer, vae_decoder);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
