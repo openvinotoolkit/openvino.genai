@@ -245,7 +245,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
-          curl https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
+          curl -o adapter_model.safetensors -s -L https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
