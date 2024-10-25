@@ -393,6 +393,7 @@ private:
         if (class_name == "StableDiffusionXLPipeline") {
             m_generation_config.guidance_scale = 5.0f;
             m_generation_config.num_inference_steps = 50;
+            m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.3f : 1.0f;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -427,6 +428,9 @@ private:
                 OPENVINO_ASSERT(generation_config.width == width,
                     "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
             }
+
+            OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
+                "'Strength' generation parameter must be withion [0, 1] range");
         } else {
             OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
