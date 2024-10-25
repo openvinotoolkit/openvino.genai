@@ -4,6 +4,7 @@ openvino>=2024.3.0
 openvino-telemetry
 optimum-intel>=1.19.0
 openvino-tokenizers
+openvino-genai
 pandas>=2.0.3
 numpy>=1.23.5
 tqdm>=4.66.1
