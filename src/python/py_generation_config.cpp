@@ -105,6 +105,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
+        .def_readwrite("adapters", &GenerationConfig::adapters)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
         .def("is_beam_search", &GenerationConfig::is_beam_search);
 }
