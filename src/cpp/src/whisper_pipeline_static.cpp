@@ -217,7 +217,18 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder.get_tensor("logits");
 
-    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+    auto logits_data = output_tensor.data<float>();
+
+    int64_t output_token;
+    float max_prob = -std::numeric_limits<float>::infinity();
+
+    for (auto [_, lang_token] : config.lang_to_id) {
+        auto prob = logits_data[lang_token];
+        if (prob > max_prob) {
+            max_prob = prob;
+            output_token = lang_token;
+        }
+    }
 
     return output_token;
 }
