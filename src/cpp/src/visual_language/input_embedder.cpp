@@ -601,35 +601,62 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
-        std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
-
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
-
+        
         if (images.empty()) {
+            ov::Tensor input_ids = get_encoded_input_ids(prompt, chat_template_fallback);
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-        } else {
-            OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
-            EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
-
-            // Create image_newline tensor with data from config
-            size_t embed_dim = encoded_image.resized_source.get_shape().at(2);
-            ov::Tensor image_newline(encoded_image.resized_source.get_element_type(), {embed_dim});
-            float* image_newline_data = image_newline.data<float>();
-            std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
-
-            ImageSize original_image_size{images.at(0).get_shape().at(2), images.at(0).get_shape().at(3)}; // [height, width]
-
-            ov::Tensor image_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
-
-            ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-
-            ov::Tensor encoded_image_token = m_tokenizer.encode(image_token, ov::genai::add_special_tokens(false)).input_ids;
-            int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-
-            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, {image_features}, image_token_id);
         }
+
+        std::string formatted_prompt;
+        std::vector<ov::Tensor> image_embeds;
+        image_embeds.reserve(images.size());
+        ov::Tensor image_newline;
+
+        for (const auto& image : images) {
+            ov::Tensor reshaped_image = image;
+            ov::Shape image_shape = image.get_shape();
+            switch (image_shape.size()) {
+                case 3:
+                    reshaped_image.set_shape({1, image_shape.at(0), image_shape.at(1), image_shape.at(2)});
+                    break;
+                case 4: break;
+                default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout");
+            }
+            ov::Shape reshaped_image_shape = reshaped_image.get_shape();
+            for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
+                ov::Tensor single_image{
+                    ov::element::u8,
+                    {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
+                    reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
+                };
+                EncodedImage encoded_image = m_vision_encoder.encode(image);
+
+                if (!image_newline) {
+                    size_t embed_dim = encoded_image.resized_source.get_shape().at(2);
+                    image_newline = ov::Tensor(encoded_image.resized_source.get_element_type(), {embed_dim});
+                    float* image_newline_data = image_newline.data<float>();
+                    std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
+                }
+
+                ImageSize original_image_size{image_shape.at(2), image_shape.at(3)}; // [height, width]
+
+                ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
+
+                image_embeds.push_back(std::move(packed_features));
+                formatted_prompt += image_token + "\n";
+            }
+        }
+        formatted_prompt += prompt;
+
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+        ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+
+        ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+        int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+
+        return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
     }
 
 private:
