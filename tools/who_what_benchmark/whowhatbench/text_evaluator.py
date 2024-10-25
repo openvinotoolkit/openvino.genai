@@ -121,6 +121,7 @@ class TextEvaluator(BaseEvaluator):
         self.generation_config = generation_config
         self.generation_config_base = generation_config
         self.seqs_per_request = seqs_per_request
+        self.generation_fn = gen_answer_fn
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
 
@@ -150,6 +151,9 @@ class TextEvaluator(BaseEvaluator):
             self.divergency = TextDivergency(tokenizer)
 
         self.last_cmp = None
+
+    def get_generation_fn(self):
+        return self.generation_fn
 
     def dump_gt(self, csv_name: str):
         self.gt_data.to_csv(csv_name)
@@ -200,8 +204,11 @@ class TextEvaluator(BaseEvaluator):
             inputs = self.tokenizer(prompt, return_tensors="pt")
 
             tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
-            out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
-            return out[len(prompt) :] if crop_question else out
+
+            if crop_question:
+                tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+
+            return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 

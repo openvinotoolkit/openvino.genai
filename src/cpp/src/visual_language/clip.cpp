@@ -23,22 +23,6 @@
 
 #include <openvino/openvino.hpp>
 
-struct clip_hparams {
-    int32_t image_size;
-    int32_t hidden_size;
-    int32_t n_intermediate;
-    int32_t projection_dim;
-    int32_t n_head;
-    int32_t n_layer;
-
-    float eps;
-
-    char mm_patch_merge_type[32] = "flat"; // spatial_unpad or flat (default)
-
-    int32_t image_grid_pinpoints[32];
-    int32_t image_crop_resolution;
-};
-
 // Linear interpolation between two points
 inline float clip_lerp(float s, float e, float t) {
     return s + (e - s) * t;

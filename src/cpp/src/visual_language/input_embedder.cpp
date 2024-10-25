@@ -5,6 +5,7 @@
 
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
+#include "visual_language/embedding_model.hpp"
 
 #include "utils.hpp"
 
@@ -25,7 +26,7 @@ protected:
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
-    ov::InferRequest m_embedding;
+    EmbeddingsModel m_embedding;
     // A tokenizer encoding a prompt.
     Tokenizer m_tokenizer;
     // True if chat mode is activated to save conversation
@@ -41,7 +42,7 @@ protected:
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
 
-    ov::InferRequest get_embedding_model() const {
+    EmbeddingsModel get_embedding_model() const {
         return m_embedding;
     }
 
@@ -87,27 +88,8 @@ protected:
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, utils::singleton_core()),
-        m_tokenizer{model_dir.string(), device_config} {
-        m_embedding = utils::singleton_core().compile_model(
-            model_dir / "openvino_text_embeddings_model.xml", device, device_config
-        ).create_infer_request();
-    }
-
-    ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
-        embedding.set_input_tensor(prompt);
-        embedding.infer();
-
-        const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
-
-        ov::Shape out_shape = embed_output_tensor.get_shape();
-        float* data = embed_output_tensor.data<float>();
-
-        // embedding * scale_emb
-        for (size_t idx = 0; idx < embed_output_tensor.get_size(); idx++) {
-            data[idx] = data[idx] * scale_emb;
-        }
-        return embed_output_tensor;
-    }
+        m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
+        m_tokenizer{model_dir.string(), device_config} { }
 
     ov::Tensor get_encoded_input_ids(const std::string& prompt, const std::string& chat_template_fallback = "") {
         ov::Tensor encoded_input_ids;
@@ -227,9 +209,7 @@ public:
 
         ov::Tensor encoded_input = get_encoded_input_ids(images_prompt);
 
-        m_embedding.set_input_tensor(encoded_input);
-        m_embedding.infer();
-        ov::Tensor inputs_embeds = m_embedding.get_output_tensor();
+        ov::Tensor inputs_embeds = m_embedding.infer(encoded_input);
         OPENVINO_ASSERT(
             m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
             "Unexpected embedding size"
@@ -484,14 +464,10 @@ public:
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
         
-        if (images.empty()) {
-            ov::Tensor input_ids = get_encoded_input_ids(prompt, chat_template_fallback);
-            return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-        }
-
         std::string formatted_prompt;
         std::vector<ov::Tensor> image_embeds;
         image_embeds.reserve(images.size());
+
         for (const auto& image : images) {
             ov::Tensor reshaped_image = image;
             ov::Shape image_shape = image.get_shape();
@@ -517,7 +493,11 @@ public:
         formatted_prompt += prompt;
 
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
-        ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+        ov::Tensor text_embeds = m_embedding.infer(input_ids);
+
+        if (images.empty()) {
+            return text_embeds;
+        }
 
         ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
@@ -603,15 +583,11 @@ public:
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
-        
-        if (images.empty()) {
-            ov::Tensor input_ids = get_encoded_input_ids(prompt, chat_template_fallback);
-            return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-        }
 
         std::string formatted_prompt;
         std::vector<ov::Tensor> image_embeds;
         image_embeds.reserve(images.size());
+        
         ov::Tensor image_newline;
 
         for (const auto& image : images) {
@@ -640,7 +616,7 @@ public:
                     std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
                 }
 
-                ImageSize original_image_size{image_shape.at(2), image_shape.at(3)}; // [height, width]
+                ImageSize original_image_size{image_shape.at(1), image_shape.at(2)}; // [height, width]
 
                 ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
 
@@ -651,7 +627,11 @@ public:
         formatted_prompt += prompt;
 
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
-        ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+        ov::Tensor text_embeds = m_embedding.infer(input_ids);
+
+        if (images.empty()) {
+            return text_embeds;
+        }
 
         ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
@@ -933,7 +913,7 @@ public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         if (images.empty()) {
             ov::Tensor input_ids = get_encoded_input_ids(prompt);
-            return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+            return m_embedding.infer(input_ids);
         } else {
             OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
             EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
@@ -956,7 +936,7 @@ public:
             std::string formatted_prompt = concated_image_tokens + "\n" + prompt;
             
             ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt);
-            ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+            ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
             ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
             int64_t image_context_token_id = encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
@@ -1038,7 +1018,7 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images);
 }
 
-ov::InferRequest InputsEmbedder::get_embedding_model() const {
+EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
