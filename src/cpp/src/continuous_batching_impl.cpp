@@ -123,7 +123,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
 
-    // Pull awaiting requests
     _pull_awaiting_requests();
 
     m_pipeline_metrics.requests = m_requests.size();

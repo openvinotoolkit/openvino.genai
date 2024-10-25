@@ -51,7 +51,7 @@ protected:
               const DeviceConfig& device_config,
               ov::Core& core);
 
-    void _pull_awaiting_requests();
+    virtual void _pull_awaiting_requests();
 
 public:
     ContinuousBatchingImpl(const std::filesystem::path& models_path,

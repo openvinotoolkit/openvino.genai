@@ -20,22 +20,16 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
 
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(SequenceGroup::Ptr request) {
-    for (const auto& sequence : request->get_sequences()) {
-        m_scheduler->free_sequence(sequence->get_id());
+    for (const auto& sequence: request->get_sequences()) {
+        if (m_scheduler->has_block_table(sequence->get_id())) {
+            m_scheduler->free_sequence(sequence->get_id());
+        }
     }
     m_sampler->clear_request_info(request->get_request_id());
+    request->set_generation_status(GenerationStatus::DROPPED_BY_HANDLE);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(int64_t request_id) {
-    // finish all request s in case of -1
-    if (request_id == -1) {
-        while (!m_requests.empty()) {
-            const auto& request = *m_requests.rbegin();
-            finish_request(request);
-            m_requests.pop_back();
-        }
-        return;
-    }
     for (size_t i = 0; i < m_requests.size(); ++i) {
         auto& request = m_requests[i];
         if (request->get_request_id() != request_id) {
@@ -49,8 +43,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
 
 GeneratedRequests
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_requests() {
-    _pull_awaiting_requests();
-
     GeneratedRequests result;
     for (const auto& request : m_requests) {
         const auto& request_id = request->get_request_id();
@@ -196,8 +188,6 @@ UpdateRequestResult
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_request_by_candidate(
     uint64_t request_id,
     const GeneratedSequences& candidates) {
-    _pull_awaiting_requests();
-
     for (auto& request : m_requests) {
         if (request->get_request_id() != request_id) {
             continue;
@@ -217,8 +207,6 @@ UpdateRequestResult
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_request(uint64_t request_id,
                                                                                          const GeneratedSequences& candidates,
                                                                                          bool is_update_logit_processor) {
-    _pull_awaiting_requests();
-
     UpdateRequestResult result{0, 0};
     for (auto& request : m_requests) {
         if (request_id != request->get_request_id()) {
@@ -228,12 +216,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
         size_t min_generated_tokens, min_candidate_len;
         if (request->get_context_len() == 0 && !request->get_num_tokens_to_validate()) {
-            if (candidates.begin()->second.log_probs.empty()) {
-                // lock generation in case on empty generation
-                request->pause_generation(true);
-                return result;
-            }
-            // init request by sequences in case the pipeline was not started
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
             result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, is_update_logit_processor);
@@ -291,13 +273,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 }
 
 void
-ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::unlock_next_request_generation() {
-    for (auto& request : m_requests) {
-        if (!request->has_finished() && !request->can_generate_tokens()) {
-            request->pause_generation(false);
-            return;
-        }
-    }
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_awaiting_requests() {
+    ContinuousBatchingImpl::_pull_awaiting_requests();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::multistep() {
