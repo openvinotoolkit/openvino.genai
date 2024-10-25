@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
 
 #include "load_image.hpp"
 #include "imwrite.hpp"
@@ -14,21 +14,19 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[3]);
     ov::Tensor rgb = rgbs[0];
+
     ov::Shape shape = rgb.get_shape();
-
     size_t height = shape[1], width = shape[2];
-    width = (width / 8) * 8;
-    height = (height / 8) * 8;
+    // width = (width / 8) * 8;
+    // height = (height / 8) * 8;
 
-    rgb = ov::Tensor(rgb.get_element_type(), { shape[0], height, width, shape[3] }, rgb.data());
+    // rgb = ov::Tensor(rgb.get_element_type(), { shape[0], height, width, shape[3] }, rgb.data());
 
-    std::cout << "Input shape " << rgb.get_shape() << std::endl;
-
-    ov::genai::Text2ImagePipeline pipe(models_path, device);
-    ov::Tensor image = pipe.generate(prompt,
-        ov::genai::image(rgb),
+    ov::genai::Image2ImagePipeline pipe(models_path, device);
+    ov::Tensor image = pipe.generate(prompt, rgb,
         ov::genai::width(width),
         ov::genai::height(height),
+        ov::genai::strength(0.4f),
         ov::genai::num_inference_steps(20),
         ov::genai::num_images_per_prompt(1));
 

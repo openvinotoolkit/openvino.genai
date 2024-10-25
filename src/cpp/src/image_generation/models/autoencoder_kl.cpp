@@ -131,7 +131,7 @@ ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
 }
 
 ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
-    OPENVINO_ASSERT(m_decoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
 
     m_encoder_request.set_input_tensor(image);
     m_encoder_request.infer();

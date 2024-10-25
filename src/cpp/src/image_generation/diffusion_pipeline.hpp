@@ -7,7 +7,6 @@
 
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "json_utils.hpp"
 namespace {
@@ -43,8 +42,16 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
 namespace ov {
 namespace genai {
 
+enum class PipelineType {
+    TEXT_2_IMAGE = 0,
+    IMAGE_2_IMAGE = 1
+};
+
 class DiffusionPipeline {
 public:
+    explicit DiffusionPipeline(PipelineType pipeline_type) :
+        m_pipeline_type(pipeline_type) { }
+
     ImageGenerationConfig get_generation_config() const {
         return m_generation_config;
     }
@@ -64,9 +71,9 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
-    virtual ov::Tensor prepare_latents(const ImageGenerationConfig& generation_config) const = 0;
+    virtual ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const = 0;
 
-    virtual ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties) = 0;
+    virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) = 0;
 
     virtual ~DiffusionPipeline() = default;
 
@@ -75,8 +82,9 @@ protected:
 
     virtual void check_image_size(const int height, const int width) const = 0;
 
-    virtual void check_inputs(const ImageGenerationConfig& generation_config) const = 0;
+    virtual void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const = 0;
 
+    PipelineType m_pipeline_type;
     std::shared_ptr<IScheduler> m_scheduler;
     ImageGenerationConfig m_generation_config;
 };

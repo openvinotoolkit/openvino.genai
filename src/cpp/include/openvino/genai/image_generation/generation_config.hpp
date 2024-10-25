@@ -59,6 +59,11 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     int64_t width = -1;
     size_t num_inference_steps = 50;
 
+    // used by some image to image pipelines to balance between noise and initial image
+    // higher 'stregth' value means more noise is added to initial latent image
+    // for text to image pipeline it must be set to 1.0f
+    float strength = 1.0f;
+
     AdapterConfig adapters;
 
     void update_generation_config(const ov::AnyMap& config_map);
@@ -88,6 +93,8 @@ static constexpr ov::Property<float> guidance_scale{"guidance_scale"};
 static constexpr ov::Property<int64_t> height{"height"};
 static constexpr ov::Property<int64_t> width{"width"};
 static constexpr ov::Property<size_t> num_inference_steps{"num_inference_steps"};
+
+static constexpr ov::Property<float> strength{"strength"};
 
 static constexpr ov::Property<std::shared_ptr<Generator>> random_generator{"random_generator"};
 

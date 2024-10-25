@@ -1,11 +1,14 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "image_generation/stable_diffusion_pipeline.hpp"
-#include "image_generation/stable_diffusion_xl_pipeline.hpp"
-
 #include <ctime>
 #include <cstdlib>
+#include <filesystem>
+
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+
+#include "image_generation/stable_diffusion_pipeline.hpp"
+#include "image_generation/stable_diffusion_xl_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -17,9 +20,9 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
 
     if (class_name == "StableDiffusionPipeline" || 
         class_name == "LatentConsistencyModelPipeline")   {
-        m_impl = std::make_shared<StableDiffusionPipeline>(root_dir);
+        m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
-        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir);
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -30,9 +33,9 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
 
     if (class_name == "StableDiffusionPipeline" ||
         class_name == "LatentConsistencyModelPipeline") {
-        m_impl = std::make_shared<StableDiffusionPipeline>(root_dir, device, properties);
+        m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline") {
-        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir, device, properties);
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -48,11 +51,10 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion(
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<StableDiffusionPipeline>(clip_text_model, unet, vae);
+    auto impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
-    impl->initialize_generation_config("StableDiffusionPipeline");
 
     return Text2ImagePipeline(impl);
 }
@@ -62,11 +64,10 @@ Text2ImagePipeline Text2ImagePipeline::latent_consistency_model(
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<StableDiffusionPipeline>(clip_text_model, unet, vae);
+    auto impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
-    impl->initialize_generation_config("LatentConsistencyModelPipeline");
 
     return Text2ImagePipeline(impl);
 }
@@ -77,11 +78,10 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
     const CLIPTextModelWithProjection& clip_text_model_with_projection,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae);
+    auto impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model, clip_text_model_with_projection, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
-    impl->initialize_generation_config("StableDiffusionXLPipeline");
 
     return Text2ImagePipeline(impl);
 }
@@ -107,7 +107,7 @@ void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& pr
 }
 
 ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
-    return m_impl->generate(positive_prompt, properties);
+    return m_impl->generate(positive_prompt, {}, properties);
 }
 
 }  // namespace genai

@@ -1,11 +1,16 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "image_generation/diffusion_pipeline.hpp"
-
 #include <ctime>
 #include <cassert>
 #include <filesystem>
+
+#include "image_generation/diffusion_pipeline.hpp"
+
+#include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/clip_text_model.hpp"
+#include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
+#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
@@ -38,9 +43,10 @@ ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding
 
 }  // namespace
 
-class Text2ImagePipeline::StableDiffusionPipeline : public DiffusionPipeline {
+class StableDiffusionPipeline : public DiffusionPipeline {
 public:
-    explicit StableDiffusionPipeline(const std::filesystem::path& root_dir) {
+    explicit StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
+        DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -66,7 +72,13 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
+            } else {
+                OPENVINO_ASSERT("Unsupported pipeline type");
+            }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -75,7 +87,8 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
     }
 
-    StableDiffusionPipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
+    StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) :
+        DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -101,7 +114,13 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+            } else {
+                OPENVINO_ASSERT("Unsupported pipeline type");
+            }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -113,12 +132,18 @@ public:
     }
 
     StableDiffusionPipeline(
+        PipelineType pipeline_type,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae_decoder)
-        : m_clip_text_encoder(std::make_shared<CLIPTextModel>(clip_text_model)),
+        const AutoencoderKL& vae)
+        : DiffusionPipeline(pipeline_type),
+          m_clip_text_encoder(std::make_shared<CLIPTextModel>(clip_text_model)),
           m_unet(std::make_shared<UNet2DConditionModel>(unet)),
-          m_vae(std::make_shared<AutoencoderKL>(vae_decoder)) { }
+          m_vae(std::make_shared<AutoencoderKL>(vae)) {
+        const bool is_lcm = m_unet->get_config().time_cond_proj_dim > 0;
+        const char * const pipeline_name = is_lcm ? "LatentConsistencyModelPipeline" : "StableDiffusionPipeline";
+        initialize_generation_config(pipeline_name);
+    }
 
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
@@ -137,24 +162,17 @@ public:
         m_vae->compile(device, properties);
     }
 
-    ov::Tensor prepare_latents(const ImageGenerationConfig& generation_config) const override {
+    ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
-        ov::Tensor initial_image = generation_config.image;
         ov::Tensor latent(ov::element::f32, {});
 
         if (initial_image) {
             latent = m_vae->encode(initial_image);
-
-            ov::Tensor noise(latent.get_element_type(), latent.get_shape());
-            std::generate_n(noise.data<float>(), noise.get_size(), [&]() -> float {
-                return generation_config.random_generator->next();
-            });
-
-            m_scheduler->add_noise(latent, noise);
+            m_scheduler->add_noise(latent, generation_config.random_generator);
         } else {
             latent.set_shape(latent_shape);
 
@@ -168,6 +186,7 @@ public:
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
+                        ov::Tensor initial_image,
                         const ov::AnyMap& properties) override {
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
@@ -183,7 +202,7 @@ public:
             generation_config.height = unet_config.sample_size * vae_scale_factor;
         if (generation_config.width < 0)
             generation_config.width = unet_config.sample_size * vae_scale_factor;
-        check_inputs(generation_config);
+        check_inputs(generation_config, initial_image);
 
         m_clip_text_encoder->set_adapters(generation_config.adapters);
         m_unet->set_adapters(generation_config.adapters);
@@ -221,12 +240,11 @@ public:
             m_unet->set_hidden_states("timestep_cond", guidance_scale_embedding);
         }
 
-        const float strength = 0.4f; // used < 1.0f for image to image generation
-        m_scheduler->set_timesteps(generation_config.num_inference_steps, strength);
+        m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
         // preparate initial latents
-        ov::Tensor latent = prepare_latents(generation_config);
+        ov::Tensor latent = prepare_latents(initial_image, generation_config);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -311,7 +329,7 @@ private:
             vae_scale_factor);
     }
 
-    void check_inputs(const ImageGenerationConfig& generation_config) const override {
+    void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
@@ -328,14 +346,19 @@ private:
         OPENVINO_ASSERT(generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
 
-        if (generation_config.image) {
-            ov::Shape initial_image_shape = generation_config.image.get_shape();
-            size_t height = initial_image_shape[1], width = initial_image_shape[2];
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            if (initial_image) {
+                ov::Shape initial_image_shape = initial_image.get_shape();
+                size_t height = initial_image_shape[1], width = initial_image_shape[2];
 
-            OPENVINO_ASSERT(generation_config.height == height,
-                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
-            OPENVINO_ASSERT(generation_config.width == width,
-                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
+                OPENVINO_ASSERT(generation_config.height == height,
+                    "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
+                OPENVINO_ASSERT(generation_config.width == width,
+                    "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
+            }
+        } else {
+            OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
+            OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
         }
     }
 

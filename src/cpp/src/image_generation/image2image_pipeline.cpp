@@ -1,11 +1,14 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "image_generation/stable_diffusion_pipeline.hpp"
-#include "image_generation/stable_diffusion_xl_pipeline.hpp"
-
 #include <ctime>
 #include <cstdlib>
+#include <filesystem>
+
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
+
+#include "image_generation/stable_diffusion_pipeline.hpp"
+#include "image_generation/stable_diffusion_xl_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -17,9 +20,9 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
 
     if (class_name == "StableDiffusionPipeline" || 
         class_name == "LatentConsistencyModelPipeline")   {
-        m_impl = std::make_shared<StableDiffusionPipeline>(root_dir);
+        m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
-        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir);
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -30,9 +33,9 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
 
     if (class_name == "StableDiffusionPipeline" ||
         class_name == "LatentConsistencyModelPipeline") {
-        m_impl = std::make_shared<StableDiffusionPipeline>(root_dir, device, properties);
+        m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline") {
-        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir, device, properties);
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -48,7 +51,7 @@ Image2ImagePipeline Image2ImagePipeline::stable_diffusion(
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<StableDiffusionPipeline>(clip_text_model, unet, vae);
+    auto impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, clip_text_model, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
@@ -61,7 +64,12 @@ Image2ImagePipeline Image2ImagePipeline::latent_consistency_model(
     const CLIPTextModel& clip_text_model,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    return stable_diffusion(scheduler, clip_text_model, unet, vae);
+    auto impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, clip_text_model, unet, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return Image2ImagePipeline(impl);
 }
 
 Image2ImagePipeline Image2ImagePipeline::stable_diffusion_xl(
@@ -70,7 +78,7 @@ Image2ImagePipeline Image2ImagePipeline::stable_diffusion_xl(
     const CLIPTextModelWithProjection& clip_text_model_with_projection,
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
-    auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae);
+    auto impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, clip_text_model, clip_text_model_with_projection, unet, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
@@ -99,11 +107,12 @@ void Image2ImagePipeline::compile(const std::string& device, const ov::AnyMap& p
 }
 
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
-    return m_impl->generate(positive_prompt, properties);
+    return m_impl->generate(positive_prompt, {}, properties);
 }
 
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
-    return m_impl->generate(positive_prompt, properties);
+    OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
+    return m_impl->generate(positive_prompt, initial_image, properties);
 }
 
 }  // namespace genai

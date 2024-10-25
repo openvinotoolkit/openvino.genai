@@ -88,13 +88,18 @@ public:
         return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
+            const std::string& positive_prompt,
+            ov::Tensor initial_image,
+            Properties&&... properties) {
+        return generate(positive_prompt, initial_image, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
     explicit Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
-
-    class StableDiffusionPipeline;
-    class StableDiffusionXLPipeline;
 };
 
 } // namespace genai

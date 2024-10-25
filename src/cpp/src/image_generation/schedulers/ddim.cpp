@@ -197,17 +197,16 @@ void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) 
     return;
 }
 
-void DDIMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise) {
+void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
     int64_t latent_timestep = m_timesteps.front();
 
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
     float * init_latent_data = init_latent.data<float>();
-    const float * noise_data = noise.data<const float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rng_generator->next();
     }
 }
 

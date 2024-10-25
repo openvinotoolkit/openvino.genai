@@ -89,9 +89,6 @@ private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
     explicit Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
-
-    class StableDiffusionPipeline;
-    class StableDiffusionXLPipeline;
 };
 
 } // namespace genai

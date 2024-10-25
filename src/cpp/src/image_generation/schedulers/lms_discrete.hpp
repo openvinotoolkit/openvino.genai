@@ -41,7 +41,7 @@ public:
 
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
 
-    void add_noise(ov::Tensor init_latent, ov::Tensor noise) override;
+    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const override;
 
 private:
     Config m_config;
