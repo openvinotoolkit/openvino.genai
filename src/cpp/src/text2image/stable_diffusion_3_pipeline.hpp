@@ -156,7 +156,7 @@ public:
                  const int height,
                  const int width,
                  const float guidance_scale) override {
-        check_inputs(height, width);
+        check_image_size(height, width);
 
         const size_t batch_size_multiplier =
             do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
@@ -193,25 +193,28 @@ public:
             generation_config.height = transformer_config.sample_size * vae_scale_factor;
         if (generation_config.width < 0)
             generation_config.width = transformer_config.sample_size * vae_scale_factor;
-        check_inputs(generation_config.height, generation_config.width);
+
+        check_image_size(generation_config.height, generation_config.width);
 
         if (generation_config.random_generator == nullptr) {
             uint32_t seed = time(NULL);
             generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        // 1. Encode positive prompt:
+        // Input tensors for transformer model
+        ov::Tensor prompt_embeds_inp, pooled_prompt_embeds_inp;
 
-        std::string prompt_2_str = !generation_config.prompt2.empty() ? generation_config.prompt2 : positive_prompt;
-        std::string prompt_3_str = !generation_config.prompt3.empty() ? generation_config.prompt3 : positive_prompt;
+        // 1. Encode positive prompt:
+        std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
+        std::string prompt_3_str = generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
 
         ov::Tensor pooled_prompt_embed_out = m_clip_text_encoder_1->infer(positive_prompt, "", false);
         size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
-        ov::Tensor prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(13);
+        ov::Tensor prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
 
         ov::Tensor pooled_prompt_2_embed_out = m_clip_text_encoder_2->infer(prompt_2_str, "", false);
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
-        ov::Tensor prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(33);
+        ov::Tensor prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
 
         ov::Tensor pooled_prompt_embed, prompt_embed, pooled_prompt_2_embed, prompt_2_embed;
         if (generation_config.num_images_per_prompt == 1) {
@@ -284,108 +287,106 @@ public:
                           pooled_prompt_embeds_data,
                           p_pr_emb_shape,
                           p_pr_emb_2_shape);
+        // From steps above we'll use prompt_embeds and pooled_prompt_embeds tensors
 
-        // from steps above we'll use prompt_embeds and pooled_prompt_embeds tensors
-
-        // 2. Encode negative prompt:
-        std::string negative_prompt_1_str =
-            !generation_config.negative_prompt.empty() ? generation_config.negative_prompt : "";
-        std::string negative_prompt_2_str =
-            !generation_config.negative_prompt2.empty() ? generation_config.negative_prompt2 : negative_prompt_1_str;
-        std::string negative_prompt_3_str =
-            !generation_config.negative_prompt3.empty() ? generation_config.negative_prompt3 : negative_prompt_1_str;
-
-        ov::Tensor negative_pooled_prompt_embed_out = m_clip_text_encoder_1->infer(negative_prompt_1_str, "", false);
-        ov::Tensor negative_prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
-
-        ov::Tensor negative_pooled_prompt_2_embed_out =
-            m_clip_text_encoder_2->infer(negative_prompt_2_str, "", false);
-        ov::Tensor negative_prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
-
-        ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed, negative_prompt_2_embed;
-        if (generation_config.num_images_per_prompt == 1) {
-            negative_pooled_prompt_embed = negative_pooled_prompt_embed_out;
-            negative_prompt_embed = negative_prompt_embed_out;
-            negative_pooled_prompt_2_embed = negative_pooled_prompt_2_embed_out;
-            negative_prompt_2_embed = negative_prompt_2_embed_out;
-        } else {
-            negative_pooled_prompt_embed = tensor_batch_copy(negative_pooled_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
-            negative_prompt_embed = tensor_batch_copy(negative_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
-            negative_pooled_prompt_2_embed = tensor_batch_copy(negative_pooled_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
-            negative_prompt_2_embed = tensor_batch_copy(negative_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
-        }
-
-        // concatenate hidden_states from two encoders
-        ov::Shape n_pr_emb_1_shape = negative_prompt_embed.get_shape();
-        ov::Shape n_pr_emb_2_shape = negative_prompt_2_embed.get_shape();
-
-        ov::Shape neg_clip_prompt_embeds_shape = {n_pr_emb_1_shape[0],
-                                                  n_pr_emb_1_shape[1],
-                                                  n_pr_emb_1_shape[2] + n_pr_emb_2_shape[2]};
-        ov::Tensor neg_clip_prompt_embeds(prompt_embed.get_element_type(), neg_clip_prompt_embeds_shape);
-
-        const float* neg_pr_emb_1_data = negative_prompt_embed.data<const float>();
-        const float* neg_pr_emb_2_data = negative_prompt_2_embed.data<const float>();
-        float* neg_clip_prompt_embeds_data = neg_clip_prompt_embeds.data<float>();
-
-        concat_3d_by_rows(neg_pr_emb_1_data,
-                          neg_pr_emb_2_data,
-                          neg_clip_prompt_embeds_data,
-                          n_pr_emb_1_shape,
-                          n_pr_emb_2_shape);
-
-        std::vector<float> t5_neg_prompt_embed(
-            t5_prompt_embed_shape[0] * t5_prompt_embed_shape[1] * t5_prompt_embed_shape[2],
-            0.0f);
-
-        // padding for neg_clip_prompt_embeds
-        ov::Shape neg_pad_embeds_shape = {neg_clip_prompt_embeds_shape[0],
-                                          neg_clip_prompt_embeds_shape[1],
-                                          t5_prompt_embed_shape[2]};
-
-        std::vector<float> neg_pad_embeds(neg_pad_embeds_shape[0] * neg_pad_embeds_shape[1] * neg_pad_embeds_shape[2],
-                                          0.0f);
-
-        padding_right(neg_clip_prompt_embeds_data,
-                      neg_pad_embeds.data(),
-                      neg_clip_prompt_embeds_shape,
-                      neg_pad_embeds_shape);
-
-        // negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
-        ov::Shape neg_prompt_embeds_shape = {neg_pad_embeds_shape[0],
-                                             neg_pad_embeds_shape[1] + t5_prompt_embed_shape[1],
-                                             neg_pad_embeds_shape[2]};
-        ov::Tensor neg_prompt_embeds(ov::element::f32, neg_prompt_embeds_shape);
-        float* neg_prompt_embeds_data = neg_prompt_embeds.data<float>();
-
-        concat_3d_by_cols(neg_pad_embeds.data(),
-                          t5_neg_prompt_embed.data(),
-                          neg_prompt_embeds_data,
-                          neg_pad_embeds_shape,
-                          t5_prompt_embed_shape);
-
-        // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1)
-        ov::Shape neg_pooled_pr_emb_shape = negative_pooled_prompt_embed.get_shape();
-        ov::Shape neg_pooled_pr_2_emb_shape = negative_pooled_prompt_2_embed.get_shape();
-
-        const float* neg_pooled_pr_emb_data = negative_pooled_prompt_embed.data<float>();
-        const float* neg_pooled_pr_2_emb_data = negative_pooled_prompt_2_embed.data<float>();
-
-        ov::Shape neg_pooled_prompt_embeds_shape = {neg_pooled_pr_emb_shape[0],
-                                                    neg_pooled_pr_emb_shape[1] + neg_pooled_pr_2_emb_shape[1]};
-        ov::Tensor neg_pooled_prompt_embeds(ov::element::f32, neg_pooled_prompt_embeds_shape);
-        float* neg_pooled_prompt_embeds_data = neg_pooled_prompt_embeds.data<float>();
-
-        concat_2d_by_rows(neg_pooled_pr_emb_data,
-                          neg_pooled_pr_2_emb_data,
-                          neg_pooled_prompt_embeds_data,
-                          neg_pooled_pr_emb_shape,
-                          neg_pooled_pr_2_emb_shape);
-
-        // from steps above we'll use neg_prompt_embeds and neg_pooled_prompt_embeds tensors
-
-        ov::Tensor prompt_embeds_inp, pooled_prompt_embeds_inp;
         if (do_classifier_free_guidance(generation_config.guidance_scale)) {
+            // 2. Encode negative prompt:
+            std::string negative_prompt_1_str =
+                !generation_config.negative_prompt.empty() ? generation_config.negative_prompt : "";
+            std::string negative_prompt_2_str =
+                !generation_config.negative_prompt_2.empty() ? generation_config.negative_prompt_2 : negative_prompt_1_str;
+            std::string negative_prompt_3_str =
+                !generation_config.negative_prompt_3.empty() ? generation_config.negative_prompt_3 : negative_prompt_1_str;
+
+            ov::Tensor negative_pooled_prompt_embed_out = m_clip_text_encoder_1->infer(negative_prompt_1_str, "", false);
+            ov::Tensor negative_prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
+
+            ov::Tensor negative_pooled_prompt_2_embed_out =
+                m_clip_text_encoder_2->infer(negative_prompt_2_str, "", false);
+            ov::Tensor negative_prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
+
+            ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed, negative_prompt_2_embed;
+            if (generation_config.num_images_per_prompt == 1) {
+                negative_pooled_prompt_embed = negative_pooled_prompt_embed_out;
+                negative_prompt_embed = negative_prompt_embed_out;
+                negative_pooled_prompt_2_embed = negative_pooled_prompt_2_embed_out;
+                negative_prompt_2_embed = negative_prompt_2_embed_out;
+            } else {
+                negative_pooled_prompt_embed = tensor_batch_copy(negative_pooled_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+                negative_prompt_embed = tensor_batch_copy(negative_prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+                negative_pooled_prompt_2_embed = tensor_batch_copy(negative_pooled_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+                negative_prompt_2_embed = tensor_batch_copy(negative_prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            }
+
+            // concatenate hidden_states from two encoders
+            ov::Shape n_pr_emb_1_shape = negative_prompt_embed.get_shape();
+            ov::Shape n_pr_emb_2_shape = negative_prompt_2_embed.get_shape();
+
+            ov::Shape neg_clip_prompt_embeds_shape = {n_pr_emb_1_shape[0],
+                                                    n_pr_emb_1_shape[1],
+                                                    n_pr_emb_1_shape[2] + n_pr_emb_2_shape[2]};
+            ov::Tensor neg_clip_prompt_embeds(prompt_embed.get_element_type(), neg_clip_prompt_embeds_shape);
+
+            const float* neg_pr_emb_1_data = negative_prompt_embed.data<const float>();
+            const float* neg_pr_emb_2_data = negative_prompt_2_embed.data<const float>();
+            float* neg_clip_prompt_embeds_data = neg_clip_prompt_embeds.data<float>();
+
+            concat_3d_by_rows(neg_pr_emb_1_data,
+                            neg_pr_emb_2_data,
+                            neg_clip_prompt_embeds_data,
+                            n_pr_emb_1_shape,
+                            n_pr_emb_2_shape);
+
+            std::vector<float> t5_neg_prompt_embed(
+                t5_prompt_embed_shape[0] * t5_prompt_embed_shape[1] * t5_prompt_embed_shape[2],
+                0.0f);
+
+            // padding for neg_clip_prompt_embeds
+            ov::Shape neg_pad_embeds_shape = {neg_clip_prompt_embeds_shape[0],
+                                            neg_clip_prompt_embeds_shape[1],
+                                            t5_prompt_embed_shape[2]};
+
+            std::vector<float> neg_pad_embeds(neg_pad_embeds_shape[0] * neg_pad_embeds_shape[1] * neg_pad_embeds_shape[2],
+                                            0.0f);
+
+            padding_right(neg_clip_prompt_embeds_data,
+                        neg_pad_embeds.data(),
+                        neg_clip_prompt_embeds_shape,
+                        neg_pad_embeds_shape);
+
+            // negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
+            ov::Shape neg_prompt_embeds_shape = {neg_pad_embeds_shape[0],
+                                                neg_pad_embeds_shape[1] + t5_prompt_embed_shape[1],
+                                                neg_pad_embeds_shape[2]};
+            ov::Tensor neg_prompt_embeds(ov::element::f32, neg_prompt_embeds_shape);
+            float* neg_prompt_embeds_data = neg_prompt_embeds.data<float>();
+
+            concat_3d_by_cols(neg_pad_embeds.data(),
+                            t5_neg_prompt_embed.data(),
+                            neg_prompt_embeds_data,
+                            neg_pad_embeds_shape,
+                            t5_prompt_embed_shape);
+
+            // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1)
+            ov::Shape neg_pooled_pr_emb_shape = negative_pooled_prompt_embed.get_shape();
+            ov::Shape neg_pooled_pr_2_emb_shape = negative_pooled_prompt_2_embed.get_shape();
+
+            const float* neg_pooled_pr_emb_data = negative_pooled_prompt_embed.data<float>();
+            const float* neg_pooled_pr_2_emb_data = negative_pooled_prompt_2_embed.data<float>();
+
+            ov::Shape neg_pooled_prompt_embeds_shape = {neg_pooled_pr_emb_shape[0],
+                                                        neg_pooled_pr_emb_shape[1] + neg_pooled_pr_2_emb_shape[1]};
+            ov::Tensor neg_pooled_prompt_embeds(ov::element::f32, neg_pooled_prompt_embeds_shape);
+            float* neg_pooled_prompt_embeds_data = neg_pooled_prompt_embeds.data<float>();
+
+            concat_2d_by_rows(neg_pooled_pr_emb_data,
+                            neg_pooled_pr_2_emb_data,
+                            neg_pooled_prompt_embeds_data,
+                            neg_pooled_pr_emb_shape,
+                            neg_pooled_pr_2_emb_shape);
+            // From steps above we'll use neg_prompt_embeds and neg_pooled_prompt_embeds tensors
+
+            // Fill in transformer inputs: concat positive and negative prompt_embeds
             ov::Shape prompt_embeds_inp_shape = {prompt_embeds_shape[0] + neg_prompt_embeds_shape[0],
                                                  prompt_embeds_shape[1],
                                                  prompt_embeds_shape[2]};
@@ -408,8 +409,8 @@ public:
                                   pooled_prompt_embeds_input_data,
                                   neg_pooled_prompt_embeds_shape,
                                   pooled_prompt_embeds_shape);
-
         } else {
+            // Fill in transformer inputs
             prompt_embeds_inp = prompt_embeds;
             pooled_prompt_embeds_inp = pooled_prompt_embeds;
         }
@@ -458,8 +459,6 @@ public:
                 for (size_t i = 0; i < timestep_size; ++i) {
                     timestep_data[i] =  timesteps[inference_step];
                 }
-                // timestep_data[0] = timesteps[inference_step], timestep_data[1] = timesteps[inference_step];
-
             } else {
                 // just assign to save memory copy
                 latent_cfg = latent;
@@ -510,6 +509,7 @@ private:
 
         size_t vae_out_channels_size = m_vae_decoder->get_config().block_out_channels.size();
         const size_t vae_scale_factor = std::pow(2, vae_out_channels_size - 1);
+        m_transformer->set_vae_scale_factor(vae_scale_factor);
 
         m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
         m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
@@ -522,15 +522,23 @@ private:
         }
     }
 
-    void check_inputs(const int height, const int width) const override {
+    void check_image_size(const int height, const int width) const override {
         assert(m_transformer != nullptr);
+        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
+        OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            vae_scale_factor);
+    }
 
-        size_t vae_out_channels_size = m_vae_decoder->get_config().block_out_channels.size();
-        const size_t vae_scale_factor = std::pow(2, vae_out_channels_size - 1);
+    void check_inputs(const GenerationConfig& generation_config) const override {
+        check_image_size(generation_config.width, generation_config.height);
 
-        OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
-                        "Both 'width' and 'height' must be divisible by",
-                        vae_scale_factor);
+        const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
+        const char* const pipeline_name = "Stable Diffusion 3";
+
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used when guidance scale <= 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used when guidance scale <= 1.0");
     }
 
     std::shared_ptr<SD3Transformer2DModel> m_transformer;

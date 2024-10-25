@@ -4,6 +4,7 @@
 #include "openvino/genai/text2image/sd3_transformer_2d_model.hpp"
 
 #include "utils.hpp"
+#include "json_utils.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include <fstream>
