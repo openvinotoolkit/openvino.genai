@@ -22,7 +22,7 @@ common_config = {
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
-    pipe = ov_genai.LLMPipeline(model_path, device, pipeline_config)
+    pipe = ov_genai.LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
     chat_history = [ pipe.generate(question, max_new_tokens=50) for question in questions ]
     pipe.finish_chat()
@@ -38,7 +38,7 @@ def test_generation_compare_with_stateful():
     stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU")
     ref_out = stateful_pipe.generate(prompt, max_new_tokens=100)
 
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
+    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     actual_out = static_pipe.generate(prompt, max_new_tokens=100)
 
     if ref_out != actual_out:
@@ -54,7 +54,7 @@ def test_length_properties_set_no_exception():
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 1024, "MIN_RESPONSE_LEN": 512 }
     pipeline_config |= common_config
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", pipeline_config)
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
 pipeline_configs = [
@@ -70,7 +70,7 @@ def test_invalid_length_properties_raise_error(pipeline_config):
     model_path = get_models_list()[0][1]
     pipeline_config |= common_config
     with pytest.raises(RuntimeError):
-        pipe = ov_genai.LLMPipeline(model_path, "NPU", pipeline_config)
+        pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
 @pytest.mark.precommit
@@ -78,7 +78,7 @@ def test_invalid_length_properties_raise_error(pipeline_config):
 def test_batch_one_no_exception():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
+    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     # Check it doesn't throw any exception when batch of size 1 is provided
     actual_out = static_pipe.generate([prompt], max_new_tokens=20)
 
@@ -89,7 +89,7 @@ def test_batch_one_no_exception():
 def test_batch_raise_error():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
         pipe.generate([prompt] * 3, max_new_tokens=100)
 
@@ -105,19 +105,19 @@ generation_configs = [
 def test_unsupported_sampling_raise_error(generation_config):
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
         pipe.generate(prompt, **generation_config)
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_max_number_of_tokens(model_descr):
+def test_max_number_of_tokens():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", common_config)
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     tokenizer = ov_genai.Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     # ignore_eos=True to ensure model will generate exactly num_tokens
