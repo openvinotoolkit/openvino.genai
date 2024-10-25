@@ -596,7 +596,7 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void notify_handle(size_t num_output_token_to_push = 1) {
+    void notify_handle(size_t num_output_token_to_push = 0) {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
