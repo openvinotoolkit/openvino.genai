@@ -481,73 +481,107 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string image_token = m_vlm_config.im_start;
-        std::string formatted_prompt = images.empty() ? prompt : image_token + "\n" + prompt;
-
-        // std::string chat_template_fallback = m_templated_chat_history + " USER: " + formatted_prompt + " ASSISTANT: ";
-        // chat_template_fallback = chat_template_fallback.erase(0, chat_template_fallback.find_first_not_of(' '));
-
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
-
+        
         if (images.empty()) {
+            ov::Tensor input_ids = get_encoded_input_ids(prompt, chat_template_fallback);
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-        } else {
-            OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
-            EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
-            ov::Tensor image_embeds = encoded_image.resized_source;
-
-            ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-
-            ov::Tensor encoded_image_token = m_tokenizer.encode(image_token, ov::genai::add_special_tokens(false)).input_ids;
-            int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-
-            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
         }
+
+        std::string formatted_prompt;
+        std::vector<ov::Tensor> image_embeds;
+        image_embeds.reserve(images.size());
+        for (const auto& image : images) {
+            ov::Tensor reshaped_image = image;
+            ov::Shape image_shape = image.get_shape();
+            switch (image_shape.size()) {
+                case 3:
+                    reshaped_image.set_shape({1, image_shape.at(0), image_shape.at(1), image_shape.at(2)});
+                    break;
+                case 4: break;
+                default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout");
+            }
+            ov::Shape reshaped_image_shape = reshaped_image.get_shape();
+            for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
+                ov::Tensor single_image{
+                    ov::element::u8,
+                    {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
+                    reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
+                };
+                EncodedImage encoded_image = m_vision_encoder.encode(image);
+                image_embeds.push_back(std::move(encoded_image.resized_source));
+                formatted_prompt += image_token + "\n";
+            }
+        }
+        formatted_prompt += prompt;
+
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+        ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+
+        ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+        int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+
+        return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
     }
 
 protected:
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
         const ov::Tensor& text_embeds,
-        const ov::Tensor& image_embeds,
+        const std::vector<ov::Tensor>& image_embeds,
         int64_t image_token_id
     ) {
         auto text_embeds_shape = text_embeds.get_shape();
-        auto image_embeds_shape = image_embeds.get_shape();
-
-        OPENVINO_ASSERT(
-            text_embeds_shape[2] == image_embeds_shape[2],
-            "Incompatible shapes between text_embeds and image_embeds"
-        );
-
         size_t text_embeds_seq_length = text_embeds_shape[1];
         size_t hidden_size = text_embeds_shape[2];
-        size_t image_embeds_seq_length = image_embeds_shape[1];
-
-        size_t merged_seq_length = text_embeds_seq_length + (image_embeds_seq_length - 1);
-
-        ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
 
         const int64_t* input_ids_data = input_ids.data<const int64_t>();
         const float* text_embeds_data = text_embeds.data<const float>();
-        const float* image_embeds_data = image_embeds.data<const float>();
-        float* merged_data = merged_embeds.data<float>();
 
-
-        size_t merged_idx = 0;
+        size_t num_image_tokens = 0;
         for (size_t s = 0; s < text_embeds_seq_length; ++s) {
             if (input_ids_data[s] == image_token_id) {
-                for (size_t i = 0; i < image_embeds_seq_length; ++i) {
+                num_image_tokens++;
+            }
+        }
+        auto num_images = image_embeds.size();
+        OPENVINO_ASSERT(
+            num_image_tokens == num_images,
+            "Number of image tokens in input_ids different from num_images."
+        );
+
+        size_t total_image_seq_length = 0;
+        for (const auto& single_image_embeds : image_embeds) {
+            OPENVINO_ASSERT(
+                text_embeds_shape[2] == single_image_embeds.get_shape().at(2),
+                "Incompatible shapes between text_embeds and image_embeds"
+            );
+            total_image_seq_length += single_image_embeds.get_shape().at(1);
+        }
+        size_t merged_seq_length = text_embeds_seq_length + total_image_seq_length - num_image_tokens;
+
+        ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
+        float* merged_data = merged_embeds.data<float>();
+
+        size_t merged_idx = 0;
+        size_t image_idx = 0;
+        for (size_t s = 0; s < text_embeds_seq_length; ++s) {
+            if (input_ids_data[s] == image_token_id) {
+                const float* image_embeds_data = image_embeds[image_idx].data<const float>();
+                size_t image_seq_length = image_embeds[image_idx].get_shape()[1];
+
+                for (size_t i = 0; i < image_seq_length; ++i) {
                     std::copy_n(image_embeds_data + i * hidden_size,
-                                hidden_size,
-                                merged_data + merged_idx * hidden_size);
-                    merged_idx++;
-                }
-            } else {
-                std::copy_n(text_embeds_data + s * hidden_size,
                             hidden_size,
                             merged_data + merged_idx * hidden_size);
+                    merged_idx++;
+                }
+                image_idx++;
+            } else {
+                std::copy_n(text_embeds_data + s * hidden_size,
+                        hidden_size,
+                        merged_data + merged_idx * hidden_size);
                 merged_idx++;
             }
         }
@@ -594,7 +628,7 @@ public:
             ov::Tensor encoded_image_token = m_tokenizer.encode(image_token, ov::genai::add_special_tokens(false)).input_ids;
             int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
 
-            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_features, image_token_id);
+            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, {image_features}, image_token_id);
         }
     }
 
