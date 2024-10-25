@@ -432,8 +432,8 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
 ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig& config) {
     // ov::Tensor to clip_image_u8
     clip_image_u8 input_image{
-        int(image.get_shape().at(3)),
         int(image.get_shape().at(2)),
+        int(image.get_shape().at(1)),
         {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
     };
 
@@ -452,8 +452,8 @@ ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig
 ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
     // ov::Tensor to clip_image_u8
     clip_image_u8 input_image{
-        int(image.get_shape().at(3)),
         int(image.get_shape().at(2)),
+        int(image.get_shape().at(1)),
         {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
     };
 
@@ -579,8 +579,8 @@ std::vector<clip_image_u8> split_image_internvl(
 
 ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_image_u8 input_image{
-        int(image.get_shape().at(3)),
         int(image.get_shape().at(2)),
+        int(image.get_shape().at(1)),
         {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
     };
 
