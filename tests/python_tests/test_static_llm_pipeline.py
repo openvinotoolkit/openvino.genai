@@ -11,23 +11,24 @@ from ov_genai_test_utils import (
 )
 
 
-# This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on CPU.
-# On machines without NPU, the pipeline will automatically fall back to CPU, which aligns with the goal of these tests.
-# However, on machines where an NPU is available, the tests may fail due to NPU-specific compile or runtime issues,
-# which are outside the scope of this test suite and not its intended focus.
-# is_npu_available = 'NPU' in Core().get_available_devices()
-is_npu_available = False
+# This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
+common_config = {
+                      'NPU_USE_NPUW': 'YES',
+                      'NPUW_DEVICES': 'CPU',
+                      'NPUW_ONLINE_PIPELINE': 'NONE',
+                      'PREFILL_CONFIG': { },
+                      'GENERATE_CONFIG': { }
+                }
 
 
-def generate_chat_history(model_path, device, questions):
-    pipe = ov_genai.LLMPipeline(model_path, device)
+def generate_chat_history(model_path, device, pipeline_config, questions):
+    pipe = ov_genai.LLMPipeline(model_path, device, pipeline_config)
     pipe.start_chat()
     chat_history = [ pipe.generate(question, max_new_tokens=50) for question in questions ]
     pipe.finish_chat()
     return chat_history
 
 
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_generation_compare_with_stateful():
@@ -37,7 +38,7 @@ def test_generation_compare_with_stateful():
     stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU")
     ref_out = stateful_pipe.generate(prompt, max_new_tokens=100)
 
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU")
+    static_pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
     actual_out = static_pipe.generate(prompt, max_new_tokens=100)
 
     if ref_out != actual_out:
@@ -46,13 +47,13 @@ def test_generation_compare_with_stateful():
     assert ref_out == actual_out
 
 
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_length_properties_set_no_exception():
     model_path = get_models_list()[0][1]
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 1024, "MIN_RESPONSE_LEN": 512 }
+    pipeline_config |= common_config
     pipe = ov_genai.LLMPipeline(model_path, "NPU", pipeline_config)
 
 
@@ -62,35 +63,33 @@ pipeline_configs = [
     { "MIN_RESPONSE_LEN": -1  },
     { "MIN_RESPONSE_LEN": "1" }
 ]
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.parametrize("pipeline_config", pipeline_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_invalid_length_properties_raise_error(pipeline_config):
     model_path = get_models_list()[0][1]
+    pipeline_config |= common_config
     with pytest.raises(RuntimeError):
         pipe = ov_genai.LLMPipeline(model_path, "NPU", pipeline_config)
 
 
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_one_no_exception():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU")
+    static_pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
     # Check it doesn't throw any exception when batch of size 1 is provided
     actual_out = static_pipe.generate([prompt], max_new_tokens=20)
 
 
 # TODO: For the further batch support
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_raise_error():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, "NPU")
+    pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
     with pytest.raises(RuntimeError):
         pipe.generate([prompt] * 3, max_new_tokens=100)
 
@@ -103,19 +102,17 @@ generation_configs = [
     dict(top_p=0.8),
     dict(top_k=10),
 ]
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config):
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, "NPU")
+    pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
     with pytest.raises(RuntimeError):
         pipe.generate(prompt, **generation_config)
 
 
-@pytest.mark.skipif(is_npu_available, reason="Not supposed to be run on NPU device")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_max_number_of_tokens(model_descr):
@@ -123,7 +120,7 @@ def test_max_number_of_tokens(model_descr):
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU")
+    pipe = ov_genai.LLMPipeline(model_path, common_config, "NPU")
     tokenizer = ov_genai.Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     # ignore_eos=True to ensure model will generate exactly num_tokens
@@ -145,8 +142,8 @@ def test_chat_generation(model_descr):
 
     model_path = get_chat_models_lists()[0][1]
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", questions)
-    chat_history_static   = generate_chat_history(model_path, "NPU", questions)
+    chat_history_stateful = generate_chat_history(model_path, "CPU", { }, questions)
+    chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')
     print('cpu chat: \n{chat_history_stateful}')
