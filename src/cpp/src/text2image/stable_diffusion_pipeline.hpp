@@ -133,6 +133,7 @@ public:
         m_clip_text_encoder->compile(device, properties);
         m_unet->compile(device, properties);
         m_vae_decoder->compile(device, properties);
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,

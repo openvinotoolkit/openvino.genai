@@ -47,11 +47,7 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir,
                              const std::string& device,
                              const ov::AnyMap& properties)
     : AutoencoderKL(root_dir) {
-    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, properties);
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
@@ -74,7 +70,12 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
 AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model;
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compiled_model = core.compile_model(m_model, device, *filtered_properties);
+    } else {
+        compiled_model = core.compile_model(m_model, device, properties);
+    }
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
