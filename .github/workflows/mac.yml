@@ -131,7 +131,7 @@ jobs:
             -DENABLE_OV_TF_FRONTEND=ON \
             -DENABLE_OV_TF_LITE_FRONTEND=OFF \
             -DENABLE_INTEL_GPU=OFF \
-            -DENABLE_INTEL_NPU=ON \
+            -DENABLE_INTEL_NPU=OFF \
             -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \

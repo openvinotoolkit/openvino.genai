@@ -4,7 +4,7 @@
 import openvino_genai as ov_genai
 from openvino.runtime import Core
 import pytest
-import math
+import sys
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
@@ -29,6 +29,7 @@ def generate_chat_history(model_path, device, pipeline_config, questions):
     return chat_history
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_generation_compare_with_stateful():
@@ -47,6 +48,7 @@ def test_generation_compare_with_stateful():
     assert ref_out == actual_out
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_length_properties_set_no_exception():
@@ -63,6 +65,7 @@ pipeline_configs = [
     { "MIN_RESPONSE_LEN": -1  },
     { "MIN_RESPONSE_LEN": "1" }
 ]
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.parametrize("pipeline_config", pipeline_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -73,6 +76,7 @@ def test_invalid_length_properties_raise_error(pipeline_config):
         pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_one_no_exception():
@@ -84,6 +88,7 @@ def test_batch_one_no_exception():
 
 
 # TODO: For the further batch support
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_raise_error():
@@ -99,6 +104,7 @@ generation_configs = [
     dict(num_beam_groups=3),
     dict(do_sample=True)
 ]
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -110,6 +116,7 @@ def test_unsupported_sampling_raise_error(generation_config):
         pipe.generate(prompt, **generation_config)
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_max_number_of_tokens():
@@ -126,6 +133,7 @@ def test_max_number_of_tokens():
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not supposed to work on mac")
 @pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
 @pytest.mark.precommit
 @pytest.mark.nightly
