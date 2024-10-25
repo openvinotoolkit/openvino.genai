@@ -138,5 +138,9 @@ private:
     EncodedImage encode_llava_next(
         const ov::Tensor& image, const ProcessorConfig& config
     );
+
+    EncodedImage encode_internvl(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
 };
 }

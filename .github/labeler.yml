@@ -10,6 +10,7 @@
 - 'src/cpp/src/synchronized_queue.hpp'
 - 'src/cpp/src/make_combine_segments_stateful.cpp'
 - 'src/cpp/src/make_combine_segments_stateful.hpp'
+- 'src/python/py_tokenizer.cpp'
 - 'thirdparty/openvino_tokenizers'
 - 'tests/python_tests/tokenizer_configs.py'
 
@@ -22,6 +23,7 @@
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
+- 'src/python/py_llm_pipeline.cpp'
 - 'tests/python_tests/test_generate_api.py'
 - 'tests/python_tests/test_chat_generate_api.py'
 
@@ -31,6 +33,7 @@
 - 'src/cpp/src/sampler.hpp'
 - 'src/cpp/src/sampler.cpp'
 - 'src/cpp/src/logit_processor.hpp'
+- 'src/python/py_generation_config.cpp'
 - 'tests/cpp/logit_filtering.cpp'
 - 'tests/cpp/generate_config.cpp'
 - 'tests/cpp/sampler.cpp'
@@ -40,7 +43,10 @@
 - 'src/cpp/src/lora_adapter.cpp'
 - 'src/cpp/src/lora_helper.cpp'
 - 'src/cpp/src/lora_helper.hpp'
+- 'src/cpp/src/lora_names_mapping.cpp'
+- 'src/cpp/src/lora_names_mapping.hpp'
 - 'src/cpp/src/safetensors.c'
+- 'src/python/py_lora_adapter.cpp'
 
 'category: samples':
 - 'samples/**/*'
@@ -51,6 +57,7 @@
 - 'src/cpp/src/whisper/**/*'
 - 'src/cpp/src/whisper_generation_config.cpp'
 - 'src/cpp/src/whisper_pipeline.cpp'
+- 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_generate_api.py'
 
 'category: Python API':
@@ -59,6 +66,7 @@
 'category: visual language':
 - 'src/include/openvino/genai/visual_language/**/*'
 - 'src/cpp/src/visual_language/**/*'
+- 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_api.py'
 
 'category: speculative decoding':
@@ -91,6 +99,7 @@
 - 'src/cpp/src/sequence_group.cpp'
 - 'src/cpp/src/sequence_group.hpp'
 - 'src/cpp/src/timer.hpp'
+- 'src/python/py_continuous_batching_pipeline.cpp'
 - 'tests/python_tests/test_cache_optimizations.py'
 - 'tests/python_tests/test_preemption.py'
 - 'tests/python_tests/test_sampling.py'
@@ -110,6 +119,8 @@
 'category: text to image':
 - 'src/include/openvino/genai/text2image/**/*'
 - 'src/cpp/src/text2image/**/*'
+- 'src/python/py_text2image_models.cpp'
+- 'src/python/py_text2image_pipeline.cpp'
 
 'category: GenAI C++ API':
 - 'src/cpp/include/openvino/genai/**/*'

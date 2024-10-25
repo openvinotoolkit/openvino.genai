@@ -493,6 +493,126 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
 
     return concatenated_tensor;
 }
+
+std::vector<clip_image_u8> split_image_internvl(
+    const clip_image_u8& image,
+    int image_size,
+    int min_num = 1,
+    int max_num = 12,
+    bool use_thumbnail = true
+) {
+    int orig_width = image.nx;
+    int orig_height = image.ny;
+    float aspect_ratio = static_cast<float>(orig_width) / orig_height;
+
+    std::vector<std::pair<int, int>> target_ratios;
+    for (int n = min_num; n <= max_num; ++n) {
+        for (int i = 1; i <= n; ++i) {
+            for (int j = 1; j <= n; ++j) {
+                if (i * j <= max_num && i * j >= min_num) {
+                    target_ratios.emplace_back(i, j);
+                }
+            }
+        }
+    }
+    std::sort(target_ratios.begin(), target_ratios.end(),
+        [](const auto& a, const auto& b) { return a.first * a.second < b.first * b.second; });
+
+    auto find_closest_aspect_ratio = [&](float ar, const std::vector<std::pair<int, int>>& ratios) {
+        float best_ratio_diff = std::numeric_limits<float>::max();
+        std::pair<int, int> best_ratio = {1, 1};
+        int area = orig_width * orig_height;
+
+        for (const auto& ratio : ratios) {
+            float target_ar = static_cast<float>(ratio.first) / ratio.second;
+            float ratio_diff = std::abs(ar - target_ar);
+            if (ratio_diff < best_ratio_diff) {
+                best_ratio_diff = ratio_diff;
+                best_ratio = ratio;
+            } else if (ratio_diff == best_ratio_diff && area > 0.5 * image_size * image_size * ratio.first * ratio.second) {
+                best_ratio = ratio;
+            }
+        }
+        return best_ratio;
+    };
+
+    auto target_aspect_ratio = find_closest_aspect_ratio(aspect_ratio, target_ratios);
+
+    int target_width = image_size * target_aspect_ratio.first;
+    int target_height = image_size * target_aspect_ratio.second;
+    int blocks = target_aspect_ratio.first * target_aspect_ratio.second;
+
+    clip_image_u8 resized_img;
+    bicubic_resize(image, resized_img, target_width, target_height);
+
+    std::vector<clip_image_u8> processed_images;
+    for (int i = 0; i < blocks; ++i) {
+        int x = (i % (target_width / image_size)) * image_size;
+        int y = (i / (target_width / image_size)) * image_size;
+
+        clip_image_u8 split_img;
+        split_img.nx = image_size;
+        split_img.ny = image_size;
+        split_img.buf.resize(3 * image_size * image_size);
+
+        for (int dy = 0; dy < image_size; ++dy) {
+            for (int dx = 0; dx < image_size; ++dx) {
+                for (int c = 0; c < 3; ++c) {
+                    int src_idx = ((y + dy) * target_width + (x + dx)) * 3 + c;
+                    int dst_idx = (dy * image_size + dx) * 3 + c;
+                    split_img.buf[dst_idx] = resized_img.buf[src_idx];
+                }
+            }
+        }
+
+        processed_images.push_back(std::move(split_img));
+    }
+
+    if (use_thumbnail && processed_images.size() != 1) {
+        clip_image_u8 thumbnail_img;
+        bicubic_resize(image, thumbnail_img, image_size, image_size);
+        processed_images.push_back(std::move(thumbnail_img));
+    }
+
+    return processed_images;
+}
+
+ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorConfig& config) {
+    clip_image_u8 input_image{
+        int(image.get_shape().at(3)),
+        int(image.get_shape().at(2)),
+        {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
+    };
+
+    const size_t image_size = config.size_shortest_edge;
+
+    clip_ctx ctx;
+    ctx.image_size = image_size;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+
+    std::vector<clip_image_u8> splitted_images = split_image_internvl(input_image, image_size);
+
+    std::vector<clip_image_f32> processed_images;
+    processed_images.reserve(splitted_images.size());
+    for (const auto& image : splitted_images) {
+        processed_images.push_back(clip_image_preprocess(ctx, image));
+    }
+
+    size_t batch_size = processed_images.size();
+    size_t channels = 3;
+    size_t height = processed_images[0].ny;
+    size_t width = processed_images[0].nx;
+
+    ov::Tensor output_tensor(ov::element::f32, {batch_size, channels, height, width});
+    float* output_data = output_tensor.data<float>();
+
+    for (size_t i = 0; i < batch_size; ++i) {
+        const auto& img = processed_images[i];
+        std::copy(img.buf.begin(), img.buf.end(), output_data + i * channels * height * width);
+    }
+    return output_tensor;
+}
 }
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
@@ -510,6 +630,8 @@ EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfi
         return encode_llava(image, config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
         return encode_llava_next(image, config);
+    }  else if (model_type == VLMModelType::INTERNVL_CHAT) {
+        return encode_internvl(image, config);
     } else {
         OPENVINO_THROW("Unsupported type of VisionEncoder");
     }
@@ -561,4 +683,16 @@ EncodedImage VisionEncoder::encode_llava_next(const ov::Tensor& image, const Pro
     encoded_image.resized_source_size = resized_source_size;
     encoded_image.patches_grid = {num_patches_h, num_patches_w};
     return encoded_image;
+}
+
+EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const ProcessorConfig& config) {
+    ov::Tensor pixel_values = get_pixel_values_internvl(image, config);
+
+    m_vision_encoder.set_tensor("pixel_values", pixel_values);
+    m_vision_encoder.infer();
+
+    ov::Tensor image_features = m_vision_encoder.get_output_tensor();
+    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+
+    return {image_features, resized_source_size};
 }

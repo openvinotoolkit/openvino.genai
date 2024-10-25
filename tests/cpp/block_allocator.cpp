@@ -101,7 +101,7 @@ TEST_F(PrefixCachingBlockAllocatorTest, OnlyAllocatesAndFreesBlocksFromAllLayers
     EXPECT_THROW(allocator.free(blocks_per_layer[0], 0), ov::Exception);
     EXPECT_NO_THROW(allocator.free(blocks_per_layer));
 
-    // with prefix caching freed blocks should go into the overwriteable store first, not in the actual free pool
+    // with prefix caching freed blocks should go into the overwritable store first, not in the actual free pool
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
 }
 
@@ -172,10 +172,10 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesHashCollisionsAtFreeCorrectly) {
     auto second_hash_0_block = allocator.allocate_block(0, cached_blocks_map);
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
 
-    // this "free" should replace the old block with the same hash in the overwriteable store
+    // this "free" should replace the old block with the same hash in the overwritable store
     allocator.free(second_hash_0_block);
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
-    std::map<uint64_t, ov::genai::BlocksPerLayer> empty_map{};  // to force allocator to take the block from overwriteable store
+    std::map<uint64_t, ov::genai::BlocksPerLayer> empty_map{};  // to force allocator to take the block from overwritable store
     auto internal_overwriteable_block = allocator.get_cached_block(0, empty_map);
     for (size_t layer_idx = 0; layer_idx < internal_overwriteable_block.size(); layer_idx++) {
         EXPECT_EQ(internal_overwriteable_block[layer_idx], second_hash_0_block[layer_idx]);

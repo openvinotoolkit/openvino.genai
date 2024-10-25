@@ -9,7 +9,7 @@
 #include "utils.hpp"
 namespace {
 
-// Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
+// Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
         return {haystack.begin(), haystack.end()};
