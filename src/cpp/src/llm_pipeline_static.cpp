@@ -55,7 +55,7 @@ void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     }
 }
 
-bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
+bool is_cw_compressed(const std::shared_ptr<ov::Model>& model) {
     std::vector<std::string> rt_info_path = {"nncf", "weight_compression", "group_size"};
     if (!model->has_rt_info(rt_info_path)) {
         // NB: Model isn't compressed by NNCF - skip
@@ -84,13 +84,6 @@ std::optional<T> get_option(ov::AnyMap& config, const std::string& option_name) 
         return std::make_optional(it->second.as<T>());
     }
     return std::nullopt;
-}
-
-void enable_npuw_dq_if_allowed(ov::AnyMap& config,
-                               const std::shared_ptr<ov::Model>& model) {
-    if (allow_to_enable_npuw_dq(model)) {
-        config["NPUW_DQ"] = "YES";
-    }
 }
 
 std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
@@ -254,13 +247,15 @@ ov::AnyMap get_baseline_common_config() {
 
 ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_baseline_common_config();
+    if (is_cw_compressed(model)) {
+        config.emplace("NPUW_SLICE_OUT", "YES");
+    }
     const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
     if (npu_l0 && std::atoi(npu_l0) == 1) {
         config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
     } else {
         config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
     }
-    enable_npuw_dq_if_allowed(config, model);
     return config;
 }
 
@@ -271,8 +266,8 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
         return { };
     }
     auto config = get_default_common_config(model);
-    if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
-        config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    if (is_cw_compressed(model)) {
+        config.emplace("NPUW_DQ", "YES");
     }
     if (npudesc.has_value() &&
         npudesc->arch == "4000" &&
@@ -290,7 +285,8 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     }
     auto config = get_default_common_config(model);
     config.emplace("NPUW_FUNCALL_ASYNC", "YES");
-    config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    // NB: Unconditionally set for generation model
+    config.emplace("NPUW_DQ", "YES");
     return config;
 }
 
