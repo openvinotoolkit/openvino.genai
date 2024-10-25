@@ -6,6 +6,7 @@
 #include <chrono>
 #include <regex>
 
+#include "debug_utils.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
@@ -23,7 +24,7 @@ void fill_tensor(ov::Tensor tensor, T fill_val) {
 }
 
 template <typename T>
-void copy_to_tensor(const std::vector<T>& src_vec, ov::Tensor&& dst_tensor) {
+void copy_to_tensor(const std::vector<T>& src_vec, ov::Tensor dst_tensor) {
     auto* dst_ptr = dst_tensor.data<T>();
     OPENVINO_ASSERT(src_vec.size() == dst_tensor.get_size());
     std::copy(src_vec.begin(), src_vec.end(), dst_ptr);
@@ -47,7 +48,7 @@ ov::Tensor encode(ov::InferRequest& request,
 }
 
 // FIXME: Duplicate from llm_pipeline_static.cpp - need to reuse instead of copy-paste
-ov::Tensor make_tensor_slice(ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos) {
+ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
     ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
     start_shape[dim] = start_pos;
     ov::Shape end_shape = tensor.get_shape();
@@ -110,19 +111,18 @@ void set_decoder_input_ids_attention_mask(ov::InferRequest& decoder,
 
     OPENVINO_ASSERT(seq_length >= init_ids.size());
 
-    const size_t pad_size = seq_length - init_ids.size();
-
     // pad right
     // input_ids [token, token, token, pad_token]
     // attention_mask [1, 1, 1, 0]
-    // normally pad left expected to work, but it didn't
     auto input_ids_data = input_ids_tensor.data<int32_t>();
     std::copy(init_ids.begin(), init_ids.end(), input_ids_data);
-    std::fill_n(input_ids_data + init_ids.size(), pad_size, static_cast<int32_t>(pad_token));
+    std::fill(input_ids_data + init_ids.size(),
+              input_ids_data + input_ids_tensor.get_size(),
+              static_cast<int32_t>(pad_token));
 
     auto attention_mask_data = attention_mask_tensor.data<ov::float16>();
     std::fill_n(attention_mask_data, init_ids.size(), 1u);
-    std::fill_n(attention_mask_data + init_ids.size(), pad_size, 0u);
+    std::fill(attention_mask_data + init_ids.size(), attention_mask_data + attention_mask_tensor.get_size(), 0u);
 }
 
 int64_t decode(ov::Tensor& encoder_hidden_state,
@@ -190,8 +190,6 @@ void zero_past_key_values(ov::InferRequest& request) {
 }
 
 void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferRequest& decoder) {
-    // initial mask size of 3 tested with 4 init tokens
-    // it may change in case of fewer init tokens
     // NB: Prepare attetion mask to be in a format [1, 1, 1, 0, 0, 0, 0, ..., 1]
     auto attention_mask = decoder_with_past.get_tensor("attention_mask");
     auto* attention_mask_ptr = attention_mask.data<ov::float16>();
