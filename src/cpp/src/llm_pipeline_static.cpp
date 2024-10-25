@@ -265,11 +265,11 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
         config.emplace("NPUW_DQ", "YES");
     } else {
         config.emplace("NPUW_PMM", "NO");
-        if (npudesc.has_value() &&
-            npudesc->arch == "4000" &&
-            npudesc->max_tiles != -1) {
-            config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
-        }
+    }
+    if (npudesc.has_value() &&
+        npudesc->arch == "4000" &&
+        npudesc->max_tiles != -1) {
+        config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
     return config;
 }
