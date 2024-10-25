@@ -213,6 +213,9 @@ public:
             config.eos_token_id = m_generation_config.eos_token_id;
         config.validate();
 
+        // Stateful pipeline does not provide logprobs for prompt tokens
+        OPENVINO_ASSERT(config.echo == false, "Echo is not supported in the stateful pipeline");
+
         std::shared_ptr<StreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
             streamer_ptr = nullptr;
