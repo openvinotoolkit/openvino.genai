@@ -310,6 +310,40 @@ def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
+
+@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_greedy_repetition_penalty(model_descr, repetition_penalty, prompt):
+    model_id, path, tokenizer, model, pipe = read_model(model_descr)
+
+    generation_config = dict(
+        repetition_penalty=2.0,
+        max_new_tokens=20,
+        do_sample=False
+    )
+    run_hf_ov_genai_comparison((model_id, path, tokenizer, model, pipe), generation_config, prompt)
+
+    generation_config = dict(
+        repetition_penalty=1.0,
+        max_new_tokens=20,
+        do_sample=False
+    )
+    run_hf_ov_genai_comparison((model_id, path, tokenizer, model, pipe), generation_config, prompt)
+
+    ov_output = pipe.generate(prompt, **generation_config)
+    
+    generation_config = dict(
+        repetition_penalty=0.5,
+        max_new_tokens=20,
+        do_sample=False
+    )
+    ov_output_half_penalty = pipe.generate(prompt, **generation_config)
+
+    assert(len(set(ov_output.split(' '))) > len(set(ov_output_half_penalty.split(' '))))
+
+
 def user_defined_callback(subword):
     print(subword)
 

@@ -117,6 +117,8 @@ jobs:
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
               if -1 == idx:
+                  print(ref)
+                  print(predictions)
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
@@ -133,6 +135,8 @@ jobs:
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
               if -1 == idx:
+                  print(ref)
+                  print(predictions)
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
@@ -149,6 +153,8 @@ jobs:
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
               if -1 == idx:
+                  print(ref)
+                  print(predictions)
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
@@ -165,6 +171,8 @@ jobs:
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
               if -1 == idx:
+                  print(ref)
+                  print(predictions)
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
@@ -181,6 +189,8 @@ jobs:
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref.replace('�', ''))
               if -1 == idx:
+                  print(ref)
+                  print(predictions)
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
@@ -203,6 +213,8 @@ jobs:
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 idx = predictions.find(ref.replace('�', ''))
                 if -1 == idx:
+                    print(ref)
+                    print(predictions)
                     raise RuntimeError(f'Missing "{ref=}" from predictions')
                 predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
