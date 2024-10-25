@@ -235,13 +235,14 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+        { "NPUW_DEVICES", "NPU" },
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE", "YES"},
         { "NPUW_WEIGHTS_BANK", "shared" },
-        { "NPUW_PMM", "YES" },
-        { "NPUW_SLICE_OUT", "YES" }
+        { "NPUW_SLICE_OUT", "YES" },
+        { "NPUW_FUNCALL_ASYNC", "YES" }
     };
     return config;
 }
@@ -259,34 +260,28 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
-    // NB: Empty config for devices != NPU
-    if (!npudesc.has_value()) {
-        return { };
-    }
     auto config = get_default_common_config(model);
     if (is_cw_compressed(model)) {
         config.emplace("NPUW_DQ", "YES");
     } else {
-        config["NPUW_PMM"] = "NO";
-    }
-    if (npudesc.has_value() &&
-        npudesc->arch == "4000" &&
-        npudesc->max_tiles != -1) {
-        config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
+        config.emplace("NPUW_PMM", "NO");
+        if (npudesc.has_value() &&
+            npudesc->arch == "4000" &&
+            npudesc->max_tiles != -1) {
+            config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
+        }
     }
     return config;
 }
 
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
                                        const std::optional<NPUDesc>& npudesc) {
-    // NB: Empty config for devices != NPU
-    if (!npudesc.has_value()) {
-        return { };
-    }
     auto config = get_default_common_config(model);
-    config.emplace("NPUW_FUNCALL_ASYNC", "YES");
     // NB: Unconditionally set for generation model
     config.emplace("NPUW_DQ", "YES");
+    if (npudesc.has_value() && npudesc->arch == "4000") {
+        config.emplace("NPU_DPU_GROUPS", 4);
+    }
     return config;
 }
 
@@ -428,13 +423,11 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    // NB: If NPU specified but not available - fallback to CPU
-    const auto target_device = (device == "NPU" && !npudesc.has_value()) ? "CPU" : device;
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, target_device, generate_config
+        m_kvcache_model, device, generate_config
     ).create_infer_request();
     m_prefill_request = core.compile_model(
-        m_prefill_model, target_device, prefill_config
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
 }
 
