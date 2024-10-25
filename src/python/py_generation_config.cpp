@@ -87,7 +87,7 @@ void init_generation_config(py::module_& m) {
         .export_values();
     
     // Binding for CandidatesMathingType
-    py::enum_<CandidatesMathingType>(m, "StopCriteria", stop_criteria_docstring)
+    py::enum_<CandidatesMathingType>(m, "CandidatesMathingType", stop_criteria_docstring)
         .value("SPECULATIVE_DECODING", CandidatesMathingType::SPECULATIVE_DECODING)
         .value("ASSISTANT_GENERATION", CandidatesMathingType::ASSISTANT_GENERATION)
         .value("NONE", CandidatesMathingType::NONE)
