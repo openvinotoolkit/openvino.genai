@@ -88,30 +88,6 @@ py::object call_common_generate(
 
 extern char generation_config_docstring[];
 
-
-ov::AnyMap llm_kwargs_to_any_map(const py::kwargs& kwargs) {
-    ov::AnyMap params = {};
-
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (key == "adapters") {
-            params.insert({ov::genai::adapters(std::move(py::cast<ov::genai::AdapterConfig>(value)))});
-        }
-        // convert arbitrary objects to ov::Any
-        // not supported properties are not checked, as these properties are passed to compile(), which will throw exception in case of unsupported property
-        else if (pyutils::py_object_is_any_map(value)) {
-            auto map = pyutils::py_object_to_any_map(value);
-            params.insert(map.begin(), map.end());
-        } else {
-            params[key] = pyutils::py_object_to_any(value);
-        }
-    }
-    return params;
-}
-
-
 void init_llm_pipeline(py::module_& m) {
     py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")
         // init(model_path, tokenizer, device, config, kwargs) should be defined before init(model_path, device, config, kwargs) 
@@ -124,7 +100,7 @@ void init_llm_pipeline(py::module_& m) {
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            ov::AnyMap properties = llm_kwargs_to_any_map(kwargs);
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
             if (config.size()) {
                 PyErr_WarnEx(PyExc_DeprecationWarning, 
                          "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 
@@ -154,7 +130,7 @@ void init_llm_pipeline(py::module_& m) {
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            ov::AnyMap properties = llm_kwargs_to_any_map(kwargs);
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
             if (config.size()) {
                 PyErr_WarnEx(PyExc_DeprecationWarning, 
                          "'config' parameters is deprecated, please use kwargs to pass config properties instead.", 

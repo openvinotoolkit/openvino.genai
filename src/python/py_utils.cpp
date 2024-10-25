@@ -156,6 +156,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
     } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
         return py::cast<ov::genai::SchedulerConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) { 
+        return py::cast<ov::genai::AdapterConfig>(py_obj);
     } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }
