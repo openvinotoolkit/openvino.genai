@@ -771,7 +771,7 @@ private:
 
         OPENVINO_ASSERT(
             patch_seq_len == height * width,
-            "Patch sequense length does not match the specified height and width"
+            "Patch sequence length does not match the specified height and width"
         );
 
         // Reshape tensor data and permute dimensions
@@ -860,6 +860,102 @@ private:
     }
 };
 
+class InputsEmbedderInternVLChat : public InputsEmbedder::IInputsEmbedder {
+public:
+    InputsEmbedderInternVLChat(
+        const VLMConfig& vlm_config,
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+        if (images.empty()) {
+            ov::Tensor input_ids = get_encoded_input_ids(prompt);
+            return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+        } else {
+            OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
+            EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
+            ov::Tensor image_embeds = encoded_image.resized_source;
+            
+            std::string image_start_token = m_vlm_config.image_start_token;
+            std::string image_context_token = m_vlm_config.image_context_token;
+            std::string image_end_token = m_vlm_config.image_end_token;
+
+            const size_t num_patches = image_embeds.get_shape().at(0);
+            const size_t num_image_tokens = image_embeds.get_shape().at(1);
+            
+            std::string concated_image_tokens;
+            concated_image_tokens += image_start_token;
+            for (int i = 0; i < num_patches * num_image_tokens; ++i) {
+                concated_image_tokens += image_context_token;
+            }
+            concated_image_tokens += image_end_token;
+
+            std::string formatted_prompt = concated_image_tokens + "\n" + prompt;
+            
+            ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt);
+            ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+
+            ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
+            int64_t image_context_token_id = encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
+
+            return merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id);
+        }
+    }
+
+protected:
+    ov::Tensor merge_text_and_image_embeddings_internvl(
+        const ov::Tensor& input_ids,
+        const ov::Tensor& text_embeds,
+        const ov::Tensor& image_embeds,
+        int64_t image_context_token_id
+    ) {
+        auto text_embeds_shape = text_embeds.get_shape();
+        auto image_embeds_shape = image_embeds.get_shape();
+        size_t batch_size = text_embeds_shape.at(0);
+        size_t seq_len = text_embeds_shape.at(1);
+        size_t embed_dim = text_embeds_shape.at(2);
+
+        ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds_shape);
+
+        const float* image_embeds_data = image_embeds.data<float>();
+        const float* text_embeds_data = text_embeds.data<float>();
+        const int64_t* input_ids_data = input_ids.data<int64_t>();
+        float* merged_embeds_data = merged_embeds.data<float>();
+
+        size_t flattened_size = batch_size * seq_len;
+        std::vector<bool> image_context_tokens_mask(flattened_size, false);
+        size_t image_context_tokens_count = 0;
+
+        for (size_t i = 0; i < flattened_size; ++i) {
+            if (input_ids_data[i] == image_context_token_id) {
+                image_context_tokens_mask[i] = true;
+                ++image_context_tokens_count;
+            }
+        }
+
+        OPENVINO_ASSERT(image_context_tokens_count > 0, "input_ids does not contain image context token ids");
+
+        size_t vision_idx = 0;
+        for (size_t i = 0; i < batch_size; ++i) {
+            for (size_t j = 0; j < seq_len; ++j) {
+                size_t flat_idx = i * seq_len + j;
+                size_t offset = flat_idx * embed_dim;
+
+                if (image_context_tokens_mask[flat_idx]) {
+                    std::copy_n(image_embeds_data + vision_idx * embed_dim, embed_dim, merged_embeds_data + offset);
+                    ++vision_idx;
+                } else {
+                    std::copy_n(text_embeds_data + offset, embed_dim, merged_embeds_data + offset);
+                }
+            }
+        }
+
+        return merged_embeds;
+    }
+};
+
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
                                const std::filesystem::path& model_dir,
                                const std::string& device,
@@ -870,6 +966,8 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
         m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }

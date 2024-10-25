@@ -61,7 +61,7 @@ def main():
         # Cache compiled models on disk for GPU to save time on the
         # next run. It's not beneficial for CPU.
         enable_compile_cache["CACHE_DIR"] = "vlm_cache"
-    pipe = openvino_genai.VLMPipeline(args.model_dir, device, enable_compile_cache)
+    pipe = openvino_genai.VLMPipeline(args.model_dir, device, **enable_compile_cache)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100

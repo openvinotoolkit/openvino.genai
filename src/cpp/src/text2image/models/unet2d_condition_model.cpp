@@ -21,8 +21,16 @@ UNet2DConditionModel::Config::Config(const std::filesystem::path& config_path) {
 
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "sample_size", sample_size);
-    read_json_param(data, "block_out_channels", block_out_channels);
     read_json_param(data, "time_cond_proj_dim", time_cond_proj_dim);
+
+    file.close();
+
+    // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
+    std::filesystem::path vae_config_path = config_path.parent_path().parent_path() / "vae_decoder" / "config.json";
+    file.open(vae_config_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
+    data = nlohmann::json::parse(file);
+    read_json_param(data, "block_out_channels", block_out_channels);
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir) :

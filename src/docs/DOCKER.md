@@ -26,7 +26,7 @@ cd /workspace/openvino.genai/
 ```
 
 
-# How to create environment to debug and develop continious batching project with OpenVINO:
+# How to create environment to debug and develop continuous batching project with OpenVINO:
 
 1. Build OpenVINO with python bindings:
 ```
@@ -64,7 +64,7 @@ cd /path/to/openvino.genai/thirdparty/openvino_tokenizers
 export OpenVINO_DIR=/path/to/openvino/build
 pip install --no-deps .
 ```
-6. Create build directory in `continious batching` project:
+6. Create build directory in `continuous batching` project:
 ```
 mkdir /path/to/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/build
 ```
@@ -77,7 +77,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug -DOpenVINO_DIR=/path/to/openvino/build ..
 ```
 make -j24
 ```
-9. Extend `PYTHONPATH` by `continious batching`:
+9. Extend `PYTHONPATH` by `continuous batching`:
 ```
 export PYTHONPATH=${PYTHONPATH}:/path/to/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/build/python
 ```

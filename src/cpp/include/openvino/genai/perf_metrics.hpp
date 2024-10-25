@@ -17,7 +17,7 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
 
 /**
  * @brief Structure with raw performance metrics for each generation before any statistics are calculated.
- * 
+ *
  * @param generate_durations Durations for each generate call in microseconds.
  * @param tokenization_durations Durations for the tokenization process in microseconds.
  * @param detokenization_durations Durations for the detokenization process in microseconds.
@@ -34,7 +34,7 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;
     std::vector<MicroSeconds> tokenization_durations;
     std::vector<MicroSeconds> detokenization_durations;
-    
+
     std::vector<MicroSeconds> m_times_to_first_token;
     std::vector<TimePoint> m_new_token_times;
     std::vector<MicroSeconds> m_token_infer_durations;
@@ -44,7 +44,7 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
 };
 
 /**
-* @brief Structure to store mean and standart deviation values.
+* @brief Structure to store mean and standard deviation values.
 */
 struct OPENVINO_GENAI_EXPORTS MeanStdPair {
     float mean;
@@ -52,8 +52,8 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
 };
 
 /**
- * @brief Holds performance metrics for each generate call. 
- * 
+ * @brief Holds performance metrics for each generate call.
+ *
  * PerfMetrics holds fields with mean and standard deviations for the following metrics:
  * - Time To the First Token (TTFT), ms
  * - Time per Output Token (TPOT), ms/token
@@ -61,14 +61,14 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
  * - Tokenization duration, ms
  * - Detokenization duration, ms
  * - Throughput, tokens/s
- * 
+ *
  * Additional fields include:
  * - Load time, ms
  * - Number of generated tokens
  * - Number of tokens in the input prompt
- * 
+ *
  * Preverable way to access values is via get functions. Getters calculate mean and std values from raw_metrics are return pairs.
- * If mean and std were already calcualted getters return cached values.
+ * If mean and std were already calculated getters return cached values.
  * @param get_load_time Returns the load time in milliseconds.
  * @param get_num_generated_tokens Returns the number of generated tokens.
  * @param get_num_input_tokens Returns the number of tokens in the input prompt.
@@ -79,15 +79,15 @@ struct OPENVINO_GENAI_EXPORTS MeanStdPair {
  * @param get_tokenization_duration Returns the mean and standard deviation of tokenization duration.
  * @param get_detokenization_duration Returns the mean and standard deviation of detokenization duration.
  * @param get_microsec Converts a duration to microseconds.
- * @param m_evaluated Flag indicating if raw metrics were evaluated. 
+ * @param m_evaluated Flag indicating if raw metrics were evaluated.
  *        If false, current mean/std TTFT, TPOT, etc. are not actual and evaluate_statistics() should recalculate them.
- * @param evaluate_statistics Calculates mean and standard deviation values from raw_metrics. 
+ * @param evaluate_statistics Calculates mean and standard deviation values from raw_metrics.
  *        Optional start_time can be provided to update durations.
  * @param operator+ Adds two PerfMetrics objects.
  * @param operator+= Adds and assigns the right-hand PerfMetrics to the current object.
  * @param raw_metrics A structure of RawPerfMetrics type that holds raw metrics.
  * @param load_time Load time in milliseconds.
- * 
+ *
  * Cached mean and standard deviations.
  * @param ttft Mean and standard deviation of Time to the First Token (TTFT) in milliseconds.
  * @param tpot Mean and standard deviation of Time per Output Token (TPOT) in milliseconds per token.
@@ -104,7 +104,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair tpot;  // Time (in ms) per output token (TPOT).
     MeanStdPair ipot;  // Inference time (in ms) per output token.
     MeanStdPair throughput;  // Tokens per second.
-    
+
     MeanStdPair generate_duration;
     MeanStdPair inference_duration;
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
@@ -112,7 +112,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
 
     size_t num_generated_tokens;
     size_t num_input_tokens;
-    
+
     float get_load_time();         // Load time in ms.
     size_t get_num_generated_tokens();
     size_t get_num_input_tokens();
@@ -120,27 +120,27 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_tpot();         // Time (in ms) per output token (TPOT).
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
     MeanStdPair get_throughput();   // Tokens per second.
-    
+
     MeanStdPair get_inference_duration();       // in ms
     MeanStdPair get_generate_duration();        // in ms
     MeanStdPair get_tokenization_duration();    // in ms
     MeanStdPair get_detokenization_duration();  // in ms
 
     // Flag indicating if raw metrics were evaluated.
-    // If false means current mean/std ttft, tpot, etc. are not actual 
+    // If false means current mean/std ttft, tpot, etc. are not actual
     // and evaluate_statistics() should recalculate them.
     bool m_evaluated = false;
 
-    /** 
-     * @brief calculates mean/std values from raw_metrics. 
-     * 
+    /**
+     * @brief calculates mean/std values from raw_metrics.
+     *
      * @param start_time optional start_time in case if duration needs to be updated.
      */
     void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt);
-    
-    /** 
+
+    /**
      * @brief convert duration to microseconds
-     * 
+     *
      * @param duration steady clock duration
      */
     static float get_microsec(std::chrono::steady_clock::duration duration);

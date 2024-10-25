@@ -3,7 +3,7 @@
 
 """
 Usage:
-After running a continous batching workload with debug dumps enabled, observe a "debug" folder in the working directory;
+After running a continuous batching workload with debug dumps enabled, observe a "debug" folder in the working directory;
 the subdirectories `cache_dump/*N*` correspond to the state of N-th layer cache at each generation step, and can be
 visualized by running:
 cacheviz.py --dump_folder ./debug/cache_dump/0

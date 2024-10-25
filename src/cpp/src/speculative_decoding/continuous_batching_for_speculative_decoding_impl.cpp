@@ -260,7 +260,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 candidate_token_log_probs.resize(min_candidate_len);
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
             }
-            // we should update a logit proccessor just for draft model to generate the same tokens
+            // we should update a logit processor just for draft model to generate the same tokens
             // logit processors of main model will be updated in sampler while validation mode
             if (is_update_logit_processor) {
                 logit_processor.update_generated_len(min_candidate_len);
