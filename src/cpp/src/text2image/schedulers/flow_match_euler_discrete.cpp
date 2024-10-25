@@ -14,7 +14,7 @@
 namespace ov {
 namespace genai {
 
-FlowMatchEulerDiscreteScheduler::Config::Config(const std::string& scheduler_config_path) {
+FlowMatchEulerDiscreteScheduler::Config::Config(const std::filesystem::path& scheduler_config_path) {
     std::ifstream file(scheduler_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", scheduler_config_path);
 
@@ -30,7 +30,7 @@ FlowMatchEulerDiscreteScheduler::Config::Config(const std::string& scheduler_con
     read_json_param(data, "max_image_seq_len", max_image_seq_len);
 }
 
-FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::string scheduler_config_path)
+FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
     : FlowMatchEulerDiscreteScheduler(Config(scheduler_config_path)) {}
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& scheduler_config)

@@ -22,10 +22,10 @@ public:
         int32_t base_image_seq_len = 256, max_image_seq_len = 4096;
 
         Config() = default;
-        explicit Config(const std::string& scheduler_config_path);
+        explicit Config(const std::filesystem::path& scheduler_config_path);
     };
 
-    explicit FlowMatchEulerDiscreteScheduler(const std::string scheduler_config_path);
+    explicit FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
     explicit FlowMatchEulerDiscreteScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps) override;
