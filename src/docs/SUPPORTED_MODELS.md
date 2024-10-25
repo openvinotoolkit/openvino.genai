@@ -206,8 +206,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <th>Example HuggingFace Models</th>
     </tr>
     <tr>
-      <td>InternVL2</td>
       <td><code>InternVL2</code></td>
+      <td>InternVL2</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-1B"><code>OpenGVLab/InternVL2-1B</code></a></li>
@@ -218,8 +218,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       </td>
     </tr>
     <tr>
-      <td>LLaVA</td>
-      <td><code>LLaVA-v1.5</code></td>
+      <td><code>LLaVA</code></td>
+      <td>LLaVA-v1.5</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/llava-hf/llava-1.5-7b-hf"><code>llava-hf/llava-1.5-7b-hf</code></a></li>
@@ -227,8 +227,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       </td>
     </tr>
     <tr>
-      <td>LLaVA-NeXT</td>
-      <td><code>LLaVa-v1.6</code></td>
+      <td><code>LLaVA-NeXT</code></td>
+      <td>LLaVa-v1.6</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/llava-hf/llava-v1.6-mistral-7b-hf"><code>llava-hf/llava-v1.6-mistral-7b-hf</code></a></li>
@@ -238,8 +238,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       </td>
     </tr>
     <tr>
-      <td>MiniCPMV</td>
-      <td><code>MiniCPM-V-2_6</code></td>
+      <td><code>MiniCPMV</code></td>
+      <td>MiniCPM-V-2_6</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/openbmb/MiniCPM-V-2_6"><code>openbmb/MiniCPM-V-2_6</code></a></li>
@@ -249,6 +249,44 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
   </tbody>
 </table>
 
+## Whisper models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Models</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td rowspan=2><code>WhisperForConditionalGeneration</code></td>
+      <td>Whisper</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/openai/whisper-tiny"><code>openai/whisper-tiny</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-tiny.en"><code>openai/whisper-tiny.en</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-base"><code>openai/whisper-base</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-base.en"><code>openai/whisper-base.en</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-small"><code>openai/whisper-small</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-small.en"><code>openai/whisper-small.en</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-medium"><code>openai/whisper-medium</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-medium.en"><code>openai/whisper-medium.en</code></a></li>
+          <li><a href="https://huggingface.co/openai/whisper-large-v3"><code>openai/whisper-large-v3</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td>Distil-Whisper</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/distil-whisper/distil-small.en"><code>distil-whisper/distil-small.en</code></a></li>
+          <li><a href="https://huggingface.co/distil-whisper/distil-medium.en"><code>distil-whisper/distil-medium.en</code></a></li>
+          <li><a href="https://huggingface.co/distil-whisper/distil-large-v3"><code>distil-whisper/distil-large-v3</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
 Some models may require access request submission on the Hugging Face page to be downloaded.
 
 If https://huggingface.co/ is down, the conversion step won't be able to download the models.

@@ -37,16 +37,6 @@ extern "C" {
     #include "safetensors.h"
 }
 
-// If set to 1, the empty tensors will be used to switch LoRA adapter off.
-// FIXME: Fix the plugins and set to 1 permanently.
-#define EMPTY_TENSORS_SUPPORTED_IN_MATMUL 0
-
-// If set to 1, LoRA state tensors will have the original type of LoRA adapter come from safetensors file.
-// If there are multiple LoRA adapters are applied, then negotiation between them happens.
-// If set to 0, LoRA state etnsors are always have type f32.
-// FIXME: Fix the plugins and set to 1 permanently.
-#define FP16_BF16_TENSORS_SUPPORTED_IN_STATE 0
-
 // FIXME: Remove or move to a dedicated common header
 #ifdef NDEBUG
     #define DEBUG_PRINT(X) do {} while(false)
@@ -819,25 +809,21 @@ struct AdapterControllerImpl {
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
         LoRAParametersByWeightGetter params_getter;
-        #if FP16_BF16_TENSORS_SUPPORTED_IN_STATE
         params_getter.type = ov::element::dynamic;
-        #else
-        params_getter.type = ov::element::f32;
-        #endif
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
             params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, config.get_tensor_name_prefix().value_or("")));
-            // TODO: Instead of aggregating types over all tensors in each adapter, make decision per node in LoRAWeightStateGetter
-            /*if(params_getter.type != ov::element::f32)*/ {  // FIXME: Implement element_type tolerant code when state is set and uncomment this condition
+            if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->tensors) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
                     OPENVINO_ASSERT(lora_tensor_type == tensor.second.B->get_output_element_type(0));
                     if(params_getter.type == ov::element::dynamic) {
                         params_getter.type = lora_tensor_type;
                     } else if(params_getter.type != lora_tensor_type) {
-                        // if types are not match among multiple LoRA tensos then fall back to f32
+                        // If types are not match among multiple LoRA tensos then fall back to f32
                         // TODO: Provide a more smart negotiation between multiple LoRAs: check ranges, try to pack to f16
+                        //       Make decision on precision per node in LoRAWeightStateGetter instead of setting this global precision
                         params_getter.type = ov::element::f32;
                         break;
                     }
@@ -1108,32 +1094,9 @@ struct AdapterControllerImpl {
     }
 
     LoRAParts<ov::Tensor> empty_adapters(const std::vector<LoRAWeight>& inputs, LoRAParts<ov::Tensor>& outputs) {
-        #if EMPTY_TENSORS_SUPPORTED_IN_MATMUL
-
         outputs.alpha.set_shape({1, 0});
         outputs.A.set_shape({0, outputs.A.get_shape()[1]});
         outputs.B.set_shape({outputs.B.get_shape()[0], 0});
-
-        #else
-
-        // TODO: As ov::Tensor lacks a convenient constructor to fill all elements with the same scalar value, do it via Constant that has such constructor
-        // FIXME: It's a huge overhead for setting just a scalar 0
-
-        ov::Shape
-            alpha_shape{1, 1},
-            A_shape{1, outputs.A.get_shape()[1]},
-            B_shape{outputs.B.get_shape()[0], 1};
-
-        outputs.alpha.set_shape(alpha_shape);
-        outputs.A.set_shape(A_shape);
-        outputs.B.set_shape(B_shape);
-        std::make_shared<v0::Constant>(outputs.alpha.get_element_type(), alpha_shape, 0)->get_tensor_view().copy_to(outputs.alpha);
-        // Element values for A and B don't matter as we are multiplying by 0 in alpha anyway
-        std::make_shared<v0::Constant>(outputs.A.get_element_type(), A_shape, 0)->get_tensor_view().copy_to(outputs.A);
-        std::make_shared<v0::Constant>(outputs.B.get_element_type(), B_shape, 0)->get_tensor_view().copy_to(outputs.B);
-
-        #endif
-
         return outputs;
     }
 
