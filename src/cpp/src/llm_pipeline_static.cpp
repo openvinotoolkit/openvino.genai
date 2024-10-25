@@ -266,10 +266,6 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
-    // NB: Empty config for devices != NPU
-    if (!npudesc.has_value()) {
-        return { };
-    }
     auto config = get_default_common_config(model);
     if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
         config.emplace("NPUW_PARALLEL_COMPILE", "YES");
@@ -282,12 +278,7 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
     return config;
 }
 
-ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
-                                       const std::optional<NPUDesc>& npudesc) {
-    // NB: Empty config for devices != NPU
-    if (!npudesc.has_value()) {
-        return { };
-    }
+ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_default_common_config(model);
     config.emplace("NPUW_FUNCALL_ASYNC", "YES");
     config.emplace("NPUW_PARALLEL_COMPILE", "YES");
@@ -424,7 +415,7 @@ void StaticLLMPipeline::setupAndCompileModels(
         properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     auto generate_config = pop_or_default(
-        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc)
+        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
     );
     merge_config_with(prefill_config, properties);
     merge_config_with(generate_config, properties);
@@ -432,13 +423,11 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    // NB: If NPU specified but not available - fallback to CPU
-    const auto target_device = (device == "NPU" && !npudesc.has_value()) ? "CPU" : device;
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, target_device, generate_config
+        m_kvcache_model, device, generate_config
     ).create_infer_request();
     m_prefill_request = core.compile_model(
-        m_prefill_model, target_device, prefill_config
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
 }
 
