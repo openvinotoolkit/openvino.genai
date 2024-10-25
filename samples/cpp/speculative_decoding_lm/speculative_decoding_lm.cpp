@@ -18,9 +18,9 @@ int main(int argc, char* argv[]) try {
     // add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
     // config.assistant_confidence_threshold = 0.4
     // to enable assistant generation with exact token matching (candidate vs sampled token)
-    // config.candidates_matching_type = ov::genai::CandidatesMathingType::ASSISTANT_GENERATION;
+    config.candidates_matching_type = ov::genai::CandidatesMathingType::ASSISTANT_GENERATION;
     // to enable speculative decoding algorithms based on paper: https://arxiv.org/pdf/2211.17192
-    config.candidates_matching_type = ov::genai::CandidatesMathingType::SPECULATIVE_DECODING;
+    // config.candidates_matching_type = ov::genai::CandidatesMathingType::SPECULATIVE_DECODING;
 
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];

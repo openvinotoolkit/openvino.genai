@@ -36,8 +36,15 @@ def main():
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
+    # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
+    # add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5
-    config.candidates_matching_type = openvino_genai.CandidatesMathingType.SPECULATIVE_DECODING
+    # add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
+    # config.assistant_confidence_threshold = 0.4
+    # to enable assistant generation with exact token matching (candidate vs sampled token)
+    config.candidates_matching_type = openvino_genai.CandidatesMathingType.ASSISTANT_GENERATION
+    # to enable speculative decoding algorithms based on paper: https://arxiv.org/pdf/2211.17192
+    # config.candidates_matching_type = openvino_genai.CandidatesMathingType.SPECULATIVE_DECODING;
 
 
     # Since the streamer is set, the results will be printed 
