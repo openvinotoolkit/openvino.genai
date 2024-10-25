@@ -205,7 +205,27 @@ void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferReq
     update_past_key_value(decoder, decoder_with_past);
 };
 
-std::vector<int32_t> prepare_init_ids(const ov::genai::WhisperGenerationConfig& config, const bool return_timestamps) {
+int64_t detect_language(ov::Tensor& encoder_hidden_state,
+                        ov::InferRequest decoder,
+                        const ov::genai::WhisperGenerationConfig& config) {
+    decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
+
+    std::vector<int32_t> init_ids{static_cast<int32_t>(config.decoder_start_token_id)};
+    set_decoder_input_ids_attention_mask(decoder, init_ids, config.pad_token_id);
+
+    decoder.infer();
+
+    auto output_tensor = decoder.get_tensor("logits");
+
+    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+
+    return output_token;
+}
+
+std::vector<int32_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
+                                      ov::InferRequest& decoder,
+                                      const ov::genai::WhisperGenerationConfig& config,
+                                      const bool return_timestamps) {
     if (!config.is_multilingual) {
         if (return_timestamps) {
             return std::vector<int32_t>{static_cast<int32_t>(config.decoder_start_token_id)};
@@ -222,8 +242,7 @@ std::vector<int32_t> prepare_init_ids(const ov::genai::WhisperGenerationConfig& 
             language_token_id = static_cast<int32_t>(config.lang_to_id.at(language));
         }
     } else {
-        // TODO: For future development
-        OPENVINO_THROW("StaticWhisperPipeline doesn't support automatical language detection!");
+        language_token_id = detect_language(encoder_hidden_state, decoder, config);
     }
 
     int32_t task_token_id = static_cast<int32_t>(config.transcribe_token_id);
@@ -377,7 +396,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
 
         // prepare init_ids just once for whole input
         if (init_ids.empty()) {
-            init_ids = prepare_init_ids(config, return_timestamps);
+            init_ids = prepare_init_ids(hidden_state_tensor, m_models.decoder, config, return_timestamps);
         }
 
         auto [cancelled, chunk_output_tokens] = full_decode(hidden_state_tensor,
