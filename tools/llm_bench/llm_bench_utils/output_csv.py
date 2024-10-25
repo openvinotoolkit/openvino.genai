@@ -86,7 +86,7 @@ def output_avg_min_median(iter_data_list):
     return result
 
 
-def gen_data_to_csv(result, iter_data, pretrain_time):
+def gen_data_to_csv(result, iter_data, pretrain_time, is_subsequent, iter_timestamp):
     generation_time = iter_data['generation_time']
     latency = iter_data['latency']
     first_latency = iter_data['first_token_latency']
@@ -129,8 +129,20 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
 
+    timestamp_start = ''
+    timestamp_end = ''
+    if is_subsequent is False:
+        time_idx = iter_data['iteration']
+    else:
+        time_idx = iter_data['prompt_idx']
+    if time_idx in iter_timestamp.keys():
+        timestamp_start = iter_timestamp[time_idx]['start']
+        timestamp_end = iter_timestamp[time_idx]['end']
+    result['start'] = timestamp_start
+    result['end'] = timestamp_end
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
+
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp):
     header = [
         'iteration',
         'model',
@@ -156,9 +168,12 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         'tokenization_time',
         'detokenization_time',
         'result_md5',
+        'start',
+        'end'
     ]
     out_file = Path(report_file)
 
+    is_subsequnt = model_args['subsequent']
     if len(iter_data_list) > 0:
         with open(out_file, 'w+', newline='') as f:
             writer = csv.DictWriter(f, header)
@@ -174,13 +189,13 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             for i in range(len(iter_data_list)):
                 iter_data = iter_data_list[i]
                 pre_time = '' if i > 0 else result['pretrain_time(s)']
-                gen_data_to_csv(result, iter_data, pre_time)
+                gen_data_to_csv(result, iter_data, pre_time, is_subsequnt, iter_timestamp)
                 writer.writerow(result)
 
             res_data = output_avg_min_median(iter_data_list)
 
             for key in res_data.keys():
                 for data in res_data[key]:
-                    gen_data_to_csv(result, data, '')
+                    gen_data_to_csv(result, data, '', is_subsequnt, iter_timestamp)
                     writer.writerow(result)
             output_comments(result, model_args['use_case'], writer)

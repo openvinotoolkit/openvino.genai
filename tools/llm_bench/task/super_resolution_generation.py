@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import datetime
 from pathlib import Path
 from PIL import Image
 import hashlib
@@ -116,7 +117,10 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    iter_timestamp = {}
     for num in range(num_iters + 1):
+        iter_timestamp[num] = {}
+        iter_timestamp[num]['start'] = datetime.datetime.now().isoformat()
         for image_id, img in enumerate(image_list):
             if num == 0:
                 if args["output_dir"] is not None:
@@ -124,6 +128,9 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             log.info(f"[{'warm-up' if num == 0 else num}][P{prompt_idx_list[image_id]}] Input image={img['prompt']}")
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id, mem_consumption)
             tm_list.clear()
+        iter_timestamp[num]['end'] = datetime.datetime.now().isoformat()
+        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        log.info(f"{prefix}timestamp start: {iter_timestamp[num]['start']}, end: {iter_timestamp[num]['end']}")
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
 
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, iter_timestamp

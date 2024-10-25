@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import datetime
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
@@ -422,20 +423,31 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     else:
         text_gen_fn = run_text_generation_genai
     proc_id = os.getpid()
+    iter_timestamp = {}
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
+            iter_timestamp[num] = {}
+            iter_timestamp[num]['start'] = datetime.datetime.now().isoformat()
             for idx, input_text in enumerate(text_list):
                 if num == 0:
                     log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
+            iter_timestamp[num]['end'] = datetime.datetime.now().isoformat()
+            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+            log.info(f"{prefix}timestamp start: {iter_timestamp[num]['start']}, end: {iter_timestamp[num]['end']}")
     else:
         for idx, input_text in enumerate(text_list):
+            p_idx = prompt_idx_list[idx]
+            iter_timestamp[p_idx] = {}
+            iter_timestamp[p_idx]['start'] = datetime.datetime.now().isoformat()
             for num in range(num_iters + 1):
                 if num == 0:
-                    log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
+                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
+            iter_timestamp[p_idx]['end'] = datetime.datetime.now().isoformat()
+            log.info(f"[P{p_idx}]timestamp start: {iter_timestamp[p_idx]['start']}, end: {iter_timestamp[p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, iter_timestamp

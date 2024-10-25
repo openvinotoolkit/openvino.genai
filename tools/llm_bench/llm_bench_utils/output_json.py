@@ -1,7 +1,7 @@
 import json
 
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp):
     metadata = {'model': model, 'framework': framework, 'device': device, 'precision': model_precision,
                 'num_beams': model_args['num_beams'], 'batch_size': model_args['batch_size']}
     result = []
@@ -24,6 +24,16 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         for idx_md5 in range(len(iter_data['result_md5'])):
             result_md5.append(iter_data['result_md5'][idx_md5])
 
+        timestamp_start = ''
+        timestamp_end = ''
+        if model_args['subsequent'] is False:
+            time_idx = iter_data['iteration']
+        else:
+            time_idx = iter_data['prompt_idx']
+        if time_idx in iter_timestamp.keys():
+            timestamp_start = iter_timestamp[time_idx]['start']
+            timestamp_end = iter_timestamp[time_idx]['end']
+
         res_data = {
             'iteration': iter_data['iteration'],
             'input_size': iter_data['input_size'],
@@ -42,6 +52,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             'prompt_idx': iter_data['prompt_idx'],
             'tokenization_time': round(tokenization_time, 5) if tokenization_time != '' else tokenization_time,
             'detokenization_time': round(detokenization_time, 5) if detokenization_time != '' else detokenization_time,
+            'start': timestamp_start,
+            'end': timestamp_end
         }
 
         result.append(res_data)
