@@ -134,7 +134,7 @@ def get_argprser():
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
-        help='Stop the generation even output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
+        help='Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
     )
     parser.add_argument('--set_torch_thread', default=0, type=num_infer_count_type, help='Set the number of torch thread')
 

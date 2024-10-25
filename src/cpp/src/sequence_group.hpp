@@ -194,7 +194,7 @@ public:
 // contains a list of Sequences in generic case (beam search or parallel sampling)
 // - each sequence shares the same prompt and KV-caches for promp
 // - in case of beam search each sequence also shares specific part of generic phase
-//   via reference counter machanism on BlockManager level
+//   via reference counter mechanism on BlockManager level
 class SequenceGroup {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
@@ -264,7 +264,7 @@ public:
         m_is_gen_paused = status;
     }
 
-    // a sequence group can generate new tokens if it already proccessed m_max_content_len before
+    // a sequence group can generate new tokens if it already processed m_max_content_len before
     bool can_generate_tokens() const {
         return m_max_content_len + m_num_validation_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
