@@ -585,7 +585,7 @@ public:
             float* image_newline_data = image_newline.data<float>();
             std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
 
-            ImageSize original_image_size{images.at(0).get_shape().at(2), images.at(0).get_shape().at(3)}; // [height, width]
+            ImageSize original_image_size{images.at(0).get_shape().at(1), images.at(0).get_shape().at(2)}; // [height, width]
 
             ov::Tensor image_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
 
@@ -763,6 +763,11 @@ private:
         size_t num_patches = shape[0];
         size_t patch_seq_len = shape[1];
         size_t embed_dim = shape[2];
+
+        OPENVINO_ASSERT(
+            num_patches == num_patch_height * num_patch_width,
+            "Number of patches does not match the specified grid size"
+        );
 
         OPENVINO_ASSERT(
             patch_seq_len == height * width,
