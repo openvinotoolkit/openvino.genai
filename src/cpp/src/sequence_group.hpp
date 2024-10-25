@@ -426,7 +426,6 @@ public:
 
 
     bool requires_sampling() const {
-        std::cout << "Requieres sampling: get_context_len(): " << get_context_len() << " get_prompt_len(): " << get_prompt_len() << " m_max_content_len: " << m_max_content_len << std::endl;
         return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len;
     }
 
@@ -584,8 +583,6 @@ public:
     }
 
     void push_partial_outputs(size_t token_cnt = 1) {
-        if(m_generation_stream->get_status() == GenerationStatus::FINISHED)
-            std::cout << "Pushing final partial outputs" << std::endl;
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
@@ -600,10 +597,8 @@ public:
 
     void notify_handle() {
         if (out_of_memory()) {
-            std::cout << "Sequence group is out of memory" << std::endl;
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
-            std::cout << "Sequence group has finished" << std::endl;
             set_generation_status(GenerationStatus::FINISHED);
         }
         // For beam search streaming is not available, so we notify only upon finishing
@@ -616,16 +611,8 @@ public:
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1 &&
                 (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
-                if (get_num_processed_tokens() < get_prompt_len() && m_generation_stream->get_status() == GenerationStatus::FINISHED) {
-                    std::cout << "get_num_processed_tokens(): " << get_num_processed_tokens() << " get_prompt_len(): " << get_prompt_len() << std::endl;
-                }
                 auto previous_step_gen_len = get_context_len() > 0 ? get_context_len() - get_prompt_len() : 0;
                 auto generation_len = m_sequences.front()->get_generated_len();
-
-                if(m_generation_stream->get_status() == GenerationStatus::FINISHED) {
-                    std::cout << "previous_step_gen_len:" << previous_step_gen_len << " generation_len:" << generation_len << std::endl;
-                    std::cout << "m_sampling_params.max_new_tokens: " << m_sampling_params.max_new_tokens << std::endl;
-                }
 
                 if (previous_step_gen_len < generation_len) {
                     auto token_to_print = generation_len - previous_step_gen_len;
