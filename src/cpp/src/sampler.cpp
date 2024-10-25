@@ -660,6 +660,7 @@ bool Sampler::validate_candidate(
     size_t& max_removed_tokens,
     ov::genai::CandidatesMathingType token_matching_type) {
     OPENVINO_ASSERT(token_idx > 0);
+    OPENVINO_ASSERT(token_matching_type != ov::genai::CandidatesMathingType::NONE);
 
     const auto& generated_tokens = running_sequence->get_generated_ids();
     auto it_token_id = generated_tokens.rbegin();
@@ -681,6 +682,8 @@ bool Sampler::validate_candidate(
         float r_i = dist(rng_engine);
         r_i /= 100;
         is_candidate_accepted = r_i <= probability_ratio;
+    } else {
+        is_candidate_accepted = *it_token_id == sampled_token.m_index;
     }
 
     // to validate candidates from assisting model and remove incorrect ones from generated sequence
