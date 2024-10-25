@@ -125,6 +125,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     m_draft_pipeline->multistep();
     draft_timer.end();
     m_sd_metrics.draft_duration += draft_timer.get_duration();
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     // to generate num_matches statistic
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
