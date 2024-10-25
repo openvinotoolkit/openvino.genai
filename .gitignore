@@ -35,3 +35,4 @@ CMakeUserPresets.json
 *.pyc
 __pycache__
 .py-build-cmake_cache
+*.egg-info
