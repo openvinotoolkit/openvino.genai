@@ -28,6 +28,7 @@ protected:
                 std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
                 m_awaiting_requests.push_back(sequence_group);
             }
+            pull_awaiting_requests();
             return std::make_shared<ov::genai::GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
         };
 
