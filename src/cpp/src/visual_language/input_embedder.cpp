@@ -765,11 +765,6 @@ private:
         size_t embed_dim = shape[2];
 
         OPENVINO_ASSERT(
-            num_patches == num_patch_height * num_patch_width,
-            "Number of patches does not match the specified grid size"
-        );
-
-        OPENVINO_ASSERT(
             patch_seq_len == height * width,
             "Patch sequence length does not match the specified height and width"
         );
