@@ -54,7 +54,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
 
     with open(report_file, 'w') as outfile:
         json.dump(output_result, outfile)
-    
+
+
 def get_timestamp(is_subsequent, iter_data, iter_timestamp):
     timestamp_start = ''
     timestamp_end = ''
