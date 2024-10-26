@@ -427,27 +427,35 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             iter_timestamp[num] = {}
-            iter_timestamp[num]['start'] = datetime.datetime.now().isoformat()
             for idx, input_text in enumerate(text_list):
                 if num == 0:
                     log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
+                p_idx = prompt_idx_list[idx]
+                iter_timestamp[num][p_idx] = {}
+                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
+                
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
-                            prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
-            iter_timestamp[num]['end'] = datetime.datetime.now().isoformat()
-            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-            log.info(f"{prefix}timestamp start: {iter_timestamp[num]['start']}, end: {iter_timestamp[num]['end']}")
+                            p_idx, bench_hook, model_precision, proc_id, mem_consumption)
+                
+                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}]start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     else:
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             iter_timestamp[p_idx] = {}
-            iter_timestamp[p_idx]['start'] = datetime.datetime.now().isoformat()
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                iter_timestamp[p_idx][num] = {}
+                iter_timestamp[p_idx][num]['start'] = datetime.datetime.now().isoformat()
+                
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
-            iter_timestamp[p_idx]['end'] = datetime.datetime.now().isoformat()
-            log.info(f"[P{p_idx}]timestamp start: {iter_timestamp[p_idx]['start']}, end: {iter_timestamp[p_idx]['end']}")
+                
+                iter_timestamp[p_idx][num]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}]start: {iter_timestamp[p_idx][num]['start']}, end: {iter_timestamp[p_idx][num]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp

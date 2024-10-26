@@ -120,17 +120,19 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     iter_timestamp = {}
     for num in range(num_iters + 1):
         iter_timestamp[num] = {}
-        iter_timestamp[num]['start'] = datetime.datetime.now().isoformat()
         for image_id, img in enumerate(image_list):
+            p_idx = prompt_idx_list[image_id]
+            iter_timestamp[num][p_idx] = {}
             if num == 0:
                 if args["output_dir"] is not None:
-                    llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, prompt_idx_list[image_id], None, proc_id)
-            log.info(f"[{'warm-up' if num == 0 else num}][P{prompt_idx_list[image_id]}] Input image={img['prompt']}")
+                    llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, p_idx, None, proc_id)
+            log.info(f"[{'warm-up' if num == 0 else num}][P{p_idx}] Input image={img['prompt']}")
+            iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id, mem_consumption)
+            iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
             tm_list.clear()
-        iter_timestamp[num]['end'] = datetime.datetime.now().isoformat()
-        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-        log.info(f"{prefix}timestamp start: {iter_timestamp[num]['start']}, end: {iter_timestamp[num]['end']}")
+            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+            log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
 
     return iter_data_list, pretrain_time, iter_timestamp

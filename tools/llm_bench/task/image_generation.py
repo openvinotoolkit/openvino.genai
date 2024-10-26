@@ -120,21 +120,25 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             iter_timestamp[num] = {}
-            iter_timestamp[num]['start'] = datetime.datetime.now().isoformat()
             for image_id, image_param in enumerate(image_list):
+                p_idx = prompt_idx_list[image_id]
+                iter_timestamp[num][p_idx] = {}
+                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 run_image_generation(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption)
-            iter_timestamp[num]['end'] = datetime.datetime.now().isoformat()
-            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-            log.info(f"{prefix}timestamp start: {iter_timestamp[num]['start']}, end: {iter_timestamp[num]['end']}")
+                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     else:
         for image_id, image_param in enumerate(image_list):
             p_idx = prompt_idx_list[image_id]
             iter_timestamp[p_idx] = {}
-            iter_timestamp[p_idx]['start'] = datetime.datetime.now().isoformat()
             for num in range(num_iters + 1):
+                iter_timestamp[p_idx][num] = {}
+                iter_timestamp[p_idx][num]['start'] = datetime.datetime.now().isoformat()
                 run_image_generation(image_param, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption)
-            iter_timestamp[p_idx]['end'] = datetime.datetime.now().isoformat()
-            log.info(f"[P{p_idx}]timestamp start: {iter_timestamp[p_idx]['start']}, end: {iter_timestamp[p_idx]['end']}")
+                iter_timestamp[p_idx][num]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[p_idx][num]['start']}, end: {iter_timestamp[p_idx][num]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time, iter_timestamp

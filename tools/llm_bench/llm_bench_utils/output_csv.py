@@ -5,6 +5,7 @@ import csv
 import numpy as np
 import copy
 from pathlib import Path
+import llm_bench_utils.output_json as output_json
 
 
 def output_comments(result, use_case, writer):
@@ -128,18 +129,7 @@ def gen_data_to_csv(result, iter_data, pretrain_time, is_subsequent, iter_timest
     result['prompt_idx'] = iter_data['prompt_idx']
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
-
-    timestamp_start = ''
-    timestamp_end = ''
-    if is_subsequent is False:
-        time_idx = iter_data['iteration']
-    else:
-        time_idx = iter_data['prompt_idx']
-    if time_idx in iter_timestamp.keys():
-        timestamp_start = iter_timestamp[time_idx]['start']
-        timestamp_end = iter_timestamp[time_idx]['end']
-    result['start'] = timestamp_start
-    result['end'] = timestamp_end
+    result['start'], result['end'] = output_json.get_timestamp(is_subsequent, iter_data, iter_timestamp)
 
 
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp):
