@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241018_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241018_x86_64.tgz
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17130-65a8f393ba0/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241024_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17130-65a8f393ba0/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241024_x86_64.tgz
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241014_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17053-939b35a9629/w_openvino_toolkit_windows_2024.5.0.dev20241018_x86_64.zip
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17130-65a8f393ba0/w_openvino_toolkit_windows_2024.5.0.dev20241024_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -49,6 +49,8 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+          wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
       - run: >
           . ./ov/setupvars.sh
           && timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
@@ -63,6 +65,11 @@ jobs:
           . ./ov/setupvars.sh
           && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+        env:
+          PYTHONPATH: "./build"
+      - run: >
+          . ./ov/setupvars.sh
+          && samples/python/greedy_causal_lm/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
         env:
           PYTHONPATH: "./build"
 
@@ -237,6 +244,8 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+          curl -o adapter_model.safetensors -s -L https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
@@ -259,6 +268,11 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
+      - run: >
+          set PATH=.\build\openvino_genai\;%PATH%
+          && set "PYTHONPATH=./build/"
+          && call .\ov\setupvars.bat
+          && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -799,15 +813,24 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
-      - name: Download and convert LLaVa-Next model and an image
+      - name: Download and convert LLaVa-Next model
         run: |
           source ./ov/setupvars.sh
           optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - LLaVa-Next
         run: >
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
+          <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
+      - name: Download and convert InternVL2 model
+        run: |
+          source ./ov/setupvars.sh
+          optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
+      - name: Run visual_language_chat C++ sample - InternVL2
+        run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
 

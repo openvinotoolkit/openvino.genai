@@ -47,6 +47,13 @@ public:
 
     // llava_next specific config params
     std::vector<float> image_newline;
+
+    /// @brief A string token denoting start of image embeddings for InternVL2 model.
+    std::string image_start_token = "<img>";
+    /// @brief A placeholder for image embeddings in text for InternVL2 model.
+    std::string image_context_token = "<IMG_CONTEXT>";
+    /// @brief A string token denoting end of image embeddings for InternVL2 model.
+    std::string image_end_token = "</img>";
     
     /// @brief Default constructor.
     VLMConfig() = default;

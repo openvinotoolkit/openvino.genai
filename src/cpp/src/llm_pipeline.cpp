@@ -86,7 +86,6 @@ public:
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
-            m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
             core.set_property(core_plugin_config);
@@ -179,6 +178,18 @@ public:
         return decoded_results;
     }
 
+    void reset_kv_state() {
+        if(m_adapter_controller) {
+            for(auto& state: m_model_runner.query_state()) {
+                if(!m_adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            m_model_runner.reset_state();
+        }
+    }
+
     EncodedResults generate(
         const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config,
@@ -201,6 +212,9 @@ public:
         if (config.eos_token_id == -1)
             config.eos_token_id = m_generation_config.eos_token_id;
         config.validate();
+
+        // Stateful pipeline does not provide logprobs for prompt tokens
+        OPENVINO_ASSERT(config.echo == false, "Echo is not supported in the stateful pipeline");
 
         std::shared_ptr<StreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
@@ -273,11 +287,7 @@ public:
         }
 
         if (!is_chat_conversation) {
-            // FIXME: Reset only KV cache part of state, there is also can be LoRA applied in the states and full reset will need to reapply LoRA even if the LoRA config is not changed
-            m_model_runner.reset_state();
-            if(m_adapter_controller) {
-                m_adapter_controller->force_full_apply(); // FIXME: Reset only KV cache part to avoid this call
-            }
+            reset_kv_state();
             m_selected_beam = std::nullopt;
         } else {
             m_is_cache_empty = false;
@@ -297,7 +307,7 @@ public:
         is_chat_conversation = true;
         m_selected_beam  = std::nullopt;
         if (!m_is_cache_empty) {
-            m_model_runner.reset_state();
+            reset_kv_state();
             m_is_cache_empty = true;
             m_history = {};
             m_templated_chat_history = "";
@@ -315,7 +325,7 @@ public:
         is_chat_conversation = false;
         m_selected_beam = std::nullopt;
         if (!m_is_cache_empty) {
-            m_model_runner.reset_state();
+            reset_kv_state();
             m_is_cache_empty = true;
             m_history.clear();
             m_templated_chat_history.clear();

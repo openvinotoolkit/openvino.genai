@@ -200,6 +200,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     step_count++;
 #endif
 
+    _fill_prompt_log_probs(m_requests, logits);
+
     SamplerOutput sampler_output;
     {
         static ManualTimer timer("sample");
@@ -410,4 +412,69 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits) {
+    const float * logits_data = logits.data<float>();
+    ov::Shape logits_shape = logits.get_shape();
+    OPENVINO_ASSERT(logits_shape.size() == 3);
+    size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
+    for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+        SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+        // requests not scheduled, in decoding phase or not echoing are not processed
+        if (!sequence_group->is_scheduled() || sequence_group->get_context_len() > sequence_group->get_prompt_len() || 
+            !sequence_group->get_sampling_parameters().echo)
+            continue;
+
+        size_t num_running_sequences = sequence_group->num_running_seqs();
+        OPENVINO_ASSERT(num_running_sequences == 1);
+        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens();
+        size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+
+        const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
+
+        size_t num_prompt_tokens_processed = sequence_group->get_num_processed_tokens();
+        OPENVINO_ASSERT(num_prompt_tokens_processed + actual_seq_len <= sequence_group->get_prompt_len());
+        
+        // if we processed the whole prompt we don't include last logprob as it will be processed by the sampler (it's already completion)
+        // otherwise we include it as it will be used in the next part of the prompt 
+        int exclude_last_logprob = 1; 
+        if (num_prompt_tokens_processed + actual_seq_len < sequence_group->get_prompt_len())
+            exclude_last_logprob = 0;
+
+        // if we start processing the prompt we add "fake" log prob for the first position (begin of sequence)
+        if (num_prompt_tokens_processed == 0)
+            sequence_group->append_prompt_log_prob(1.0);
+
+        for (int token_logits_offset = 0, token_id_offset = num_prompt_tokens_processed + 1;
+             token_logits_offset < actual_seq_len - exclude_last_logprob;
+             token_logits_offset++, token_id_offset++) {
+            
+            const float* token_logits = (sequence_group_logits_data + token_logits_offset * vocab_size);
+            int64_t token_id = sequence_group->get_prompt_ids()[token_id_offset];
+            float token_logit = token_logits[token_id];
+
+            // find max value for log softmax
+            float max_value = -std::numeric_limits<float>::infinity();
+            size_t max_index = 0;
+            for (size_t i = 0; i < vocab_size; ++i) {
+                if (token_logits[i] > max_value) {
+                    max_value = token_logits[i];
+                    max_index = i;
+                }
+            }
+
+            // apply log softmax to token logit
+            float log_sum = std::log(std::accumulate(
+                token_logits, token_logits + vocab_size, 0.0f, [max_value](float accumulated, float to_add) {
+                    return accumulated + std::exp(to_add - max_value);
+            }));
+
+            sequence_group->append_prompt_log_prob(token_logit - max_value - log_sum);
+        }
+        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+        // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
+        if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
+            sequence_group->notify_handle_echo_only();
+        }
+    }
+}
 }

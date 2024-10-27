@@ -11,6 +11,7 @@
 
 #include "openvino/genai/text2image/pipeline.hpp"
 
+#include "tokenizers_path.hpp"
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -21,6 +22,7 @@ void init_clip_text_model(py::module_& m) {
         .def(py::init([](
             const std::filesystem::path& root_dir
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::CLIPTextModel>(root_dir);
         }),
         py::arg("root_dir"), "Model root directory", 
@@ -33,6 +35,7 @@ void init_clip_text_model(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::CLIPTextModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
@@ -229,6 +232,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
         .def(py::init([](
             const std::filesystem::path& root_dir
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir);
         }),
         py::arg("root_dir"), "Model root directory", 
@@ -241,6 +245,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::CLIPTextModelWithProjection>(root_dir, device,  pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory", 
