@@ -214,8 +214,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         }
 
         std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
+        OPENVINO_ASSERT(running_sequences.size() > 0);
         size_t min_generated_tokens, min_candidate_len;
-        if (request->get_context_len() == 0 && !request->get_num_tokens_to_validate()) {
+        if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
             result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, is_update_logit_processor);
@@ -253,7 +254,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                      prompt_len = request->get_prompt_len(),
                      updated_context_len = min_candidate_len + prompt_len,
                      max_new_tokens = request->get_sampling_parameters().max_new_tokens;
-        size_t generated_len = num_processed_tokens - prompt_len + 1;
+        size_t generated_len = request->get_context_len() - request->get_prompt_len();
         if (num_processed_tokens > 0) {
             request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt);
             generated_len -= result.removed_tokens_cnt;
@@ -296,7 +297,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt && sampling_params.assistant_confidence_threshold == 0.f) {
                 request->pause_generation(true);
-            } else if ((request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= sampling_params.max_new_tokens - 1) {
+            } else if (request->get_context_len() >= request->get_prompt_len() &&
+                (request->get_context_len() - request->get_prompt_len()) >= sampling_params.max_new_tokens - 1) {
+                request->pause_generation(true);
+            } else if (sampling_params.max_new_tokens == 0) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();
