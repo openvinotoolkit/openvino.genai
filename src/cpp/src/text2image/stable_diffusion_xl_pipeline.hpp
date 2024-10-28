@@ -177,8 +177,8 @@ public:
             std::copy(time_ids.begin(), time_ids.end(), add_time_ids_data + time_ids.size());
         }
 
-        ov::Tensor add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, generation_config.negative_prompt, batch_size_multiplier > 1);
-        m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt, batch_size_multiplier > 1);
+        ov::Tensor add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, *generation_config.negative_prompt, batch_size_multiplier > 1);
+        m_clip_text_encoder->infer(positive_prompt, *generation_config.negative_prompt, batch_size_multiplier > 1);
 
         // prompt_embeds = prompt_embeds.hidden_states[-2]
         size_t idx_hidden_state_1 = m_clip_text_encoder->get_config().num_hidden_layers;
@@ -357,9 +357,9 @@ private:
         const char * const pipeline_name = "Stable Diffusion XL";
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt == std::nullopt, "Negative prompt is not used when guidance scale < 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale < 1.0");
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
     }
 
     ov::AnyMap properties_for_text_encoder(ov::AnyMap properties, const std::string& tensor_name_prefix) {

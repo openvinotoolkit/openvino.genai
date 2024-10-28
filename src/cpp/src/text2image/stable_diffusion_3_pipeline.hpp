@@ -38,6 +38,28 @@ ov::Tensor tensor_batch_copy(const ov::Tensor input, const size_t num_images_per
     return tensor_repeated;
 }
 
+ov::Tensor split_2d_by_batch(const ov::Tensor input, size_t batch_num) {
+    ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1]});
+
+    size_t shift = batch_num * input.get_shape()[1];
+    std::memcpy(result.data<float>(),
+                input.data<float>() + shift,
+                result.get_shape()[1] * sizeof(float));
+
+    return result;
+}
+
+ov::Tensor split_3d_by_batch(const ov::Tensor input, size_t batch_num) {
+    ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1], input.get_shape()[2]});
+
+    size_t shift = batch_num * input.get_shape()[1] * input.get_shape()[2];
+    std::memcpy(result.data<float>(),
+                input.data<float>() + shift,
+                result.get_shape()[1] * input.get_shape()[2] * sizeof(float));
+
+    return result;
+}
+
 }  // namespace
 
 namespace ov {
@@ -45,28 +67,28 @@ namespace genai {
 
 class Text2ImagePipeline::StableDiffusion3Pipeline : public Text2ImagePipeline::DiffusionPipeline {
 public:
-    explicit StableDiffusion3Pipeline(const std::string& root_dir) {
-        const std::string model_index_path = root_dir + "/model_index.json";
+    explicit StableDiffusion3Pipeline(const std::filesystem::path& root_dir) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir + "/scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder");
+            m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder_2");
+            m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2");
         } else {
-            OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
+            OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
 
         // TODO:
@@ -79,14 +101,14 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir + "/vae_decoder");
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
-            m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir + "/transformer");
+            m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer");
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
         }
@@ -95,20 +117,22 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
     }
 
-    StableDiffusion3Pipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties) {
-        const std::string model_index_path = root_dir + "/model_index.json";
+    StableDiffusion3Pipeline(const std::filesystem::path& root_dir,
+                             const std::string& device,
+                             const ov::AnyMap& properties) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
-        set_scheduler(Scheduler::from_config(root_dir + "/scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_1 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder", device, properties);
+                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
@@ -116,7 +140,7 @@ public:
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_2 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir + "/text_encoder_2", device, properties);
+                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
@@ -125,14 +149,14 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir + "/vae_decoder", device, properties);
+            m_vae_decoder = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
-            m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir + "/transformer", device, properties);
+            m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
         }
@@ -157,14 +181,14 @@ public:
         check_image_size(height, width);
 
         const size_t batch_size_multiplier =
-            do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+            do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
         m_clip_text_encoder_1->reshape(batch_size_multiplier);
         m_clip_text_encoder_2->reshape(batch_size_multiplier);
-        m_vae_decoder->reshape(num_images_per_prompt, height, width);
         m_transformer->reshape(num_images_per_prompt * batch_size_multiplier,
                                height,
                                width,
                                m_clip_text_encoder_1->get_config().max_position_embeddings);
+        m_vae_decoder->reshape(num_images_per_prompt, height, width);
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
@@ -184,15 +208,14 @@ public:
                                                  ? 2
                                                  : 1;  // Transformer accepts 2x batch in case of CFG
 
-        size_t vae_out_channels_size = m_vae_decoder->get_config().block_out_channels.size();
-        const size_t vae_scale_factor = std::pow(2, vae_out_channels_size - 1);
+        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
 
         if (generation_config.height < 0)
             generation_config.height = transformer_config.sample_size * vae_scale_factor;
         if (generation_config.width < 0)
             generation_config.width = transformer_config.sample_size * vae_scale_factor;
 
-        check_image_size(generation_config.height, generation_config.width);
+        check_inputs(generation_config);
 
         if (generation_config.random_generator == nullptr) {
             uint32_t seed = time(NULL);
@@ -208,13 +231,45 @@ public:
         std::string prompt_3_str =
             generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
 
-        ov::Tensor pooled_prompt_embed_out = m_clip_text_encoder_1->infer(positive_prompt, "", false);
-        size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
-        ov::Tensor prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
 
-        ov::Tensor pooled_prompt_2_embed_out = m_clip_text_encoder_2->infer(prompt_2_str, "", false);
+        std::string negative_prompt_1_str = generation_config.negative_prompt!= std::nullopt
+                                                ? *generation_config.negative_prompt
+                                                : "";
+        std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt
+                                                ? *generation_config.negative_prompt_2
+                                                : negative_prompt_1_str;
+        std::string negative_prompt_3_str = generation_config.negative_prompt_3 != std::nullopt
+                                                ? *generation_config.negative_prompt_3
+                                                : negative_prompt_1_str;
+
+        // text_encoder_1_output - stores positive and negative pooled_prompt_embeds
+        ov::Tensor text_encoder_1_output =
+            m_clip_text_encoder_1->infer(positive_prompt,
+                                         negative_prompt_1_str,
+                                         do_classifier_free_guidance(generation_config.guidance_scale));
+
+        // get positive pooled_prompt_embed_out
+        ov::Tensor pooled_prompt_embed_out = split_2d_by_batch(text_encoder_1_output, 1);
+
+        // text_encoder_1_hidden_state - stores positive and negative prompt_embeds
+        size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
+        ov::Tensor text_encoder_1_hidden_state = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
+        // get positive prompt_embed_out
+        ov::Tensor prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 1);
+
+        // text_encoder_2_output - stores positive and negative pooled_prompt_2_embeds
+        ov::Tensor text_encoder_2_output = m_clip_text_encoder_2->infer(prompt_2_str,
+                                                                        negative_prompt_2_str,
+                                                                        do_classifier_free_guidance(generation_config.guidance_scale));
+
+        // get positive pooled_prompt_2_embed_out
+        ov::Tensor pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 1);
+
+        // text_encoder_2_hidden_state - stores positive and negative prompt_2_embeds
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
-        ov::Tensor prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
+        ov::Tensor text_encoder_2_hidden_state = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
+        // get positive prompt_2_embed_out
+        ov::Tensor prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 1);
 
         ov::Tensor pooled_prompt_embed, prompt_embed, pooled_prompt_2_embed, prompt_2_embed;
         if (generation_config.num_images_per_prompt == 1) {
@@ -250,7 +305,7 @@ public:
 
         // TODO: text_encoder_3
         ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
-                                           77,  // TODO: self.tokenizer.model_max_length
+                                           m_clip_text_encoder_1->get_config().max_position_embeddings,
                                            transformer_config.joint_attention_dim};
 
         std::vector<float> t5_prompt_embed(
@@ -297,22 +352,11 @@ public:
 
         if (do_classifier_free_guidance(generation_config.guidance_scale)) {
             // 2. Encode negative prompt:
-            std::string negative_prompt_1_str =
-                !generation_config.negative_prompt.empty() ? generation_config.negative_prompt : "";
-            std::string negative_prompt_2_str = !generation_config.negative_prompt_2.empty()
-                                                    ? generation_config.negative_prompt_2
-                                                    : negative_prompt_1_str;
-            std::string negative_prompt_3_str = !generation_config.negative_prompt_3.empty()
-                                                    ? generation_config.negative_prompt_3
-                                                    : negative_prompt_1_str;
 
-            ov::Tensor negative_pooled_prompt_embed_out =
-                m_clip_text_encoder_1->infer(negative_prompt_1_str, "", false);
-            ov::Tensor negative_prompt_embed_out = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
-
-            ov::Tensor negative_pooled_prompt_2_embed_out =
-                m_clip_text_encoder_2->infer(negative_prompt_2_str, "", false);
-            ov::Tensor negative_prompt_2_embed_out = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
+            ov::Tensor negative_pooled_prompt_embed_out = split_2d_by_batch(text_encoder_1_output, 0);
+            ov::Tensor negative_prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 0);
+            ov::Tensor negative_pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 0);
+            ov::Tensor negative_prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 0);
 
             ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed,
                 negative_prompt_2_embed;
@@ -475,10 +519,7 @@ public:
                 size_t timestep_size = generation_config.num_images_per_prompt * batch_size_multiplier;
                 timestep = ov::Tensor(ov::element::f32, {timestep_size});
                 float* timestep_data = timestep.data<float>();
-
-                for (size_t i = 0; i < timestep_size; ++i) {
-                    timestep_data[i] = timesteps[inference_step];
-                }
+                std::fill_n(timestep_data, timestep_size, timesteps[inference_step]);
             } else {
                 // just assign to save memory copy
                 latent_cfg = latent;
@@ -520,23 +561,22 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale > 1.0;
+        return guidance_scale >= 1.0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_transformer != nullptr);
-        const auto& transformer_config = m_transformer->get_config();
+        assert(m_vae_decoder != nullptr);
 
-        size_t vae_out_channels_size = m_vae_decoder->get_config().block_out_channels.size();
-        const size_t vae_scale_factor = std::pow(2, vae_out_channels_size - 1);
-        m_transformer->set_vae_scale_factor(vae_scale_factor);
+        const auto& transformer_config = m_transformer->get_config();
+        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
 
         m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
         m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
 
         if (class_name == "StableDiffusion3Pipeline") {
-            m_generation_config.guidance_scale = 7.5f;
-            m_generation_config.num_inference_steps = 50;
+            m_generation_config.guidance_scale = 7.0f;
+            m_generation_config.num_inference_steps = 28;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -556,11 +596,15 @@ private:
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
         const char* const pipeline_name = "Stable Diffusion 3";
 
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(),
+        OPENVINO_ASSERT(
+            generation_config.prompt_3 == std::nullopt || generation_config.negative_prompt_3 == std::nullopt,
+            "T5Encoder is not currently supported, 'prompt_3' and 'negative_prompt_3' can't be used. Please, add "
+            "support.");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt == std::nullopt,
                         "Negative prompt is not used when guidance scale <= 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2.empty(),
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt,
                         "Negative prompt 2 is not used when guidance scale <= 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_3.empty(),
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_3 == std::nullopt,
                         "Negative prompt 3 is not used when guidance scale <= 1.0");
     }
 

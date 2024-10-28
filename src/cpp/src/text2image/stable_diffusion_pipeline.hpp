@@ -131,6 +131,7 @@ public:
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         m_clip_text_encoder->compile(device, properties);
+        m_unet->compile(device, properties);
         m_vae_decoder->compile(device, properties);
         update_adapters_from_properties(properties, m_generation_config.adapters);
     }
@@ -161,7 +162,7 @@ public:
             generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
+        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, *generation_config.negative_prompt,
             batch_size_multiplier > 1);
 
         // replicate encoder hidden state to UNet model
@@ -290,12 +291,12 @@ private:
         OPENVINO_ASSERT(generation_config.prompt_2 == std::nullopt, "Prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
         if (is_lcm) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by ", pipeline_name);
         } else if (!is_classifier_free_guidance) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used when guidance scale < 1.0");
         }
-        OPENVINO_ASSERT(generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
     }
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;

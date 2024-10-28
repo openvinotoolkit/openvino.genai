@@ -259,7 +259,7 @@ std::vector<int64_t> EulerDiscreteScheduler::get_timesteps() const {
 }
 
 std::vector<float> EulerDiscreteScheduler::get_float_timesteps() const {
-    return std::vector<float>();
+    OPENVINO_THROW("EulerDiscreteScheduler doesn't support float timesteps");
 }
 
 float EulerDiscreteScheduler::get_init_noise_sigma() const {

@@ -125,7 +125,7 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
 }
 
 std::vector<std::int64_t> FlowMatchEulerDiscreteScheduler::get_timesteps() const {
-    return std::vector<std::int64_t>();
+    OPENVINO_THROW("FlowMatchEulerDiscreteScheduler doesn't support int timesteps");
 }
 
 std::vector<float> FlowMatchEulerDiscreteScheduler::get_float_timesteps() const {
@@ -138,10 +138,6 @@ float FlowMatchEulerDiscreteScheduler::get_init_noise_sigma() const {
 
 void FlowMatchEulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
     return;
-}
-
-void FlowMatchEulerDiscreteScheduler::set_begin_index(size_t begin_index) {
-    m_begin_index = begin_index;
 }
 
 void FlowMatchEulerDiscreteScheduler::init_step_index() {

@@ -3,13 +3,15 @@
 
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 #include "openvino/core/any.hpp"
-#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
+
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 namespace genai {
@@ -28,17 +30,20 @@ public:
         size_t pooled_projection_dim = 2048;
         size_t out_channels = 16;
         size_t pos_embed_max_size = 96;
+        std::vector<size_t> block_out_channels = { 128, 256, 512, 512 };
 
-        explicit Config(const std::string& config_path);
+        explicit Config(const std::filesystem::path& config_path);
     };
 
-    explicit SD3Transformer2DModel(const std::string root_dir);
+    explicit SD3Transformer2DModel(const std::filesystem::path& root_dir);
 
-    SD3Transformer2DModel(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties = {});
+    SD3Transformer2DModel(const std::filesystem::path& root_dir,
+                          const std::string& device,
+                          const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    SD3Transformer2DModel(const std::string& root_dir, const std::string& device, Properties&&... properties)
+    SD3Transformer2DModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
         : SD3Transformer2DModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     SD3Transformer2DModel(const SD3Transformer2DModel&);
@@ -51,7 +56,7 @@ public:
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<SD3Transformer2DModel&, Properties...> compile(const std::string& device,
-                                                                                        Properties&&... properties) {
+                                                                                  Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -60,8 +65,6 @@ public:
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
 
     size_t get_vae_scale_factor() const;
-
-    void set_vae_scale_factor(size_t vae_scale_factor);
 
 private:
     Config m_config;

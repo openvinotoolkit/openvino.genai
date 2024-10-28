@@ -5,14 +5,13 @@
 
 #include "utils.hpp"
 #include "json_utils.hpp"
-#include "openvino/runtime/core.hpp"
 
 #include <fstream>
 
 namespace ov {
 namespace genai {
 
-SD3Transformer2DModel::Config::Config(const std::string& config_path) {
+SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
 
@@ -30,14 +29,26 @@ SD3Transformer2DModel::Config::Config(const std::string& config_path) {
     read_json_param(data, "pooled_projection_dim", pooled_projection_dim);
     read_json_param(data, "out_channels", out_channels);
     read_json_param(data, "pos_embed_max_size", pos_embed_max_size);
+
+    file.close();
+
+    // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
+    std::filesystem::path vae_config_path = config_path.parent_path().parent_path() / "vae_decoder" / "config.json";
+    file.open(vae_config_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
+    data = nlohmann::json::parse(file);
+    read_json_param(data, "block_out_channels", block_out_channels);
 }
 
-SD3Transformer2DModel::SD3Transformer2DModel(const std::string root_dir) :
-    m_config(root_dir + "/config.json") {
-    m_model = ov::Core().read_model(root_dir + "/openvino_model.xml");
+SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir) :
+    m_config(root_dir / "config.json") {
+    m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
+
+    // compute VAE scale factor
+    m_vae_scale_factor = std::pow(2, m_config.block_out_channels.size() - 1);
 }
 
-SD3Transformer2DModel::SD3Transformer2DModel(const std::string& root_dir,
+SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir,
                 const std::string& device,
                 const ov::AnyMap& properties) :
     SD3Transformer2DModel(root_dir) {
@@ -68,12 +79,12 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size, int height
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
+            name_to_shape[input_name][0] = batch_size;
         } else if (input_name == "hidden_states") {
             name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name][0] = batch_size;
-            name_to_shape[input_name][1] = tokenizer_model_max_length;
+            name_to_shape[input_name][1] = tokenizer_model_max_length * 2;
         } else if (input_name == "pooled_projections") {
             name_to_shape[input_name][0] = batch_size;
         }
@@ -86,7 +97,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size, int height
 
 SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = ov::Core().compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
@@ -101,10 +112,6 @@ void SD3Transformer2DModel::set_hidden_states(const std::string& tensor_name, ov
 
 size_t SD3Transformer2DModel::get_vae_scale_factor() const {
     return m_vae_scale_factor;
-}
-
-void SD3Transformer2DModel::set_vae_scale_factor(size_t vae_scale_factor) {
-    m_vae_scale_factor = vae_scale_factor;
 }
 
 ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input,

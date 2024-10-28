@@ -74,7 +74,7 @@ public:
         // FLUX: prompt2 (prompt if prompt2 is not defined explicitly)
         // SD 3: prompt2, prompt3 (with fallback to prompt) and negative_prompt2, negative_prompt3
         std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
-        std::string negative_prompt, negative_prompt_2, negative_prompt_3;
+        std::optional<std::string> negative_prompt = std::nullopt, negative_prompt_2 = std::nullopt, negative_prompt_3 = std::nullopt;
 
         size_t num_images_per_prompt = 1;
 

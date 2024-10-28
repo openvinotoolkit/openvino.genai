@@ -190,7 +190,7 @@ std::vector<int64_t> DDIMScheduler::get_timesteps() const {
 }
 
 std::vector<float> DDIMScheduler::get_float_timesteps() const {
-    return std::vector<float>();
+    OPENVINO_THROW("DDIMScheduler doesn't support float timesteps");
 }
 
 float DDIMScheduler::get_init_noise_sigma() const {

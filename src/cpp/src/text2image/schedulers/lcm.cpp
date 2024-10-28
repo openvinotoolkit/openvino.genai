@@ -209,7 +209,7 @@ std::vector<int64_t> LCMScheduler::get_timesteps() const {
 }
 
 std::vector<float> LCMScheduler::get_float_timesteps() const {
-    return std::vector<float>();
+    OPENVINO_THROW("LCMScheduler doesn't support float timesteps");
 }
 
 float LCMScheduler::get_init_noise_sigma() const {
