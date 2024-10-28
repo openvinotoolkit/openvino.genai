@@ -35,14 +35,7 @@ CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir,
                              const std::string& device,
                              const ov::AnyMap& properties) :
     CLIPTextModel(root_dir) {
-    AdapterConfig adapters;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
-        adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or("lora_te"));
-        m_adapter_controller = AdapterController(m_model, adapters, device);
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, properties);
 }
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
@@ -66,7 +59,15 @@ CLIPTextModel& CLIPTextModel::reshape(int batch_size) {
 CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model;
+    std::optional<AdapterConfig> adapters;
+    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_te"));
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+        compiled_model = core.compile_model(m_model, device, *filtered_properties);
+    } else {
+        compiled_model = core.compile_model(m_model, device, properties);
+    }
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
@@ -74,8 +75,10 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     return *this;
 }
 
-void CLIPTextModel::set_adapters(const AdapterConfig& adapters) {
-    m_adapter_controller.apply(m_request, adapters);
+void CLIPTextModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    if(adapters) {
+        m_adapter_controller.apply(m_request, *adapters);
+    }
 }
 
 ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
