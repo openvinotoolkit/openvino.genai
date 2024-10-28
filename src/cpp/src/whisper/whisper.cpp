@@ -8,13 +8,13 @@
 #include <regex>
 #include <thread>
 
-#include "utils.hpp"
 #include "logit_processor.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "timestamps.hpp"
+#include "utils.hpp"
 #include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
@@ -299,10 +299,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     size_t segment_offset = 0;
 
     for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
-        if (output_tokens.size() >= max_new_tokens) {
-            break;
-        }
-
         auto input_features_chunk = input_features.get_data_with_offset(chunk_offset, feature_extractor.nb_max_frames);
 
         ov::Tensor hidden_state_tensor = encode(models.encoder,
@@ -320,10 +316,12 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                             config,
                                                             models,
                                                             init_ids,
-                                                            max_new_tokens - output_tokens.size(),
+                                                            max_new_tokens,
                                                             return_timestamps,
                                                             raw_metrics,
                                                             streamer);
+
+        models.decoder_with_past.reset_state();
 
         if (return_timestamps) {
             auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,

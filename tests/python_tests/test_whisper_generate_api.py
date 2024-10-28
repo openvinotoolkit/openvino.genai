@@ -19,6 +19,8 @@ import typing
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
+    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+
     if (path / "openvino_encoder_model.xml").exists():
         opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
             path,
@@ -54,8 +56,8 @@ def read_whisper_model(params, **tokenizer_kwargs):
         opt_model.generation_config.save_pretrained(path)
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
+        processor.save_pretrained(path)
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
     opt_pipe = pipeline(
         "automatic-speech-recognition",
         model=opt_model,
