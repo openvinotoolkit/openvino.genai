@@ -9,7 +9,7 @@ from datasets import load_dataset
 from diffusers import DiffusionPipeline
 from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
-from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoProcessor, AutoModel
+from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoProcessor, AutoModel, AutoModelForVision2Seq
 
 from optimum.exporters.tasks import TasksManager
 from optimum.intel import OVPipelineForText2Image
@@ -160,14 +160,9 @@ def load_visual_text_model(
         ov_options = None
 
     if use_hf:
-        from transformers import LlavaNextForConditionalGeneration
-        HF_VM_CLASS_MAP = {
-            "llava_next" : LlavaNextForConditionalGeneration
-        }
-
         logger.info("Using HF Transformers API")
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        model = HF_VM_CLASS_MAP[config.model_type].from_pretrained(
+        model = AutoModelForVision2Seq.from_pretrained(
             model_id, trust_remote_code=True, device_map=device.lower()
         )
     elif use_genai:
