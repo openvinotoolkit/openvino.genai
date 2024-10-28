@@ -3,10 +3,10 @@
 
 #include "openvino/genai/text2image/sd3_transformer_2d_model.hpp"
 
-#include "utils.hpp"
-#include "json_utils.hpp"
-
 #include <fstream>
+
+#include "json_utils.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -40,8 +40,8 @@ SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) 
     read_json_param(data, "block_out_channels", block_out_channels);
 }
 
-SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir) :
-    m_config(root_dir / "config.json") {
+SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir)
+    : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
 
     // compute VAE scale factor
@@ -49,9 +49,9 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_d
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir,
-                const std::string& device,
-                const ov::AnyMap& properties) :
-    SD3Transformer2DModel(root_dir) {
+                                             const std::string& device,
+                                             const ov::AnyMap& properties)
+    : SD3Transformer2DModel(root_dir) {
     compile(device, properties);
 }
 
@@ -61,20 +61,23 @@ const SD3Transformer2DModel::Config& SD3Transformer2DModel::get_config() const {
     return m_config;
 }
 
-SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size, int height, int width, int tokenizer_model_max_length) {
+SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
+                                                      int height,
+                                                      int width,
+                                                      int tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
-    //hidden_states=latent_model_input,
-    //timestep=timestep,
-    //encoder_hidden_states=prompt_embeds,
-    //pooled_projections=pooled_prompt_embeds,
+    // hidden_states=latent_model_input,
+    // timestep=timestep,
+    // encoder_hidden_states=prompt_embeds,
+    // pooled_projections=pooled_prompt_embeds,
 
     height /= m_vae_scale_factor;
     width /= m_vae_scale_factor;
 
     std::map<std::string, ov::PartialShape> name_to_shape;
 
-    for (auto && input : m_model->inputs()) {
+    for (auto&& input : m_model->inputs()) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
@@ -83,7 +86,9 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size, int height
             name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name][0] = batch_size;
-            name_to_shape[input_name][1] = tokenizer_model_max_length * 2;
+            name_to_shape[input_name][1] =
+                tokenizer_model_max_length *
+                2;  // x2 is necessary because of the concatenation of prompt_embeds and t5_prompt_embeds
         } else if (input_name == "pooled_projections") {
             name_to_shape[input_name][0] = batch_size;
         }
@@ -113,8 +118,7 @@ size_t SD3Transformer2DModel::get_vae_scale_factor() const {
     return m_vae_scale_factor;
 }
 
-ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input,
-                                        const ov::Tensor timestep) {
+ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
     m_request.set_tensor("hidden_states", latent_model_input);
@@ -124,5 +128,5 @@ ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input,
     return m_request.get_output_tensor();
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov
