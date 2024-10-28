@@ -551,17 +551,15 @@ protected:
                 const float* image_embeds_data = image_embeds[image_idx].data<const float>();
                 size_t image_seq_length = image_embeds[image_idx].get_shape()[1];
 
-                for (size_t i = 0; i < image_seq_length; ++i) {
-                    std::copy_n(image_embeds_data + i * hidden_size,
-                            hidden_size,
+                std::copy_n(image_embeds_data,
+                            image_seq_length * hidden_size,
                             merged_data + merged_idx * hidden_size);
-                    merged_idx++;
-                }
+                merged_idx += image_seq_length;
                 image_idx++;
             } else {
                 std::copy_n(text_embeds_data + s * hidden_size,
-                        hidden_size,
-                        merged_data + merged_idx * hidden_size);
+                            hidden_size,
+                            merged_data + merged_idx * hidden_size);
                 merged_idx++;
             }
         }
