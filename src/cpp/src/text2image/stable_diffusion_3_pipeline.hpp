@@ -42,9 +42,7 @@ ov::Tensor split_2d_by_batch(const ov::Tensor input, size_t batch_num) {
     ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1]});
 
     size_t shift = batch_num * input.get_shape()[1];
-    std::memcpy(result.data<float>(),
-                input.data<float>() + shift,
-                result.get_shape()[1] * sizeof(float));
+    std::memcpy(result.data<float>(), input.data<float>() + shift, result.get_shape()[1] * sizeof(float));
 
     return result;
 }
@@ -142,7 +140,7 @@ public:
             m_clip_text_encoder_2 =
                 std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, properties);
         } else {
-            OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
+            OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
 
         // TODO: text_encoder_3
@@ -231,10 +229,8 @@ public:
         std::string prompt_3_str =
             generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
 
-
-        std::string negative_prompt_1_str = generation_config.negative_prompt!= std::nullopt
-                                                ? *generation_config.negative_prompt
-                                                : "";
+        std::string negative_prompt_1_str =
+            generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : "";
         std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt
                                                 ? *generation_config.negative_prompt_2
                                                 : negative_prompt_1_str;
@@ -258,9 +254,10 @@ public:
         ov::Tensor prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 1);
 
         // text_encoder_2_output - stores positive and negative pooled_prompt_2_embeds
-        ov::Tensor text_encoder_2_output = m_clip_text_encoder_2->infer(prompt_2_str,
-                                                                        negative_prompt_2_str,
-                                                                        do_classifier_free_guidance(generation_config.guidance_scale));
+        ov::Tensor text_encoder_2_output =
+            m_clip_text_encoder_2->infer(prompt_2_str,
+                                         negative_prompt_2_str,
+                                         do_classifier_free_guidance(generation_config.guidance_scale));
 
         // get positive pooled_prompt_2_embed_out
         ov::Tensor pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 1);
@@ -585,7 +582,9 @@ private:
     void check_image_size(const int height, const int width) const override {
         assert(m_transformer != nullptr);
         const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
-        OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
+        const size_t patch_size = m_transformer->get_patch_size();
+        OPENVINO_ASSERT((height % (vae_scale_factor * patch_size) == 0 || height < 0) &&
+                            (width % (vae_scale_factor * patch_size) == 0 || width < 0),
                         "Both 'width' and 'height' must be divisible by",
                         vae_scale_factor);
     }
