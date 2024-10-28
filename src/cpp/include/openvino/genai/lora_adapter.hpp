@@ -22,7 +22,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
 
-// Inmutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
+// Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
 class OPENVINO_GENAI_EXPORTS Adapter {
     class Impl;
     std::shared_ptr<Impl> m_pimpl;
@@ -190,8 +190,9 @@ public:
     // Apply adapters configured in the current config set last time, or set and use new config given as optional `config` argument
     void apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config = std::nullopt);
 
-    // the next call of apply will set all adapter tensors regardless of config change, use this method if full state.reset is called for the controlled model
-    void force_full_apply(bool full_apply = true);
+    // Returns true if a given name is one of the state names created by this adapter controller for dynamic LoRA
+    // Helps to distinguish LoRA states from other states (e.g. KV cache state) in the model for a partial state reset.
+    bool has_state_name(const std::string& name);
 
     operator bool() const {
         return bool(m_pimpl);

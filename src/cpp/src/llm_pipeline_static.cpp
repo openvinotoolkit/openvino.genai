@@ -55,7 +55,7 @@ void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     }
 }
 
-bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
+bool is_cw_compressed(const std::shared_ptr<ov::Model>& model) {
     std::vector<std::string> rt_info_path = {"nncf", "weight_compression", "group_size"};
     if (!model->has_rt_info(rt_info_path)) {
         // NB: Model isn't compressed by NNCF - skip
@@ -84,13 +84,6 @@ std::optional<T> get_option(ov::AnyMap& config, const std::string& option_name) 
         return std::make_optional(it->second.as<T>());
     }
     return std::nullopt;
-}
-
-void enable_npuw_dq_if_allowed(ov::AnyMap& config,
-                               const std::shared_ptr<ov::Model>& model) {
-    if (allow_to_enable_npuw_dq(model)) {
-        config["NPUW_DQ"] = "YES";
-    }
 }
 
 std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
@@ -241,13 +234,15 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
 
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+        { "NPUW_DEVICES", "NPU" },
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE", "YES"},
         { "NPUW_WEIGHTS_BANK", "shared" },
-        { "NPUW_PMM", "NO" }
+        { "NPUW_SLICE_OUT", "YES" },
+        { "NPUW_FUNCALL_ASYNC", "YES" }
     };
     return config;
 }
@@ -260,19 +255,16 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     } else {
         config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
     }
-    enable_npuw_dq_if_allowed(config, model);
     return config;
 }
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
-    // NB: Empty config for devices != NPU
-    if (!npudesc.has_value()) {
-        return { };
-    }
     auto config = get_default_common_config(model);
-    if (get_option<std::string>(config, "NPUW_FUNCALL_FOR_ALL").value_or("NO") == "YES") {
-        config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    if (is_cw_compressed(model)) {
+        config.emplace("NPUW_DQ", "YES");
+    } else {
+        config.emplace("NPUW_PMM", "NO");
     }
     if (npudesc.has_value() &&
         npudesc->arch == "4000" &&
@@ -284,13 +276,12 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
 
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
                                        const std::optional<NPUDesc>& npudesc) {
-    // NB: Empty config for devices != NPU
-    if (!npudesc.has_value()) {
-        return { };
-    }
     auto config = get_default_common_config(model);
-    config.emplace("NPUW_FUNCALL_ASYNC", "YES");
-    config.emplace("NPUW_PARALLEL_COMPILE", "YES");
+    // NB: Unconditionally set for generation model
+    config.emplace("NPUW_DQ", "YES");
+    if (npudesc.has_value() && npudesc->arch == "4000") {
+        config.emplace("NPU_DPU_GROUPS", 4);
+    }
     return config;
 }
 
@@ -432,13 +423,11 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    // NB: If NPU specified but not available - fallback to CPU
-    const auto target_device = (device == "NPU" && !npudesc.has_value()) ? "CPU" : device;
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, target_device, generate_config
+        m_kvcache_model, device, generate_config
     ).create_infer_request();
     m_prefill_request = core.compile_model(
-        m_prefill_model, target_device, prefill_config
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
 }
 

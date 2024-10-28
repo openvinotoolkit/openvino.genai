@@ -156,6 +156,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
     } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
         return py::cast<ov::genai::SchedulerConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) { 
+        return py::cast<ov::genai::AdapterConfig>(py_obj);
     } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }
@@ -232,13 +234,12 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
 
         if (item.second.is_none()) {
             // Even if argument key name does not fit GenerationConfig name 
-            // it's not an eror if it's not defined. 
-            // Some HF configs can have parameters for methods currenly unsupported in ov_genai
+            // it's not an error if it's not defined. 
+            // Some HF configs can have parameters for methods currently unsupported in ov_genai
             // but if their values are not set / None, then this should not block 
             // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
             return res_config;
-        }
-        
+        }  
         if (key == "max_new_tokens") {
             res_config.max_new_tokens = py::cast<int>(item.second);
         } else if (key == "max_length") {
@@ -271,6 +272,8 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
             res_config.repetition_penalty = py::cast<float>(item.second);
         } else if (key == "eos_token_id") {
             res_config.set_eos_token_id(py::cast<int>(item.second));
+        } else if (key == "adapters") {
+            res_config.adapters = py::cast<ov::genai::AdapterConfig>(item.second);
         } else {
             throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
                                         "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));

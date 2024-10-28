@@ -228,8 +228,8 @@ public:
     }
 
     /**
-     * Returns the number of overwriteable blocks (in a prefix caching scenario).
-     * @return Number of overwriteable blocks for this layer.
+     * Returns the number of overwritable blocks (in a prefix caching scenario).
+     * @return Number of overwritable blocks for this layer.
      */
     size_t num_overwriteable_blocks() const {
         return m_overwriteable_blocks.num_blocks();

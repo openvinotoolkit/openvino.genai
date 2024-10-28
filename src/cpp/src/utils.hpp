@@ -24,11 +24,14 @@ ov::Tensor extend_attention(ov::Tensor attention_mask);
 
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
 
+template <typename T> struct OmitOptional { using value = T; };
+template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
+
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
     if (it != config_map.end()) {
-        param = it->second.as<T>();
+        param = it->second.as<typename OmitOptional<T>::value>();
     }
 }
 
