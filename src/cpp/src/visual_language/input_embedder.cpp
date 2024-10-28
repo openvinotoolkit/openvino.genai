@@ -485,7 +485,7 @@ public:
                     {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
                     reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
                 };
-                EncodedImage encoded_image = m_vision_encoder.encode(image);
+                EncodedImage encoded_image = m_vision_encoder.encode(single_image);
                 image_embeds.push_back(std::move(encoded_image.resized_source));
                 formatted_prompt += image_token + "\n";
             }
@@ -607,7 +607,7 @@ public:
                     {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
                     reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
                 };
-                EncodedImage encoded_image = m_vision_encoder.encode(image);
+                EncodedImage encoded_image = m_vision_encoder.encode(single_image);
 
                 if (!image_newline) {
                     size_t embed_dim = encoded_image.resized_source.get_shape().at(2);
