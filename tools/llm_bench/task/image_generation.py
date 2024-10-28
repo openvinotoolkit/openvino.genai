@@ -49,6 +49,11 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         if 'turbo' in args['model_name']:
             additional_args["guidance_scale"] = 0.0
     input_text_list = [input_text] * args['batch_size']
+    input_data = pipe.tokenizer(input_text, return_tensors='pt')
+    input_data.pop('token_type_ids', None)
+    # Remove `token_type_ids` from inputs
+    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
+    input_token_size = input_tokens[0].numel()
     if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
@@ -65,6 +70,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     generation_time = end - start
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
+        in_size=input_token_size * args['batch_size'],
         infer_count=nsteps,
         gen_time=generation_time,
         res_md5=result_md5_list,
