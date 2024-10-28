@@ -39,6 +39,5 @@ from .py_openvino_genai import (
     AggregationMode,
     Generator,
     CppStdGenerator,
-    draft_model,
-    CandidatesMathingType
+    draft_model
 )

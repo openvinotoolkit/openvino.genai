@@ -49,7 +49,7 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, ov::genai::CandidatesMathingType token_matching_type);
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample);
 
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;

@@ -18,26 +18,22 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
     ov::genai::GenerationConfig generation_config_greedy_constant = ov::genai::greedy();
     {
         generation_config_greedy_constant.num_assistant_tokens = 5;
-        generation_config_greedy_constant.candidates_matching_type = ov::genai::CandidatesMathingType::ASSISTANT_GENERATION;
     }
 
     ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
     {
         generation_config_multinomial_constant.num_assistant_tokens = 5;
         generation_config_multinomial_constant.num_return_sequences = 1;
-        generation_config_greedy_constant.candidates_matching_type = ov::genai::CandidatesMathingType::ASSISTANT_GENERATION;
     }
 
     ov::genai::GenerationConfig generation_config_greedy_dynamic = ov::genai::greedy();
     {
         generation_config_greedy_dynamic.assistant_confidence_threshold = 0.8f;
-        generation_config_greedy_constant.candidates_matching_type = ov::genai::CandidatesMathingType::SPECULATIVE_DECODING;
     }
 
     ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::multinomial();
     {
         generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
-        generation_config_greedy_constant.candidates_matching_type = ov::genai::CandidatesMathingType::SPECULATIVE_DECODING;
     }
 
     return {
