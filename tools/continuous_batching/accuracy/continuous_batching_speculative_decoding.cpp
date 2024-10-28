@@ -18,7 +18,6 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
     ov::genai::GenerationConfig generation_config_greedy_constant = ov::genai::greedy();
     {
         generation_config_greedy_constant.num_assistant_tokens = 5;
-        generation_config_greedy_constant.max_new_tokens = 5;
     }
 
     ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
