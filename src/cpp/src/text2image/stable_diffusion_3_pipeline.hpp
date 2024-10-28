@@ -229,8 +229,7 @@ public:
         std::string prompt_3_str =
             generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
 
-        std::string negative_prompt_1_str =
-            generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : "";
+        std::string negative_prompt_1_str = generation_config.negative_prompt;
         std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt
                                                 ? *generation_config.negative_prompt_2
                                                 : negative_prompt_1_str;
@@ -582,7 +581,7 @@ private:
     void check_image_size(const int height, const int width) const override {
         assert(m_transformer != nullptr);
         const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
-        const size_t patch_size = m_transformer->get_patch_size();
+        const size_t patch_size = m_transformer->get_config().patch_size;
         OPENVINO_ASSERT((height % (vae_scale_factor * patch_size) == 0 || height < 0) &&
                             (width % (vae_scale_factor * patch_size) == 0 || width < 0),
                         "Both 'width' and 'height' must be divisible by",
@@ -599,12 +598,12 @@ private:
             generation_config.prompt_3 == std::nullopt || generation_config.negative_prompt_3 == std::nullopt,
             "T5Encoder is not currently supported, 'prompt_3' and 'negative_prompt_3' can't be used. Please, add "
             "support.");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt == std::nullopt,
-                        "Negative prompt is not used when guidance scale <= 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(),
+                        "Negative prompt is not used when guidance scale < 1.0");
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt,
-                        "Negative prompt 2 is not used when guidance scale <= 1.0");
+                        "Negative prompt 2 is not used when guidance scale < 1.0");
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_3 == std::nullopt,
-                        "Negative prompt 3 is not used when guidance scale <= 1.0");
+                        "Negative prompt 3 is not used when guidance scale < 1.0");
     }
 
     std::shared_ptr<SD3Transformer2DModel> m_transformer;

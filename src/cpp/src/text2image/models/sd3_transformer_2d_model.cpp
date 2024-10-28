@@ -46,7 +46,6 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_d
 
     // compute VAE scale factor
     m_vae_scale_factor = std::pow(2, m_config.block_out_channels.size() - 1);
-    m_patch_size = m_config.patch_size;
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir,
@@ -62,7 +61,6 @@ const SD3Transformer2DModel::Config& SD3Transformer2DModel::get_config() const {
     return m_config;
 }
 
-// TODO:
 SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size, int height, int width, int tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
@@ -113,10 +111,6 @@ void SD3Transformer2DModel::set_hidden_states(const std::string& tensor_name, ov
 
 size_t SD3Transformer2DModel::get_vae_scale_factor() const {
     return m_vae_scale_factor;
-}
-
-size_t SD3Transformer2DModel::get_patch_size() const {
-    return m_patch_size;
 }
 
 ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input,

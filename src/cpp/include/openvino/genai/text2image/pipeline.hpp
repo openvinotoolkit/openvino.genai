@@ -69,12 +69,13 @@ public:
     };
 
     struct OPENVINO_GENAI_EXPORTS GenerationConfig {
-        // LCM: prompt only w/o negative prompt
-        // SD XL: prompt2 and negative_prompt2
-        // FLUX: prompt2 (prompt if prompt2 is not defined explicitly)
-        // SD 3: prompt2, prompt3 (with fallback to prompt) and negative_prompt2, negative_prompt3
+        // LCM: prompt only w/o negative_prompt
+        // SD XL: prompt_2 and negative_prompt2
+        // FLUX: prompt_2 (prompt if prompt_2 is not defined explicitly)
+        // SD 3: prompt_2, prompt3 (with fallback to prompt) and negative_prompt_2, negative_prompt_3
         std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
-        std::optional<std::string> negative_prompt = std::nullopt, negative_prompt_2 = std::nullopt, negative_prompt_3 = std::nullopt;
+        std::string negative_prompt;
+        std::optional<std::string> negative_prompt_2 = std::nullopt, negative_prompt_3 = std::nullopt;
 
         size_t num_images_per_prompt = 1;
 

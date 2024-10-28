@@ -65,13 +65,12 @@ public:
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
 
     size_t get_vae_scale_factor() const;
-    size_t get_patch_size() const;
 
 private:
     Config m_config;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
-    size_t m_vae_scale_factor, m_patch_size;
+    size_t m_vae_scale_factor;
 };
 
 }  // namespace genai

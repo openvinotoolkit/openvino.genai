@@ -57,7 +57,9 @@ void Text2ImagePipeline::GenerationConfig::update_generation_config(const ov::An
 }
 
 void Text2ImagePipeline::GenerationConfig::validate() const {
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt == std::nullopt, "Guidance scale < 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt.empty(), "Guidance scale < 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt");
 }
 
 //
