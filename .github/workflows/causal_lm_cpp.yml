@@ -49,6 +49,8 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+          wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
       - run: >
           . ./ov/setupvars.sh
           && timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
@@ -63,6 +65,11 @@ jobs:
           . ./ov/setupvars.sh
           && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+        env:
+          PYTHONPATH: "./build"
+      - run: >
+          . ./ov/setupvars.sh
+          && samples/python/greedy_causal_lm/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
         env:
           PYTHONPATH: "./build"
 
@@ -237,6 +244,8 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+          curl -o adapter_model.safetensors -s -L https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
@@ -259,6 +268,11 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
+      - run: >
+          set PATH=.\build\openvino_genai\;%PATH%
+          && set "PYTHONPATH=./build/"
+          && call .\ov\setupvars.bat
+          && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
