@@ -75,6 +75,13 @@ public:
 
     void compile(const std::string& device, const ov::AnyMap& properties = {});
 
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(
+            const std::string& device,
+            Properties&&... properties) {
+        return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
     ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 

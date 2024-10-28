@@ -26,9 +26,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor image = pipe.generate(prompt, rgb,
         ov::genai::width(width),
         ov::genai::height(height),
-        ov::genai::strength(0.4f),
-        ov::genai::num_inference_steps(20),
-        ov::genai::num_images_per_prompt(1));
+        ov::genai::strength(0.6f),
+        ov::genai::num_images_per_prompt(2));
 
     // writes `num_images_per_prompt` images by pattern name
     imwrite("image_%d.bmp", image, true);

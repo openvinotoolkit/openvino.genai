@@ -172,6 +172,14 @@ public:
 
         if (initial_image) {
             latent = m_vae->encode(initial_image);
+            if (generation_config.num_images_per_prompt > 1) {
+                ov::Tensor batched_latent(ov::element::f32, latent_shape);
+                for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
+                    batch_copy(latent, batched_latent, 0, n);
+                }
+                latent = batched_latent;
+            }
+
             m_scheduler->add_noise(latent, generation_config.random_generator);
         } else {
             latent.set_shape(latent_shape);
