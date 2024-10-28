@@ -39,9 +39,9 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
 
     return {
         generation_config_greedy_constant,
-        // generation_config_multinomial_constant,
-        // generation_config_greedy_dynamic,
-        // generation_config_multinomial_dynamic,
+        generation_config_multinomial_constant,
+        generation_config_greedy_dynamic,
+        generation_config_multinomial_dynamic,
     };
 }
 
@@ -79,7 +79,6 @@ int main(int argc, char* argv[]) try {
     const std::string device = result["device"].as<std::string>();
 
     std::vector<std::string> prompt_examples = {
-        "| Project Charter |  |\n| --- | --- |\n|  | 2. Users may not be satisfied with the functionality or usability of the application, which could affect user adoption. <br> 3. Security breaches or data loss could occur, which could compromise user data and trust. <br> 4. The project budget may exceed expectations due to unforeseen issues or scope changes. |\n| **Approvals:** | The following approvals are required for this project: <br> - Project Charter: [Project Sponsor's Name] <br> - Finalized Design: [Project Sponsor's Name] <br> - User Acceptance Testing: [Project Sponsor's Name] |\n| **Project Success Criteria:** | The success of the project will be measured by the following criteria: <br> 1. Completion of the project on time and within budget. <br> 2. User satisfaction with the application and its features. <br> 3. Reduction in the time and effort required to generate appraisal reports. <br> 4. Improvement in the accuracy and quality of appraisal reports. <br> 5. Increased efficiency in the appraisal process. |\n| **Conclusion:** | This project charter outlines the scope, objectives, deliverables, timeline, budget, project team, assumptions and risks, and approvals required for the development of a web-based commercial appraisal report writing application. The success of the project will be measured by completion on time and within budget, user satisfaction, reduction in time and effort required for appraisal reports, improved accuracy and quality of appraisal reports, and increased efficiency in the appraisal process. |",
         "What is OpenVINO?",
         "How are you?",
         "What is your name?",
@@ -110,14 +109,14 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config;
     // batch size
-    scheduler_config.max_num_batched_tokens = 256;
+    scheduler_config.max_num_batched_tokens = 32;
     // cache params
     scheduler_config.num_kv_blocks = 364;
     scheduler_config.block_size = get_default_block_size(device);
     // mode - vLLM or dynamic_split_fuse
-    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
-    scheduler_config.max_num_seqs = 256;
+    scheduler_config.max_num_seqs = 2;
     
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);

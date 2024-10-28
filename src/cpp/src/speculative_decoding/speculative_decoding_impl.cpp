@@ -141,6 +141,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     m_main_pipeline->step();
     main_timer.end();
     m_sd_metrics.main_duration += main_timer.get_duration();
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
