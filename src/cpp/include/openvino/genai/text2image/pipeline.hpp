@@ -85,7 +85,7 @@ public:
         int64_t width = -1;
         size_t num_inference_steps = 50;
 
-        AdapterConfig adapters;
+        std::optional<AdapterConfig> adapters;
 
         void update_generation_config(const ov::AnyMap& config_map);
 
