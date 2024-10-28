@@ -22,6 +22,7 @@ Install WWB and its requirements from the source using `pip` or any other packag
 * `python -m venv eval_env`
 * `source eval_env/bin/activate`
 * `pip install -r requirements.txt`
+* `pip install openvino.genai` to validate with OpenVINO GenAI API
 * `pip install .`
 
 ## Usage
