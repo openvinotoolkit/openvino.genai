@@ -299,6 +299,10 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     size_t segment_offset = 0;
 
     for (size_t chunk_offset = 0; chunk_offset < input_features.n_frames; chunk_offset += segment_offset) {
+        if (output_tokens.size() >= max_new_tokens) {
+            break;
+        }
+
         auto input_features_chunk = input_features.get_data_with_offset(chunk_offset, feature_extractor.nb_max_frames);
 
         ov::Tensor hidden_state_tensor = encode(models.encoder,
@@ -316,7 +320,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                             config,
                                                             models,
                                                             init_ids,
-                                                            max_new_tokens,
+                                                            max_new_tokens - output_tokens.size(),
                                                             return_timestamps,
                                                             raw_metrics,
                                                             streamer);
