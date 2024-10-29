@@ -736,7 +736,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python --pre
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python
       - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
           python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv

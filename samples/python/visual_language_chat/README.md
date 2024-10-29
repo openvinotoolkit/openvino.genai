@@ -6,10 +6,10 @@ This example showcases inference of text-generation Vision Language Models (VLMs
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported. [../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios.
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
 ```
 
