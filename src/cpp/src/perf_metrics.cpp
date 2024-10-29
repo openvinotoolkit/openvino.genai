@@ -112,7 +112,6 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
             raw_metrics.m_durations[i] = tok_times[i] - start_time_val;
             
             // If in 10 ms a batch of 5 new tokens is generated then TPOT is 10 / 5 = 2 tok/ms.
-            raw_metrics.m_durations[i] /= batch_sizes[i];
             num_generated_tokens += batch_sizes[i];
             start_time_val = tok_times[i];
         }
