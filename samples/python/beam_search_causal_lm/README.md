@@ -14,6 +14,7 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 ```
 
 ## Run
+
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 `python beam_search_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
