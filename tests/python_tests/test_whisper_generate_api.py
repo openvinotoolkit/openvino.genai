@@ -77,25 +77,31 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
     ds = datasets.load_dataset(dataset_id, "clean", split="validation")
     opt_infer_time = 0
     genai_infer_time = 0
-    failed = 0
+
     for ds_row in ds:
         audio_sample = ds_row["audio"]
 
+        streamer_result = ""
+
+        def streamer(word: str) -> bool:
+            nonlocal streamer_result
+            streamer_result += word
+            return False
+
         start = time.time()
-        genai_result = genai_pipe.generate(audio_sample["array"].tolist())
+        genai_result = genai_pipe.generate(
+            audio_sample["array"].tolist(), streamer=streamer
+        )
         genai_infer_time += time.time() - start
 
         start = time.time()
         result = opt_pipe(audio_sample)
         opt_infer_time += time.time() - start
 
-        if genai_result.texts[0] != result["text"]:
-            print(f'HuggingFace: {result["text"]}\n genai: {genai_result.texts[0]}')
-            failed += 1
+        assert genai_result.texts[0] == result["text"]
+        assert streamer_result == result["text"]
+
     print(f"Inference time\nOpt: {opt_infer_time}\nGenAI: {genai_infer_time}")
-    if failed > 0:
-        print(f"Filed: {failed}")
-    assert failed == 0
 
 
 def get_samples_from_dataset(
@@ -474,21 +480,12 @@ def test_longform_audio_return_timestamps_multilingual(model_descr, test_sample)
         return_timestamps=True,
     )
 
-    streamer_result = ""
-
-    def streamer(word: str) -> bool:
-        nonlocal streamer_result
-        streamer_result += word
-        return False
-
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
-        streamer=streamer,
     )
 
     assert genai_result.texts[0] == expected["text"]
-    assert streamer_result == expected["text"]
 
     assert len(genai_result.chunks) == len(expected["chunks"])
 
@@ -518,21 +515,12 @@ def test_longform_audio_return_timestamps_en(model_descr, test_sample):
         return_timestamps=True,
     )
 
-    streamer_result = ""
-
-    def streamer(word: str) -> bool:
-        nonlocal streamer_result
-        streamer_result += word
-        return False
-
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
-        streamer=streamer,
     )
 
     assert genai_result.texts[0] == expected["text"]
-    assert streamer_result == expected["text"]
 
     assert len(genai_result.chunks) == len(expected["chunks"])
 
