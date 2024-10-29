@@ -5,5 +5,6 @@ einops==0.8.0  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.30.3
 librosa # For Whisper
+transformers>=4.43 # For Whisper
 torchvision  # For visual language models
 timm  # For exporting InternVL2
