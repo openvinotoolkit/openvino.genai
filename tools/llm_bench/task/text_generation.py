@@ -228,6 +228,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     else:
         log.warning("No generated tokens")
     tm_list = np.array(perf_metrics.raw_metrics.m_durations) / 1000 / 1000
+    if args['batch_size'] > 1:
+        tm_list = np.multiply(tm_list, args['batch_size'])
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     tokenization_time = (
