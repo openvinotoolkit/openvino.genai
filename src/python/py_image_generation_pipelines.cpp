@@ -99,7 +99,7 @@ void update_image_generation_config_from_kwargs(
             config.strength = py::cast<float>(value);
         } else {
             throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                        "Use help(openvino_genai.Text2ImagePipeline.GenerationConfig) to get list of acceptable parameters."));
+                                        "Use help(openvino_genai.ImageGenerationConfig) to get list of acceptable parameters."));
         }
     }
 }
@@ -169,7 +169,7 @@ void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
 
-    // init text2image models
+    // init image generation models
     init_clip_text_model(m);
     init_clip_text_model_with_projection(m);
     init_unet2d_condition_model(m);
@@ -186,7 +186,7 @@ void init_image_generation_pipelines(py::module_& m) {
         }))
         .def("next", &ov::genai::CppStdGenerator::next);
 
-    py::class_<ov::genai::ImageGenerationConfig>(m, "GenerationConfig", "This class is used for storing generation config for Text2Image pipeline.")
+    py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())
         .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)
         .def_readwrite("prompt_3", &ov::genai::ImageGenerationConfig::prompt_3)
@@ -271,11 +271,11 @@ void init_image_generation_pipelines(py::module_& m) {
             (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
 
-    auto text2image_scheduler = py::class_<ov::genai::Scheduler>(m, "Scheduler", "Scheduler for image generation pipelines.")
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler>(m, "Scheduler", "Scheduler for image generation pipelines.")
         .def(py::init<>())
         .def("from_config", &ov::genai::Scheduler::from_config);
 
-    py::enum_<ov::genai::Scheduler::Type>(text2image_scheduler, "Type")
+    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
         .value("AUTO", ov::genai::Scheduler::Type::AUTO)
         .value("LCM", ov::genai::Scheduler::Type::LCM)
         .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
