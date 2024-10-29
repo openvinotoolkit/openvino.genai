@@ -74,6 +74,7 @@ private:
     size_t m_vae_scale_factor;
 
     class UNetInferenceDynamic;
+    class UNetInferenceStaticBS1;
 };
 
 } // namespace genai

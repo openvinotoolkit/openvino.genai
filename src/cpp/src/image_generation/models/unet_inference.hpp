@@ -8,37 +8,6 @@
 namespace ov {
 namespace genai {
 
-//REMOVE THIS
-static inline void logBasicModelInfo(const std::shared_ptr<ov::Model>& model) {
-    std::cout << "Model name: " << model->get_friendly_name() << std::endl;
-
-    // Dump information about model inputs/outputs
-    ov::OutputVector inputs = model->inputs();
-    ov::OutputVector outputs = model->outputs();
-
-    std::cout << "\tInputs: " << std::endl;
-    for (const ov::Output<ov::Node>& input : inputs) {
-        const std::string name = input.get_any_name();
-        const ov::element::Type type = input.get_element_type();
-        const ov::PartialShape shape = input.get_partial_shape();
-        const ov::Layout layout = ov::layout::get_layout(input);
-
-        std::cout << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string() << std::endl;
-    }
-
-    std::cout << "\tOutputs: " << std::endl;
-    for (const ov::Output<ov::Node>& output : outputs) {
-        const std::string name = output.get_any_name();
-        const ov::element::Type type = output.get_element_type();
-        const ov::PartialShape shape = output.get_partial_shape();
-        const ov::Layout layout = ov::layout::get_layout(output);
-
-        std::cout << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string() << std::endl;
-    }
-
-    return;
-}
-
 class UNet2DConditionModel::UNetInference {
 
 public:

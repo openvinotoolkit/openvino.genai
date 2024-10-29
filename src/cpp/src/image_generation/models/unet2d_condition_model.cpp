@@ -3,6 +3,8 @@
 
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 #include "image_generation/models/unet_inference_dynamic.hpp"
+#include "image_generation/models/unet_inference_static_bs1.hpp"
+
 #include <fstream>
 
 #include "json_utils.hpp"
@@ -60,7 +62,11 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
 UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
 
-    m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    if (device == "NPU") {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
+    } else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
+    }
 
     std::optional<AdapterConfig> adapters;
     if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
