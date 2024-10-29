@@ -6,16 +6,18 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
 ## Run
 
-`beam_search_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+
+`python beam_search_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
 
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.

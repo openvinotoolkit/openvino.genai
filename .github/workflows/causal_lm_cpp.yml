@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17130-65a8f393ba0/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241024_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17130-65a8f393ba0/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241024_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241014_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17130-65a8f393ba0/w_openvino_toolkit_windows_2024.5.0.dev20241024_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241028_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241028_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241028_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/w_openvino_toolkit_windows_2024.5.0.dev20241028_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -46,9 +46,11 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+          wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
       - run: >
           . ./ov/setupvars.sh
           && timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
@@ -63,6 +65,11 @@ jobs:
           . ./ov/setupvars.sh
           && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+        env:
+          PYTHONPATH: "./build"
+      - run: >
+          . ./ov/setupvars.sh
+          && samples/python/greedy_causal_lm/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
         env:
           PYTHONPATH: "./build"
 
@@ -98,7 +105,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
@@ -234,9 +241,11 @@ jobs:
       - name: Download and convert model
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
+          curl -o adapter_model.safetensors -s -L https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
@@ -259,6 +268,11 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
+      - run: >
+          set PATH=.\build\openvino_genai\;%PATH%
+          && set "PYTHONPATH=./build/"
+          && call .\ov\setupvars.bat
+          && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -285,7 +299,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
       - run: >
@@ -319,7 +333,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
       - run: >
@@ -354,7 +368,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
       - run: >
@@ -389,7 +403,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
       - run: >
@@ -424,7 +438,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
@@ -474,7 +488,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
@@ -546,7 +560,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
       - name: Run Generation
@@ -601,7 +615,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
       - name: Run Generation
@@ -656,7 +670,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
@@ -722,7 +736,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python
       - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
           python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
@@ -846,7 +860,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Run gtests
@@ -892,7 +906,7 @@ jobs:
       - name: Download and convert and model
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Run gtests
@@ -937,7 +951,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Run gtests

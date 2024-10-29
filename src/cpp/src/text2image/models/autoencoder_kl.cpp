@@ -32,6 +32,7 @@ AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     read_json_param(data, "latent_channels", latent_channels);
     read_json_param(data, "out_channels", out_channels);
     read_json_param(data, "scaling_factor", scaling_factor);
+    read_json_param(data, "shift_factor", shift_factor);
     read_json_param(data, "block_out_channels", block_out_channels);
 }
 
@@ -47,14 +48,14 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir,
                              const std::string& device,
                              const ov::AnyMap& properties)
     : AutoencoderKL(root_dir) {
-    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, properties);
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
+
+const AutoencoderKL::Config& AutoencoderKL::get_config() const {
+    return m_config;
+}
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
@@ -74,7 +75,12 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
 AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model;
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compiled_model = core.compile_model(m_model, device, *filtered_properties);
+    } else {
+        compiled_model = core.compile_model(m_model, device, properties);
+    }
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

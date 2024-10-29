@@ -40,5 +40,4 @@ from .py_openvino_genai import (
     Generator,
     CppStdGenerator,
     draft_model
-
 )

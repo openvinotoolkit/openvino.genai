@@ -23,9 +23,9 @@ public:
                                                  bool is_validation_mode_enabled);
 
     void multistep();
-    void finish_request(int64_t request_id = -1);
-    void unlock_next_request_generation();
 
+    void finish_request(int64_t request_id = -1);
+    void pull_awaiting_requests();
     GeneratedRequests get_generated_requests();
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
 
@@ -33,5 +33,6 @@ public:
 
 protected:
     void finish_request(SequenceGroup::Ptr request);
+    void _pull_awaiting_requests() override {};
 };
 }
