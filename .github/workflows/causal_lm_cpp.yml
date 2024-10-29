@@ -274,6 +274,41 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
+  cpp-greedy_causal_lm-Chatglm3-6b:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --task text-generation-with-past --model THUDM/chatglm3-6b chatglm3-6b
+      - run: > 
+          . ./ov/setupvars.sh
+          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ 69) -
+        env:
+          PYTHONPATH: "./build"
+
+
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -492,6 +527,78 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
+      - name: run and compare
+        run: |
+          source ./ov/setupvars.sh
+
+          echo 'Code:```python
+          def add(a, b):
+              return a + b
+          ```
+          Question: Can you please add 2 and 3
+          A:' > ./prompt.txt
+
+          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_prompt_lookup.txt', 'r') as f:
+              predicted_prompt_lookup = f.readline()
+          assert predicted_greedy == predicted_prompt_lookup
+          "
+          echo "Prompt lookup" passed
+      - name: run and compare (model with seq_length_axis = 1)
+        run: |
+          source ./ov/setupvars.sh
+
+          echo 'Code:```python
+          def add(a, b):
+              return a + b
+          ```
+          Question: Can you please add 2 and 3
+          A:' > ./prompt.txt
+
+          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_prompt_lookup.txt', 'r') as f:
+              predicted_prompt_lookup = f.readline()
+          assert predicted_greedy == predicted_prompt_lookup
+          "
+          echo "Prompt lookup" passed
+
+  cpp-prompt_lookup_decoding_lm-ubuntu-Chatglm3-6b:
+    runs-on: ubuntu-20.04-16-cores
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.12
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --task text-generation-with-past --model THUDM/chatglm3-6b chatglm3-6b
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
