@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "visual_language/image_embedder.hpp"
+#include "visual_language/inputs_embedder.hpp"
 
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
