@@ -60,7 +60,7 @@ public:
 
     void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
 
-    void set_adapters(const AdapterConfig& adapters);
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
 
     ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep);
 

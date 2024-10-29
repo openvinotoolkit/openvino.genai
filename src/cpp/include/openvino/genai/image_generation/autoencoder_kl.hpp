@@ -24,6 +24,7 @@ public:
         size_t latent_channels = 4;
         size_t out_channels = 3;
         float scaling_factor = 0.18215f;
+        float shift_factor = 0.0609f;
         std::vector<size_t> block_out_channels = { 64 };
 
         explicit Config(const std::filesystem::path& config_path);
@@ -75,7 +76,7 @@ public:
 
     ov::Tensor encode(ov::Tensor image);
 
-    Config get_config() const;
+    const Config& get_config() const;
 
     size_t get_vae_scale_factor() const;
 

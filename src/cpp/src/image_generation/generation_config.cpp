@@ -39,7 +39,6 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, SD_GENERATION_CONFIG, *this);
 
     // then try per-parameter values
-    read_anymap_param(properties, "image", image);
     read_anymap_param(properties, "prompt_2", prompt_2);
     read_anymap_param(properties, "prompt_3", prompt_3);
     read_anymap_param(properties, "negative_prompt", negative_prompt);
@@ -59,6 +58,8 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
 
 void ImageGenerationConfig::validate() const {
     OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt.empty(), "Guidance scale < 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt 2");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt 3");
 }
 
 }  // namespace genai

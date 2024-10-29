@@ -17,6 +17,7 @@
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
+#include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 
 namespace ov {
@@ -44,24 +45,32 @@ public:
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(
-        const std::shared_ptr<Scheduler>& scheduler_type,
+        const std::shared_ptr<Scheduler>& scheduler,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae);
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline latent_consistency_model(
-        const std::shared_ptr<Scheduler>& scheduler_type,
+        const std::shared_ptr<Scheduler>& scheduler,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae);
 
     // creates SDXL pipeline from building blocks
     static Text2ImagePipeline stable_diffusion_xl(
-        const std::shared_ptr<Scheduler>& scheduler_type,
+        const std::shared_ptr<Scheduler>& scheduler,
         const CLIPTextModel& clip_text_model,
         const CLIPTextModelWithProjection& clip_text_model_with_projection,
         const UNet2DConditionModel& unet,
+        const AutoencoderKL& vae);
+
+    // creates SD3 pipeline from building blocks
+    static Text2ImagePipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const SD3Transformer2DModel& transformer,
         const AutoencoderKL& vae);
 
     ImageGenerationConfig get_generation_config() const;

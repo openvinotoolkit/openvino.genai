@@ -32,6 +32,7 @@ AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "latent_channels", latent_channels);
     read_json_param(data, "out_channels", out_channels);
+    read_json_param(data, "shift_factor", shift_factor);
     read_json_param(data, "scaling_factor", scaling_factor);
     read_json_param(data, "block_out_channels", block_out_channels);
 }
@@ -138,7 +139,7 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
     return m_encoder_request.get_output_tensor();
 }
 
-AutoencoderKL::Config AutoencoderKL::get_config() const {
+const AutoencoderKL::Config& AutoencoderKL::get_config() const {
     return m_config;
 }
 

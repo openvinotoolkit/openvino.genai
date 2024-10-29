@@ -19,7 +19,7 @@ namespace genai {
 
 class StableDiffusionXLPipeline : public DiffusionPipeline {
 public:
-    explicit StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
+    StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
@@ -81,32 +81,22 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            AdapterConfig adapters;
-            std::filesystem::path path = root_dir / "text_encoder";
-            if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
-                auto clip_properties = properties;
-                adapters.set_tensor_name_prefix("lora_te1");
-                clip_properties[ov::genai::adapters.name()] = adapters;
-                m_clip_text_encoder = std::make_shared<CLIPTextModel>(path, device, clip_properties);
-            } else {
-                m_clip_text_encoder = std::make_shared<CLIPTextModel>(path, device, properties);
-            }
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(
+                root_dir / "text_encoder",
+                device,
+                properties_for_text_encoder(properties, "lora_te1")
+            );
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            AdapterConfig adapters;
-            std::filesystem::path path = root_dir / "text_encoder_2";
-            if(update_adapters_from_properties(properties, adapters) && !adapters.get_tensor_name_prefix()) {
-                auto clip_properties = properties;
-                adapters.set_tensor_name_prefix("lora_te2");
-                clip_properties[ov::genai::adapters.name()] = adapters;
-                m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(path, device, clip_properties);
-            } else {
-                m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(path, device, properties);
-            }
+            m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
+                root_dir / "text_encoder_2",
+                device,
+                properties_for_text_encoder(properties, "lora_te2")
+            );
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
@@ -415,8 +405,8 @@ private:
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale < 1.0");
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             if (initial_image) {
@@ -435,6 +425,15 @@ private:
             OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
         }
+    }
+
+    ov::AnyMap properties_for_text_encoder(ov::AnyMap properties, const std::string& tensor_name_prefix) {
+        std::optional<AdapterConfig> adapters;
+        if(update_adapters_from_properties(properties, adapters) && !adapters->get_tensor_name_prefix()) {
+            adapters->set_tensor_name_prefix(tensor_name_prefix);
+            properties[ov::genai::adapters.name()] = *adapters;
+        }
+        return properties;
     }
 
     friend class Text2ImagePipeline;

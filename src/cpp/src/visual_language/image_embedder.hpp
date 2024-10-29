@@ -11,6 +11,7 @@
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/vlm_config.hpp"
+#include "visual_language/embedding_model.hpp"
 
 namespace ov::genai {
 
@@ -25,7 +26,7 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images);
 
     // returns embedding model which converts token_id(s) to embedding vectors
-    ov::InferRequest get_embedding_model() const;
+    EmbeddingsModel get_embedding_model() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
@@ -36,7 +37,6 @@ public:
     void update_chat_history(const std::string& decoded_results);
     // finishes chat and clears a chat history 
     void finish_chat();
-
 private:
     class IInputsEmbedder;
     std::shared_ptr<IInputsEmbedder> m_impl;

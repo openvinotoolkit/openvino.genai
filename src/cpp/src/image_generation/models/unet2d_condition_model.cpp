@@ -47,14 +47,7 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
                                            const std::string& device,
                                            const ov::AnyMap& properties) :
     UNet2DConditionModel(root_dir) {
-    AdapterConfig adapters;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
-        adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or("lora_unet"));
-        m_adapter_controller = AdapterController(m_model, adapters, device);
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, properties);
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
@@ -94,7 +87,15 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
 UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model;
+    std::optional<AdapterConfig> adapters;
+    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_unet"));
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+        compiled_model = core.compile_model(m_model, device, *filtered_properties);
+    } else {
+        compiled_model = core.compile_model(m_model, device, properties);
+    }
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
@@ -107,8 +108,10 @@ void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov:
     m_request.set_tensor(tensor_name, encoder_hidden_states);
 }
 
-void UNet2DConditionModel::set_adapters(const AdapterConfig& adapters) {
-    m_adapter_controller.apply(m_request, adapters);
+void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    if(adapters) {
+        m_adapter_controller.apply(m_request, *adapters);
+    }
 }
 
 ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {

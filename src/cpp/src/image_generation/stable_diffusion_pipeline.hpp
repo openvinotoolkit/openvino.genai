@@ -45,7 +45,7 @@ ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding
 
 class StableDiffusionPipeline : public DiffusionPipeline {
 public:
-    explicit StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
+    StableDiffusionPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
@@ -353,8 +353,8 @@ private:
         } else if (!is_classifier_free_guidance) {
             OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
         }
-        OPENVINO_ASSERT(generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             if (initial_image) {

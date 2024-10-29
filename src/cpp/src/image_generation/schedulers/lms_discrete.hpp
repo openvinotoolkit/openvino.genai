@@ -35,6 +35,8 @@ public:
 
     std::vector<std::int64_t> get_timesteps() const override;
 
+    std::vector<float> get_float_timesteps() const override;
+
     float get_init_noise_sigma() const override;
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;

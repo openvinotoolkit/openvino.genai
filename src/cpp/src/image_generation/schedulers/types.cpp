@@ -53,6 +53,8 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Schedu
             param = Scheduler::LMS_DISCRETE;
         else if (scheduler_type_str == "EulerDiscreteScheduler")
             param = Scheduler::EULER_DISCRETE;
+        else if (scheduler_type_str == "FlowMatchEulerDiscreteScheduler")
+            param = Scheduler::FLOW_MATCH_EULER_DISCRETE;
         else if (!scheduler_type_str.empty()) {
             OPENVINO_THROW("Unsupported value for 'prediction_type' ", scheduler_type_str);
         }

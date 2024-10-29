@@ -56,6 +56,7 @@ auto text2image_generate_docstring = R"(
     num_inference_steps: int - number of inference steps,
     random_generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
     adapters: LoRA adapters
+    strength: strength for image to image generation. 1.0f means initial image is fully noised
 
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
@@ -90,10 +91,12 @@ void update_image_generation_config_from_kwargs(
         } else if (key == "num_inference_steps") {
             config.num_inference_steps = py::cast<size_t>(value);
         } else if (key == "random_generator") {
-            auto py_generator =py::cast<std::shared_ptr<ov::genai::Generator>>(value);
+            auto py_generator = py::cast<std::shared_ptr<ov::genai::Generator>>(value);
             config.random_generator = py_generator;
         } else if (key == "adapters") {
             config.adapters = py::cast<ov::genai::AdapterConfig>(value);
+        } else if (key == "strength") {
+            config.strength = py::cast<float>(value);
         } else {
             throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
                                         "Use help(openvino_genai.Text2ImagePipeline.GenerationConfig) to get list of acceptable parameters."));
@@ -133,6 +136,8 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
             params.insert({ov::genai::random_generator(std::move(py_generator))});
         } else if (key == "adapters") {
             params.insert({ov::genai::adapters(std::move(py::cast<ov::genai::AdapterConfig>(value)))});
+        } else if (key == "strength") {
+            params.insert({ov::genai::strength(std::move(py::cast<float>(value)))});
         }
         else {
             if (allow_compile_properties) {
@@ -195,6 +200,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("num_inference_steps", &ov::genai::ImageGenerationConfig::num_inference_steps)
         .def_readwrite("num_images_per_prompt", &ov::genai::ImageGenerationConfig::num_images_per_prompt)
         .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
+        .def_readwrite("strength", &ov::genai::ImageGenerationConfig::strength)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
             ov::genai::ImageGenerationConfig config,
@@ -274,5 +280,6 @@ void init_image_generation_pipelines(py::module_& m) {
         .value("LCM", ov::genai::Scheduler::Type::LCM)
         .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
         .value("DDIM", ov::genai::Scheduler::Type::DDIM)
-        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE);
+        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
+        .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
 }

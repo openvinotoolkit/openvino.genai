@@ -42,11 +42,9 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     // SD XL: prompt2 and negative_prompt2
     // FLUX: prompt2 (prompt if prompt2 is not defined explicitly)
     // SD 3: prompt2, prompt3 (with fallback to prompt) and negative_prompt2, negative_prompt3
+    std::string negative_prompt;
     std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
-    std::string negative_prompt, negative_prompt_2, negative_prompt_3;
-
-    // Optional image for image to image generation
-    ov::Tensor image;
+    std::optional<std::string> negative_prompt_2 = std::nullopt, negative_prompt_3 = std::nullopt;
 
     size_t num_images_per_prompt = 1;
 
@@ -64,7 +62,7 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     // for text to image pipeline it must be set to 1.0f
     float strength = 1.0f;
 
-    AdapterConfig adapters;
+    std::optional<AdapterConfig> adapters;
 
     void update_generation_config(const ov::AnyMap& config_map);
 
