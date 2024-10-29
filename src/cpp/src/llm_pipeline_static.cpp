@@ -415,7 +415,7 @@ void StaticLLMPipeline::setupAndCompileModels(
         properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     auto generate_config = pop_or_default(
-        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
+        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc)
     );
     merge_config_with(prefill_config, properties);
     merge_config_with(generate_config, properties);
