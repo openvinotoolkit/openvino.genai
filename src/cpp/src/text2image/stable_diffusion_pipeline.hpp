@@ -295,8 +295,8 @@ private:
         } else if (!is_classifier_free_guidance) {
             OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
         }
-        OPENVINO_ASSERT(generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
     }
 
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;

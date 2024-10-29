@@ -32,6 +32,7 @@ AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     read_json_param(data, "latent_channels", latent_channels);
     read_json_param(data, "out_channels", out_channels);
     read_json_param(data, "scaling_factor", scaling_factor);
+    read_json_param(data, "shift_factor", shift_factor);
     read_json_param(data, "block_out_channels", block_out_channels);
 }
 
@@ -51,6 +52,10 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& root_dir,
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
+
+const AutoencoderKL::Config& AutoencoderKL::get_config() const {
+    return m_config;
+}
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");

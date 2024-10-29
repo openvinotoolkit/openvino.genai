@@ -51,6 +51,8 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Text2I
             param = Text2ImagePipeline::Scheduler::LMS_DISCRETE;
         else if (scheduler_type_str == "EulerDiscreteScheduler")
             param = Text2ImagePipeline::Scheduler::EULER_DISCRETE;
+        else if (scheduler_type_str == "FlowMatchEulerDiscreteScheduler")
+            param = Text2ImagePipeline::Scheduler::FLOW_MATCH_EULER_DISCRETE;
         else if (!scheduler_type_str.empty()) {
             OPENVINO_THROW("Unsupported value for 'prediction_type' ", scheduler_type_str);
         }

@@ -358,8 +358,8 @@ private:
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2.empty(), "Negative prompt 2 is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(generation_config.negative_prompt_3.empty(), "Negative prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale < 1.0");
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
     }
 
     ov::AnyMap properties_for_text_encoder(ov::AnyMap properties, const std::string& tensor_name_prefix) {
