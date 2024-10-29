@@ -10,9 +10,8 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT>'");
     }
 
-    ov::genai::GenerationConfig config = ov::genai::multinomial();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    config.num_return_sequences = 1;
     // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
     // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5;
