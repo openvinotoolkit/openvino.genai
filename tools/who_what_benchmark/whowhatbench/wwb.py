@@ -325,8 +325,12 @@ def parse_args():
 
 
 def check_args(args):
-    assert not (args.base_model is None and args.target_model is None)
-    assert not (args.base_model is None and args.gt_data is None)
+    if args.base_model is None and args.target_model is None:
+        raise ValueError("Wether --base-model or --target-model should be provided")
+    if args.base_model is None and args.gt_data is None:
+        raise ValueError("Wether --base-model or --gt-data should be provided")
+    if args.target_model is None and args.gt_data is None:
+        raise ValueError("Wether --target-model or --gt-data should be provided")
 
 
 def load_tokenizer(args):
