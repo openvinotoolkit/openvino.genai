@@ -49,7 +49,7 @@ protected:
               const DeviceConfig& device_config,
               ov::Core& core);
 
-    void _pull_awaiting_requests();
+    virtual void _pull_awaiting_requests();
 
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
 public:

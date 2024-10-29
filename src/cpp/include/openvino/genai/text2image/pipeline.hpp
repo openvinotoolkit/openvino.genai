@@ -19,6 +19,7 @@
 #include "openvino/genai/text2image/clip_text_model_with_projection.hpp"
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
 #include "openvino/genai/text2image/autoencoder_kl.hpp"
+#include "openvino/genai/text2image/sd3_transformer_2d_model.hpp"
 
 namespace ov {
 namespace genai {
@@ -57,7 +58,8 @@ public:
             LCM,
             LMS_DISCRETE,
             DDIM,
-            EULER_DISCRETE
+            EULER_DISCRETE,
+            FLOW_MATCH_EULER_DISCRETE
         };
 
         static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,
@@ -67,12 +69,13 @@ public:
     };
 
     struct OPENVINO_GENAI_EXPORTS GenerationConfig {
-        // LCM: prompt only w/o negative prompt
-        // SD XL: prompt2 and negative_prompt2
-        // FLUX: prompt2 (prompt if prompt2 is not defined explicitly)
-        // SD 3: prompt2, prompt3 (with fallback to prompt) and negative_prompt2, negative_prompt3
+        // LCM: prompt only w/o negative_prompt
+        // SD XL: prompt_2 and negative_prompt2
+        // FLUX: prompt_2 (prompt if prompt_2 is not defined explicitly)
+        // SD 3: prompt_2, prompt3 (with fallback to prompt) and negative_prompt_2, negative_prompt_3
         std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
-        std::string negative_prompt, negative_prompt_2, negative_prompt_3;
+        std::string negative_prompt;
+        std::optional<std::string> negative_prompt_2 = std::nullopt, negative_prompt_3 = std::nullopt;
 
         size_t num_images_per_prompt = 1;
 
@@ -85,7 +88,7 @@ public:
         int64_t width = -1;
         size_t num_inference_steps = 50;
 
-        AdapterConfig adapters;
+        std::optional<AdapterConfig> adapters;
 
         void update_generation_config(const ov::AnyMap& config_map);
 
@@ -131,6 +134,14 @@ public:
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae_decoder);
 
+    // creates SD3 pipeline from building blocks
+    static Text2ImagePipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler_type,
+        const CLIPTextModelWithProjection& clip_text_model_1,
+        const CLIPTextModelWithProjection& clip_text_model_2,
+        const SD3Transformer2DModel& transformer,
+        const AutoencoderKL& vae_decoder);
+
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);
 
@@ -160,6 +171,7 @@ private:
 
     class StableDiffusionPipeline;
     class StableDiffusionXLPipeline;
+    class StableDiffusion3Pipeline;
 };
 
 //

@@ -12,16 +12,19 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+
 Download assisting and main model to run speculative decoding sample.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
 optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
 ```
 
 ## Run
+
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 `python speculative_decoding_lm.py ./dolly-v2-7b ./dolly-v2-3b "Why is the Sun yellow?"`
 
