@@ -24,9 +24,9 @@ def preprocess_fn(example):
     return {"prompts": example["instruction"], "images": get_pil_from_url(example["image_url"])}
 
 
-def prepare_default_data():
+def prepare_default_data(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
-    NUM_SAMPLES = 24
+    NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(DATASET_NAME, split="test").\
         shuffle(seed=42).take(NUM_SAMPLES)
@@ -50,7 +50,7 @@ def register_input_maker(*names):
 
 
 @register_input_maker("llava", "llava_next")
-def prepare_llama_inputs(processor, image, prompt):
+def prepare_llava_inputs(processor, image, prompt):
     conversation = [
         {
             "role": "user",
@@ -195,22 +195,14 @@ class VisualTextEvaluator(TextEvaluator):
                 )
                 self.language = autodetect_language(model)
 
-            data = pd.DataFrame.from_dict(prepare_default_data())
+            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         prompt_data = data["prompts"]
         image_data = data["images"]
 
         answers = []
-        prompts = (
-            prompt_data.values
-            if self.num_samples is None
-            else prompt_data.values[: self.num_samples]
-        )
-        images = (
-            image_data.values
-            if self.num_samples is None
-            else image_data.values[: self.num_samples]
-        )
+        prompts = prompt_data.values
+        images = image_data.values
 
         for p, i in tqdm(zip(prompts, images), desc="Evaluate pipeline"):
             answers.append(

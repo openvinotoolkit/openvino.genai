@@ -1,5 +1,6 @@
 import argparse
 import difflib
+import numpy as np
 import os
 import json
 import pandas as pd
@@ -7,6 +8,7 @@ from PIL import Image
 import logging
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
+from openvino import Tensor
 from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoProcessor, AutoModel, AutoModelForVision2Seq
@@ -150,6 +152,20 @@ def load_text2image_model(
     return model
 
 
+def load_visual_text_genai_pipeline(model_dir, device="CPU"):
+    try:
+        import openvino_genai
+    except ImportError:
+        logger.error("Failed to import openvino_genai package. Please install it.")
+        exit(-1)
+    logger.info("Using OpenVINO GenAI API")
+    return GenAIModelWrapper(
+        openvino_genai.VLMPipeline(model_dir, device),
+        model_dir,
+        "visual-text"
+    )
+
+
 def load_visual_text_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
@@ -166,8 +182,8 @@ def load_visual_text_model(
             model_id, trust_remote_code=True, device_map=device.lower()
         )
     elif use_genai:
-        raise NotImplementedError("GenAI implementation is absent")
-        
+        model = load_visual_text_genai_pipeline(model_id, device)
+
     else:
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
@@ -183,7 +199,6 @@ def load_visual_text_model(
                 device=device,
                 ov_config=ov_options,
             )
-
     return model
 
 
@@ -425,7 +440,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
@@ -443,6 +458,16 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
     )
     image = Image.fromarray(image_tensor.data[0])
     return image
+
+
+def genai_gen_visual_text(model, prompt, image, processor, max_new_tokens, crop_question):
+    config = openvino_genai.GenerationConfig()
+    config.max_new_tokens = max_new_tokens
+    config.do_sample = False
+    prompt = input('question:\n')
+    image_data = Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
+    out = model.generate(prompt, images=image_data, generation_config=config)
+    return out
 
 
 def create_evaluator(base_model, args):
@@ -465,7 +490,7 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=genai_gen_answer if args.genai else None,
+                gen_answer_fn=genai_gen_text if args.genai else None,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -487,7 +512,7 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
-                gen_answer_fn=genai_gen_answer if args.genai else None,
+                gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
             )
         else:
