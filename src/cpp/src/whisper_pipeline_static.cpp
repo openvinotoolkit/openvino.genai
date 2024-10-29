@@ -442,8 +442,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         }
     }
 
-    m_models.decoder_with_past.reset_state();
-
     if (streamer_ptr) {
         streamer_ptr->end();
     }
