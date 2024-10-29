@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <filesystem>
 #include <list>
 #include <string>
 
@@ -13,27 +12,25 @@
 namespace ov {
 namespace genai {
 
-class LMSDiscreteScheduler : public IScheduler {
+class FlowMatchEulerDiscreteScheduler : public IScheduler {
 public:
     struct Config {
         int32_t num_train_timesteps = 1000;
-        float beta_start = 0.00085f, beta_end = 0.012f;
-        BetaSchedule beta_schedule = BetaSchedule::SCALED_LINEAR;
-        PredictionType prediction_type = PredictionType::EPSILON;
-        std::vector<float> trained_betas = {};
-        TimestepSpacing timestep_spacing = TimestepSpacing::LINSPACE;
-        size_t steps_offset = 0;
+        float shift = 1.0f;
+        bool use_dynamic_shifting = false;
+        float base_shift = 0.5f, max_shift = 1.15f;
+        int32_t base_image_seq_len = 256, max_image_seq_len = 4096;
 
         Config() = default;
         explicit Config(const std::filesystem::path& scheduler_config_path);
     };
 
-    explicit LMSDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
-    explicit LMSDiscreteScheduler(const Config& scheduler_config);
+    explicit FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path);
+    explicit FlowMatchEulerDiscreteScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps) override;
 
-    std::vector<std::int64_t> get_timesteps() const override;
+    std::vector<int64_t> get_timesteps() const override;
 
     std::vector<float> get_float_timesteps() const override;
 
@@ -43,15 +40,20 @@ public:
 
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
 
+    void set_begin_index(size_t begin_index);
+
 private:
     Config m_config;
 
-    std::vector<float> m_alphas, m_betas, m_alphas_cumprod;
-    std::vector<float> m_sigmas, m_log_sigmas;
-    std::vector<int64_t> m_timesteps;
-    std::list<std::vector<float>> m_derivative_list;
+    std::vector<float> m_sigmas;
+    std::vector<float> m_timesteps;
 
-    int64_t _sigma_to_t(float sigma) const;
+    float m_sigma_min, m_sigma_max;
+    size_t m_step_index, m_begin_index;
+    size_t m_num_inference_steps;
+
+    void init_step_index();
+    float sigma_to_t(float simga);
 };
 
 } // namespace genai
