@@ -543,34 +543,6 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
     return out_tokens;
 }
 
-Token Sampler::_speculative_sampling(const Logits& logits, float p_prime) {
-    // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
-    std::vector<float> multinomial_weights;
-    multinomial_weights.reserve(logits.m_size);
-    if (logits.is_vector_initialized()) {
-        for (auto& logit: logits.m_vector) {
-            float updated_weight = logit.m_log_prob / p_prime;
-            multinomial_weights.emplace_back(updated_weight);
-        }
-    } else {
-        multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
-    }
-
-    // std::discrete_distribution returns corrupted results when applied to log probabilities
-    // which result returning NAN only logprobs.
-    // so log() is applied after this line
-    auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-
-    size_t element_to_pick = dist(rng_engine);
-    if (logits.is_vector_initialized()) {
-        auto logit = logits.m_vector[element_to_pick];
-        logit.m_log_prob = std::log(logit.m_log_prob);
-        return logit;
-    }
-    else
-        return { std::log(logits.m_data[element_to_pick]), element_to_pick };
-}
-
 std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequence_group) {
     auto sampling_params = sequence_group->get_sampling_parameters();
     std::vector<int64_t> dropped_seq_ids;
@@ -738,9 +710,18 @@ float get_p_prime(Sequence::Ptr& running_sequence,
 
     running_sequence->remove_last_tokens(token_offset);
 
+    float cumulative_prob = 0;
+    for (auto& log_prob : running_sequence->get_generated_log_probs()) {
+        cumulative_prob += std::exp(log_prob);
+    }
+
+    if (cumulative_prob == 0.f) {
+        return 1.f;
+    }
+    
     float p_n = std::exp(sampled_token_id.m_log_prob),
           q_n = std::exp(*it_log_prob),
-          p_prime = std::max(0.f, (p_n - q_n)) / std::exp(running_sequence->get_cumulative_log_probs());
+          p_prime = std::max(0.f, (p_n - q_n)) / std::log(cumulative_prob);
 
     return p_prime;
 }
@@ -827,9 +808,14 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             sampled_token_id = sampled_token_ids.front();
                             // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
                             if (!is_validation_passed) {
-                                float p_prime = get_p_prime(running_sequence, sampled_token_id, token_offset);
+                                float p_prime = get_p_prime(running_sequence, sampled_token_id, token_offset + 1);
                                 max_removed_tokens_per_request = std::max(max_removed_tokens_per_request, token_offset);
-                                sampled_token_id = _speculative_sampling(logit_vector, p_prime);
+                                // update prob only in case candidate prob > sampled token prob
+                                if (p_prime > 0.f) {
+                                    auto prob = std::exp(sampled_token_id.m_log_prob);
+                                    prob /= p_prime;
+                                    sampled_token_id.m_log_prob = std::log(prob);
+                                }
                             }
                         }
                         // flag to add sampled token to generated sequence or extend logit processors only
