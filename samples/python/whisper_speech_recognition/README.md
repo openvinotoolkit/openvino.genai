@@ -28,9 +28,9 @@ python recorder.py
 
 ## Run the Whisper model
 
-[../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios: converting models and deployment.
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
-`whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
+`python whisper_speech_recognition.py whisper-base how_are_you_doing_today.wav`
 
 Output:
 ```

@@ -24,7 +24,7 @@ optimum-cli export openvino --trust-remote-code --weight-format fp16 --model dat
 
 ## Run
 
-[../../deployment-requirements.txt](../../deployment-requirements.txt) describes the requirements to deploy all samples. [../../requirements.txt](../../requirements.txt) includes packages for both scenarios: converting models and deployment.
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 `python speculative_decoding_lm.py ./dolly-v2-7b ./dolly-v2-3b "Why is the Sun yellow?"`
 
