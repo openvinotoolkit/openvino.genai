@@ -46,6 +46,7 @@ class Sampler {
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits) const;
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
+    Token _speculative_sampling(const Logits& logits, float p_prime);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
