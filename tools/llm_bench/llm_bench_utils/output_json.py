@@ -24,7 +24,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         for idx_md5 in range(len(iter_data['result_md5'])):
             result_md5.append(iter_data['result_md5'][idx_md5])
 
-        timestamp_start, timestamp_end = get_timestamp(model_args['subsequent'], iter_data, iter_timestamp)
+        timestamp_start, timestamp_end = get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
 
         res_data = {
             'iteration': iter_data['iteration'],
@@ -56,18 +56,12 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         json.dump(output_result, outfile)
 
 
-def get_timestamp(is_subsequent, iter_data, iter_timestamp):
+def get_timestamp(iter_idx, prompt_idx, iter_timestamp):
     timestamp_start = ''
     timestamp_end = ''
-    if is_subsequent is False:
-        first_idx = iter_data['iteration']
-        second_idx = iter_data['prompt_idx']
-    else:
-        first_idx = iter_data['prompt_idx']
-        second_idx = iter_data['iteration']
-    if first_idx in iter_timestamp.keys():
-        if second_idx in iter_timestamp[first_idx].keys():
-            timestamp_start = iter_timestamp[first_idx][second_idx]['start']
-            timestamp_end = iter_timestamp[first_idx][second_idx]['end']
+    if iter_idx in iter_timestamp.keys():
+        if prompt_idx in iter_timestamp[iter_idx].keys():
+            timestamp_start = iter_timestamp[iter_idx][prompt_idx]['start']
+            timestamp_end = iter_timestamp[iter_idx][prompt_idx]['end']
 
     return timestamp_start, timestamp_end

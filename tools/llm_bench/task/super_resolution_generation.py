@@ -117,12 +117,10 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
-    iter_timestamp = {}
+    iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     for num in range(num_iters + 1):
-        iter_timestamp[num] = {}
         for image_id, img in enumerate(image_list):
             p_idx = prompt_idx_list[image_id]
-            iter_timestamp[num][p_idx] = {}
             if num == 0:
                 if args["output_dir"] is not None:
                     llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, p_idx, None, proc_id)
