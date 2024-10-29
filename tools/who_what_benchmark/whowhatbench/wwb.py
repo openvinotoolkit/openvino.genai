@@ -484,7 +484,7 @@ def create_evaluator(base_model, args):
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
         prompts = load_prompts(args)
 
-        if task == "text-generation":
+        if task == "text":
             tokenizer = load_tokenizer(args)
             return EvaluatorCLS(
                 base_model=base_model,
