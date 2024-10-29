@@ -17,6 +17,8 @@ public:
 
     virtual std::vector<std::int64_t> get_timesteps() const = 0;
 
+    virtual std::vector<float> get_float_timesteps() const = 0;
+
     virtual float get_init_noise_sigma() const = 0;
 
     virtual void scale_model_input(ov::Tensor sample, size_t inference_step) = 0;

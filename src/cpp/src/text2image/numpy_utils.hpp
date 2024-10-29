@@ -6,9 +6,12 @@
 #include <vector>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+
+#include "openvino/core/shape.hpp"
 
 namespace ov {
 namespace genai {
@@ -41,6 +44,12 @@ void rescale_zero_terminal_snr(std::vector<float>& betas);
 
 // np.interp(...) implementation
 std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp);
+
+void concat_3d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+void concat_3d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+void concat_2d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+void concat_2d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
 
 } // namespace ov
 } // namespace genai

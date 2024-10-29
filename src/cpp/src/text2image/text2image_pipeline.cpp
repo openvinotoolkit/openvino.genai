@@ -3,6 +3,7 @@
 
 #include "text2image/stable_diffusion_pipeline.hpp"
 #include "text2image/stable_diffusion_xl_pipeline.hpp"
+#include "text2image/stable_diffusion_3_pipeline.hpp"
 
 #include <ctime>
 #include <cstdlib>
@@ -57,6 +58,8 @@ void Text2ImagePipeline::GenerationConfig::update_generation_config(const ov::An
 
 void Text2ImagePipeline::GenerationConfig::validate() const {
     OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt.empty(), "Guidance scale < 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt");
 }
 
 //
@@ -71,6 +74,8 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
         m_impl = std::make_shared<StableDiffusionPipeline>(root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir);
+    } else if (class_name == "StableDiffusion3Pipeline") {
+        m_impl = std::make_shared<StableDiffusion3Pipeline>(root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -84,6 +89,8 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
         m_impl = std::make_shared<StableDiffusionPipeline>(root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir, device, properties);
+    } else if (class_name == "StableDiffusion3Pipeline") {
+        m_impl = std::make_shared<StableDiffusion3Pipeline>(root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -117,11 +124,25 @@ Text2ImagePipeline Text2ImagePipeline::latent_consistency_model(
 
 Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
     const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModel& clip_text_model,
-        const CLIPTextModelWithProjection& clip_text_model_with_projection,
-        const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae_decoder) {
+    const CLIPTextModel& clip_text_model,
+    const CLIPTextModelWithProjection& clip_text_model_with_projection,
+    const UNet2DConditionModel& unet,
+    const AutoencoderKL& vae_decoder) {
     auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae_decoder);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return Text2ImagePipeline(impl);
+}
+
+Text2ImagePipeline Text2ImagePipeline::stable_diffusion_3(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const CLIPTextModelWithProjection& clip_text_model_1,
+    const CLIPTextModelWithProjection& clip_text_model_2,
+    const SD3Transformer2DModel& transformer,
+    const AutoencoderKL& vae_decoder){
+    auto impl = std::make_shared<StableDiffusion3Pipeline>(clip_text_model_1, clip_text_model_2, transformer, vae_decoder);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);

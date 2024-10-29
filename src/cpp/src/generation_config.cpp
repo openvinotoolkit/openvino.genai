@@ -120,7 +120,7 @@ bool GenerationConfig::is_multinomial() const {
 }
 
 bool GenerationConfig::is_speculative_decoding() const {
-    return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
+    return (assistant_confidence_threshold > 0 || num_assistant_tokens > 0);
 }
 
 void GenerationConfig::validate() const {
