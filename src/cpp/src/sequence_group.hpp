@@ -609,7 +609,7 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void notify_handle() {
+    void notify_handle(size_t num_output_token_to_push = 0) {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
@@ -625,12 +625,8 @@ public:
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1 &&
                 (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
-                auto previous_step_gen_len = get_num_processed_tokens() > 0 ? get_num_processed_tokens() - get_prompt_len() + 1 : 0;
-                auto generation_len = m_sequences.front()->get_generated_len();
-                if (previous_step_gen_len < generation_len) {
-                    auto token_to_print = generation_len - previous_step_gen_len;
-                    push_partial_outputs(token_to_print);
-                }
+                if (num_output_token_to_push)
+                    push_partial_outputs(num_output_token_to_push);
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
