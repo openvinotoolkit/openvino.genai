@@ -54,7 +54,7 @@ def test_generation_compare_with_stateful():
 def test_length_properties_set_no_exception():
     model_path = get_models_list()[0][1]
     # NB: Check it doesn't throw any exception
-    pipeline_config = { "MAX_PROMPT_LEN": 1024, "MIN_RESPONSE_LEN": 512 }
+    pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
 
