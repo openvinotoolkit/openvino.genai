@@ -37,8 +37,11 @@ struct WhisperDecodedResults : public DecodedResults {
  * @brief Automatic speech recognition pipeline
  */
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
+    class WhisperPipelineImplBase;
+    std::unique_ptr<WhisperPipelineImplBase> m_impl;
+
+    class StaticWhisperPipeline;
+    class WhisperPipelineStatefulImpl;
 
 public:
     /**
@@ -74,7 +77,8 @@ public:
      * @param raw_speech_input raw speech input. Required to be normalized to near [-1, 1] range and have 16k Hz
      * sampling rate.
      * @param generation_config optional GenerationConfig
-     * @param streamer optional streamer
+     * @param streamer optional streamer. Streamer supported for short-form audio (< 30 seconds) with
+     * `return_timestamps=False` only
      * @return WhisperDecodedResults decoded resulting text transcription
      */
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
