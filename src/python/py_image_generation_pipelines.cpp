@@ -28,7 +28,7 @@ public:
     }
 
     ov::Tensor randn_tensor(const ov::Shape& shape) override {
-        PYBIND11_OVERRIDE_PURE(ov::Tensor, Generator, randn_tensor, shape);
+        PYBIND11_OVERRIDE(ov::Tensor, Generator, randn_tensor, shape);
     }
 };
 
