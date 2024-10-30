@@ -368,7 +368,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale >= 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
+        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -404,8 +404,8 @@ private:
         const char * const pipeline_name = "Stable Diffusion XL";
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale < 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale <= 1.0");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
