@@ -704,6 +704,17 @@ EncodedResults StaticLLMPipeline::generate(
         position_ids_data[0] = m_kvcache_desc.num_stored_tokens;
         attention_mask_data[m_kvcache_desc.num_stored_tokens - 1] = 1u;
 
+        // NB: Write KV-cache for the new token to the correct input position for the next iteration
+        for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
+            const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
+            auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+            auto kvcache_in_slice = make_tensor_slice(
+                kvcache_in_tensor, m_kvcache_desc.dim, m_kvcache_desc.num_stored_tokens, m_kvcache_desc.num_stored_tokens + 1
+            );
+            const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
+            m_kvcache_request.set_tensor(output_name, kvcache_in_slice);
+        }
+
         m_kvcache_request.infer();
         m_kvcache_desc.num_stored_tokens += 1;
 
@@ -723,17 +734,6 @@ EncodedResults StaticLLMPipeline::generate(
         // NB: KV-cache is full, further generation is impossible
         if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
             break;
-        }
-
-        // NB: Write KV-cache for the new token to the correct input position for the next iteration
-        for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
-            const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
-            auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
-            auto kvcache_in_slice = make_tensor_slice(
-                kvcache_in_tensor, m_kvcache_desc.dim, m_kvcache_desc.num_stored_tokens - 1, m_kvcache_desc.num_stored_tokens
-            );
-            const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
-            m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
     auto stop_time = std::chrono::steady_clock::now();
