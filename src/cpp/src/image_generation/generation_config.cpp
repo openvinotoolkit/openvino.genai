@@ -68,9 +68,9 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
 }
 
 void ImageGenerationConfig::validate() const {
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt.empty(), "Guidance scale < 1.0 ignores negative prompt");
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt 2");
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt 3");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt.empty(), "Guidance scale <= 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 2");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 3");
 }
 
 }  // namespace genai

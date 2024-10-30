@@ -613,7 +613,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale >= 1.0;
+        return guidance_scale > 1.0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {

@@ -306,7 +306,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale >= 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
+        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -351,7 +351,7 @@ private:
         if (is_lcm) {
             OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
         } else if (!is_classifier_free_guidance) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
+            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
         }
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
