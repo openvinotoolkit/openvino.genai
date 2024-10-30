@@ -730,13 +730,24 @@ def test_left_pad():
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(prompt, generation_config):
+    config = generation_config.copy()
+
+    run_hf_ov_genai_comparison_batched(read_model((
+        "facebook/opt-125m",
+        Path("opt-125m")
+    )), config, prompt)
+
     model_id, path, tokenizer, model, stateful = read_model((
         "facebook/opt-125m",
         Path("opt-125m")
     ))
     cb = get_continuous_batching(path)
-    generated = cb.generate(prompt, **generation_config)
-    reference = stateful.generate(prompt, **generation_config)
+    config = generation_config.copy()
+    reference = stateful.generate(prompt, **config)
+
+    config = generation_config.copy()
+    generated = cb.generate(prompt, **config)
+
     assert generated.texts == reference.texts
     if 1 != generation_config.get("num_return_sequences", 1):
         # Stateful puts zeroes to generated.scores. Don't compare them.
@@ -750,10 +761,15 @@ def test_cb_streamer_vs_return_vs_stateful(prompt):
         "facebook/opt-125m",
         Path("opt-125m")
     ))
+    reference = stateful.generate(prompt, max_new_tokens=20)
+    print("\nreference: ", reference)
+
     cb = get_continuous_batching(path)
     streamed = []
     generated = cb.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
-    reference = stateful.generate(prompt, max_new_tokens=20)
+    print("\ngenerated: ", generated)
+    print("\ngenerated: ", "".join(streamed))
+
     assert generated == "".join(streamed)
     assert "".join(streamed) == reference
 
