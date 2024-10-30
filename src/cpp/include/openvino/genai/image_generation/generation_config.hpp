@@ -23,6 +23,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS Generator {
 public:
     virtual float next() = 0;
+    virtual ov::Tensor randn_tensor(const ov::Shape& shape);
     virtual ~Generator();
 };
 
@@ -49,7 +50,7 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_images_per_prompt = 1;
 
     // random generator to have deterministic results
-    std::shared_ptr<Generator> random_generator = std::make_shared<CppStdGenerator>(42);
+    std::shared_ptr<Generator> generator = std::make_shared<CppStdGenerator>(42);
 
     // the following values depend on HF diffusers class used to perform generation
     float guidance_scale = 7.5f;
@@ -94,7 +95,7 @@ static constexpr ov::Property<size_t> num_inference_steps{"num_inference_steps"}
 
 static constexpr ov::Property<float> strength{"strength"};
 
-static constexpr ov::Property<std::shared_ptr<Generator>> random_generator{"random_generator"};
+static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"};
 
 OPENVINO_GENAI_EXPORTS
 std::pair<std::string, ov::Any> generation_config(const ImageGenerationConfig& generation_config);

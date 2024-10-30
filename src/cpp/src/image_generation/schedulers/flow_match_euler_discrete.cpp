@@ -97,9 +97,7 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     m_step_index = -1, m_begin_index = -1;
 }
 
-std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tensor noise_pred,
-                                                                        ov::Tensor latents,
-                                                                        size_t inference_step) {
+std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
@@ -145,7 +143,7 @@ void FlowMatchEulerDiscreteScheduler::init_step_index() {
     m_step_index = (m_begin_index == -1) ? 0 : m_begin_index;
 }
 
-void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
+void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_flow_match_euler_discrete.py#L117
     OPENVINO_THROW("Not implemented");
 }

@@ -243,12 +243,12 @@ public:
         if (initial_image) {
             OPENVINO_THROW("StableDiffusion3 image to image is not implemented");
         } else {
-            latent.set_shape(latent_shape);
+            latent = generation_config.generator->randn_tensor(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
-            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
-            });
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] *= m_scheduler->get_init_noise_sigma();
         }
 
         return latent;
@@ -275,9 +275,9 @@ public:
 
         check_inputs(generation_config, initial_image);
 
-        if (generation_config.random_generator == nullptr) {
+        if (generation_config.generator == nullptr) {
             uint32_t seed = time(NULL);
-            generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
+            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
         // Input tensors for transformer model
@@ -598,7 +598,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step);
+            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
         }
 
