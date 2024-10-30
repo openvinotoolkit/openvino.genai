@@ -468,9 +468,8 @@ def genai_gen_visual_text(model, prompt, image, processor, max_new_tokens, crop_
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
-    prompt = input('question:\n')
     image_data = Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
-    out = model.generate(prompt, images=image_data, generation_config=config)
+    out = model.generate(prompt, images=[image_data], generation_config=config)
     return out
 
 
