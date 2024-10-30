@@ -8,7 +8,7 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
@@ -17,6 +17,8 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 ```
 
 ## Run
+
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "return 0;"`
 

@@ -256,8 +256,15 @@ public:
         this->start_time = start_time;
     }
 
-    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id) {
-        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], dataset->m_sampling_params[request_id]);
+    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id, bool is_speculative_decoding_enabled) {
+        auto sampling_params = dataset->m_sampling_params[request_id];
+        if (is_speculative_decoding_enabled) {
+            // to enable static speculative decoding
+            sampling_params.num_assistant_tokens = 5;
+            // to enable dynamic speculative decoding
+            // sampling_params.assistant_confidence_threshold = 0.4f;
+        }
+        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], sampling_params);
         std::lock_guard<std::mutex> lock(mutex);
         generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
     }
@@ -306,7 +313,7 @@ public:
     }
 };
 
-void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector) {
+void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector, bool is_speculative_decoding_enabled) {
     double numeric_request_rate;
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -333,7 +340,7 @@ void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* data
     generation_info_collector->set_start_time(std::chrono::steady_clock::now());
     for (size_t request_id = 0; request_id < dataset->size(); ++request_id) {
         std::cout << "Traffic thread adding request to the queue..." << std::endl;
-        generation_info_collector->add_generation(pipe, dataset, request_id);
+        generation_info_collector->add_generation(pipe, dataset, request_id, is_speculative_decoding_enabled);
         if (numeric_request_rate > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(int(distribution(gen) * 1000)));
     }
@@ -434,6 +441,7 @@ int main(int argc, char* argv[]) try {
     ("b,max_batch_size", "A maximum number of batched tokens", cxxopts::value<size_t>()->default_value("256"))
     ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("draft_model", "Path to assistant model directory", cxxopts::value<std::string>()->default_value(""))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
@@ -462,6 +470,7 @@ int main(int argc, char* argv[]) try {
     const size_t max_batch_size = result["max_batch_size"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
+    const std::string draft_model_path = result["draft_model"].as<std::string>();
     const std::string dataset_path = result["dataset"].as<std::string>();
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
@@ -470,6 +479,8 @@ int main(int argc, char* argv[]) try {
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
     const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
+
+    bool is_speculative_decoding_enabled = !draft_model_path.empty();
 
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
@@ -509,6 +520,9 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
 
     ov::AnyMap device_config_map = {};
+    if (is_speculative_decoding_enabled) {
+        device_config_map.insert({ ov::genai::draft_model(draft_model_path) });
+    }
     if (!parse_plugin_config_string(device_config, device_config_map)) {
         std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
         return EXIT_FAILURE;
@@ -524,14 +538,14 @@ int main(int argc, char* argv[]) try {
 
     std::atomic<bool> finishGenerationThread{false};
     if (request_rate == "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
+        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
         trafficSimulatorThread.join();
     }
     
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
     if (request_rate != "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
+        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
         trafficSimulatorThread.join();
     }
     statisticsReporterThread.join();

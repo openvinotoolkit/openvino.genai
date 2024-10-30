@@ -6,7 +6,7 @@ This example showcases inference of speech recognition Whisper Models. The appli
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
@@ -20,6 +20,8 @@ Prepare audio file in wav format with sampling rate 16k Hz.
 You can download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 
 ## Run
+
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
 

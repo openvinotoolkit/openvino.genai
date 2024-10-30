@@ -276,8 +276,8 @@ ov::Tensor prepare_vis_position_ids(
 
 EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source{
-        int(img.get_shape().at(3)),
         int(img.get_shape().at(2)),
+        int(img.get_shape().at(1)),
         {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}
     };
     std::vector<std::vector<clip_image_u8>> imgs = ::slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
@@ -432,8 +432,8 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
 ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig& config) {
     // ov::Tensor to clip_image_u8
     clip_image_u8 input_image{
-        int(image.get_shape().at(3)),
         int(image.get_shape().at(2)),
+        int(image.get_shape().at(1)),
         {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
     };
 
@@ -452,8 +452,8 @@ ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig
 ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
     // ov::Tensor to clip_image_u8
     clip_image_u8 input_image{
-        int(image.get_shape().at(3)),
         int(image.get_shape().at(2)),
+        int(image.get_shape().at(1)),
         {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
     };
 
@@ -579,8 +579,8 @@ std::vector<clip_image_u8> split_image_internvl(
 
 ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_image_u8 input_image{
-        int(image.get_shape().at(3)),
         int(image.get_shape().at(2)),
+        int(image.get_shape().at(1)),
         {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
     };
 
@@ -657,10 +657,13 @@ EncodedImage VisionEncoder::encode_llava(const ov::Tensor& image, const Processo
     m_vision_encoder.set_tensor("pixel_values", pixel_values);
     m_vision_encoder.infer();
 
-    ov::Tensor image_features = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
 
-    return {image_features, resized_source_size};
+    return {std::move(image_features), resized_source_size};
 }
 
 EncodedImage VisionEncoder::encode_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
@@ -669,17 +672,20 @@ EncodedImage VisionEncoder::encode_llava_next(const ov::Tensor& image, const Pro
     m_vision_encoder.set_tensor("pixel_values", pixel_values);
     m_vision_encoder.infer();
 
-    ov::Tensor image_features = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
 
     // Gen number of patches
-    ImageSize original_image_size{image.get_shape().at(2), image.get_shape().at(3)};
+    ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)};
     auto best_resolution = select_best_resolution({original_image_size.width, original_image_size.height}, config.image_grid_pinpoints);
     int num_patches_w = best_resolution.first / config.size_shortest_edge;
     int num_patches_h = best_resolution.second / config.size_shortest_edge;
 
     EncodedImage encoded_image;
-    encoded_image.resized_source = image_features;
+    encoded_image.resized_source = std::move(image_features);
     encoded_image.resized_source_size = resized_source_size;
     encoded_image.patches_grid = {num_patches_h, num_patches_w};
     return encoded_image;
@@ -691,8 +697,11 @@ EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const Proce
     m_vision_encoder.set_tensor("pixel_values", pixel_values);
     m_vision_encoder.infer();
 
-    ov::Tensor image_features = m_vision_encoder.get_output_tensor();
+    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
 
-    return {image_features, resized_source_size};
+    return {std::move(image_features), resized_source_size};
 }

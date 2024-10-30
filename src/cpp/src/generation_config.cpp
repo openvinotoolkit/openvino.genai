@@ -44,6 +44,8 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "do_sample", do_sample);
     read_json_param(data, "repetition_penalty", repetition_penalty);
     read_json_param(data, "eos_token_id", eos_token_id);
+    // note that echo is not present in HF GenerationConfig
+    read_json_param(data, "echo", echo);
 
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
@@ -92,6 +94,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "do_sample", do_sample);
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
+    read_anymap_param(config_map, "echo", echo);
     read_anymap_param(config_map, "adapters", adapters);
 }
 
@@ -117,7 +120,7 @@ bool GenerationConfig::is_multinomial() const {
 }
 
 bool GenerationConfig::is_speculative_decoding() const {
-    return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
+    return (assistant_confidence_threshold > 0 || num_assistant_tokens > 0);
 }
 
 void GenerationConfig::validate() const {
@@ -126,7 +129,7 @@ void GenerationConfig::validate() const {
                     "Please either set do_sample=false to use beam search "
                     "or set num_beams=1 if you with to use multinomial sampling.");
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
-    OPENVINO_ASSERT(max_new_tokens > 0, "'max_new_tokens' must be greater than 0");
+    OPENVINO_ASSERT(max_new_tokens > 0 || (max_new_tokens == 0 && echo), "'max_new_tokens' must be greater than 0, if `echo` is set, 0 is also accepted");
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
     OPENVINO_ASSERT(
         num_beams % num_beam_groups == 0,
