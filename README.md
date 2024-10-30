@@ -192,7 +192,7 @@ def main():
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for additional setup details, or this blog for full instruction [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 
 ```cpp
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "imwrite.hpp"
 int main(int argc, char* argv[]) {
 

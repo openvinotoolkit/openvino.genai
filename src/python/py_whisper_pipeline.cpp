@@ -37,7 +37,8 @@ auto whisper_generate_docstring = R"(
     :param generation_config: generation_config
     :type generation_config: WhisperGenerationConfig or a Dict
 
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
+                     Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
