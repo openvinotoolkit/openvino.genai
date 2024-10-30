@@ -69,7 +69,8 @@ struct TextStreamer {
             print_len = 0;
             return;
         }
-        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+        constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
+        if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
             // Don't print incomplete text
             return;
         } else if (text.size() > print_len) {

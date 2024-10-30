@@ -19,6 +19,8 @@ import typing
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
+    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+
     if (path / "openvino_encoder_model.xml").exists():
         opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
             path,
@@ -54,8 +56,8 @@ def read_whisper_model(params, **tokenizer_kwargs):
         opt_model.generation_config.save_pretrained(path)
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
+        processor.save_pretrained(path)
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
     opt_pipe = pipeline(
         "automatic-speech-recognition",
         model=opt_model,
@@ -67,9 +69,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         model_id,
         path,
         opt_pipe,
-        ov_genai.WhisperPipeline(
-            path, 'CPU', **{'ENABLE_MMAP': False}
-        ),
+        ov_genai.WhisperPipeline(path, "CPU", **{"ENABLE_MMAP": False}),
     )
 
 
@@ -77,25 +77,31 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
     ds = datasets.load_dataset(dataset_id, "clean", split="validation")
     opt_infer_time = 0
     genai_infer_time = 0
-    failed = 0
+
     for ds_row in ds:
         audio_sample = ds_row["audio"]
 
+        streamer_result = ""
+
+        def streamer(word: str) -> bool:
+            nonlocal streamer_result
+            streamer_result += word
+            return False
+
         start = time.time()
-        genai_result = genai_pipe.generate(audio_sample["array"].tolist())
+        genai_result = genai_pipe.generate(
+            audio_sample["array"].tolist(), streamer=streamer
+        )
         genai_infer_time += time.time() - start
 
         start = time.time()
         result = opt_pipe(audio_sample)
         opt_infer_time += time.time() - start
 
-        if genai_result.texts[0] != result["text"]:
-            print(f'HuggingFace: {result["text"]}\n genai: {genai_result.texts[0]}')
-            failed += 1
+        assert genai_result.texts[0] == result["text"]
+        assert streamer_result == result["text"]
+
     print(f"Inference time\nOpt: {opt_infer_time}\nGenAI: {genai_infer_time}")
-    if failed > 0:
-        print(f"Filed: {failed}")
-    assert failed == 0
 
 
 def get_samples_from_dataset(
@@ -194,16 +200,42 @@ def test_whisper_config_constructor(model_descr):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
-def test_max_new_tokens(model_descr, test_sample):
-    model_id, path = model_descr
+def test_whisper_constructors(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(test_sample, max_new_tokens=30)["text"]
+    expected = opt_pipe(test_sample)["text"]
 
-    genai_result = ov_genai.WhisperPipeline(path, 'CPU').generate(
-        test_sample, max_new_tokens=30
-    )
+    genai_result = ov_genai.WhisperPipeline(
+        models_path=path, device="CPU", **{"ENABLE_MMAP": False}
+    ).generate(test_sample)
 
+    assert genai_result.texts[0] == expected
+
+    genai_result = ov_genai.WhisperPipeline(
+        path, "CPU", **{"ENABLE_MMAP": False}
+    ).generate(test_sample)
+    assert genai_result.texts[0] == expected
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
+@pytest.mark.precommit
+def test_max_new_tokens(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(test_sample, max_new_tokens=10)["text"]
+
+    genai_result = pipe.generate(test_sample, max_new_tokens=10)
+
+    assert genai_result.texts[0] == expected
+
+    genai_result = pipe.generate(test_sample)
+
+    assert genai_result.texts[0] != expected
+
+    config = pipe.get_generation_config()
+    config.max_new_tokens = 10
+    genai_result = pipe.generate(test_sample, config)
     assert genai_result.texts[0] == expected
 
 

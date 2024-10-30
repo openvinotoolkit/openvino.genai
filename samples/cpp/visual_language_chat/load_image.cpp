@@ -45,14 +45,14 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
             if (channels * height * width != bytes) {
                 throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
             }
-            std::free(image);
+            stbi_image_free(image);
             image = nullptr;
         }
         bool is_equal(const SharedImageAllocator& other) const noexcept {return this == &other;}
     };
     return ov::Tensor(
         ov::element::u8,
-        ov::Shape{1, size_t(desired_channels), size_t(y), size_t(x)},
+        ov::Shape{1, size_t(y), size_t(x), size_t(desired_channels)},
         SharedImageAllocator{image, desired_channels, y, x}
     );
 }

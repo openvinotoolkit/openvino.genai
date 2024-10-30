@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import datetime
 from PIL import Image
 import hashlib
 import logging as log
@@ -49,6 +50,11 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         if 'turbo' in args['model_name']:
             additional_args["guidance_scale"] = 0.0
     input_text_list = [input_text] * args['batch_size']
+    input_data = pipe.tokenizer(input_text, return_tensors='pt')
+    input_data.pop('token_type_ids', None)
+    # Remove `token_type_ids` from inputs
+    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
+    input_token_size = input_tokens[0].numel()
     if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
@@ -65,6 +71,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     generation_time = end - start
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
+        in_size=input_token_size * args['batch_size'],
         infer_count=nsteps,
         gen_time=generation_time,
         res_md5=result_md5_list,
@@ -115,14 +122,25 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(image_list):
+                p_idx = prompt_idx_list[image_id]
+                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 run_image_generation(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption)
+                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     else:
         for image_id, image_param in enumerate(image_list):
+            p_idx = prompt_idx_list[image_id]
             for num in range(num_iters + 1):
-                run_image_generation(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption)
+                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
+                run_image_generation(image_param, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption)
+                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, iter_timestamp

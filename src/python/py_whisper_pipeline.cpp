@@ -1,17 +1,16 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/whisper_generation_config.hpp"
-#include "openvino/genai/whisper_pipeline.hpp"
-
+#include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
 #include <pybind11/stl/filesystem.h>
-#include <pybind11/functional.h>
+#include <pybind11/stl_bind.h>
 
-#include "tokenizers_path.hpp"
+#include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
+#include "tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::DecodedResults;
@@ -38,7 +37,8 @@ auto whisper_generate_docstring = R"(
     :param generation_config: generation_config
     :type generation_config: WhisperGenerationConfig or a Dict
 
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
+                     Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
@@ -68,54 +68,54 @@ auto whisper_decoded_result_chunk = R"(
 )";
 
 auto whisper_generation_config_docstring = R"(
-    WhisperGenerationConfig parameters
-    max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-    type: int
+    WhisperGenerationConfig
+    :param max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                       `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
+    :type max_length: int
 
-    max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-    type: int
+    :param max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+    :type max_new_tokens: int
 
-    eos_token_id: End of stream token id.
-    type: int
+    :param eos_token_id: End of stream token id.
+    :type eos_token_id: int
 
     Whisper specific parameters:
 
-    decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
-    type: int
+    :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
+    :type decoder_start_token_id: int
 
-    pad_token_id: Padding token id.
-    type: int
+    :param pad_token_id: Padding token id.
+    :type pad_token_id: int
 
-    translate_token_id: Translate token id.
-    type: int
+    :param translate_token_id: Translate token id.
+    :type translate_token_id: int
 
-    transcribe_token_id: Transcribe token id.
-    type: int
+    :param transcribe_token_id: Transcribe token id.
+    :type transcribe_token_id: int
 
-    no_timestamps_token_id: No timestamps token id.
-    type: int
+    :param no_timestamps_token_id: No timestamps token id.
+    :type no_timestamps_token_id: int
 
-    is_multilingual:
-    type: bool
+    :param is_multilingual:
+    :type is_multilingual: bool
 
-    begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
-    type: list[int]
+    :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
+    :type begin_suppress_tokens: list[int]
 
-    suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
-    type: list[int]
+    :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
+    :type suppress_tokens: list[int]
 
-    language: Language token to use for generation in the form of <|en|>.
-              You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
-    type: Optional[str]
+    :param language: Language token to use for generation in the form of <|en|>.
+                     You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
+    :type language: Optional[str]
 
-    lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
-    type: Dict[str, int]
+    :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+    :type lang_to_id: Dict[str, int]
 
-    task: Task to use for generation, either “translate” or “transcribe”
-    type: int
+    :param task: Task to use for generation, either “translate” or “transcribe”
+    :type task: int
 
-    return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
+    :param return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
                        For instance, if you get
                        WhisperDecodedResultChunk
                            start_ts = 0.5
@@ -123,7 +123,7 @@ auto whisper_generation_config_docstring = R"(
                            text = " Hi there!"
                        then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                        Note that a segment of text refers to a sequence of one or more words, rather than individual words.
-    type: bool
+    :type return_timestamps: bool
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -248,7 +248,7 @@ void init_whisper_pipeline(py::module_& m) {
     py::class_<WhisperDecodedResults, DecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
         .def_readonly("chunks", &WhisperDecodedResults::chunks);
 
-    py::class_<WhisperPipeline>(m, "WhisperPipeline")
+    py::class_<WhisperPipeline>(m, "WhisperPipeline", "Automatic speech recognition pipeline")
         .def(py::init([](const std::filesystem::path& models_path,
                          const std::string& device,
                          const py::kwargs& kwargs) {
@@ -263,7 +263,7 @@ void init_whisper_pipeline(py::module_& m) {
              R"(
             WhisperPipeline class constructor.
             models_path (str): Path to the model file.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            device (str): Device to run the model on (e.g., CPU, GPU).
         )")
 
         .def(
