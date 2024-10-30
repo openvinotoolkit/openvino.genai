@@ -133,6 +133,7 @@ void init_vlm_pipeline(py::module_& m) {
 
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat)
+        .def("set_chat_template", &ov::genai::VLMPipeline::set_chat_template)
         .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
         .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config)
