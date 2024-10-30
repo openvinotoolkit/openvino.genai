@@ -392,7 +392,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
         width=model.resolution[0],
         height=model.resolution[1],
         num_inference_steps=num_inference_steps,
-        generator=generator
+        random_generator=generator
     )
     image = Image.fromarray(image_tensor.data[0])
     return image
