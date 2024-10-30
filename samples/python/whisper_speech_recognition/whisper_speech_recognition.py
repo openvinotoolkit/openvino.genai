@@ -30,14 +30,10 @@ def main():
     config.task = "transcribe"
     config.return_timestamps = True
 
-    def streamer(word: str) -> bool:
-        print(word, end="")
-        return False
-
     raw_speech = read_wav(args.wav_file_path)
-    result = pipe.generate(raw_speech, config, streamer)
+    result = pipe.generate(raw_speech, config)
 
-    print()
+    print(result)
 
     for chunk in result.chunks:
         print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
