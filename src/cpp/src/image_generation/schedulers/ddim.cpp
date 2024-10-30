@@ -116,7 +116,7 @@ void DDIMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     }
 }
 
-std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
+std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
@@ -201,16 +201,19 @@ void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) 
     return;
 }
 
-void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
+void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     int64_t latent_timestep = m_timesteps.front();
 
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
+    ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
+
     float * init_latent_data = init_latent.data<float>();
+    const float * rand_tensor_data = rand_tensor.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rng_generator->next();
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
     }
 }
 

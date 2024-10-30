@@ -45,11 +45,7 @@ LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path) :
 }
 
 LCMScheduler::LCMScheduler(const Config& scheduler_config)
-    : m_config(scheduler_config),
-      m_seed(42),
-      m_gen(m_seed),
-      m_normal(0.0f, 1.0f) {
-
+    : m_config(scheduler_config) {
     m_sigma_data = 0.5f; // Default: 0.5
 
     std::vector<float> alphas, betas;
@@ -118,10 +114,9 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     //     temp.push_back(lcm_origin_timesteps[i]);
     // for(size_t i = 0; i < num_inference_steps; i++)
     //     m_timesteps.push_back(temp[i]);
-
 }
 
-std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
+std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     ov::Shape shape = latents.get_shape();
     size_t batch_size = shape[0], latent_size = ov::shape_size(shape) / batch_size;
     float* noise_pred_data = noise_pred.data<float>();
@@ -174,7 +169,7 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     }
 
     // 6. Denoise model output using boundary conditions
-    ov::Tensor denoised(latents.get_element_type(), latents.get_shape());
+    ov::Tensor denoised(latents.get_element_type(), shape);
     float* denoised_data = denoised.data<float>();
     for (std::size_t i = 0; i < batch_size; ++i) {
         for (std::size_t j = 0; j < latent_size; ++j) {
@@ -185,13 +180,15 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     /// 7. Sample and inject noise z ~ N(0, I) for MultiStep Inference
     // Noise is not used on the final timestep of the timestep schedule.
     // This also means that noise is not used for one-step sampling.
-    ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
+    ov::Tensor prev_sample(latents.get_element_type(), shape);
     float* prev_sample_data = prev_sample.data<float>();
 
     if (inference_step != m_num_inference_steps - 1) {
+        ov::Tensor rand_tensor = generator->randn_tensor(shape);
+        const float * rand_tensor_data = rand_tensor.data<float>();
+
         for (std::size_t i = 0; i < batch_size * latent_size; ++i) {
-            float gen_noise = m_normal(m_gen);
-            prev_sample_data[i] = alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * gen_noise;
+            prev_sample_data[i] = alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * rand_tensor_data[i];
         }
     } else {
         std::copy_n(denoised_data, denoised.get_size(), prev_sample_data);
@@ -250,16 +247,19 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     return thresholded_sample;
 }
 
-void LCMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
+void LCMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     int64_t latent_timestep = m_timesteps.front();
 
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
+    ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
+
     float * init_latent_data = init_latent.data<float>();
+    const float * rand_tensor_data = rand_tensor.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rng_generator->next();
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
     }
 }
 

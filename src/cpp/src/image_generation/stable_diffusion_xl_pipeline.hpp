@@ -170,14 +170,14 @@ public:
 
         if (initial_image) {
             latent = m_vae->encode(initial_image);
-            m_scheduler->add_noise(latent, generation_config.random_generator);
+            m_scheduler->add_noise(latent, generation_config.generator);
         } else {
-            latent.set_shape(latent_shape);
+            latent = generation_config.generator->randn_tensor(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
-            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
-            });
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] *= m_scheduler->get_init_noise_sigma();
         }
 
         return latent;
@@ -206,9 +206,9 @@ public:
         m_clip_text_encoder_with_projection->set_adapters(generation_config.adapters);
         m_unet->set_adapters(generation_config.adapters);
 
-        if (generation_config.random_generator == nullptr) {
+        if (generation_config.generator == nullptr) {
             uint32_t seed = time(NULL);
-            generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
+            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
         std::vector<float> time_ids = {static_cast<float>(generation_config.width),
@@ -355,7 +355,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step);
+            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
