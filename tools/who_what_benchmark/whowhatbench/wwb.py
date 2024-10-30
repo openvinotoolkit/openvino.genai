@@ -5,6 +5,10 @@ import json
 import pandas as pd
 from PIL import Image
 import logging
+
+from .utils import patch_diffusers
+patch_diffusers()
+
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
 from optimum.intel.openvino import OVModelForCausalLM

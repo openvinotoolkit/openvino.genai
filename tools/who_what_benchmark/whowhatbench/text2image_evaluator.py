@@ -35,7 +35,7 @@ class Generator(openvino_genai.Generator):
         self.rng = rng
 
     def next(self):
-        return torch.normal(torch.tensor(self.mu), self.sigma, generator=self.rng).item()
+        return torch.randn(1, generator=self.rng, dtype=torch.float32).item()
 
 
 @register_evaluator("text-to-image")
