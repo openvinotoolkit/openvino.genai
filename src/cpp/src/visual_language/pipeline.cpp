@@ -8,7 +8,7 @@
 #include "openvino/genai/tokenizer.hpp"
 
 #include "visual_language/vlm_config.hpp"
-#include "visual_language/image_embedder.hpp"
+#include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
 
 #include "sampler.hpp"
