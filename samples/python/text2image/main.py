@@ -7,16 +7,18 @@ import argparse
 import openvino_genai
 from PIL import Image
 import numpy as np
+import torch
+
 
 class Generator(openvino_genai.Generator):
     def __init__(self, seed, mu=0.0, sigma=1.0):
         openvino_genai.Generator.__init__(self)
-        np.random.seed(seed)
         self.mu = mu
         self.sigma = sigma
+        self.generator = torch.Generator(device='cpu').manual_seed(seed)
 
     def next(self):
-        return np.random.normal(self.mu, self.sigma)
+        return torch.normal(torch.tensor(self.mu), self.sigma, generator=self.generator).item()
 
 
 def main():
@@ -27,13 +29,11 @@ def main():
 
     device = 'CPU'  # GPU can be used as well
     random_generator = Generator(42)  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
+    print(f'--- {random_generator.next()}')
+
     pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
     image_tensor = pipe.generate(
         args.prompt,
-        width=512,
-        height=512,
-        num_inference_steps=20,
-        num_images_per_prompt=1,
         random_generator=random_generator
     )
 

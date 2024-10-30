@@ -45,11 +45,7 @@ LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path) :
 }
 
 LCMScheduler::LCMScheduler(const Config& scheduler_config)
-    : m_config(scheduler_config),
-      m_seed(42),
-      m_gen(m_seed),
-      m_normal(0.0f, 1.0f) {
-
+    : m_config(scheduler_config) {
     m_sigma_data = 0.5f; // Default: 0.5
 
     std::vector<float> alphas, betas;
@@ -188,19 +184,30 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
     float* prev_sample_data = prev_sample.data<float>();
 
+    size_t amount = 0;
+    std::cout << "LCMScheduler::step: ";
+
     if (inference_step != m_num_inference_steps - 1) {
         for (std::size_t i = 0; i < batch_size * latent_size; ++i) {
-            float gen_noise = m_normal(m_gen);
+            float gen_noise = m_generator->next();
+            if (amount++ < 20)
+                std::cout << gen_noise << " ";
             prev_sample_data[i] = alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * gen_noise;
         }
     } else {
         std::copy_n(denoised_data, denoised.get_size(), prev_sample_data);
     }
 
+    std::cout << std::endl;
+
     return {
         {"latent", prev_sample},
         {"denoised", denoised}
     };
+}
+
+void LCMScheduler::set_random_generator(std::shared_ptr<Generator> generator) {
+    m_generator = generator;
 }
 
 std::vector<int64_t> LCMScheduler::get_timesteps() const {
@@ -258,9 +265,16 @@ void LCMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> 
 
     float * init_latent_data = init_latent.data<float>();
 
+    size_t amount = 0;
+    std::cout << "LCMScheduler::add_noise: ";
+
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rng_generator->next();
+        float gen_noise = m_generator->next();
+        if (amount++ < 20)
+            std::cout << gen_noise << " ";
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod;
     }
+    std::cout << std::endl;
 }
 
 } // namespace genai

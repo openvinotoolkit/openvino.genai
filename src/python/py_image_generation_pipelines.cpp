@@ -186,7 +186,7 @@ void init_image_generation_pipelines(py::module_& m) {
         }))
         .def("next", &ov::genai::CppStdGenerator::next);
 
-    py::class_<ov::genai::ImageGenerationConfig>(m, "GenerationConfig", "This class is used for storing generation config for Text2Image pipeline.")
+    py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for Text2Image pipeline.")
         .def(py::init<>())
         .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)
         .def_readwrite("prompt_3", &ov::genai::ImageGenerationConfig::prompt_3)

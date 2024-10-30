@@ -7,6 +7,8 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 
+#include "image_generation/schedulers/lcm.hpp"
+
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
@@ -184,10 +186,17 @@ public:
         } else {
             latent.set_shape(latent_shape);
 
+            size_t amount = 0;
+            std::cout << "LCMScheduler::prepare_latents: ";
+
             // latents are multiplied by 'init_noise_sigma'
             std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
+                float value = generation_config.random_generator->next();
+                if (amount++ < 20)
+                    std::cout << value << " ";
+                return value * m_scheduler->get_init_noise_sigma();
             });
+            std::cout << std::endl;
         }
 
         return latent;
@@ -216,8 +225,13 @@ public:
         m_unet->set_adapters(generation_config.adapters);
 
         if (generation_config.random_generator == nullptr) {
+            OPENVINO_ASSERT(false);
             uint32_t seed = time(NULL);
             generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
+        } else {
+            std::shared_ptr<LCMScheduler> lcm = std::dynamic_pointer_cast<LCMScheduler>(m_scheduler);
+            OPENVINO_ASSERT(lcm != nullptr);
+            lcm->set_random_generator(generation_config.random_generator);
         }
 
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
