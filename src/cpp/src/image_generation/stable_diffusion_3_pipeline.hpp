@@ -303,14 +303,9 @@ public:
                                          negative_prompt_1_str,
                                          do_classifier_free_guidance(generation_config.guidance_scale));
 
-        // get positive pooled_prompt_embed_out
-        ov::Tensor pooled_prompt_embed_out = split_2d_by_batch(text_encoder_1_output, 1);
-
         // text_encoder_1_hidden_state - stores positive and negative prompt_embeds
         size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
         ov::Tensor text_encoder_1_hidden_state = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
-        // get positive prompt_embed_out
-        ov::Tensor prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 1);
 
         // text_encoder_2_output - stores positive and negative pooled_prompt_2_embeds
         ov::Tensor text_encoder_2_output =
@@ -318,14 +313,24 @@ public:
                                          negative_prompt_2_str,
                                          do_classifier_free_guidance(generation_config.guidance_scale));
 
-        // get positive pooled_prompt_2_embed_out
-        ov::Tensor pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 1);
-
         // text_encoder_2_hidden_state - stores positive and negative prompt_2_embeds
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
         ov::Tensor text_encoder_2_hidden_state = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
         // get positive prompt_2_embed_out
-        ov::Tensor prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 1);
+
+        ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out;
+
+        if (do_classifier_free_guidance(generation_config.guidance_scale)) {
+            pooled_prompt_embed_out = split_2d_by_batch(text_encoder_1_output, 1);
+            prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 1);
+            pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 1);
+            prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 1);
+        } else {
+            pooled_prompt_embed_out =text_encoder_1_output;
+            prompt_embed_out = text_encoder_1_hidden_state;
+            pooled_prompt_2_embed_out = text_encoder_2_output;
+            prompt_2_embed_out = text_encoder_2_hidden_state;
+        }
 
         ov::Tensor pooled_prompt_embed, prompt_embed, pooled_prompt_2_embed, prompt_2_embed;
         if (generation_config.num_images_per_prompt == 1) {
