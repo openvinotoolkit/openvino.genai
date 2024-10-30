@@ -328,8 +328,7 @@ public:
                 batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             } else {
-                // just assign to save memory copy
-                latent_cfg = latent;
+                std::memcpy(latent_cfg.data<float>(), latent.data<float>(), latent_cfg.get_size() * sizeof(float));
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
