@@ -229,9 +229,9 @@ public:
             uint32_t seed = time(NULL);
             generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
         } else {
-            std::shared_ptr<LCMScheduler> lcm = std::dynamic_pointer_cast<LCMScheduler>(m_scheduler);
-            OPENVINO_ASSERT(lcm != nullptr);
-            lcm->set_random_generator(generation_config.random_generator);
+            // std::shared_ptr<LCMScheduler> lcm = std::dynamic_pointer_cast<LCMScheduler>(m_scheduler);
+            // OPENVINO_ASSERT(lcm != nullptr);
+            // lcm->set_random_generator(generation_config.random_generator);
         }
 
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
