@@ -57,8 +57,6 @@ public:
 
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
 
-    size_t get_vae_scale_factor() const;
-
 private:
     Config m_config;
     ov::InferRequest m_request;

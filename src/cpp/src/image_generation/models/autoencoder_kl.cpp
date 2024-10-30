@@ -22,6 +22,16 @@
 namespace ov {
 namespace genai {
 
+size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path) {
+    std::ifstream file(vae_config_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
+    nlohmann::json data = nlohmann::json::parse(file);
+
+    std::vector<size_t> block_out_channels;
+    utils::read_json_param(data, "block_out_channels", block_out_channels);
+    return std::pow(2, block_out_channels.size() - 1);
+}
+
 AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);

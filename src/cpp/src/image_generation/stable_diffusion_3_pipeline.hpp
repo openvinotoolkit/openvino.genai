@@ -232,7 +232,7 @@ public:
     }
 
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
-        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
                                m_transformer->get_config().in_channels,
                                generation_config.height / vae_scale_factor,
@@ -266,7 +266,7 @@ public:
                                                  ? 2
                                                  : 1;  // Transformer accepts 2x batch in case of CFG
 
-        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         if (generation_config.height < 0)
             generation_config.height = transformer_config.sample_size * vae_scale_factor;
@@ -616,7 +616,7 @@ private:
         assert(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
-        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
         m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
@@ -631,8 +631,11 @@ private:
 
     void check_image_size(const int height, const int width) const override {
         assert(m_transformer != nullptr);
-        const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
+        assert(m_vae != nullptr);
+
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const size_t patch_size = m_transformer->get_config().patch_size;
+
         OPENVINO_ASSERT((height % (vae_scale_factor * patch_size) == 0 || height < 0) &&
                             (width % (vae_scale_factor * patch_size) == 0 || width < 0),
                         "Both 'width' and 'height' must be divisible by",

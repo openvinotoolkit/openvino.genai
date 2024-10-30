@@ -16,7 +16,7 @@ namespace genai {
 
 class LCMScheduler : public IScheduler {
 public:
-    // values from https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_lcm.py#L190
+    // values from https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_lcm.py#L197-L214
     struct Config {
         size_t num_train_timesteps = 1000;
         float beta_start = 0.00085f, beta_end = 0.012f;

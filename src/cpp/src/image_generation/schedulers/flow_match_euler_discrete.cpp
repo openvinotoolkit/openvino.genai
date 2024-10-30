@@ -146,7 +146,7 @@ void FlowMatchEulerDiscreteScheduler::init_step_index() {
 }
 
 void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
-    // use https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_flow_match_euler_discrete.py#L117
+    // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_flow_match_euler_discrete.py#L117
     OPENVINO_THROW("Not implemented");
 }
 

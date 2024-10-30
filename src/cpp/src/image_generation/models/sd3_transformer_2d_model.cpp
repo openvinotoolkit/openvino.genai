@@ -11,6 +11,8 @@
 namespace ov {
 namespace genai {
 
+size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path);
+
 SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -27,19 +29,7 @@ SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
-
-    // compute VAE scale factor
-    {
-        // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
-        std::filesystem::path vae_config_path = root_dir.parent_path() / "vae_decoder" / "config.json";
-        std::ifstream file(vae_config_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
-        nlohmann::json data = nlohmann::json::parse(file);
-
-        std::vector<size_t> block_out_channels;
-        utils::read_json_param(data, "block_out_channels", block_out_channels);
-        m_vae_scale_factor = std::pow(2, block_out_channels.size() - 1);
-    }
+    m_vae_scale_factor = ov::genai::get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir,
@@ -106,10 +96,6 @@ SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device,
 void SD3Transformer2DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
-}
-
-size_t SD3Transformer2DModel::get_vae_scale_factor() const {
-    return m_vae_scale_factor;
 }
 
 ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {

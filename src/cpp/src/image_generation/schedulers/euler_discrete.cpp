@@ -285,7 +285,7 @@ void EulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inferen
 }
 
 void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
-    // use https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_euler_discrete.py#L686
+    // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_euler_discrete.py#L686
     OPENVINO_THROW("Not implemented");
 }
 
