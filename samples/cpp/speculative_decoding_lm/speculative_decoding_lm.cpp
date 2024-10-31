@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
     
     // User can run main and draft model on different devices.
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
-    std::string main_device = "CPU", draft_device = main_device;
+    std::string main_device = "CPU", draft_device = "CPU";
 
     // Perform the inference
     auto get_default_block_size = [](const std::string& device) {
@@ -40,9 +40,17 @@ int main(int argc, char* argv[]) try {
     scheduler_config.cache_size = 5;
     scheduler_config.block_size = get_default_block_size(main_device);
 
+    ov::genai::SchedulerConfig draft_scheduler_config;
+    draft_scheduler_config.cache_size = 5;
+    draft_scheduler_config.block_size = get_default_block_size(draft_device);
+
     // Example to run main_model on GPU and draft_model on CPU:
-    // ov::genai::LLMPipeline pipe(main_model_path, "GPU", ov::genai::draft_model(draft_model_path, "CPU"), ov::genai::scheduler_config(scheduler_config));
-    ov::genai::LLMPipeline pipe(main_model_path, main_device, ov::genai::draft_model(draft_model_path, draft_device), ov::genai::scheduler_config(scheduler_config));
+    // Different devices require different block sizes, so different scheduler configs need to be set.
+    ov::genai::LLMPipeline pipe(
+        main_model_path,
+        main_device,
+        ov::genai::draft_model(draft_model_path, draft_device, ov::genai::scheduler_config(draft_scheduler_config)),
+        ov::genai::scheduler_config(scheduler_config));
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;

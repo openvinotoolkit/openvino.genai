@@ -11,10 +11,6 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-bool operator==(const SchedulerConfig& lhs, const SchedulerConfig& rhs) {
-    return ov::Any(lhs).as<std::string>() == ov::Any(rhs).as<std::string>();
-}
-
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::filesystem::path& main_models_path,
     const SchedulerConfig& main_scheduler_config,
