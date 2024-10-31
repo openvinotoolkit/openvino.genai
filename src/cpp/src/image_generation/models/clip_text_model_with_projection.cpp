@@ -20,7 +20,6 @@ CLIPTextModelWithProjection::Config::Config(const std::filesystem::path& config_
     using utils::read_json_param;
 
     read_json_param(data, "max_position_embeddings", max_position_embeddings);
-    read_json_param(data, "hidden_size", hidden_size);
     read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
