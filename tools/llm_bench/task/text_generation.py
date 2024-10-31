@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import datetime
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
@@ -421,21 +422,33 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
         text_gen_fn = run_text_generation_genai_with_stream
     else:
         text_gen_fn = run_text_generation_genai
+
     proc_id = os.getpid()
+    iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
+                p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
+                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
-                            prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
+                            p_idx, bench_hook, model_precision, proc_id, mem_consumption)
+                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     else:
         for idx, input_text in enumerate(text_list):
+            p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
+                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
+                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, iter_timestamp
