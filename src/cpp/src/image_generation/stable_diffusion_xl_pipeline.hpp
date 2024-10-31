@@ -66,6 +66,9 @@ public:
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
+
+        // initialize force_zeros_for_empty_prompt, which is SDXL specific
+        read_json_param(data, "force_zeros_for_empty_prompt", m_force_zeros_for_empty_prompt);
     }
 
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) :
@@ -124,6 +127,9 @@ public:
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
 
+        // initialize force_zeros_for_empty_prompt, which is SDXL specific
+        read_json_param(data, "force_zeros_for_empty_prompt", m_force_zeros_for_empty_prompt);
+
         update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
@@ -139,6 +145,8 @@ public:
           m_unet(std::make_shared<UNet2DConditionModel>(unet)),
           m_vae(std::make_shared<AutoencoderKL>(vae)) {
         initialize_generation_config("StableDiffusionXLPipeline");
+        // here we implicitly imply that force_zeros_for_empty_prompt is set to True as by default in diffusers
+        m_force_zeros_for_empty_prompt = true;
     }
 
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
@@ -226,38 +234,76 @@ public:
             std::copy(time_ids.begin(), time_ids.end(), add_time_ids_data + time_ids.size());
         }
 
-        ov::Tensor add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, generation_config.negative_prompt, batch_size_multiplier > 1);
-        m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt, batch_size_multiplier > 1);
+        // see https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L423-L427
+        bool force_zeros_for_empty_prompt = generation_config.negative_prompt == std::nullopt && m_force_zeros_for_empty_prompt;
+        std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        bool compute_negative_prompt = !force_zeros_for_empty_prompt && batch_size_multiplier > 1;
 
-        // prompt_embeds = prompt_embeds.hidden_states[-2]
         size_t idx_hidden_state_1 = m_clip_text_encoder->get_config().num_hidden_layers;
-        ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
         size_t idx_hidden_state_2 = m_clip_text_encoder_with_projection->get_config().num_hidden_layers;
-        ov::Tensor encoder_hidden_states_2 = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
 
-        ov::Shape ehs_1_shape = encoder_hidden_states_1.get_shape();
-        ov::Shape ehs_2_shape = encoder_hidden_states_2.get_shape();
+        ov::Tensor encoder_hidden_states(ov::element::f32, {}), add_text_embeds(ov::element::f32, {});
 
-        OPENVINO_ASSERT(ehs_1_shape[0] == ehs_2_shape[0] && ehs_1_shape[1] == ehs_2_shape[1],
-                        "Tensors for concatenation must have the same dimensions");
+        if (compute_negative_prompt) {
+            add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt, batch_size_multiplier > 1);
+            m_clip_text_encoder->infer(positive_prompt, negative_prompt, batch_size_multiplier > 1);
 
-        // concatenate hidden_states from two encoders
-        ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0], ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
-        ov::Tensor encoder_hidden_states(encoder_hidden_states_1.get_element_type(), encoder_hidden_states_shape);
+            // prompt_embeds = prompt_embeds.hidden_states[-2]
+            ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
+            ov::Tensor encoder_hidden_states_2 = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
 
-        const float* ehs_1_data = encoder_hidden_states_1.data<const float>();
-        const float* ehs_2_data = encoder_hidden_states_2.data<const float>();
-        float* encoder_hidden_states_data = encoder_hidden_states.data<float>();
+            ov::Shape ehs_1_shape = encoder_hidden_states_1.get_shape();
+            ov::Shape ehs_2_shape = encoder_hidden_states_2.get_shape();
 
-        for (size_t i = 0; i < ehs_1_shape[0]; ++i) {
-            for (size_t j = 0; j < ehs_1_shape[1]; ++j) {
-                size_t offset_1 = (i * ehs_1_shape[1] + j) * ehs_1_shape[2];
-                size_t offset_2 = (i * ehs_2_shape[1] + j) * ehs_2_shape[2];
+            OPENVINO_ASSERT(ehs_1_shape[0] == ehs_2_shape[0] && ehs_1_shape[1] == ehs_2_shape[1],
+                            "Tensors for concatenation must have the same dimensions");
 
-                size_t step = (i * ehs_1_shape[1] + j) * (ehs_1_shape[2] + ehs_2_shape[2]);
+            // concatenate hidden_states from two encoders
+            ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0], ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
+            encoder_hidden_states.set_shape(encoder_hidden_states_shape);
 
-                std::memcpy(encoder_hidden_states_data + step, ehs_1_data + offset_1, ehs_1_shape[2] * sizeof(float));
-                std::memcpy(encoder_hidden_states_data + step + ehs_1_shape[2], ehs_2_data + offset_2, ehs_2_shape[2] * sizeof(float));
+            const float* ehs_1_data = encoder_hidden_states_1.data<const float>();
+            const float* ehs_2_data = encoder_hidden_states_2.data<const float>();
+            float* encoder_hidden_states_data = encoder_hidden_states.data<float>();
+
+            for (size_t i = 0; i < ehs_1_shape[0] * ehs_1_shape[1]; ++i,
+                encoder_hidden_states_data += encoder_hidden_states_shape[2],
+                ehs_1_data += ehs_1_shape[2], ehs_2_data += ehs_2_shape[2]) {
+                std::memcpy(encoder_hidden_states_data                 , ehs_1_data, ehs_1_shape[2] * sizeof(float));
+                std::memcpy(encoder_hidden_states_data + ehs_1_shape[2], ehs_2_data, ehs_2_shape[2] * sizeof(float));
+            }
+        } else if (batch_size_multiplier > 1) {
+            ov::Tensor add_text_embeds_positive = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt, false);
+            m_clip_text_encoder->infer(positive_prompt, negative_prompt, false);
+
+            ov::Tensor encoder_hidden_states_1_positive = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
+            ov::Tensor encoder_hidden_states_2_positive = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
+            
+            ov::Shape ehs_1_shape = encoder_hidden_states_1_positive.get_shape();
+            ov::Shape ehs_2_shape = encoder_hidden_states_2_positive.get_shape();
+
+            ov::Shape add_text_embeds_shape = add_text_embeds_positive.get_shape();
+            add_text_embeds_shape[0] *= batch_size_multiplier;
+            ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0] * batch_size_multiplier, ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
+
+            add_text_embeds.set_shape(add_text_embeds_shape);
+            encoder_hidden_states.set_shape(encoder_hidden_states_shape);
+
+            std::fill_n(add_text_embeds.data<float>(), add_text_embeds_positive.get_size(), 0.0f); // apply force_zeros_for_empty_prompt
+            std::copy_n(add_text_embeds_positive.data<float>(), add_text_embeds_positive.get_size(), add_text_embeds.data<float>() + add_text_embeds_positive.get_size());
+
+            float* encoder_hidden_states_data = encoder_hidden_states.data<float>();
+            std::fill_n(encoder_hidden_states_data, ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier, 0.0f); // apply force_zeros_for_empty_prompt
+
+            const float* ehs_1_data = encoder_hidden_states_1_positive.data<const float>();
+            const float* ehs_2_data = encoder_hidden_states_2_positive.data<const float>();
+            encoder_hidden_states_data += ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier;
+
+            for (size_t i = 0; i < ehs_1_shape[0] * ehs_1_shape[1]; ++i,
+                encoder_hidden_states_data += encoder_hidden_states_shape[2],
+                ehs_1_data += ehs_1_shape[2], ehs_2_data += ehs_2_shape[2]) {
+                std::memcpy(encoder_hidden_states_data                 , ehs_1_data, ehs_1_shape[2] * sizeof(float));
+                std::memcpy(encoder_hidden_states_data + ehs_1_shape[2], ehs_2_data, ehs_2_shape[2] * sizeof(float));
             }
         }
 
@@ -267,7 +313,6 @@ public:
             m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states);
             m_unet->set_hidden_states("text_embeds", add_text_embeds);
             m_unet->set_hidden_states("time_ids", add_time_ids);
-
         } else {
             ov::Shape enc_shape = encoder_hidden_states.get_shape();
             enc_shape[0] *= generation_config.num_images_per_prompt;
@@ -323,12 +368,10 @@ public:
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
+            batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
-            } else {
-                std::memcpy(latent_cfg.data<float>(), latent.data<float>(), latent_cfg.get_size() * sizeof(float));
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -403,7 +446,7 @@ private:
         const char * const pipeline_name = "Stable Diffusion XL";
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt == std::nullopt, "Negative prompt is not used when guidance scale <= 1.0");
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale <= 1.0");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
@@ -438,6 +481,7 @@ private:
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;
 
+    bool m_force_zeros_for_empty_prompt = true;
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_with_projection;
     std::shared_ptr<UNet2DConditionModel> m_unet;

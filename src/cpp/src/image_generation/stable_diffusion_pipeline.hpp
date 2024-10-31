@@ -220,7 +220,8 @@ public:
             generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
+        std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
             batch_size_multiplier > 1);
 
         // replicate encoder hidden state to UNet model
@@ -261,13 +262,10 @@ public:
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
+            batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
-            } else {
-                // just assign to save memory copy
-                latent_cfg = latent;
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -349,9 +347,9 @@ private:
         OPENVINO_ASSERT(generation_config.prompt_2 == std::nullopt, "Prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
         if (is_lcm) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by ", pipeline_name);
         } else if (!is_classifier_free_guidance) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used when guidance scale <= 1.0");
         }
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
