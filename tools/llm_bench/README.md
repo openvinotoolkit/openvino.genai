@@ -170,4 +170,4 @@ OpenVINO is by default built with [oneTBB](https://github.com/oneapi-src/oneTBB/
 ## 7. Additional Resources
 
 - **Error Troubleshooting:** Check the [NOTES.md](./doc/NOTES.md) for solutions to known issues.
-- **Syntax of prompt file:** Refer to [PROMPT.md](./doc/PROMPT.md) for how to manually generate a prompt file.
+- **Syntax and attributes of prompt file:** Refer to [PROMPT.md](./doc/PROMPT.md) for writing a prompt file.
