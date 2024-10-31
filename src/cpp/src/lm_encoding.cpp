@@ -19,6 +19,16 @@
 namespace ov {
 namespace genai {
 
+void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
+    const size_t batch_size = attention_mask.get_shape().at(0);
+    const size_t sequence_length = attention_mask.get_shape().at(1);
+    position_ids.set_shape({batch_size, 1});
+
+    for (size_t batch = 0; batch < batch_size; batch++) {
+        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
+        position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
+    }
+}
 
 void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
     ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
@@ -130,13 +140,8 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
         }
 
-        ov::Tensor
-            new_input_ids(ov::element::i64, {total_num_tokens, 1}),
-            new_position_ids(ov::element::i64, {total_num_tokens, 1});
-
-        int64_t
-            * input_ids_data = new_input_ids.data<int64_t>(),
-            * position_ids_data = new_position_ids.data<int64_t>();
+        ov::Tensor new_input_ids(ov::element::i64, {total_num_tokens, 1});
+        int64_t * input_ids_data = new_input_ids.data<int64_t>();
 
         std::vector<int32_t> next_beams;
         for (auto& sequence_group : active_sequence_groups) {
@@ -155,13 +160,10 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                     input_ids_data[token_id] = position_id < sequence_group->get_prompt_len() ?
                         sequence_group->get_prompt_ids()[position_id] :
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
-
-                    position_ids_data[token_id] = position_id;
                 }
 
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
-                position_ids_data += num_scheduled_tokens;
 
                 // for different sequences iteration of beams started from 0, but we collect it to one input_ids#
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
@@ -189,8 +191,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
         if (position_ids.has_value()) {
-            m_llm.get_tensor("position_ids").set_shape(new_position_ids.get_shape());
-            m_llm.set_tensor("position_ids", new_position_ids);
+            update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
         }
 
         m_llm.get_tensor("beam_idx").set_shape({ total_num_tokens });

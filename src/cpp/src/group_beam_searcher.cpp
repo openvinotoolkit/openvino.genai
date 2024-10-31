@@ -315,17 +315,6 @@ std::vector<std::vector<std::vector<Beam>>> finalize(GroupBeamSearcher&& group_b
     return finalized;
 }
 
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape().at(0);
-    const size_t sequence_length = attention_mask.get_shape().at(1);
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
-        position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
-    }
-}
-
 void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
     request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {0, 0}));
     request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {0}));

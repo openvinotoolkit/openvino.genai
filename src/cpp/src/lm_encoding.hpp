@@ -14,5 +14,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(ov::InferRequest& m_ll
 
 void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams);
 
+void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
+
 }
 }
