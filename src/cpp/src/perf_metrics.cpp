@@ -29,7 +29,6 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
     return {mean, std};
 }
 
-
 } // namespace
 
 namespace ov {
@@ -102,13 +101,18 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
-        raw_metrics.m_durations = std::vector<MicroSeconds>(tok_times.size());
+        raw_metrics.m_durations = std::vector<MicroSeconds>(tok_times.size() - 1);
 
         auto ttft = tok_times[0] - start_time_val;
         raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
         raw_metrics.m_times_to_first_token.emplace_back(ttft / batch_sizes[0]);
         num_generated_tokens = 0;
-        for (size_t i = 0; i < tok_times.size(); ++i) {
+        
+        // Exclude prefill from calculating TPOT.
+        // The very first duration used to calcualte TPOT is from the first token to the second token, 
+        // not from the start time to the first token.
+        start_time_val = tok_times[0];
+        for (size_t i = 1; i < tok_times.size(); ++i) {
             raw_metrics.m_durations[i] = tok_times[i] - start_time_val;
             
             // If in 10 ms a batch of 5 new tokens is generated then TPOT is 10 / 5 = 2 tok/ms.
