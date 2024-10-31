@@ -587,7 +587,7 @@ void register_new_token(const Token& sampled_token_id,
         running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
     }
     if (!is_validation_mode_enabled &&
-        std::fabs(sampled_token_id.m_log_prob) < logit_processor.get_assistant_confidence_threshold()) { 
+        std::fabs(std::exp(sampled_token_id.m_log_prob)) < logit_processor.get_assistant_confidence_threshold()) {
         auto sequence_group = running_sequence->get_sequence_group_ptr();
         sequence_group->pause_generation(true);
     }
