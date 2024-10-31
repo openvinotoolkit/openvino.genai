@@ -575,7 +575,7 @@ public:
                 timestep = ov::Tensor(ov::element::f32, {timestep_size});
                 std::fill_n(timestep.data<float>(), timestep.get_size(), timesteps[inference_step]);
             } else {
-                // just assign to save memory copy (not, )
+                // just assign to save memory copy
                 latent_cfg = latent;
                 timestep = ov::Tensor(ov::element::f32, {1}, &timesteps[inference_step]);
             }

@@ -272,7 +272,7 @@ public:
                 std::memcpy(encoder_hidden_states_data                 , ehs_1_data, ehs_1_shape[2] * sizeof(float));
                 std::memcpy(encoder_hidden_states_data + ehs_1_shape[2], ehs_2_data, ehs_2_shape[2] * sizeof(float));
             }
-        } else if (batch_size_multiplier > 1) {
+        } else {
             ov::Tensor add_text_embeds_positive = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt, false);
             m_clip_text_encoder->infer(positive_prompt, negative_prompt, false);
 
@@ -282,6 +282,9 @@ public:
             ov::Shape ehs_1_shape = encoder_hidden_states_1_positive.get_shape();
             ov::Shape ehs_2_shape = encoder_hidden_states_2_positive.get_shape();
 
+            OPENVINO_ASSERT(ehs_1_shape[0] == ehs_2_shape[0] && ehs_1_shape[1] == ehs_2_shape[1],
+                            "Tensors for concatenation must have the same dimensions");
+
             ov::Shape add_text_embeds_shape = add_text_embeds_positive.get_shape();
             add_text_embeds_shape[0] *= batch_size_multiplier;
             ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0] * batch_size_multiplier, ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
@@ -289,15 +292,24 @@ public:
             add_text_embeds.set_shape(add_text_embeds_shape);
             encoder_hidden_states.set_shape(encoder_hidden_states_shape);
 
-            std::fill_n(add_text_embeds.data<float>(), add_text_embeds_positive.get_size(), 0.0f); // apply force_zeros_for_empty_prompt
-            std::copy_n(add_text_embeds_positive.data<float>(), add_text_embeds_positive.get_size(), add_text_embeds.data<float>() + add_text_embeds_positive.get_size());
+            float * add_text_embeds_data = add_text_embeds.data<float>();
+            float * encoder_hidden_states_data = encoder_hidden_states.data<float>();
 
-            float* encoder_hidden_states_data = encoder_hidden_states.data<float>();
-            std::fill_n(encoder_hidden_states_data, ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier, 0.0f); // apply force_zeros_for_empty_prompt
+            // apply force_zeros_for_empty_prompt
+            if (batch_size_multiplier > 1) {
+                size_t encoder_state_size = ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier;
+
+                std::fill_n(add_text_embeds_data, add_text_embeds_positive.get_size(), 0.0f);
+                std::fill_n(encoder_hidden_states_data, encoder_state_size, 0.0f);
+
+                add_text_embeds_data += add_text_embeds_positive.get_size();
+                encoder_hidden_states_data += encoder_state_size;
+            }
+
+            std::copy_n(add_text_embeds_positive.data<float>(), add_text_embeds_positive.get_size(), add_text_embeds_data);
 
             const float* ehs_1_data = encoder_hidden_states_1_positive.data<const float>();
             const float* ehs_2_data = encoder_hidden_states_2_positive.data<const float>();
-            encoder_hidden_states_data += ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier;
 
             for (size_t i = 0; i < ehs_1_shape[0] * ehs_1_shape[1]; ++i,
                 encoder_hidden_states_data += encoder_hidden_states_shape[2],
