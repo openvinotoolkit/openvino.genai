@@ -132,9 +132,7 @@ def test_max_number_of_tokens():
     assert len(encoded_results.tokens[0]) == num_tokens
 
 
-# FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
-@pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_chat_generation(model_descr):
