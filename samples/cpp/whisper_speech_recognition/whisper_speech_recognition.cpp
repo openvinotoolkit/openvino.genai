@@ -16,21 +16,16 @@ int main(int argc, char* argv[]) try {
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
     ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
-    config.max_new_tokens = 100;
+    config.max_new_tokens = 100;  // increase this based on your speech length
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
     config.return_timestamps = true;
 
-    auto streamer = [](std::string word) {
-        std::cout << word;
-        return false;
-    };
-
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
-    auto result = pipeline.generate(raw_speech, config, streamer);
+    auto result = pipeline.generate(raw_speech, config);
 
-    std::cout << "\n";
+    std::cout << result << "\n";
 
     for (auto& chunk : *result.chunks) {
         std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";

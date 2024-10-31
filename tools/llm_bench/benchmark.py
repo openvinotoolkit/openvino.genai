@@ -184,7 +184,7 @@ def main():
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
     try:
-        iter_data_list, pretrain_time = CASE_TO_BENCH[model_args['use_case']](
+        iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
             model_path, framework, args.device, model_args, args.num_iters, mem_consumption)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
@@ -203,6 +203,7 @@ def main():
                     iter_data_list,
                     pretrain_time,
                     model_precision,
+                    iter_timestamp
                 )
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
@@ -214,6 +215,7 @@ def main():
                     iter_data_list,
                     pretrain_time,
                     model_precision,
+                    iter_timestamp
                 )
     except Exception:
         log.error('An exception occurred')

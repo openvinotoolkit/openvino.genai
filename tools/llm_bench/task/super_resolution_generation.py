@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import datetime
 from PIL import Image
 import hashlib
 import logging as log
@@ -97,17 +98,22 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     for num in range(num_iters + 1):
         for image_id, img in enumerate(image_list):
+            p_idx = prompt_idx_list[image_id]
             if num == 0:
                 if args["output_dir"] is not None:
-                    llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, prompt_idx_list[image_id], None, proc_id)
-            log.info(f"[{'warm-up' if num == 0 else num}][P{prompt_idx_list[image_id]}] Input image={img['prompt']}")
+                    llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, p_idx, None, proc_id)
+            log.info(f"[{'warm-up' if num == 0 else num}][P{p_idx}] Input image={img['prompt']}")
+            iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id, mem_consumption)
+            iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
             tm_list.clear()
+            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+            log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
-
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, iter_timestamp
 
 
 def get_ldm_image_prompt(args):

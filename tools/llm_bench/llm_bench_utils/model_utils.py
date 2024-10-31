@@ -234,3 +234,13 @@ def get_model_precision(model_name_list):
         if model_precision != 'unknown':
             break
     return '' if model_precision == 'unknown' else model_precision
+
+
+def init_timestamp(num_iters, prompt_list, prompt_idx_list):
+    iter_timestamp = {}
+    for num in range(num_iters + 1):
+        iter_timestamp[num] = {}
+        for idx, input_text in enumerate(prompt_list):
+            p_idx = prompt_idx_list[idx]
+            iter_timestamp[num][p_idx] = {}
+    return iter_timestamp

@@ -82,7 +82,8 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  ov::genai::GenerationConfig sampling_params) {
-    m_draft_pipeline->add_request(request_id, input_ids, sampling_params);
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
@@ -90,7 +91,8 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  ov::genai::GenerationConfig sampling_params) {
-    m_draft_pipeline->add_request(request_id, prompt, sampling_params);
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
@@ -112,12 +114,18 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
+    // this blocks adding new requests during step as it may break coherence between main and draft models
+    std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
+    m_draft_pipeline->pull_awaiting_requests();
+    m_main_pipeline->pull_awaiting_requests();
+
     // generate candidates by draft model
     ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
     draft_timer.start();
     m_draft_pipeline->multistep();
     draft_timer.end();
     m_sd_metrics.draft_duration += draft_timer.get_duration();
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     // to generate num_matches statistic
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
@@ -133,6 +141,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     m_main_pipeline->step();
     main_timer.end();
     m_sd_metrics.main_duration += main_timer.get_duration();
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
@@ -145,8 +154,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto request_id = draft_request.first;
         if (!main_generated_requests.count(request_id)) {
             m_draft_pipeline->finish_request(request_id);
-            // in case of some requests not to started, unlock generation of next request
-            m_draft_pipeline->unlock_next_request_generation();
+            // remove draft_generation_handle from queue
+            m_draft_generations.erase(request_id);
         }
         auto updated_seq_info = update_sequence_info[request_id];
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
@@ -175,18 +184,16 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         }
     }, streamer);
 
-    std::vector<GenerationHandle> main_generations, draft_generations;
+    std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
 
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
-        draft_sampling_params.max_new_tokens = draft_sampling_params.max_new_tokens + 1;
-        draft_sampling_params.min_new_tokens = draft_sampling_params.min_new_tokens + 1;
         draft_sampling_params.ignore_eos = true;
-        draft_generations.push_back(m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params));
-        // decrease generation len to generate last token by main model
+        std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
 
     std::vector<EncodedGenerationResult> results;
@@ -210,7 +217,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     if (streamer_ptr) {
         streamer_ptr->end();
     }
-    draft_generations.clear();
 
     for (size_t generation_idx = 0; generation_idx < main_generations.size(); ++generation_idx) {
         const auto& generation = main_generations[generation_idx];
