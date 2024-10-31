@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
+import datetime
 import numpy as np
 from pathlib import Path
 import hashlib
@@ -112,14 +113,20 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     ov_model, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2_txt_model(model_path, device, **args)
     pipe = ov_model
     md5_list = {num : {} for num in range(num_iters + 1)}
+    iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     for num in range(num_iters + 1):
         for idx, speech_file in enumerate(speech_list):
+            p_idx = speech_idx_list[idx]
             raw_speech = model_utils.read_wav(speech_file['media'], processor.feature_extractor.sampling_rate)
+            iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
             run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, speech_idx_list[idx],
                                         iter_data_list, mem_consumption, processor)
+            iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+            log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     metrics_print.print_average(iter_data_list, speech_idx_list, 1, True)
 
-    return iter_data_list, pretrain_time
+    return iter_data_list, pretrain_time, iter_timestamp
 
 
 def get_speech_files(args):
