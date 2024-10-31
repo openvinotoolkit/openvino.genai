@@ -290,7 +290,7 @@ public:
             generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
 
         std::string negative_prompt_1_str = generation_config.negative_prompt != std::nullopt
-                                                ? *generation_config.negative_prompt_2
+                                                ? *generation_config.negative_prompt
                                                 : std::string{};
         std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt
                                                 ? *generation_config.negative_prompt_2
@@ -584,9 +584,10 @@ public:
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
-            noisy_residual_tensor.set_shape(noise_pred_shape);
 
             if (batch_size_multiplier > 1) {
+                noisy_residual_tensor.set_shape(noise_pred_shape);
+
                 // perform guidance
                 float* noisy_residual = noisy_residual_tensor.data<float>();
                 const float* noise_pred_uncond = noise_pred_tensor.data<const float>();

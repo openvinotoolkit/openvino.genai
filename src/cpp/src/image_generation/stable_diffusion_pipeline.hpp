@@ -275,9 +275,10 @@ public:
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
-            noisy_residual_tensor.set_shape(noise_pred_shape);
 
             if (batch_size_multiplier > 1) {
+                noisy_residual_tensor.set_shape(noise_pred_shape);
+
                 // perform guidance
                 float* noisy_residual = noisy_residual_tensor.data<float>();
                 const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
