@@ -170,14 +170,14 @@ public:
 
         if (initial_image) {
             latent = m_vae->encode(initial_image);
-            m_scheduler->add_noise(latent, generation_config.random_generator);
+            m_scheduler->add_noise(latent, generation_config.generator);
         } else {
-            latent.set_shape(latent_shape);
+            latent = generation_config.generator->randn_tensor(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
-            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
-            });
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] *= m_scheduler->get_init_noise_sigma();
         }
 
         return latent;
@@ -206,9 +206,9 @@ public:
         m_clip_text_encoder_with_projection->set_adapters(generation_config.adapters);
         m_unet->set_adapters(generation_config.adapters);
 
-        if (generation_config.random_generator == nullptr) {
+        if (generation_config.generator == nullptr) {
             uint32_t seed = time(NULL);
-            generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
+            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
         std::vector<float> time_ids = {static_cast<float>(generation_config.width),
@@ -328,8 +328,7 @@ public:
                 batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             } else {
-                // just assign to save memory copy
-                latent_cfg = latent;
+                std::memcpy(latent_cfg.data<float>(), latent.data<float>(), latent_cfg.get_size() * sizeof(float));
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -355,7 +354,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step);
+            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
@@ -368,7 +367,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale >= 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
+        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -404,8 +403,8 @@ private:
         const char * const pipeline_name = "Stable Diffusion XL";
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
-        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale < 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
+        OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale <= 1.0");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {

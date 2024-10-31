@@ -180,14 +180,14 @@ public:
                 latent = batched_latent;
             }
 
-            m_scheduler->add_noise(latent, generation_config.random_generator);
+            m_scheduler->add_noise(latent, generation_config.generator);
         } else {
-            latent.set_shape(latent_shape);
+            latent = generation_config.generator->randn_tensor(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
-            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-                return generation_config.random_generator->next() * m_scheduler->get_init_noise_sigma();
-            });
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] *= m_scheduler->get_init_noise_sigma();
         }
 
         return latent;
@@ -215,9 +215,9 @@ public:
         m_clip_text_encoder->set_adapters(generation_config.adapters);
         m_unet->set_adapters(generation_config.adapters);
 
-        if (generation_config.random_generator == nullptr) {
+        if (generation_config.generator == nullptr) {
             uint32_t seed = time(NULL);
-            generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
+            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
@@ -293,7 +293,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step);
+            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
@@ -306,7 +306,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale >= 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
+        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -351,7 +351,7 @@ private:
         if (is_lcm) {
             OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
         } else if (!is_classifier_free_guidance) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
+            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
         }
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);

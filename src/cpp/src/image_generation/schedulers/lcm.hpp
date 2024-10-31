@@ -52,9 +52,9 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
+    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
 
-    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const override;
+    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
 
 private:
     Config m_config;
@@ -65,10 +65,6 @@ private:
     float m_sigma_data;
 
     std::vector<int64_t> m_timesteps;
-
-    uint32_t m_seed;
-    std::mt19937 m_gen;
-    std::normal_distribution<float> m_normal;
 
     std::vector<float> threshold_sample(const std::vector<float>& flat_sample);
 };
