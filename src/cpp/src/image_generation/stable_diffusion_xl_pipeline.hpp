@@ -247,8 +247,8 @@ public:
         bool force_zeros_for_empty_prompt = generation_config.negative_prompt == std::nullopt && m_force_zeros_for_empty_prompt;
         bool compute_negative_prompt = !force_zeros_for_empty_prompt && batch_size_multiplier > 1;
 
-        size_t idx_hidden_state_1 = m_clip_text_encoder->get_config().num_hidden_layers;
-        size_t idx_hidden_state_2 = m_clip_text_encoder_with_projection->get_config().num_hidden_layers;
+        size_t idx_hidden_state_1 = m_clip_text_encoder->get_config().num_hidden_layers + 1;
+        size_t idx_hidden_state_2 = m_clip_text_encoder_with_projection->get_config().num_hidden_layers + 1;
 
         ov::Tensor encoder_hidden_states(ov::element::f32, {}), add_text_embeds(ov::element::f32, {});
 
@@ -286,7 +286,7 @@ public:
 
             ov::Tensor encoder_hidden_states_1_positive = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
             ov::Tensor encoder_hidden_states_2_positive = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
-            
+
             ov::Shape ehs_1_shape = encoder_hidden_states_1_positive.get_shape();
             ov::Shape ehs_2_shape = encoder_hidden_states_2_positive.get_shape();
 
@@ -305,13 +305,13 @@ public:
 
             // apply force_zeros_for_empty_prompt
             if (batch_size_multiplier > 1) {
-                size_t encoder_state_size = ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier;
+                size_t encoder_hidden_states_size = ov::shape_size(encoder_hidden_states_shape) / batch_size_multiplier;
 
                 std::fill_n(add_text_embeds_data, add_text_embeds_positive.get_size(), 0.0f);
-                std::fill_n(encoder_hidden_states_data, encoder_state_size, 0.0f);
+                std::fill_n(encoder_hidden_states_data, encoder_hidden_states_size, 0.0f);
 
                 add_text_embeds_data += add_text_embeds_positive.get_size();
-                encoder_hidden_states_data += encoder_state_size;
+                encoder_hidden_states_data += encoder_hidden_states_size;
             }
 
             std::copy_n(add_text_embeds_positive.data<float>(), add_text_embeds_positive.get_size(), add_text_embeds_data);
