@@ -3,7 +3,7 @@
 > If there is no prompt file, the default value is used.
 > There can be multiple prompts in the prompt file. You can specify the prompt to run by using the option --prompt_index
 
-## 1.Text
+## 1.Text Generation
 Supported parameters that can be set are:
 * `prompt` - input prompt text for the text generation
 Prompt file example：
