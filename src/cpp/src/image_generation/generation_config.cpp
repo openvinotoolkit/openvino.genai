@@ -16,6 +16,17 @@ static constexpr char SD_GENERATION_CONFIG[] = "SD_GENERATION_CONFIG";
 
 Generator::~Generator() = default;
 
+ov::Tensor Generator::randn_tensor(const ov::Shape& shape) {
+    ov::Tensor rand_tensor(ov::element::f32, shape);
+    float * rand_tensor_data = rand_tensor.data<float>();
+
+    for (size_t i = 0; i < rand_tensor.get_size(); ++i) {
+        rand_tensor_data[i] = next();
+    }
+
+    return rand_tensor;
+}
+
 CppStdGenerator::CppStdGenerator(uint32_t seed)
     : gen(seed), normal(0.0f, 1.0f) {
 }
@@ -45,7 +56,7 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "negative_prompt_2", negative_prompt_2);
     read_anymap_param(properties, "negative_prompt_3", negative_prompt_3);
     read_anymap_param(properties, "num_images_per_prompt", num_images_per_prompt);
-    read_anymap_param(properties, "random_generator", random_generator);
+    read_anymap_param(properties, "generator", generator);
     read_anymap_param(properties, "guidance_scale", guidance_scale);
     read_anymap_param(properties, "height", height);
     read_anymap_param(properties, "width", width);
@@ -57,9 +68,9 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
 }
 
 void ImageGenerationConfig::validate() const {
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt.empty(), "Guidance scale < 1.0 ignores negative prompt");
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt 2");
-    OPENVINO_ASSERT(guidance_scale >= 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale < 1.0 ignores negative prompt 3");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt.empty(), "Guidance scale <= 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 2");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 3");
 }
 
 }  // namespace genai

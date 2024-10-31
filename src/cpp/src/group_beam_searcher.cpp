@@ -7,6 +7,8 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
+#include "lm_encoding.hpp"
+
 namespace {
 
 // Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
@@ -311,37 +313,6 @@ std::vector<std::vector<std::vector<Beam>>> finalize(GroupBeamSearcher&& group_b
     }
 
     return finalized;
-}
-
-void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
-    ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
-    ov::Shape original_shape = original_mask.get_shape();
-    attention_mask.copy_to(original_mask);
-
-    ov::Shape new_shape{next_beams.size(), original_mask.get_shape().at(1) + 1};
-    attention_mask.set_shape(new_shape);
-
-    for (size_t beam_id = 0; beam_id < next_beams.size(); beam_id++) {
-        const size_t original_prompt_offset = next_beams.at(beam_id) * original_shape.at(1);
-        const size_t result_prompt_offset = beam_id * new_shape.at(1);
-
-        int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
-        const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
-
-        std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
-        attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
-    }
-}
-
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape().at(0);
-    const size_t sequence_length = attention_mask.get_shape().at(1);
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
-        position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
-    }
 }
 
 void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {

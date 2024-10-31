@@ -59,7 +59,8 @@ def test_image_model_types(model_id, model_type, backend):
 
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
-    assert "## Reference text" not in result.stderr
+    similarity = float(str(result.stderr).split(" ")[-1])
+    assert similarity >= 0.98
 
 
 @pytest.mark.parametrize(
@@ -117,7 +118,8 @@ def test_image_model_genai(model_id, model_type):
 
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
-    assert "## Reference text" not in result.stderr
+    similarity = float(str(result.stderr).split(" ")[-1])
+    assert similarity >= 0.98
 
 
 @pytest.mark.parametrize(
