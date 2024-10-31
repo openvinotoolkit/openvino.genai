@@ -1,23 +1,25 @@
-from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
-import openvino_genai
-from optimum.intel import OVPipelineForText2Image
-from optimum.exporters.tasks import TasksManager
-from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
-from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
-from optimum.intel.openvino import OVModelForCausalLM
-from diffusers import DiffusionPipeline
-from datasets import load_dataset
-import argparse
-import difflib
-import os
-import json
-import pandas as pd
-from PIL import Image
-import logging
-
 from .utils import patch_diffusers
+
 patch_diffusers()
 
+import argparse
+import difflib
+import json
+import logging
+import os
+
+import openvino_genai
+import pandas as pd
+from datasets import load_dataset
+from diffusers import DiffusionPipeline
+from optimum.exporters.tasks import TasksManager
+from optimum.intel import OVPipelineForText2Image
+from optimum.intel.openvino import OVModelForCausalLM
+from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
+from PIL import Image
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
