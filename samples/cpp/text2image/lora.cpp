@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/text2image/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "imwrite.hpp"
 
@@ -24,7 +24,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     std::cout << "Generating image with LoRA adapters applied, resulting image will be in lora.bmp\n";
     ov::Tensor image = pipe.generate(prompt,
-        ov::genai::random_generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
+        ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20));
@@ -33,7 +33,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
     image = pipe.generate(prompt,
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
-        ov::genai::random_generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
+        ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20));

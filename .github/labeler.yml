@@ -17,9 +17,7 @@
 'category: LLM':
 - 'src/cpp/include/openvino/genai/llm_pipeline.hpp'
 - 'src/cpp/src/llm_pipeline.cpp'
-- 'src/cpp/src/greedy_decoding.cpp'
-- 'src/cpp/src/group_beam_searcher.cpp'
-- 'src/cpp/src/multinomial_decoding.cpp'
+- 'src/cpp/src/lm_encoding.cpp'
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
@@ -117,10 +115,10 @@
 - 'pyproject.toml'
 
 'category: text to image':
-- 'src/include/openvino/genai/text2image/**/*'
-- 'src/cpp/src/text2image/**/*'
-- 'src/python/py_text2image_models.cpp'
-- 'src/python/py_text2image_pipeline.cpp'
+- 'src/include/openvino/genai/image_generation/**/*'
+- 'src/cpp/src/image_generation/**/*'
+- 'src/python/py_image_generation_models.cpp'
+- 'src/python/py_image_generation_pipelines.cpp'
 
 'category: GenAI C++ API':
 - 'src/cpp/include/openvino/genai/**/*'
