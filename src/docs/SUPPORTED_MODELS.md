@@ -198,6 +198,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3.5-large"><code>stabilityai/stable-diffusion-3.5-large</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo"><code>stabilityai/stable-diffusion-3.5-large-turbo</code></a></li>
         </ul>
       </td>
     </tr>
