@@ -241,6 +241,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
     m_sd_metrics.total_duration = generate_timer.get_duration();
+    m_sd_metrics.draft_infer_duration = m_draft_pipeline->get_infer_duration();
+    m_sd_metrics.main_infer_duration = m_main_pipeline->get_infer_duration();
 
     // Print Speculative decoding metrics
     if (0) {
@@ -251,6 +253,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
         std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
         std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(0) << std::endl;
+        std::cout << "Draft model inference duration, s: " << m_sd_metrics.draft_infer_duration << std::endl;
+        std::cout << "main model inference duration, s: " << m_sd_metrics.main_infer_duration << std::endl;
         std::cout << "Token per sec: " << float(sampling_params[0].max_new_tokens) / m_sd_metrics.total_duration << std::endl;
         std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(0) << std::endl;
         std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(0) << std::endl;

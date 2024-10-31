@@ -33,6 +33,7 @@ class ModelRunner {
     AttentionScoresForEachSubsequence m_last_attention_scores;
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
+    ManualTimer m_infer_timer = ManualTimer("pure generate inference");
 public:
     /**
      * Constructs the ModelRunner.
@@ -55,6 +56,13 @@ public:
      */
     ov::InferRequest get_infer_request() const {
         return m_request;
+    }
+
+    /**
+     * @return pure inference duration.
+     */
+    float get_infer_duration() const {
+        return m_infer_timer.get_duration();
     }
 
     /**
@@ -179,10 +187,9 @@ public:
         // print_tensor("max_context_len", max_context_len);
 
         {
-            static ManualTimer timer("pure generate inference");
-            timer.start();
+            m_infer_timer.start();
             m_request.infer();
-            timer.end();
+            m_infer_timer.end();
         }
 
         if (m_collect_attention_scores && m_scheduler_config.use_cache_eviction) {

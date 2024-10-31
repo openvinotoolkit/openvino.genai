@@ -85,5 +85,7 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
+
+    float get_infer_duration();
 };
 }
