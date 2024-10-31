@@ -32,6 +32,8 @@ Prompt file example：
 ## 4.Whisper
 Supported parameters that can be set are:
 * `media` - audio file path
+* `language` - language of audio (default <|en|>)
+* `timestamp` - timestamp for whisper (default true)
 Prompt file example：
-{"media": "./audio/intel_ad_90s_128kbps.mp3"}
-{"media": "./audio/intel_ad_120s_128kbps.mp3"}
+{"media": "./audio/intel_ad_90s_128kbps.mp3", "language": "<|en|>", "timestamp":false}
+{"media": "./audio/intel_ad_120s_128kbps.mp3", "language": "<|en|>", "timestamp":true}

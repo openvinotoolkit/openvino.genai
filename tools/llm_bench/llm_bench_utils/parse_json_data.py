@@ -48,7 +48,11 @@ def parse_speech_json_data(json_data_list):
                 speech_param['media'] = json_data['media']
             else:
                 raise RuntimeError('== media path should not be empty string ==')
-            speech_param_list.append(speech_param)
         else:
             raise RuntimeError('== key word "media" does not exist ==')
+        if 'language' in json_data:
+            speech_param['language'] = json_data['language']
+        if 'timestamp' in json_data:
+            speech_param['timestamp'] = json_data['timestamp']
+        speech_param_list.append(speech_param)
     return speech_param_list

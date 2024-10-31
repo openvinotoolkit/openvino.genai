@@ -16,23 +16,33 @@ import llm_bench_utils.parse_json_data as parse_json_data
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
+DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 
-def run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, speech_id,
-                                iter_data_list, mem_consumption, processor):
+
+def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
+    raw_speech = input_param['raw_speech']
+    num = input_param['iter_idx']
+    speech_id = input_param['speech_idx']
+    mem_consumption = input_param['mem_consumption']
+    processor = input_param['processor']
+    speech_language = input_param['speech_param'].get('language', "<|en|>")
+    ret_timestamps = input_param['speech_param'].get('timestamp', True)
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
-    result_text = pipe.generate(
+    result_text = input_param['pipe'].generate(
         raw_speech,
-        max_new_tokens=1000,
+        max_new_tokens=max_gen_tokens,
         # 'task' and 'language' parameters are supported for multilingual models only
-        language="<|en|>",
+        language=speech_language,
         task="transcribe",
-        return_timestamps=True
+        return_timestamps=ret_timestamps
     )
     end = time.perf_counter()
     tm_list = np.array(result_text.perf_metrics.raw_metrics.m_durations) / 1000 / 1000
@@ -40,8 +50,6 @@ def run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, speech_id
 
     generation_time = end - start
     out_data = processor.tokenizer(result_text, return_tensors='pt')
-    out_data.pop('token_type_ids', None)
-    # Remove `token_type_ids` from inputs
     out_tokens = out_data['input_ids'] if 'input_ids' in out_data else out_data
     out_token_size = out_tokens[0].numel()
 
@@ -110,17 +118,24 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(speech_list) == 0:
         raise RuntimeError('==Failure speech list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
-    ov_model, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2_txt_model(model_path, device, **args)
-    pipe = ov_model
+    pipe, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2_txt_model(model_path, device, **args)
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
+    input_param = {
+        'pipe': pipe,
+        'mem_consumption': mem_consumption,
+        'processor': processor
+    }
     for num in range(num_iters + 1):
-        for idx, speech_file in enumerate(speech_list):
+        for idx, speech_param in enumerate(speech_list):
             p_idx = speech_idx_list[idx]
-            raw_speech = model_utils.read_wav(speech_file['media'], processor.feature_extractor.sampling_rate)
+            raw_speech = model_utils.read_wav(speech_param['media'], processor.feature_extractor.sampling_rate)
+            input_param['speech_idx'] = p_idx
+            input_param['speech_param'] = speech_param
+            input_param['iter_idx'] = num
+            input_param['raw_speech'] = raw_speech
             iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-            run_speech_2_txt_generation(raw_speech, pipe, args, num, md5_list, speech_idx_list[idx],
-                                        iter_data_list, mem_consumption, processor)
+            run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list)
             iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
             prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
             log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
@@ -139,7 +154,7 @@ def get_speech_files(args):
                 if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
                     speech_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), speech_file['media'].replace('./', ''))
                     speech_file['media'] = Path(speech_file['media'])
-                    speech_file_list.append(speech_file)
+                speech_file_list.append(speech_file)
     else:
         speech_file_list.append({'media': output_data_list[0]})
     return speech_file_list
