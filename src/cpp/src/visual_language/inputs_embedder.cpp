@@ -1007,6 +1007,125 @@ protected:
     }
 };
 
+class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
+public:
+    InputsEmbedderPhi3V(
+        const VLMConfig& vlm_config,
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap device_config
+    ) : IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0} {}
+
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+        std::string images_prompt;
+        std::vector<EncodedImage> embeds;
+        for (const ov::Tensor& image : to_single_image_tensors(images)) {
+            EncodedImage encoded_image = m_vision_encoder.encode(image);
+        }
+        ov::Tensor inputs_embeds;
+        //     if (m_vlm_config.use_image_id) {
+        //         images_prompt += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
+        //         ++m_image_id;
+        //     }
+        //     std::string unk64;
+        //     for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
+        //         unk64 += m_vlm_config.unk;
+        //     }
+        //     images_prompt += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
+        //     if (encoded_image.slices) {
+        //         ov::Shape slices_shape = encoded_image.slices.get_shape();
+        //         for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+        //             for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+        //                 images_prompt += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
+        //             }
+        //             images_prompt += '\n';
+        //         }
+        //     }
+        //     if ('\n' != *(images_prompt.end() - 1)) {
+        //         // Image wasn't sliced, add \n to the end of image anyway.
+        //         // Strangely, \n isn't placed between </image><slice>.
+        //         images_prompt += '\n';
+        //     }
+        //     embeds.push_back(std::move(encoded_image));
+        // }
+        // images_prompt += prompt;
+
+        // ov::Tensor encoded_input = get_encoded_input_ids(images_prompt);
+
+        // ov::Tensor inputs_embeds = m_embedding.infer(encoded_input);
+        // OPENVINO_ASSERT(
+        //     m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
+        //     "Unexpected embedding size"
+        // );
+        // ov::Tensor special_tokens = m_tokenizer.encode(
+        //     m_vlm_config.im_start
+        //     + m_vlm_config.im_end
+        //     + m_vlm_config.slice_start
+        //     + m_vlm_config.slice_end
+        // ).input_ids;
+        // OPENVINO_ASSERT(
+        //     4 == special_tokens.get_shape().at(1),
+        //     "Every special token must be represented with a single int."
+        // );
+        // int64_t im_start_id = special_tokens.data<int64_t>()[0];
+        // int64_t im_end_id = special_tokens.data<int64_t>()[1];
+        // int64_t slice_start_id = special_tokens.data<int64_t>()[2];
+        // int64_t slice_end_id = special_tokens.data<int64_t>()[3];
+        // int64_t im_start_pos = 0, slice_start_pos = 0;
+        // int64_t* begin = encoded_input.data<int64_t>();
+        // int64_t* ids = begin;
+        // size_t encoded_input_size = encoded_input.get_size();
+        // int64_t* end = ids + encoded_input_size;
+        // float* inputs_embeds_data = inputs_embeds.data<float>();
+        // for (const EncodedImage& encoded_image : embeds) {
+        //     const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
+        //     float* emb = resampled_source.data<float>();
+        //     ids = std::find(ids, end, im_start_id);
+        //     OPENVINO_ASSERT(end != ids);
+        //     ++ids;
+        //     std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+        //     ids += m_vlm_config.query_num;
+        //     if (encoded_image.slices) {
+        //         size_t token_idx = 0;
+        //         const ov::Shape& slices_shape = encoded_image.slices.get_shape();
+        //         for (size_t i = 0; i < slices_shape.at(0); ++i) {
+        //             for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
+        //                 size_t d2 = slices_shape.at(2);
+        //                 size_t d3 = slices_shape.at(3);
+        //                 ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, encoded_image.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
+        //                 const ov::Tensor& vision_embed_tensor_i_j = resample(encoded_view, {encoded_image.slices_size});
+        //                 ids = std::find(ids, end, slice_start_id);
+        //                 OPENVINO_ASSERT(end != ids);
+        //                 ++ids;
+        //                 std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+        //                 ids += m_vlm_config.query_num;
+        //             }
+        //         }
+        //     }
+        // }
+
+        if (!m_is_chat_conversation) {
+            m_image_id = 0;
+        }
+
+        return inputs_embeds;
+    }
+
+    virtual void start_chat(const std::string& system_message) override {
+        IInputsEmbedder::start_chat(system_message);
+        m_image_id = 0;
+    }
+
+    virtual void finish_chat() override {
+        IInputsEmbedder::finish_chat();
+        m_image_id = 0;
+    }
+
+private:
+    // Used to insert <|image_i|>\n per image (not a slice).
+    size_t m_image_id;
+};
+
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
                                const std::filesystem::path& model_dir,
                                const std::string& device,
@@ -1019,6 +1138,8 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
         m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
         m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::PHI3_V) {
+        m_impl = std::make_shared<InputsEmbedderPhi3V>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }

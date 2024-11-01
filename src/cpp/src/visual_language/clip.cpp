@@ -28,7 +28,7 @@ inline float clip_lerp(float s, float e, float t) {
     return s + (e - s) * t;
 }
 // Bilinear resize function
-static void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height) {
+void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height) {
     dst.nx = target_width;
     dst.ny = target_height;
     dst.buf.resize(3 * target_width * target_height);

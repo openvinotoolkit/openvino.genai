@@ -35,15 +35,21 @@ public:
     /// llava calls it image_std.
     std::array<float, 3> norm_std{1.0f, 1.0f, 1.0f};
 
-    // llava specific config params
+    // A renamed version of norm_mean.
     std::array<float, 3> image_mean{0.0f, 0.0f, 0.0f};
     std::array<float, 3> image_std{1.0f, 1.0f, 1.0f};
+    // llava specific config params
     size_t crop_size_height = 336;
     size_t crop_size_width = 336;
     size_t size_shortest_edge = 336;
 
     // llava-next specific config params
     std::vector<std::pair<int, int>> image_grid_pinpoints{{336, 672}, {672, 336}, {672, 672}, {1008, 336}, {336, 1008}};
+
+    struct {
+        size_t num_crops = 4;
+        size_t num_img_tokens = 144;
+    } phi3_v;
 
     /// @brief Default constructor
     ProcessorConfig() = default;
