@@ -48,7 +48,7 @@ def main():
     pipe = openvino_genai.Text2ImagePipeline(args.models_path, device, adapters=adapter_config)
     print("Generating image with LoRA adapters applied, resulting image will be in lora.bmp")
     image = pipe.generate(prompt,
-                          random_generator=Generator(42),
+                          generator=Generator(42),
                           width=512,
                           height=896,
                           num_inference_steps=20)
@@ -58,7 +58,7 @@ def main():
     image = pipe.generate(prompt,
                           # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
                           adapters=openvino_genai.AdapterConfig(),
-                          random_generator=Generator(42),
+                          generator=Generator(42),
                           width=512,
                           height=896,
                           num_inference_steps=20
