@@ -291,7 +291,40 @@ def create_genai_speech_2_txt_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-    return genai_pipe, processor, from_pretrained_time
+    return genai_pipe, processor, from_pretrained_time, True
+
+
+def create_speech_2txt_model(model_path, device, **kwargs):
+    """Create speech generation model.
+
+    - model_path: can be model_path or IR path
+    - device: can be CPU
+    - model_type:
+    """
+    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
+    model_type = kwargs.get('model_type', default_model_type)
+    model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
+    model_path = Path(model_path)
+    model_path_existed = model_path.exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+    else:
+        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+            if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+            else:
+                return create_genai_speech_2_txt_model(model_path, device, **kwargs)
+        start = time.perf_counter()
+        ov_model = model_class.from_pretrained(
+            model_path,
+            device=device
+        )
+        end = time.perf_counter()
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    processor = AutoProcessor.from_pretrained(model_path)
+    return ov_model, processor, from_pretrained_time, False
 
 
 def is_genai_available(log_msg=False):

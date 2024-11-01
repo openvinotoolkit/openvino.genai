@@ -50,7 +50,7 @@ def get_param_from_file(args, input_key):
 
 def read_wav(filepath, sampling_rate):
     raw_speech = librosa.load(filepath, sr=sampling_rate)
-    return raw_speech[0].tolist()
+    return raw_speech[0]
 
 
 def set_default_param_for_ov_config(ov_config):

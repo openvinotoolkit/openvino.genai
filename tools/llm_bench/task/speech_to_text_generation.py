@@ -24,11 +24,13 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
+    pipe = input_param['pipe']
     raw_speech = input_param['raw_speech']
     num = input_param['iter_idx']
     speech_id = input_param['speech_idx']
     mem_consumption = input_param['mem_consumption']
     processor = input_param['processor']
+    use_genai = input_param['use_genai']
     speech_language = input_param['speech_param'].get('language', "<|en|>")
     ret_timestamps = input_param['speech_param'].get('timestamp', True)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -36,14 +38,17 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
-    result_text = input_param['pipe'].generate(
-        raw_speech,
-        max_new_tokens=max_gen_tokens,
-        # 'task' and 'language' parameters are supported for multilingual models only
-        language=speech_language,
-        task="transcribe",
-        return_timestamps=ret_timestamps
-    )
+    if use_genai:
+        result_text = pipe.generate(
+            raw_speech,
+            max_new_tokens=max_gen_tokens,
+            # 'task' and 'language' parameters are supported for multilingual models only
+            language=speech_language,
+            task="transcribe",
+            return_timestamps=ret_timestamps
+        )
+    else:
+        result_text = pipe(raw_speech, generate_kwargs={"task": 'translate'}, return_timestamps=ret_timestamps)["text"]
     end = time.perf_counter()
     tm_list = np.array(result_text.perf_metrics.raw_metrics.m_durations) / 1000 / 1000
     result_text = result_text.texts[0]
@@ -118,13 +123,14 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(speech_list) == 0:
         raise RuntimeError('==Failure speech list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
-    pipe, processor, pretrain_time = FW_UTILS[framework].create_genai_speech_2_txt_model(model_path, device, **args)
+    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
         'pipe': pipe,
         'mem_consumption': mem_consumption,
-        'processor': processor
+        'processor': processor,
+        'use_genai': use_genai
     }
     for num in range(num_iters + 1):
         for idx, speech_param in enumerate(speech_list):
