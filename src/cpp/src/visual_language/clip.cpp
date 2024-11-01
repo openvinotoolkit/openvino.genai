@@ -6,25 +6,13 @@
 // I'll gradually clean and extend it
 // Note: Even when using identical normalized image inputs (see normalize_image_u8_to_f32()) we have a significant difference in resulting embeddings compared to pytorch
 
-#include <cassert>
-#include <cmath>
-#include <cstdlib>
-#include <cstring>
-#include <fstream>
-#include <map>
-#include <regex>
-#include <stdexcept>
-#include <vector>
-#include <sstream>
-#include <cinttypes>
-#include <limits>
-
 #include "clip.hpp"
 
-#include <openvino/openvino.hpp>
+#include <cmath>
+#include <cstring>
 
 // Linear interpolation between two points
-inline float clip_lerp(float s, float e, float t) {
+static float clip_lerp(float s, float e, float t) {
     return s + (e - s) * t;
 }
 // Bilinear resize function
@@ -62,24 +50,12 @@ static void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int ta
     }
 }
 
-// Normalize image to float32 - careful with pytorch .to(model.device, dtype=torch.float16) - this sometimes reduces precision (32>16>32), sometimes not
-static void normalize_image_u8_to_f32(const clip_image_u8* src, clip_image_f32* dst, const float mean[3], const float std[3]) {
-    dst->nx = src->nx;
-    dst->ny = src->ny;
-    dst->buf.resize(src->buf.size());
-
-    for (size_t i = 0; i < src->buf.size(); ++i) {
-        int c = i % 3; // rgb
-        dst->buf[i] = (static_cast<float>(src->buf[i]) / 255.0f - mean[c]) / std[c];
-    }
-}
-
 template<typename NUM>
 NUM clip(NUM x, NUM lower, NUM upper) {
     return std::max(lower, std::min(x, upper));
 }
 
-bool bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_width, int target_height) {
+void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_width, int target_height) {
     const int nx = img.nx;
     const int ny = img.ny;
 
@@ -138,12 +114,10 @@ bool bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_wid
             }
         }
     }
-
-    return true;
 }
 
 // llava-1.6 type of resize_and_pad (black)
-static void resize_and_pad_image(const clip_image_u8& image, clip_image_u8 &image_output, const std::pair<int, int>& target_resolution) {
+static clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution) {
     int target_width = target_resolution.first;
     int target_height = target_resolution.second;
 
@@ -181,7 +155,7 @@ static void resize_and_pad_image(const clip_image_u8& image, clip_image_u8 &imag
             }
         }
     }
-    image_output = std::move(padded_image);
+    return padded_image;
 }
 
 /**
@@ -326,8 +300,7 @@ std::vector<clip_image_u8> get_image_patches(
     int height = best_resolution.second;
 
     // Resize and pad image for patching
-    clip_image_u8 resized_image;
-    resize_and_pad_image(image, resized_image, best_resolution);
+    clip_image_u8 resized_image = resize_and_pad_image(image, best_resolution);
 
     // Calculate patch dimensions
     int patches_w = width / patch_size;
