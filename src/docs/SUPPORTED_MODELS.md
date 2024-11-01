@@ -155,13 +155,9 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 4. `position_ids` (optional) encodes a position of currently generating token in the sequence and a single `logits` output.
 
 > [!NOTE]
-> Models should belong to the same family and have the same tokenizers.
-
->[!NOTE]
->`optimum-cli` requires the `--task text-generation-with-past` argument for the `THUDM/chatglm3-6b` model
-
->[!NOTE]
-> The **beam search** is not supported for `ChatGLM3-6B model`.
+>* Models should belong to the same family and have the same tokenizers.
+>* `optimum-cli` requires the `--task text-generation-with-past` argument for the `THUDM/chatglm3-6b` model
+>* The **beam search** is not supported for `ChatGLM3-6B model`.
 
 ## Text 2 image models
 
