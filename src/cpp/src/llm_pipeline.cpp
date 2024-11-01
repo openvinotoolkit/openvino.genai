@@ -152,7 +152,7 @@ public:
 
         auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
         auto stop_time = std::chrono::steady_clock::now();
-        raw_counters.generate_durations = std::vector<MicroSecond>();
+        raw_counters.generate_durations = std::vector<MicroSeconds>();
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
         raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
         raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));

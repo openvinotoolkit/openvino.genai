@@ -9,19 +9,19 @@
 
 namespace {
 
-ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecond>& durations) {
+ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
     if (durations.size() == 0) {
         return {-1, -1};
     }
     // Accepts time durations in microseconds and returns standard deviation and mean in milliseconds.
     float mean = std::accumulate(durations.begin(), durations.end(), 0.0f, 
-        [](const float& acc, const ov::genai::MicroSecond& duration) -> float {
+        [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
             return acc + duration.count() / 1000.0f;
         });
     mean /= durations.size();
     
     float sum_square_durations = std::accumulate(durations.begin(), durations.end(), 0.0f,
-        [](const float& acc, const ov::genai::MicroSecond& duration) -> float {
+        [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
             auto d = duration.count() / 1000.0f;
             return acc + d * d;
         });
@@ -101,10 +101,10 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
-        raw_metrics.m_durations = std::vector<MicroSecond>(tok_times.size() - 1);
+        raw_metrics.m_durations = std::vector<MicroSeconds>(tok_times.size() - 1);
 
         auto ttft = tok_times[0] - start_time_val;
-        raw_metrics.m_times_to_first_token = std::vector<MicroSecond>();
+        raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
         raw_metrics.m_times_to_first_token.emplace_back(ttft / batch_sizes[0]);
         num_generated_tokens = 0;
         

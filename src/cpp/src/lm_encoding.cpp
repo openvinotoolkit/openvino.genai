@@ -79,7 +79,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     raw_perf_counters.m_new_token_times.reserve(max_new_tokens);
     raw_perf_counters.m_batch_sizes.reserve(max_new_tokens);
     raw_perf_counters.m_token_infer_durations.reserve(max_new_tokens);
-    raw_perf_counters.m_inference_durations = {{ MicroSecond(0.0f) }};
+    raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
     if (m_embedding.has_value())
@@ -105,7 +105,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     m_llm.infer();
     const auto infer_end = std::chrono::steady_clock::now();
     const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
-    raw_perf_counters.m_inference_durations[0] += MicroSecond(infer_ms);
+    raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
     raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
     raw_perf_counters.m_new_token_times.emplace_back(infer_end);
     raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
@@ -201,7 +201,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         m_llm.infer();
         const auto infer_end = std::chrono::steady_clock::now();
         const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
-        raw_perf_counters.m_inference_durations[0] += MicroSecond(infer_ms);
+        raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
