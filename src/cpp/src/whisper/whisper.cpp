@@ -19,7 +19,7 @@
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 
-using ov::genai::MicroSeconds;
+using ov::genai::MicroSecond;
 
 namespace {
 
@@ -44,7 +44,7 @@ ov::Tensor encode(ov::InferRequest& request,
     const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_metrics.m_inference_durations[0] += MicroSecond(infer_ms);
 
     // reset input tensor
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
@@ -84,7 +84,7 @@ void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetric
     request.infer();
     const auto infer_end = std::chrono::steady_clock::now();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
-    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_metrics.m_inference_durations[0] += MicroSecond(infer_ms);
     raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
     raw_metrics.m_new_token_times.emplace_back(infer_end);
     raw_metrics.m_batch_sizes.emplace_back(1);
@@ -293,7 +293,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     raw_metrics.m_new_token_times.reserve(max_new_tokens);
     raw_metrics.m_batch_sizes.reserve(max_new_tokens);
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
-    raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    raw_metrics.m_inference_durations = {{MicroSecond(0.0f)}};
 
     std::vector<int64_t> init_ids;
     std::vector<int64_t>& output_tokens = result.output_tokens;

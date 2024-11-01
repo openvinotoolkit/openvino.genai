@@ -13,7 +13,7 @@ namespace ov {
 namespace genai {
 
 using TimePoint = std::chrono::steady_clock::time_point;
-using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
+using MicroSecond = std::chrono::duration<float, std::ratio<1, 1000000>>;
 
 /**
  * @brief Structure with raw performance metrics for each generation before any statistics are calculated.
@@ -31,16 +31,16 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param num_input_tokens Total number of tokens in the input prompt.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
-    std::vector<MicroSeconds> generate_durations;
-    std::vector<MicroSeconds> tokenization_durations;
-    std::vector<MicroSeconds> detokenization_durations;
+    std::vector<MicroSecond> generate_durations;
+    std::vector<MicroSecond> tokenization_durations;
+    std::vector<MicroSecond> detokenization_durations;
 
-    std::vector<MicroSeconds> m_times_to_first_token;
+    std::vector<MicroSecond> m_times_to_first_token;
     std::vector<TimePoint> m_new_token_times;
-    std::vector<MicroSeconds> m_token_infer_durations;
+    std::vector<MicroSecond> m_token_infer_durations;
     std::vector<size_t> m_batch_sizes;
-    std::vector<MicroSeconds> m_durations;
-    std::vector<MicroSeconds> m_inference_durations;
+    std::vector<MicroSecond> m_durations;
+    std::vector<MicroSecond> m_inference_durations;
 };
 
 /**

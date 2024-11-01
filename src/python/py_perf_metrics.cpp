@@ -21,16 +21,16 @@ auto raw_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
     :param generate_durations: Durations for each generate call in microseconds.
-    :type generate_durations: List[MicroSeconds]
+    :type generate_durations: List[MicroSecond]
 
     :param tokenization_durations: Durations for the tokenization process in microseconds.
-    :type tokenization_durations: List[MicroSeconds]
+    :type tokenization_durations: List[MicroSecond]
 
     :param detokenization_durations: Durations for the detokenization process in microseconds.
-    :type detokenization_durations: List[MicroSeconds]
+    :type detokenization_durations: List[MicroSecond]
 
     :param m_times_to_first_token: Times to the first token for each call in microseconds.
-    :type m_times_to_first_token: List[MicroSeconds]
+    :type m_times_to_first_token: List[MicroSecond]
 
     :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
     :type m_new_token_times: List[MilliSeconds]
@@ -39,7 +39,7 @@ auto raw_perf_metrics_docstring = R"(
     :type m_batch_sizes: List[int]
 
     :param m_durations: Total durations for each generate call in microseconds.
-    :type m_durations: List[MicroSeconds]
+    :type m_durations: List[MicroSecond]
 
     :param num_generated_tokens: Total number of tokens generated.
     :type num_generated_tokens: int
