@@ -135,7 +135,7 @@ def test_max_number_of_tokens():
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_generation(model_descr):
+def test_chat_generation():
     questions = [
         '1+1=',
         'What is the previous answer?',
