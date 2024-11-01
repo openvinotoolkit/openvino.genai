@@ -3,10 +3,8 @@
 
 #pragma once
 
-#include <cmath>
 #include <cstdint>
 #include <vector>
-#include <numeric>
 
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
