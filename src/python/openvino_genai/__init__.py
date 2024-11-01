@@ -40,5 +40,6 @@ from .py_openvino_genai import (
     AggregationMode,
     Generator,
     CppStdGenerator,
+    Scheduler,
     draft_model
 )

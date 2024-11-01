@@ -255,12 +255,47 @@ def create_image_gen_model(model_path, device, **kwargs):
     if not Path(model_path).exists():
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
+        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+            if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"], OV_MODEL_CLASSES_MAPPING["chatglm"]]:
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+            else:
+                return create_genai_image_gen_model(model_path, device, ov_config, **kwargs)
+
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
-    return ov_model, from_pretrained_time
+    return ov_model, from_pretrained_time, False, None
+
+
+def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
+    import openvino_genai
+    from transformers import AutoTokenizer
+
+    if kwargs.get("lora", None):
+        if len(kwargs['lora']) != len(kwargs['lora_alphas']):
+            log.warning(f'LoRA paths and alphas is not eq. LoRA will be ignored. {kwargs["lora"]} {kwargs["lora_alphas"]}')
+        else:
+            adapter_config = list()
+            for idx in range(len(kwargs['lora'])):
+                if not Path(kwargs['lora'][idx]).exists():
+                    log.warning(f'LoRA path is not exists: {kwargs["lora"][idx]}. LoRA will be ignored.')
+                    continue
+                adapter_config = openvino_genai.AdapterConfig()
+                adapter = openvino_genai.Adapter(kwargs['lora'][idx])
+                alpha = float(kwargs['lora_alphas'][idx])
+                adapter_config.add(adapter, alpha)
+            ov_config['adapters'] = adapter_config
+
+    start = time.perf_counter()
+    tokenizer = None
+    if (model_path / 'tokenizer').exists():
+        tokenizer = AutoTokenizer.from_pretrained(model_path / 'tokenizer')
+    t2i_pipe = openvino_genai.Text2ImagePipeline(model_path, device.upper(), **ov_config)
+    end = time.perf_counter()
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    return t2i_pipe, end - start, True, tokenizer
 
 
 def create_ldm_super_resolution_model(model_path, device, **kwargs):
