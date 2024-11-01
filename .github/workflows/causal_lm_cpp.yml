@@ -275,7 +275,7 @@ jobs:
           && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Chatglm3-6b:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-20.04-16-cores
     defaults:
       run:
         shell: bash
@@ -301,7 +301,7 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          optimum-cli export openvino --trust-remote-code --task text-generation-with-past --model THUDM/chatglm3-6b chatglm3-6b
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
       - run: > 
           . ./ov/setupvars.sh
           && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ 69) -
@@ -528,7 +528,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
-          optimum-cli export openvino --trust-remote-code --task text-generation-with-past --model THUDM/chatglm3-6b chatglm3-6b
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
