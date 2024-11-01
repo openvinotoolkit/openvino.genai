@@ -4,9 +4,7 @@
 // Based on clip.cpp
 
 #include "clip.hpp"
-
 #include <cmath>
-#include <cstring>
 
 // Linear interpolation between two points
 static float clip_lerp(float s, float e, float t) {
