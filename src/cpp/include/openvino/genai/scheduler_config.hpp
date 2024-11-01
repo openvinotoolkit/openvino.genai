@@ -53,5 +53,12 @@ struct SchedulerConfig {
     // When turend off only KV-cache required for batch calculation is kept in memory and 
     // when a sequence has finished genegartion its cache is released.
     bool enable_prefix_caching = false;
+
+    bool operator==(const SchedulerConfig& other) const {
+        return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&
+               cache_size == other.cache_size && block_size == other.block_size &&
+               dynamic_split_fuse == other.dynamic_split_fuse && use_cache_eviction == other.use_cache_eviction &&
+               max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
+    }
 };
 }
