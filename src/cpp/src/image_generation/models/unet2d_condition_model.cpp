@@ -99,7 +99,7 @@ void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov:
 }
 
 void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
-    if(adapters) {
+    if (adapters) {
         m_adapter_controller.apply(m_request, *adapters);
     }
 }

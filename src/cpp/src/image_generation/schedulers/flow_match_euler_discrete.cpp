@@ -40,10 +40,8 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& s
     int32_t num_train_timesteps = m_config.num_train_timesteps;
     float shift = m_config.shift;
 
-    auto linspaced = linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
-    for (auto it = linspaced.rbegin(); it != linspaced.rend(); ++it) {
-        m_timesteps.push_back(*it);
-    }
+    m_timesteps = linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
+    std::reverse(m_timesteps.begin(), m_timesteps.end());
 
     std::transform(m_timesteps.begin(),
                    m_timesteps.end(),
@@ -102,8 +100,8 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
     // latents - sample
     // inference_step
 
-    float* model_output_data = noise_pred.data<float>();
-    float* sample_data = latents.data<float>();
+    const float* model_output_data = noise_pred.data<const float>();
+    const float* sample_data = latents.data<const float>();
 
     if (m_step_index == -1)
         init_step_index();

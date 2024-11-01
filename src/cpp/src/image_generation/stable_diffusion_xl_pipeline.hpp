@@ -492,7 +492,7 @@ private:
 
     ov::AnyMap properties_for_text_encoder(ov::AnyMap properties, const std::string& tensor_name_prefix) {
         std::optional<AdapterConfig> adapters;
-        if(update_adapters_from_properties(properties, adapters) && !adapters->get_tensor_name_prefix()) {
+        if (update_adapters_from_properties(properties, adapters) && !adapters->get_tensor_name_prefix()) {
             adapters->set_tensor_name_prefix(tensor_name_prefix);
             properties[ov::genai::adapters.name()] = *adapters;
         }

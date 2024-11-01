@@ -557,27 +557,18 @@ public:
 
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
-        ov::Tensor timestep;
 
         for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; ++inference_step) {
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
                 batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
-                batch_copy(latent,
-                           latent_cfg,
-                           0,
-                           generation_config.num_images_per_prompt,
-                           generation_config.num_images_per_prompt);
-
-                size_t timestep_size = generation_config.num_images_per_prompt * batch_size_multiplier;
-                timestep = ov::Tensor(ov::element::f32, {timestep_size});
-                std::fill_n(timestep.data<float>(), timestep.get_size(), timesteps[inference_step]);
+                batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             } else {
                 // just assign to save memory copy
                 latent_cfg = latent;
-                timestep = ov::Tensor(ov::element::f32, {1}, &timesteps[inference_step]);
             }
 
+            ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
@@ -601,12 +592,6 @@ public:
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
-        }
-
-        float* latent_data = latent.data<float>();
-        for (size_t i = 0; i < latent.get_size(); ++i) {
-            latent_data[i] = (latent_data[i] / m_vae->get_config().scaling_factor) +
-                             m_vae->get_config().shift_factor;
         }
 
         return m_vae->decode(latent);

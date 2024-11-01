@@ -65,7 +65,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = batch_size;
+            name_to_shape[input_name][0] = 1;
         } else if (input_name == "hidden_states") {
             name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "encoder_hidden_states") {
