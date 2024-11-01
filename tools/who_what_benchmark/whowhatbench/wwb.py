@@ -21,7 +21,6 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
 
-from .utils import add_device_specific_properties
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -163,8 +162,6 @@ def load_model(
             ov_options = json.load(f)
     else:
         ov_options = {}
-
-    ov_options = add_device_specific_properties(device, ov_options)
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai)

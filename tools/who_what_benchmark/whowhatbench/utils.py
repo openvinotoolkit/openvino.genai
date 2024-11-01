@@ -1,6 +1,4 @@
 from typing import Union, Tuple, List, Optional
-
-import openvino as ov
 import torch
 
 from diffusers.utils import torch_utils
@@ -24,12 +22,3 @@ def new_randn_tensor(
 
 def patch_diffusers():
     torch_utils.randn_tensor = new_randn_tensor
-
-
-def add_device_specific_properties(device, ov_config):
-    properties = ov.Core().get_property(device, ov.properties.supported_properties)
-
-    if "ACTIVATIONS_SCALE_FACTOR" in properties:
-        ov_config["ACTIVATIONS_SCALE_FACTOR"] = 8.0  # FP16 overflow issue
-
-    return ov_config
