@@ -340,7 +340,15 @@ print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
 ```
 
 #### Using raw performance metrics
-Additionally to mean and std values, `perf_metrics` object has a `raw_metrics` field which stored raw numbers with timesteps when batch of tokens was generated, with batch sizes for each timestamp, with tokenization duration and so on.
+In addition to mean and standard deviation values, the `perf_metrics` object has a `raw_metrics` field. This field stores raw data, including:
+
+- Timestamps for each batch of generated tokens
+- Batch sizes for each timestamp
+- Tokenization durations
+- Detokenization durations
+- Other relevant metrics
+
+These metrics can be use for more fine grained analysis, such as getting exact calculating median values, percentiles, etc. Below are a few examples of how to use raw metrics.
 
 Getting timestamps for each generated token:
 ```python
@@ -352,7 +360,24 @@ raw_metrics = perf_metrics.raw_metrics
 
 print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
 print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
-print(f'Timestamps: {" ms, ".join(f"{i:.2f}" for i in raw_metrics.m_new_token_times[1:])}')
+print(f'Timestamps: {" ms, ".join(f"{i:.2f}" for i in raw_metrics.m_new_token_times)}')
+```
+
+Getting pure inference time without tokenizatin and detokenization duration:
+```python
+import openvino_genai as ov_genai
+import openvino_genai as ov_genai
+import numpy as np
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+
+raw_metrics = perf_metrics.raw_metrics
+generate_duration = np.array(raw_metrics.generate_durations)
+tok_detok_duration = np.array(raw_metrics.tokenization_durations) - np.array(raw_metrics.detokenization_durations)
+pure_inference_duration = np.mean(generate_duration - tok_detok_duration) / 1000 # in seconds
+print(f'Pure Inference duration: {pure_inference_duration:.2f} ms')
 ```
 
 Example of using raw metrics to calculate median value of generate duration:
