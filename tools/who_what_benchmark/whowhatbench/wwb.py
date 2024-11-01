@@ -65,7 +65,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
     logger.info("Using OpenVINO GenAI API")
-    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, config=ov_config), model_dir, "text")
+    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
 
 
 def load_text_model(
@@ -112,7 +112,7 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
         exit(-1)
     logger.info("Using OpenVINO GenAI API")
     return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, ov_config=ov_config),
+        openvino_genai.Text2ImagePipeline(model_dir, device=device, **ov_config),
         model_dir,
         "text-to-image"
     )
@@ -160,7 +160,7 @@ def load_model(
         with open(ov_config) as f:
             ov_options = json.load(f)
     else:
-        ov_options = None
+        ov_options = {}
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai)
