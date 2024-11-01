@@ -44,7 +44,6 @@ int main(int argc, char* argv[]) try {
     draft_scheduler_config.cache_size = 5;
     draft_scheduler_config.block_size = get_default_block_size(draft_device);
 
-    // Example to run main_model on GPU and draft_model on CPU:
     // Different devices require different block sizes, so different scheduler configs need to be set.
     ov::genai::LLMPipeline pipe(
         main_model_path,
