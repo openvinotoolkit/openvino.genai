@@ -21,7 +21,6 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -161,7 +160,7 @@ def load_model(
         with open(ov_config) as f:
             ov_options = json.load(f)
     else:
-        ov_options = {}
+        ov_options = None
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai)
