@@ -64,7 +64,7 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& s
     m_sigma_max = m_sigmas[0], m_sigma_min = m_sigmas.back();
 }
 
-float FlowMatchEulerDiscreteScheduler::sigma_to_t(float sigma) {
+double FlowMatchEulerDiscreteScheduler::sigma_to_t(double sigma) {
     return sigma * m_config.num_train_timesteps;
 }
 
@@ -77,20 +77,24 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     float shift = m_config.shift;
 
     using numpy_utils::linspace;
-    m_timesteps = linspace<float>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
+    std::vector<double> timesteps = linspace<double>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
 
-    for (const float& i : m_timesteps) {
-        m_sigmas.push_back(i / num_train_timesteps);
+    std::vector<double> sigmas(timesteps.size());
+    for (size_t i = 0; i < sigmas.size(); ++i) {
+        sigmas[i] = timesteps[i] / num_train_timesteps;
     }
 
     OPENVINO_ASSERT(!m_config.use_dynamic_shifting,
                     "Parameter 'use_dynamic_shifting' is not supported. Please, add support.");
 
-    for (size_t i = 0; i < m_sigmas.size(); ++i) {
-        m_sigmas[i] = shift * m_sigmas[i] / (1 + (shift - 1) * m_sigmas[i]);
+    m_sigmas.resize(sigmas.size());
+    m_timesteps.resize(sigmas.size());
+
+    for (size_t i = 0; i < sigmas.size(); ++i) {
+        m_sigmas[i] = shift * sigmas[i] / (1.0 + (shift - 1.0) * sigmas[i]);
         m_timesteps[i] = m_sigmas[i] * num_train_timesteps;
     }
-    m_sigmas.push_back(0);
+    m_sigmas.push_back(0.0f);
 
     m_step_index = -1, m_begin_index = -1;
 }
