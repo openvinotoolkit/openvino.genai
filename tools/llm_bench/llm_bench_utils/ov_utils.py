@@ -324,7 +324,16 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-    return ov_model, processor, from_pretrained_time, False
+
+    from transformers import pipeline
+    pipe = pipeline("automatic-speech-recognition",
+        model=ov_model,
+        chunk_length_s=30,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor
+    )
+
+    return pipe, processor, from_pretrained_time, False
 
 
 def is_genai_available(log_msg=False):

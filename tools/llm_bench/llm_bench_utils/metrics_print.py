@@ -6,7 +6,7 @@ import logging as log
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1
+        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, prompt_idx=-1, whisper=None
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -57,6 +57,8 @@ def print_metrics(
             log.warning(f'{prefix} No hook data output for first infer latency and other infers latency')
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
+    if whisper is not None:
+        print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
         output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
@@ -190,3 +192,6 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
         for prompt_key in prompt_dict:
             out_str += prompt_dict[prompt_key]
         log.info(out_str)
+
+def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
+    log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
