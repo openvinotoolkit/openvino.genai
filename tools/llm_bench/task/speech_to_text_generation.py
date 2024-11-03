@@ -8,7 +8,6 @@ import numpy as np
 from pathlib import Path
 import hashlib
 import logging as log
-from transformers import pipeline
 import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print

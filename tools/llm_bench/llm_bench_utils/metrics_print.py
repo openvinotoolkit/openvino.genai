@@ -193,5 +193,6 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
             out_str += prompt_dict[prompt_key]
         log.info(out_str)
 
+
 def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
     log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')

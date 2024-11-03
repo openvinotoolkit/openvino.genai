@@ -58,17 +58,19 @@ class WhisperHook:
         for idx, data in enumerate(self.latency_list):
             title = f'[ INFO ] [{iter}][P{prompt_idx}][L{idx}]'
             if 'enc_token_time' and 'enc_infer_time' in data:
-                str += f"{title} encoder token latency: {data['enc_token_time']:.2f} ms/token, " \
+                str += \
+                    f"{title} encoder token latency: {data['enc_token_time']:.2f} ms/token, " \
                     f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer"
             if 'dec_1st_token_time' and 'dec_2nd_tokens_time' in data:
-                str += '\n'
-                str += f"{title} decoder first token latency: {data['dec_1st_token_time']} ms/token, " \
-                        f"decoder other tokens latency: {data['dec_2nd_tokens_time']} ms/token, " \
-                        f"decoder tokens count: {data['dec_token_count']}\n"
+                str += \
+                    f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms/token, " \
+                    f"decoder other tokens latency: {data['dec_2nd_tokens_time']} ms/token, " \
+                    f"decoder tokens count: {data['dec_token_count']}\n"
             if 'dec_1st_infer_time' and 'dec_2nd_infers_time' in data:
-                str += f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms/infer, " \
-                        f"decoder other infers latency: {data['dec_2nd_infers_time']} ms/infer, " \
-                        f"decoder infers count: {data['dec_infer_count']}"
+                str += \
+                    f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms/infer, " \
+                    f"decoder other infers latency: {data['dec_2nd_infers_time']} ms/infer, " \
+                    f"decoder infers count: {data['dec_infer_count']}"
             if idx < len(self.latency_list) - 1:
                 str += '\n'
         return str

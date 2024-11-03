@@ -326,7 +326,8 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     processor = AutoProcessor.from_pretrained(model_path)
 
     from transformers import pipeline
-    pipe = pipeline("automatic-speech-recognition",
+    pipe = pipeline(
+        "automatic-speech-recognition",
         model=ov_model,
         chunk_length_s=30,
         tokenizer=processor.tokenizer,
