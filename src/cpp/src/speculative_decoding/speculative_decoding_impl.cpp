@@ -11,7 +11,7 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-bool is_tokenizers_are_equal(Tokenizer& lhs, Tokenizer& rhs) {
+bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
     std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
     ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
                encoded_string_rhs = rhs.encode(test_string).input_ids;
@@ -80,7 +80,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
               draft_model_tokenizer(draft_models_path, tokenizer_properties);
 
     // todo: remove this condition after support of CVS-154103
-    OPENVINO_ASSERT(is_tokenizers_are_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
+    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     
     m_tokenizer = main_model_tokenizer;
 
