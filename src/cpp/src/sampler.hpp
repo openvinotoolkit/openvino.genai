@@ -44,7 +44,7 @@ class Sampler {
     class GroupBeamSearcher;
 
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
-    Token _greedy_sample(const Logits& logits) const;
+    Token _greedy_sample(const Logits& logits, int top_logprobs) const;
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
