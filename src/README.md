@@ -366,7 +366,6 @@ print(f'Timestamps: {" ms, ".join(f"{i:.2f}" for i in raw_metrics.m_new_token_ti
 Getting pure inference time without tokenizatin and detokenization duration:
 ```python
 import openvino_genai as ov_genai
-import openvino_genai as ov_genai
 import numpy as np
 pipe = ov_genai.LLMPipeline(models_path, "CPU")
 result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
