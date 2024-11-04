@@ -53,7 +53,7 @@ py::object call_common_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    ov::genai::GenerationConfig generation_config;
+    ov::genai::GenerationConfig default_config;
     if (config.has_value()) {
         default_config = *config;
     } else {
