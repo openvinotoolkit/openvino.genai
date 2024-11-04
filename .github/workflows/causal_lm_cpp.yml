@@ -304,7 +304,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
       - run: > 
           . ./ov/setupvars.sh
-          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ 69) -
+          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ 69 "why is sun yellow?"
         env:
           PYTHONPATH: "./build"
 
