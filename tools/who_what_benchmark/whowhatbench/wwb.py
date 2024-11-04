@@ -8,7 +8,6 @@ import json
 import logging
 import os
 
-import openvino_genai
 import pandas as pd
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
