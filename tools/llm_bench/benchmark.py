@@ -134,8 +134,8 @@ def get_argprser():
         nargs='*',
         required=False,
         default=None,
-        help="Path to LoRA adapters for using OpenVINO GenAI Text2Image optimized pipelines with LoRA for benchmarking")
-    parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[0.5])
+        help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
+    parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument(
