@@ -114,6 +114,7 @@ std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
     // Converts c++ duration to double so that it can be used in Python.
     // Use double instead of float bacuse timestamp in ms contains 14 digits
     // while float only allows to store ~7 significant digits.
+    // And the current timestamp (number of secs from 1970) is already 11 digits.
     std::vector<double> res;
     const auto& timestamps = instance.*member;
     res.reserve(timestamps.size());
