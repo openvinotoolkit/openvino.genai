@@ -53,7 +53,13 @@ py::object call_common_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    auto updated_config = pyutils::update_config_from_kwargs(config, kwargs);
+    ov::genai::GenerationConfig generation_config;
+    if (config.has_value()) {
+        default_config = *config;
+    } else {
+        default_config = pipe.get_generation_config();
+    }
+    auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
     py::object results;
     EncodedInputs tensor_data;
     StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
