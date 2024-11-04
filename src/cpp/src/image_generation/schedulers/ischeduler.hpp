@@ -27,9 +27,10 @@ public:
 
     virtual void scale_model_input(ov::Tensor sample, size_t inference_step) = 0;
 
-    virtual std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) = 0;
+    virtual std::map<std::string, ov::Tensor> step(
+        ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) = 0;
 
-    virtual void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const = 0;
+    virtual void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const = 0;
 };
 
 } // namespace genai

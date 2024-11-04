@@ -12,6 +12,17 @@
 namespace ov {
 namespace genai {
 
+std::filesystem::path get_tokenizer_path_by_text_encoder(const std::filesystem::path& text_encoder_path) {
+    const std::string to_replace = "text_encoder", replacement = "tokenizer";
+    std::string text_encoder_path_str = text_encoder_path.string();
+
+    size_t pos = text_encoder_path_str.find(to_replace);
+    OPENVINO_ASSERT(pos != std::string::npos, "Failed to find '", to_replace, "' substring in '", text_encoder_path_str, "'");
+    text_encoder_path_str.replace(pos, to_replace.length(), replacement);
+
+    return text_encoder_path_str;
+}
+
 CLIPTextModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -20,12 +31,11 @@ CLIPTextModel::Config::Config(const std::filesystem::path& config_path) {
     using utils::read_json_param;
 
     read_json_param(data, "max_position_embeddings", max_position_embeddings);
-    read_json_param(data, "hidden_size", hidden_size);
     read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
 CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir) :
-    m_clip_tokenizer(root_dir.parent_path() / "tokenizer"),
+    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
     m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model((root_dir / "openvino_model.xml").string());

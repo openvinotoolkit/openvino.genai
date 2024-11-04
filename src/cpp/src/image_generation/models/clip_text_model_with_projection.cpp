@@ -12,6 +12,8 @@
 namespace ov {
 namespace genai {
 
+std::filesystem::path get_tokenizer_path_by_text_encoder(const std::filesystem::path& text_encoder_path);
+
 CLIPTextModelWithProjection::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -20,12 +22,11 @@ CLIPTextModelWithProjection::Config::Config(const std::filesystem::path& config_
     using utils::read_json_param;
 
     read_json_param(data, "max_position_embeddings", max_position_embeddings);
-    read_json_param(data, "hidden_size", hidden_size);
     read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::filesystem::path& root_dir) :
-    m_clip_tokenizer(root_dir.parent_path() / "tokenizer_2"),
+    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
     m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model((root_dir / "openvino_model.xml").string());
