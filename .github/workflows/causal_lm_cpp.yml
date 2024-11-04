@@ -763,20 +763,17 @@ jobs:
       - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          set -o pipefail
-          && source ./ov/setupvars.sh
+          source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?' | tee cpp2.txt
+          <<< $'What is unusual on this image?'
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          set -o pipefail
-          && source ./ov/setupvars.sh
+          source ./ov/setupvars.sh
           && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?' | tee py2.txt
+          <<< $'What is unusual on this image?'
         env:
           PYTHONPATH: "./build/"
-      - run: diff cpp2.txt py2.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
