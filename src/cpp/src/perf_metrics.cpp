@@ -108,7 +108,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         raw_metrics.m_times_to_first_token.emplace_back(ttft / batch_sizes[0]);
         num_generated_tokens = batch_sizes[0];
         
-        // The very first infer request (prefill stage) is slower than sunsequent ones since we process a sequence of tokens.
+        // The very first infer request (prefill stage) is slower than subsequent ones since we process a sequence of tokens.
         // To have a clearer TPOT number, the time taken to generate the very first token at the prefill stage 
         // must not be included in the TPOT calculation. The first duration used for TPOT is from the first token 
         // to the second token, not from the start time to the first token.
