@@ -747,13 +747,15 @@ jobs:
           mkdir images
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee py.txt
         env:
@@ -761,15 +763,17 @@ jobs:
       - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?' | tee cpp2.txt
+          <<< $'a\nb' | tee cpp2.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?' | tee py2.txt
+          <<< $'a\nb' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
       - run: diff cpp2.txt py2.txt
