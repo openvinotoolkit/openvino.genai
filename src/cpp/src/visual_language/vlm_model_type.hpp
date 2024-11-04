@@ -11,15 +11,19 @@
 
 namespace ov::genai {
 
-enum class OPENVINO_GENAI_EXPORTS VLMModelType {
+enum class VLMModelType {
     MINICPM,
     LLAVA,
+    LLAVA_NEXT,
+    INTERNVL_CHAT,
 };
 
 inline VLMModelType to_vlm_model_type(const std::string& value) {
     static const std::unordered_map<std::string, VLMModelType> model_types_map = {
         {"minicpmv", VLMModelType::MINICPM},
-        {"llava", VLMModelType::LLAVA}
+        {"llava", VLMModelType::LLAVA},
+        {"llava_next", VLMModelType::LLAVA_NEXT},
+        {"internvl_chat", VLMModelType::INTERNVL_CHAT}
     };
 
     auto it = model_types_map.find(value);

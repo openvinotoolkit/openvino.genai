@@ -126,12 +126,22 @@ public:
         }
     }
 
-    GenerationOutput get_last_generation_output() {
+    GenerationOutput get_last_generation_output(size_t token_cnt = 1) {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        output.generated_ids = std::vector<int64_t> {m_generated_ids.back()};
-        output.generated_log_probs = std::vector<float> {m_generated_log_probs.back()};
+
+        auto generated_token_id = get_generated_ids();
+        auto generated_log_probs = get_generated_log_probs();
+
+        OPENVINO_ASSERT(get_generated_len() >= token_cnt);
+        auto offset = get_generated_len() - token_cnt;
+
+        std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
+        std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
+
+        output.generated_ids = token_id;
+        output.generated_log_probs = log_probs;
         output.finish_reason = get_finish_reason();
         return output;
     }
@@ -184,16 +194,18 @@ public:
 // contains a list of Sequences in generic case (beam search or parallel sampling)
 // - each sequence shares the same prompt and KV-caches for promp
 // - in case of beam search each sequence also shares specific part of generic phase
-//   via reference counter machanism on BlockManager level
+//   via reference counter mechanism on BlockManager level
 class SequenceGroup {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
     ov::genai::GenerationConfig m_sampling_params;
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
+    std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     bool m_enable_prefix_caching;
     size_t m_num_evicted_tokens = 0;
+    bool m_has_echoed = false;
 
     uint64_t m_next_sequence_id = 0;
  
@@ -205,7 +217,9 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
     // max validation length within a group to check generated tokens
-    size_t m_num_validated_tokens = 0;
+    size_t m_num_validation_tokens = 0;
+    // flag to enable/disable token generation, e.g. in speculative decoding scenario
+    bool m_is_gen_paused = false;
 
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
@@ -230,6 +244,7 @@ public:
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
+        m_prompt_log_probs.reserve(m_prompt_ids.size());
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
@@ -248,9 +263,13 @@ public:
         return m_prompt_ids.size();
     }
 
-    // a sequence group can generate new tokens if it already proccessed m_max_content_len before
+    void pause_generation(bool status) {
+        m_is_gen_paused = status;
+    }
+
+    // a sequence group can generate new tokens if it already processed m_max_content_len before
     bool can_generate_tokens() const {
-        return m_max_content_len >= get_prompt_len();
+        return m_max_content_len + m_num_validation_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
 
     Sequence::Ptr operator[] (size_t index) {
@@ -405,13 +424,12 @@ public:
 
     // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
-        OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
 
 
     bool requires_sampling() const {
-        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len;
+        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && m_sampling_params.max_new_tokens > 0;
     }
 
     void schedule_tokens(size_t num_tokens) {
@@ -420,7 +438,7 @@ public:
 
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
-        m_num_validated_tokens = 0;
+        m_num_validation_tokens = 0;
     }
 
     bool is_scheduled() const {
@@ -429,12 +447,12 @@ public:
 
     void set_num_validated_tokens(size_t k) {
         // in case of non-prompt we need to take prev tokens + token to validate
-        // m_num_validated_tokens = get_num_processed_tokens() ? k + 1 : k;
-        m_num_validated_tokens = k;
+        // m_num_validation_tokens = get_num_processed_tokens() ? k + 1 : k;
+        m_num_validation_tokens = k;
     }
 
     size_t get_num_tokens_to_validate() {
-        return m_num_validated_tokens;
+        return m_num_validation_tokens;
     }
 
     size_t get_num_available_tokens_for_batching() const {
@@ -442,7 +460,7 @@ public:
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
         size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validated_tokens;
+        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
     }
 
     // mark current schedule phase as finished and updates internal counters
@@ -468,6 +486,10 @@ public:
 
     const TokenIds& get_prompt_ids() const {
         return m_prompt_ids;
+    }
+
+    void append_prompt_log_prob(float log_prob) {
+        m_prompt_log_probs.push_back(log_prob);
     }
 
     /**
@@ -529,7 +551,7 @@ public:
                 return true;
             }
         }
-        return false;
+        return m_is_gen_paused;
     }
 
     void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
@@ -560,6 +582,10 @@ public:
             GenerationOutput output;
             output.generated_ids = sequence->get_generated_ids();
             output.generated_log_probs = sequence->get_generated_log_probs();
+            if (m_sampling_params.echo) {
+                output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
+                output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
+            }
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
@@ -567,18 +593,23 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void push_partial_outputs() {
+    void push_partial_outputs(size_t token_cnt = 1) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
-            const auto last_gen_token = sequence->get_last_generation_output();
-            outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+            auto output = sequence->get_last_generation_output(token_cnt);
+            if (m_sampling_params.echo && !m_has_echoed) {
+                output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
+                output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
+            }
+            outputs.emplace(sequence->get_grouped_id(), output);
         }
+        m_has_echoed = true;
         m_generation_stream->push(std::move(outputs));
     }
 
-    void notify_handle() {
+    void notify_handle(size_t num_output_token_to_push = 0) {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
@@ -592,12 +623,39 @@ public:
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
-            if (num_total_seqs() == 1&& (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
-                push_partial_outputs();
+            if (num_total_seqs() == 1 &&
+                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
+                if (num_output_token_to_push)
+                    push_partial_outputs(num_output_token_to_push);
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
         }
+    }
+
+    
+    // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
+    void notify_handle_echo_only() {
+        // This method is called after scheduling and before sampling,
+        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
+        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
+        size_t first_token_position = m_num_processed_tokens;
+        size_t last_token_position = get_context_len();
+
+        GenerationOutput output;
+        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
+        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
+        output.score = 0.0; // Should we accumulate prompt log probs here?
+        output.finish_reason = GenerationFinishReason::NONE;
+
+        if (last_token_position == get_prompt_len()) {
+            output.finish_reason = GenerationFinishReason::LENGTH;
+            set_generation_status(GenerationStatus::FINISHED);
+            m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
+        }
+        GenerationOutputs outputs;
+        outputs.emplace(0, output);
+        m_generation_stream->push(std::move(outputs));
     } 
 };
 }

@@ -19,7 +19,7 @@
 #include <thread>
 #include <vector>
 
-#include "../utils.hpp"
+#include "json_utils.hpp"
 #include "openvino/genai/visibility.hpp"
 
 namespace {
@@ -440,13 +440,13 @@ std::vector<float> WhisperFeatures::get_data_with_offset(const size_t frame_offs
     return offset_data;
 }
 
-WhisperFeatureExtractor::WhisperFeatureExtractor(const std::string& preprocessor_json_path) {
+WhisperFeatureExtractor::WhisperFeatureExtractor(const std::filesystem::path& preprocessor_json_path) {
     init_parameters(preprocessor_json_path);
     fill_sin_cos_table(sin_vals, cos_vals, n_fft);
     init_mel_filter();
 }
 
-void WhisperFeatureExtractor::init_parameters(const std::string& preprocessor_json_path) {
+void WhisperFeatureExtractor::init_parameters(const std::filesystem::path& preprocessor_json_path) {
     // preprocessor_config.json not found. Skip parameters initialization from file, use defaults.
     if (!std::filesystem::exists(preprocessor_json_path)) {
         return;
@@ -455,7 +455,7 @@ void WhisperFeatureExtractor::init_parameters(const std::string& preprocessor_js
     using ov::genai::utils::read_json_param;
 
     std::ifstream f(preprocessor_json_path);
-    OPENVINO_ASSERT(f.is_open(), "Failed to open '" + preprocessor_json_path + "' with preprocessor config");
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", preprocessor_json_path, "' with preprocessor config");
 
     nlohmann::json data = nlohmann::json::parse(f);
 

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <string>
+#include <filesystem>
 
 namespace ov {
 namespace genai {
@@ -13,7 +13,7 @@ namespace genai {
  */
 class WhisperConfig {
 public:
-    explicit WhisperConfig(const std::string& json_path);
+    explicit WhisperConfig(const std::filesystem::path& json_path);
 
     size_t max_source_positions = 1500;
 };

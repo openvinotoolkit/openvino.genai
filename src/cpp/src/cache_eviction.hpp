@@ -39,7 +39,7 @@ namespace ov::genai {
  * in general, one partially filled block past the recent area).
  *
  * Sizes of *start*, *evictable* and *recent* areas are configurable, but the *evictable* area size specifies the
- * _minimal_ size of the evictable area. When tokens overflow the eviction arena, the acutal evictable area is
+ * _minimal_ size of the evictable area. When tokens overflow the eviction arena, the actual evictable area is
  * determined as the tokens between the fixed-size *start area* and the fixed-size *end area*, so at a given eviction step
  * there are in general more tokens considered for eviction than the specified *evictable* size.
  *

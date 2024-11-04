@@ -11,7 +11,7 @@
 namespace ov::genai {
 /// @brief A Configuration class passed to VLMPipeline and used to
 /// change VLMPipeline's behavior. Corresponds to config.json.
-class OPENVINO_GENAI_EXPORTS VLMConfig {
+class VLMConfig {
 public:
     /// @brief A enum denoting model type.
     VLMModelType model_type;
@@ -44,6 +44,17 @@ public:
     std::string im_id_end = "</image_id>";
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
+
+    // llava_next specific config params
+    std::vector<float> image_newline;
+
+    /// @brief A string token denoting start of image embeddings for InternVL2 model.
+    std::string image_start_token = "<img>";
+    /// @brief A placeholder for image embeddings in text for InternVL2 model.
+    std::string image_context_token = "<IMG_CONTEXT>";
+    /// @brief A string token denoting end of image embeddings for InternVL2 model.
+    std::string image_end_token = "</img>";
+    
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

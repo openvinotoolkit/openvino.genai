@@ -47,7 +47,9 @@ class Sampler {
     Token _greedy_sample(const Logits& logits) const;
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
-    void update_logit_processor(uint64_t request_id, uint64_t token_id);
+
+    bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample);
 
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
@@ -64,7 +66,13 @@ public:
 
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
-    void clear_beam_search_info(uint64_t request_id);
+
+    void clear_request_info(uint64_t request_id);
+
+    LogitProcessor& get_logit_processor(uint64_t request_id);
+    void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);
+
+    std::map<size_t, int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
 };
 
 class Sampler::GroupBeamSearcher {
@@ -109,5 +117,6 @@ public:
 
     void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
     void finalize(SamplerOutput& sampler_output);
+    std::map<size_t, int32_t> get_beam_idxs();
 };
 }

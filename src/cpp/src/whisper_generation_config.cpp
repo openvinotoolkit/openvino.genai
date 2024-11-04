@@ -9,15 +9,16 @@
 #include <openvino/runtime/core.hpp>
 
 #include "utils.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
 
-WhisperGenerationConfig::WhisperGenerationConfig(const std::string& json_path) {
+WhisperGenerationConfig::WhisperGenerationConfig(const std::filesystem::path& json_path) {
     using ov::genai::utils::read_json_param;
 
     std::ifstream f(json_path);
-    OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path, "' with generation config");
 
     nlohmann::json data = nlohmann::json::parse(f);
 
@@ -29,7 +30,6 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::string& json_path) {
     read_json_param(data, "eos_token_id", eos_token_id);
     read_json_param(data, "pad_token_id", pad_token_id);
     read_json_param(data, "no_timestamps_token_id", no_timestamps_token_id);
-    read_json_param(data, "begin_timestamps_token_id", begin_timestamps_token_id);
     read_json_param(data, "max_initial_timestamp_index", max_initial_timestamp_index);
 
     read_json_param(data, "is_multilingual", is_multilingual);
@@ -67,7 +67,6 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "transcribe_token_id", transcribe_token_id);
     read_anymap_param(config_map, "translate_token_id", translate_token_id);
     read_anymap_param(config_map, "no_timestamps_token_id", no_timestamps_token_id);
-    read_anymap_param(config_map, "begin_timestamps_token_id", begin_timestamps_token_id);
     read_anymap_param(config_map, "max_initial_timestamp_index", max_initial_timestamp_index);
     read_anymap_param(config_map, "is_multilingual", is_multilingual);
     read_anymap_param(config_map, "language", language);

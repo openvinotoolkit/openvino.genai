@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -17,7 +18,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig {
 public:
     WhisperGenerationConfig() = default;
-    explicit WhisperGenerationConfig(const std::string& json_path);
+    explicit WhisperGenerationConfig(const std::filesystem::path& json_path);
 
     // Generic
 
@@ -48,9 +49,6 @@ public:
     // No timestamps token id.
     int64_t no_timestamps_token_id = 50363;
 
-    // Begin timestamps token id.
-    int64_t begin_timestamps_token_id = 50364;
-
     size_t max_initial_timestamp_index = 50;
 
     bool is_multilingual = true;
@@ -77,10 +75,10 @@ public:
     // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     bool return_timestamps = false;
 
-    // A list containing tokens that will be supressed at the beginning of the sampling process.
+    // A list containing tokens that will be suppressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
 
-    // A list containing the non-speech tokens that will be supressed during generation.
+    // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
@@ -104,7 +102,6 @@ public:
 /*
  * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::genai::max_new_tokens(200),...)
- * pipe(text, ov::genai::max_new_tokens(200),...)
  */
 
 static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin_suppress_tokens"};
@@ -114,7 +111,6 @@ static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
 static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
 static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
-static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};

@@ -27,23 +27,15 @@
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "openvino/pass/graph_rewrite.hpp"
 #include "openvino/pass/manager.hpp"
-#include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
+
+#include "utils.hpp"
+#include "lora_names_mapping.hpp"
 
 extern "C" {
     #include "safetensors.h"
 }
-
-// If set to 1, the empty tensors will be used to switch LoRA adapter off.
-// FIXME: Fix the plugins and set to 1 permanently.
-#define EMPTY_TENSORS_SUPPORTED_IN_MATMUL 0
-
-// If set to 1, LoRA state tensors will have the original type of LoRA adapter come from safetensors file.
-// If there are multiple LoRA adapters are applied, then negotiation between them happens.
-// If set to 0, LoRA state etnsors are always have type f32.
-// FIXME: Fix the plugins and set to 1 permanently.
-#define FP16_BF16_TENSORS_SUPPORTED_IN_STATE 0
 
 // FIXME: Remove or move to a dedicated common header
 #ifdef NDEBUG
@@ -84,7 +76,7 @@ using LoRATensors = std::map<std::string, LoRAWeight>;
 
 
 // Read binary file to memory.
-BufferPtr read_file_helper(const std::string& filename) {
+BufferPtr read_file_helper(const std::filesystem::path& filename) {
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
     OPENVINO_ASSERT(file.is_open(), "Cannot open file with LoRA weights: ", filename);
 
@@ -92,7 +84,7 @@ BufferPtr read_file_helper(const std::string& filename) {
     auto buffer = std::make_shared<Buffer>(filesize);
     file.seekg(0, std::ios::beg);
     // TODO: Use mmapped AlignedBuffer as ov::Core::read_model can do, necessary functionality is not available in public OV API.
-    // LoRA files do not usuall have huge size in comparison to the base models, but it can vary depending on adapter,
+    // LoRA files do not usually have huge size in comparison to the base models, but it can vary depending on adapter,
     // and using mmap will help to optimize memory consumption and could be critical
     // when the application at the edge of available memory that is not really uncommon for applications dealing with LLMs.
     file.read(&(*buffer)[0], filesize);
@@ -134,7 +126,7 @@ struct AutoSafetensor: public safetensors_File {
 // The key in the map is a tensor name and the Constant uses a region of memory from the memory block.
 // Each Constant holds a shared pointer to the block in the runtime info.
 // The memory block will be deallocated when the last Constant is destroyed.
-ConstantMap read_safetensors(const std::string& filename) {
+ConstantMap read_safetensors(const std::filesystem::path& filename) {
     auto buffer = read_file_helper(filename);
     AutoSafetensor safe_tensors_file{};
 
@@ -158,7 +150,7 @@ ConstantMap read_safetensors(const std::string& filename) {
         auto type = safetensors_to_ov_element_type(tensor.dtype);
         auto constant =
             std::make_shared<v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
-        constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destoyed
+        constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
         tensors[name] = constant;
     }
     return tensors;
@@ -242,7 +234,7 @@ using LoRAWeightByNodeGetter = std::function<std::optional<LoRANode>(NodePtr)>;
 // the ranks from all applicable LoRA tensors (if there are multiple LoRA adapters).
 struct LoRAParameters {
     ov::Dimension rank;         // accumulated LoRA rank, could be dynamic if rank is not known or DYNAMIC mode is applied
-    ov::element::Type type;     // element type of a tensor that will be applied to the model, negotiated based on multple LoRA adapters
+    ov::element::Type type;     // element type of a tensor that will be applied to the model, negotiated based on multiple LoRA adapters
     bool fine_grained_alpha;    // use 1D tensor of the same rank for alpha instead of a scalar to blend multiple weighted LoRAs
     // TODO: flag to have various alphas over the batch
 };
@@ -254,18 +246,20 @@ using LoRAParametersGetter = std::function<std::optional<LoRAParameters>(NodePtr
 // It works for a single LoRA adapter.
 // Returns std::nullopt, if there is no LoRA adapter for a given layer name.
 struct LoRAWeightGetterDefault {
-    // TODO: Add filtering by tensor name prefix
-    const LoRATensors* lora_tensors;
+    const LoRATensors* lora_tensors = nullptr;
     const std::string prefix;
     mutable std::set<std::string> used_tensors;
+    mutable bool active = false;    // true if operator() was called at least once to filter out the case when this object is temporary object that is not used for tensor queries
 
     LoRAWeightGetterDefault (const LoRATensors* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
 
     std::optional<LoRANode> operator() (const std::string& name) const {
+        active = true;
         std::string name_with_underscores = name;
         // TODO: Investigate what is the root cause for this replacement in the name. Customize mapping or change PT FE to produce correct weight names.
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');
-        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, name, name_with_underscores](const LoRATensors::value_type& pair){
+        std::vector<std::string> variants{name, name_with_underscores};
+        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const LoRATensors::value_type& pair){
             std::string lora_name = pair.first;
             // TODO: Make this filtering for prefix once in ctor as a more efficient solution
             if(lora_name.find(prefix) == 0) {
@@ -274,7 +268,7 @@ struct LoRAWeightGetterDefault {
                 return false;
             }
             // TODO: Should it be an exact match instead of substring taking into account that we should provide custom mapper for names?
-            return name.find(lora_name) != std::string::npos || name_with_underscores.find(lora_name) != std::string::npos;
+            return variants.end() != std::find_if(variants.begin(), variants.end(), [lora_name](const std::string& name) { return name.find(lora_name) != std::string::npos; });
         });
         if(it != lora_tensors->end()) {
             used_tensors.insert(it->first);
@@ -282,7 +276,39 @@ struct LoRAWeightGetterDefault {
         }
         return std::nullopt;
     }
+
+    // Return list of LoRA tensors that are dedicated for the model but left unused
+    std::list<std::string> get_unused_tensors() const {
+        std::list<std::string> unused;
+        for(auto const& tensor: *lora_tensors) {
+            if(tensor.first.find(prefix) == 0) {
+                if(used_tensors.find(tensor.first) == used_tensors.end()) {
+                    unused.push_back(tensor.first);
+                }
+            }
+        }
+        return unused;
+    }
+
+    ~LoRAWeightGetterDefault() {
+        if(!active || !lora_tensors) {
+            return;
+        }
+
+        auto unused = get_unused_tensors();
+        if(unused.empty()) {
+            return;
+        }
+
+        std::cerr << "[ WARNING ] There unused LoRA tensors. The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
+
+        for(const auto& unused_name: unused) {
+            std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
+        }
+    }
+
 };
+
 
 
 // Maps a node in the base model to LoRA parameters object that describes how the LoRA tensors should be injected for that node.
@@ -316,7 +342,7 @@ struct LoRAParametersByWeightGetter {
                 }
             });
             if(size == 0) {
-                // as LoRA adapters with 0 rank cannot exist, 0 menas there are no adapters for a given node
+                // as LoRA adapters with 0 rank cannot exist, 0 means there are no adapters for a given node
                 return std::nullopt;
             }
             rank = size;
@@ -331,17 +357,8 @@ struct LoRAParametersByWeightGetter {
 };
 
 
-// TODO: There is possible simplification if a new feature is implemented in OpenVINO:
-// move name from LoRAVarIDs to to LoRAIndices when the order of tensors in the model state in OV infer request will
-// be the same as the order of variables, remove LoRAVarsIDs in this case.
-
-struct LoRAIndices : public LoRAParts<size_t> {
-    std::string name;
-};
-
-struct LoRAVarIDs : public LoRAParts<ov::op::util::VariableInfo> {
-    std::string name;  // layer name where LoRA with given variables is attached
-};
+using LoRAIndices = LoRAParts<size_t>;
+using LoRAVarIDs = LoRAParts<ov::op::util::VariableInfo>;
 
 
 // Deduce expected LoRA input and output static dimensions based on a given node where LoRA is applied
@@ -362,15 +379,18 @@ void deduce_input_output_dims(NodePtr node, ov::Dimension& input_dim, ov::Dimens
 }
 
 
+using LoRAVarMap = std::map<std::string, LoRAVarIDs>;
+
+
 // Creates ReadValue and Assign nodes to inject LoRA tensors as variables for a given node but
 // doesn't connect them to the model returning as LoRANode instance.
 struct LoRAWeightStateGetter {
     LoRAParametersGetter params_getter;
     std::shared_ptr<ov::Model> model;
-    std::vector<LoRAVarIDs>& variable_ids;
+    LoRAVarMap& variable_ids;
     // TODO: Use variable indices instead of variable_id for faster search for a state tensor
 
-    LoRAWeightStateGetter (const LoRAParametersGetter& params_getter, std::shared_ptr<ov::Model> model, std::vector<LoRAVarIDs>& variable_ids) :
+    LoRAWeightStateGetter (const LoRAParametersGetter& params_getter, std::shared_ptr<ov::Model> model, LoRAVarMap& variable_ids) :
         params_getter(params_getter), model(model), variable_ids(variable_ids) {}
 
     std::optional<LoRANode> operator() (NodePtr node) const {
@@ -379,12 +399,11 @@ struct LoRAWeightStateGetter {
             deduce_input_output_dims(node, input_dim, output_dim);
 
             std::string name = node->get_friendly_name();
-            // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastrcuture independently each time (not a recommended approach).
+            // FIXME: Potential name conflict if LoRA is applied multiple times by using this infrastructure independently each time (not a recommended approach).
             // TODO: Check for name collisions searching for existing variables with the same names.
             std::string variable_id_prefix = "lora_state_" + std::to_string(model->get_sinks().size()) + name;
             LoRANode result;
             LoRAVarIDs var_ids;
-            var_ids.name = name;
 
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.A = model->get_variables().size();
@@ -410,7 +429,7 @@ struct LoRAWeightStateGetter {
                 variable_id_prefix + ".B"
             };
             result.B = add_variable(var_ids.B);
-            variable_ids.emplace_back(var_ids);
+            variable_ids.emplace(name, var_ids);
             return result;
         } else {
             return std::nullopt;
@@ -561,6 +580,7 @@ public:
     }
 
     void insert (const Signature& signature, std::shared_ptr<ov::Model> model) {
+        ov::Core core = ov::genai::utils::singleton_core();
         requests[signature] = core.compile_model(model, device).create_infer_request();
     }
 
@@ -584,12 +604,11 @@ public:
             }
             request.set_output_tensor(i, outputs[i]);
         }
-        request.infer();    // TODO: Consider using async to increase througput, requies more complicated archestration
+        request.infer();    // TODO: Consider using async to increase throughput, requires more complicated archestration
     }
 
 private:
 
-    ov::Core core;
     std::unordered_map<Signature, ov::InferRequest> requests;
     std::string device;
 };
@@ -599,7 +618,7 @@ private:
 // This is one-way LoRA fusion that cannot be undone.
 // By default it uses CPU plugin to modify the base model weights.
 // TODO: This transformation unpacks potentially compressed to f16/bf16 weights to f32,
-// we should pack it back into the original precsion to maintain the same wieght size.
+// we should pack it back into the original precision to maintain the same weight size.
 // But it will work well if all plugins equally support fp-compressed weights and can unpack them on-line.
 class LoRAFuseTransform : public LoRATransformBase {
 
@@ -634,7 +653,7 @@ public:
             signature_push_back(signature, multiplier);
         }
 
-        // TODO: In case when comressed repacking of newly created weights is retained,
+        // TODO: In case when compressed repacking of newly created weights is retained,
         // replace weights_input by weigths_constant to keep decompression Convert in the model.
         auto consumers = weights_input.get_target_inputs();
 
@@ -652,12 +671,12 @@ public:
             fusers.insert(signature, weights_model);
         }
 
-        // Newly created contants in the next line are not mmaped unlike original weights, so it will inflate required memory
+        // Newly created constants in the next line are not mmaped unlike original weights, so it will inflate required memory
         // eventually allocating up to 2x of the base model size.
         // 2X is due to usually applied compression in the base model that is not retained in the current version of this code.
         // But even if the compression is used, then still a copy of all weights that affected by the LoRA adapters are allocated in memory.
         // FIXME: Provide a way for postponed weight repacking that will be triggered by the plugin in compile_model call for the base model.
-        // Constant sub-expression can be a solution, but it requres improvements inside plugins, because currently it works extremely slow.
+        // Constant sub-expression can be a solution, but it requires improvements inside plugins, because currently it works extremely slow.
         auto replacement_const = std::make_shared<v0::Constant>(weights_input.get_element_type(), weights_input.get_shape());
 
         ov::TensorVector outputs{replacement_const->get_tensor_view()};
@@ -690,7 +709,6 @@ public:
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
         auto weights_input = node->input_value(1);
         auto weights_input_type = weights_input.get_element_type();
-        //DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
         NodePtr add_term = nullptr;
         NodePtr replacement = nullptr;
 
@@ -736,15 +754,35 @@ namespace genai {
 
 class Adapter::Impl {
 public:
-    Impl(const std::string& path) :
+    Impl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
-    {}
+    {
+        std::set<std::string> keys;
+        for(const auto& kv: tensors) {
+            keys.insert(kv.first);
+        }
+        auto mapping = maybe_map_non_diffusers_lora_to_diffusers(keys);
+        if(!mapping.empty()) {
+            LoRATensors new_tensors;
+            for(const auto& kv: tensors) {
+                auto it = mapping.find(kv.first);
+                if(it == mapping.end()) {
+                    // pass
+                    new_tensors[kv.first] = kv.second;
+                } else {
+                    // replace key
+                    new_tensors[it->second] = kv.second;
+                }
+            }
+            tensors = new_tensors;
+        }
+    }
 
     LoRATensors tensors;
 };
 
 
-Adapter::Adapter(const std::string& path) :
+Adapter::Adapter(const std::filesystem::path& path) :
     m_pimpl(std::make_shared<Adapter::Impl>(path)) {
 }
 
@@ -760,37 +798,32 @@ bool operator< (const Adapter& a, const Adapter& b) {
 
 
 struct AdapterControllerImpl {
-    std::vector<LoRAVarIDs> variable_ids;
-    const std::string prefix;
+    LoRAVarMap variable_ids;
+    std::unordered_set<std::string> variable_names;
     AdapterConfig current_config;
     bool need_full_apply = true;
     InferRequestSignatureCache lora_state_evaluators;
 
-    AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
-        prefix(prefix),
+    AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config) :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
         LoRAParametersByWeightGetter params_getter;
-        #if FP16_BF16_TENSORS_SUPPORTED_IN_STATE
         params_getter.type = ov::element::dynamic;
-        #else
-        params_getter.type = ov::element::f32;
-        #endif
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, prefix));
-            // TODO: Instead of aggregating types over all tensors in each adapter, make decision per node in LoRAWeightStateGetter
-            /*if(params_getter.type != ov::element::f32)*/ {  // FIXME: Implement element_type tolerant code when state is set and uncomment this condition
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, config.get_tensor_name_prefix().value_or("")));
+            if(params_getter.type != ov::element::f32) {
                 for(auto const& tensor : adapter_impl->tensors) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
                     OPENVINO_ASSERT(lora_tensor_type == tensor.second.B->get_output_element_type(0));
                     if(params_getter.type == ov::element::dynamic) {
                         params_getter.type = lora_tensor_type;
                     } else if(params_getter.type != lora_tensor_type) {
-                        // if types are not match among multiple LoRA tensos then fall back to f32
+                        // If types are not match among multiple LoRA tensos then fall back to f32
                         // TODO: Provide a more smart negotiation between multiple LoRAs: check ranges, try to pack to f16
+                        //       Make decision on precision per node in LoRAWeightStateGetter instead of setting this global precision
                         params_getter.type = ov::element::f32;
                         break;
                     }
@@ -837,6 +870,13 @@ struct AdapterControllerImpl {
 
         pm.run_passes(model);
         model->validate_nodes_and_infer_types();    // FIXME: For debugging purposes only
+
+        // Collect all variable names to quickly detect which state tensor belongs to this adapter controller later
+        for(const auto& var: variable_ids) {
+            variable_names.insert(var.second.A.variable_id);
+            variable_names.insert(var.second.B.variable_id);
+            variable_names.insert(var.second.alpha.variable_id);
+        }
     }
 
     static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
@@ -884,7 +924,7 @@ struct AdapterControllerImpl {
             OPENVINO_ASSERT(
                 config->get_mode() == AdapterConfig::MODE_AUTO || config->get_mode() == AdapterConfig::MODE_DYNAMIC || config->get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
                 "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
-            current_config = *config;
+            current_config.update(*config);
         }
         if(need_full_apply) {
             need_full_apply = false;
@@ -892,15 +932,14 @@ struct AdapterControllerImpl {
         } else if(diff) {
             if(diff.adapter) {
                 set_new_adapter_tensors(infer_request);
-            } else {
-                OPENVINO_ASSERT(diff.alpha);
+            } else if(diff.alpha)  {
                 set_new_adapter_alphas(infer_request);
             }
         }
     }
 
-    void force_full_apply(bool full_apply) {
-        need_full_apply = full_apply;
+    bool has_state_name(const std::string& name) {
+        return variable_names.count(name);
     }
 
     void set_new_adapter_alphas (ov::InferRequest& infer_request) {
@@ -917,7 +956,7 @@ struct AdapterControllerImpl {
         const auto& adapters = current_config.get_adapters();
         weight_getters.reserve(adapters.size());
         for(const auto& adapter: adapters) {
-            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, prefix));
+            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, current_config.get_tensor_name_prefix().value_or("")));
         }
 
         auto state = infer_request.query_state();
@@ -935,12 +974,10 @@ struct AdapterControllerImpl {
         for(const auto& lora_var_ids : variable_ids) {
             // FIXME: Remove this mapping when the order of state will be the same as the order of variables
             LoRAIndices lora_indices;
-            lora_indices.alpha = state_name_to_index.at(lora_var_ids.alpha.variable_id);
-            lora_indices.A = state_name_to_index.at(lora_var_ids.A.variable_id);
-            lora_indices.B = state_name_to_index.at(lora_var_ids.B.variable_id);
-            lora_indices.name = lora_var_ids.name;  // TODO: Redundant?
-
-            set_lora_tensors(state, lora_var_ids, lora_indices, weight_getters);
+            lora_indices.alpha = state_name_to_index.at(lora_var_ids.second.alpha.variable_id);
+            lora_indices.A = state_name_to_index.at(lora_var_ids.second.A.variable_id);
+            lora_indices.B = state_name_to_index.at(lora_var_ids.second.B.variable_id);
+            set_lora_tensors(state, lora_var_ids.first, lora_var_ids.second, lora_indices, weight_getters);
         }
     }
 
@@ -986,7 +1023,7 @@ struct AdapterControllerImpl {
         for(const auto& input: inputs) {
             signature +=
                 std::string("(") +
-                    // Shape is set to be dynamic because it doesn't mater for signature as it is completelly determined by the corresponding model
+                    // Shape is set to be dynamic because it doesn't matter for signature as it is completely determined by the corresponding model
                     "(" + get_tensor_signature(outputs.alpha.get_element_type(), ov::PartialShape::dynamic(1)) + ")" +
                     "(" + get_tensor_signature(outputs.A.get_element_type(), ov::PartialShape::dynamic(2)) + ")" +
                     "(" + get_tensor_signature(outputs.B.get_element_type(), ov::PartialShape::dynamic(2)) + ")" +
@@ -1057,32 +1094,9 @@ struct AdapterControllerImpl {
     }
 
     LoRAParts<ov::Tensor> empty_adapters(const std::vector<LoRAWeight>& inputs, LoRAParts<ov::Tensor>& outputs) {
-        #if EMPTY_TENSORS_SUPPORTED_IN_MATMUL
-
         outputs.alpha.set_shape({1, 0});
         outputs.A.set_shape({0, outputs.A.get_shape()[1]});
         outputs.B.set_shape({outputs.B.get_shape()[0], 0});
-
-        #else
-
-        // TODO: As ov::Tensor lacks a convenient constructor to fill all elements with the same scalar value, do it via Constant that has such constructor
-        // FIXME: It's a huge overhead for setting just a scalar 0
-
-        ov::Shape
-            alpha_shape{1, 1},
-            A_shape{1, outputs.A.get_shape()[1]},
-            B_shape{outputs.B.get_shape()[0], 1};
-
-        outputs.alpha.set_shape(alpha_shape);
-        outputs.A.set_shape(A_shape);
-        outputs.B.set_shape(B_shape);
-        std::make_shared<v0::Constant>(outputs.alpha.get_element_type(), alpha_shape, 0)->get_tensor_view().copy_to(outputs.alpha);
-        // Element values for A and B don't matter as we are multiplying by 0 in alpha anyway
-        std::make_shared<v0::Constant>(outputs.A.get_element_type(), A_shape, 0)->get_tensor_view().copy_to(outputs.A);
-        std::make_shared<v0::Constant>(outputs.B.get_element_type(), B_shape, 0)->get_tensor_view().copy_to(outputs.B);
-
-        #endif
-
         return outputs;
     }
 
@@ -1138,13 +1152,13 @@ struct AdapterControllerImpl {
         return shape;
     }
 
-    void set_lora_tensors(std::vector<VariableState>& state, const LoRAVarIDs& lora_var_ids, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
+    void set_lora_tensors(std::vector<VariableState>& state, const std::string& name, const LoRAVarIDs& lora_var_ids, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
         LoRAParts<ov::Tensor> lora_state_tensors{
             ov::Tensor(lora_var_ids.alpha.data_type, dynamic_to_static(lora_var_ids.alpha.data_shape)),
             ov::Tensor(lora_var_ids.A.data_type, dynamic_to_static(lora_var_ids.A.data_shape)),
             ov::Tensor(lora_var_ids.B.data_type, dynamic_to_static(lora_var_ids.B.data_shape))
         };
-        auto new_tensors = prepare_lora_tensors(lora_indices.name, weight_getters, lora_state_tensors);
+        auto new_tensors = prepare_lora_tensors(name, weight_getters, lora_state_tensors);
 
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         state[lora_indices.A].set_state(new_tensors.A);
@@ -1169,14 +1183,14 @@ struct AdapterControllerImpl {
 };
 
 
-AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix, std::string device)
+AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device)
 {
     // If AdapterConfig::MODE_AUTO is used, then set real mode depending on the device capabilities
-    // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapaters
+    // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapters
     if (config.get_mode() == AdapterConfig::MODE_AUTO) {
         static const std::map<std::string, AdapterConfig::Mode> default_modes {
             {"CPU", AdapterConfig::MODE_DYNAMIC},
-            {"GPU", AdapterConfig::MODE_STATIC_RANK},
+            {"GPU", AdapterConfig::MODE_DYNAMIC},
             {"NPU", AdapterConfig::MODE_STATIC},
         };
         if(device.find("GPU") != std::string::npos) {  // to handle GPU device variants which doesn't matter for adapter mode
@@ -1186,7 +1200,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
         if(default_mode != default_modes.end()) {
             AdapterConfig updated_config = config;
             updated_config.set_mode(default_mode->second);
-            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config, prefix);
+            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config);
             return;
         } else {
             std::string device_msg;
@@ -1201,7 +1215,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
                 << "To avoid this warning set one of the AdapterConfig::Mode values except MODE_AUTO.";
         }
     }
-    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config, prefix);
+    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config);
 }
 
 
@@ -1216,8 +1230,8 @@ void AdapterController::apply(ov::InferRequest& request, const std::optional<Ada
 }
 
 
-void AdapterController::force_full_apply(bool full_apply) {
-    return m_pimpl->force_full_apply(full_apply);
+bool AdapterController::has_state_name(const std::string& name) {
+    return m_pimpl->has_state_name(name);
 }
 
 
@@ -1275,7 +1289,7 @@ AdapterConfig& AdapterConfig::set_alpha(const Adapter& adapter, float alpha) {
 float AdapterConfig::get_alpha(const Adapter& adapter) const {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adapters only");
     return alphas[it - adapters.begin()];
 }
 
@@ -1288,6 +1302,18 @@ AdapterConfig& AdapterConfig::remove(const Adapter& adapter) {
     alphas.erase(alphas.begin() + index);
     adapters.erase(it);
     return *this;
+}
+
+
+void AdapterConfig::update (const AdapterConfig& other) {
+    adapters = other.adapters;
+    alphas = other.alphas;
+    if(other.mode != MODE_AUTO) {
+        mode = other.mode;
+    }
+    if(other.tensor_name_prefix) {
+        tensor_name_prefix = other.tensor_name_prefix;
+    }
 }
 
 

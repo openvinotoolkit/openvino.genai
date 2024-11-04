@@ -9,10 +9,13 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/intel_npu/properties.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
 #include "text_callback_streamer.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -52,7 +55,7 @@ void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     }
 }
 
-bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
+bool is_cw_compressed(const std::shared_ptr<ov::Model>& model) {
     std::vector<std::string> rt_info_path = {"nncf", "weight_compression", "group_size"};
     if (!model->has_rt_info(rt_info_path)) {
         // NB: Model isn't compressed by NNCF - skip
@@ -68,18 +71,19 @@ bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
 
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
         config.erase(it);
-        return std::make_optional(it->second);
+        return found;
     }
     return std::nullopt;
 }
 
-void enable_npuw_dq_if_allowed(ov::AnyMap& config,
-                               const std::shared_ptr<ov::Model>& model) {
-    if (allow_to_enable_npuw_dq(model)) {
-        config["NPUW_DQ"] = "YES";
-        pop_option(config, "NPUW_ONLINE_AVOID");
+template <typename T>
+std::optional<T> get_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        return std::make_optional(it->second.as<T>());
     }
+    return std::nullopt;
 }
 
 std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
@@ -190,8 +194,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
     model->reshape(new_shapes);
 }
 
-void fill_tensor(ov::Tensor tensor, int64_t fill_val, size_t offset = 0u) {
-    int64_t* tensor_data = tensor.data<int64_t>();
+template <typename T>
+void fill_tensor(ov::Tensor tensor, T fill_val, size_t offset = 0u) {
+    T* tensor_data = tensor.data<T>();
     std::fill(tensor_data + offset, tensor_data + tensor.get_size(), fill_val);
 }
 
@@ -212,33 +217,71 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
-ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+struct NPUDesc {
+    std::string arch;
+    int64_t max_tiles;
+};
+
+std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
+    const auto all_devices = core.get_available_devices();
+    if (std::find(all_devices.begin(), all_devices.end(), "NPU") == all_devices.end()) {
+        return std::nullopt;
+    }
+    const auto arch = core.get_property("NPU", ov::device::architecture);
+    const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
+    return std::make_optional(NPUDesc{arch, max_tiles});
+}
+
+ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_USE_NPUW", "YES" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+        { "NPUW_DEVICES", "NPU" },
+        { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE",  "YES" },
-        { "NPUW_WEIGHTS_BANK",  "shared" },
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+        { "NPUW_DCOFF_SCALE", "YES"},
+        { "NPUW_WEIGHTS_BANK", "shared" },
+        { "NPUW_SLICE_OUT", "YES" },
+        { "NPUW_FUNCALL_ASYNC", "YES" }
     };
-    enable_npuw_dq_if_allowed(config, model);
     return config;
 }
 
-ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
-    ov::AnyMap config = {
-        { "NPU_USE_NPUW", "YES" },
-        { "NPUW_FOLD", "YES" },
-        { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE", "YES" },
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-        { "NPUW_PARALLEL_COMPILE", "YES" },
-        { "NPUW_FUNCALL_ASYNC", "YES" },
-        { "NPUW_WEIGHTS_BANK",  "shared" },
-        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
-    };
-    enable_npuw_dq_if_allowed(config, model);
+ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
+    auto config = get_baseline_common_config();
+    const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
+    if (npu_l0 && std::atoi(npu_l0) == 1) {
+        config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
+    } else {
+        config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
+    }
+    return config;
+}
+
+ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
+                                      const std::optional<NPUDesc>& npudesc) {
+    auto config = get_default_common_config(model);
+    if (is_cw_compressed(model)) {
+        config.emplace("NPUW_DQ", "YES");
+    } else {
+        config.emplace("NPUW_PMM", "NO");
+    }
+    if (npudesc.has_value() &&
+        npudesc->arch == "4000" &&
+        npudesc->max_tiles != -1) {
+        config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
+    }
+    return config;
+}
+
+ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
+                                       const std::optional<NPUDesc>& npudesc) {
+    auto config = get_default_common_config(model);
+    // NB: Unconditionally set for generation model
+    config.emplace("NPUW_DQ", "YES");
+    if (npudesc.has_value() && npudesc->arch == "4000") {
+        config.emplace("NPU_DPU_GROUPS", 4);
+    }
     return config;
 }
 
@@ -249,6 +292,27 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
         return anyopt.value().as<T>();
     }
     return default_value;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
 }
 
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
@@ -271,13 +335,13 @@ namespace ov {
 namespace genai {
 
 StaticLLMPipeline::StaticLLMPipeline(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
-                        utils::from_config_json_if_exists(path)) {
-    auto pipeline_config = config;
+                        utils::from_config_json_if_exists(models_path)) {
+    auto properties = config;
     /* NB: Static LLM pipeline consists of two models,
        first to process the input prompt (prefill),
        second to use in generation loop (kvcache)
@@ -290,27 +354,27 @@ StaticLLMPipeline::StaticLLMPipeline(
         2. When both models are directly imported from provided prefill
            and generation precompiled blobs, that is "USE_BLOBS=YES" way.
     */
-    const auto use_blobs = pop_or_default(pipeline_config, "USE_BLOBS", false);
+    const auto use_blobs = pop_or_default(properties, "USE_BLOBS", false);
     if (!use_blobs) {
-        setupAndCompileModels(path, device, pipeline_config);
+        setupAndCompileModels(models_path, device, properties);
     } else {
-        setupAndImportModels(path, device, pipeline_config);
+        setupAndImportModels(models_path, device, properties);
     }
     // Initialize tensors
     prepare_for_new_conversation();
 };
 
 StaticLLMPipeline::StaticLLMPipeline(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& config
-) : StaticLLMPipeline(path, path.string(), device, config) {
+    const ov::AnyMap& properties
+) : StaticLLMPipeline(models_path, Tokenizer(models_path), device, properties) {
 }
 
 void StaticLLMPipeline::setupAndCompileModels(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    ov::AnyMap& pipeline_config) {
+    ov::AnyMap& properties) {
     /* Initialization assumes multiple steps if user passes "USE_BLOBS=NO":
         1) Read the template model - this will be kvcache model
         2) Expose KV-cache input and output layers from kvcache model
@@ -323,8 +387,11 @@ void StaticLLMPipeline::setupAndCompileModels(
 
     ov::Core core;
 
+    // NB: Get information about NPU if available
+    auto npudesc = extract_npu_descriptor(core);
+
     // (1) Read the template model - this will be kvcache model
-    m_kvcache_model = core.read_model(path / "openvino_model.xml");
+    m_kvcache_model = core.read_model((models_path / "openvino_model.xml").string());
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
     // (3) Align u4 ZP constants
@@ -337,37 +404,37 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
     // (7) Reshape both models to static shape
-    const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
-    const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
+    const uint32_t kMaxPromptLen = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(models_path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (8) Compile both model
     auto prefill_config = pop_or_default(
-        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model)
+        properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     auto generate_config = pop_or_default(
-        pipeline_config, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
+        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc)
     );
-    merge_config_with(prefill_config, pipeline_config);
-    merge_config_with(generate_config, pipeline_config);
+    merge_config_with(prefill_config, properties);
+    merge_config_with(generate_config, properties);
     // FIXME: Drop CACHE_DIR option if NPUW is enabled
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
-    ).create_infer_request();
     m_kvcache_request = core.compile_model(
         m_kvcache_model, device, generate_config
+    ).create_infer_request();
+    m_prefill_request = core.compile_model(
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
 }
 
 void StaticLLMPipeline::setupAndImportModels(
-    const std::filesystem::path& path,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    ov::AnyMap& pipeline_config) {
+    ov::AnyMap& properties) {
     /* To initialize pipeline in case when user passes "USE_BLOBS=YES",
        next steps are required:
         1) Check that neither MAX_PROMPT_LEN nor MIN_RESPONSE_LEN is
@@ -380,15 +447,15 @@ void StaticLLMPipeline::setupAndImportModels(
     ov::Core core;
 
     auto import_blob = [this,
-                        &path,
-                        &pipeline_config,
+                        &models_path,
+                        &properties,
                         &core,
                         &device](const std::string& model_name,
                                  ov::AnyMap& model_config) {
         auto blob_path = pop_or_default(model_config, "BLOB_PATH", std::string{});
 
         if (blob_path.empty()) {
-            blob_path = (path /
+            blob_path = (models_path /
                 (std::string("openvino_") + model_name + ".blob")).string();
         }
 
@@ -397,7 +464,7 @@ void StaticLLMPipeline::setupAndImportModels(
                 + blob_path);
         }
 
-        merge_config_with(model_config, pipeline_config);
+        merge_config_with(model_config, properties);
 
         std::fstream fs(blob_path, std::ios::in | std::ios::binary);
 
@@ -418,17 +485,17 @@ void StaticLLMPipeline::setupAndImportModels(
 
     // (1) Check that neither MAX_PROMPT_LEN nor MIN_RESPONSE_LEN is
     //     exposed in the config
-    if (pipeline_config.count("MAX_PROMPT_LEN") ||
-        pipeline_config.count("MIN_RESPONSE_LEN")) {
+    if (properties.count("MAX_PROMPT_LEN") ||
+        properties.count("MIN_RESPONSE_LEN")) {
         OPENVINO_THROW("Neither \"MAX_PROMPT_LEN\" nor \"MIN_RESPONSE_LEN\""
            " can be specified in \"USE_BLOBS=YES\" configuration!");
     }
     // (2) Import prefill model from model directory or specified path
-    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", ov::AnyMap());
+    auto prefill_config = pop_or_default(properties, "PREFILL_CONFIG", ov::AnyMap());
     auto prefill_model = import_blob("prefill", prefill_config);
     m_prefill_request = prefill_model.create_infer_request();
     // (3) Import generate model from model directory or specified path
-    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", ov::AnyMap());
+    auto generate_config = pop_or_default(properties, "GENERATE_CONFIG", ov::AnyMap());
     auto generate_model = import_blob("generate", generate_config);
     m_kvcache_request = generate_model.create_infer_request();
     // (4) Fill in m_kvcache_desc
@@ -451,10 +518,10 @@ void StaticLLMPipeline::finish_chat() {
 };
 
 void StaticLLMPipeline::prepare_for_new_conversation() {
-    fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
-    fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
-    fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
-    fill_tensor(m_kvcache_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("position_ids"), 0u);
+    fill_tensor<int64_t>(m_prefill_request.get_tensor("attention_mask"), 0u);
+    fill_tensor<int64_t>(m_kvcache_request.get_tensor("attention_mask"), 0u);
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
@@ -579,7 +646,7 @@ EncodedResults StaticLLMPipeline::generate(
     copy_with_offset(input_ids, offset, padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
-    fill_tensor(padded_attention_mask, 1u, offset);
+    fill_tensor<int64_t>(padded_attention_mask, 1u, offset);
 
     auto padded_position_ids = m_prefill_request.get_tensor("position_ids");
     auto* padded_pos_data = padded_position_ids.data<int64_t>();
@@ -614,6 +681,8 @@ EncodedResults StaticLLMPipeline::generate(
 
         const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
         auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+        fill_tensor<ov::float16>(kvcache_in_tensor, 0);
+
         auto kvcache_in_slice = make_tensor_slice(
             kvcache_in_tensor, m_kvcache_desc.dim, 0u, m_kvcache_desc.num_stored_tokens
         );

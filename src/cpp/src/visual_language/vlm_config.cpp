@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
-#include "utils.hpp"
+#include "json_utils.hpp"
+
 #include <fstream>
 
 ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
@@ -15,4 +16,7 @@ ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "scale_emb", scale_emb);
     read_json_param(parsed, "query_num", query_num);
     read_json_param(parsed, "use_image_id", use_image_id);
+
+    // Setting llava_next specific config params
+    read_json_param(parsed, "image_newline", image_newline);
 }
