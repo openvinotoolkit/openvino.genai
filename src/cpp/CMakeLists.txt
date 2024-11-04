@@ -73,7 +73,7 @@ target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
-target_compile_features(${TARGET_NAME} PUBLIC cxx_std_20)
+target_compile_features(${TARGET_NAME} PUBLIC cxx_std_23)
 
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai

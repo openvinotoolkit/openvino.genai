@@ -402,9 +402,8 @@ private:
                 for (size_t d = 0; d < embed_dim / 2; ++d) {
                     // Correctly access the 2D position grid
                     float value = omega[d] * pos_data[h * W + w];
-                    // There should be sinf() and cosf(), but they don't exist on default Ubuntu20 gcc.
-                    emb_data[h * W * embed_dim + w * embed_dim + d] = std::sin(value);
-                    emb_data[h * W * embed_dim + w * embed_dim + d + (embed_dim / 2)] = std::cos(value);
+                    emb_data[h * W * embed_dim + w * embed_dim + d] = std::sinf(float(value));
+                    emb_data[h * W * embed_dim + w * embed_dim + d + (embed_dim / 2)] = std::cosf(float(value));
                 }
             }
         }
