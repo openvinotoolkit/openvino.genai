@@ -19,11 +19,11 @@ install(FILES requirements.txt DESTINATION samples
 
 install(DIRECTORY
             cpp/beam_search_causal_lm
+            cpp/benchmark_genai
             cpp/chat_sample
             cpp/greedy_causal_lm
             cpp/lora_greedy_causal_lm
             cpp/multinomial_causal_lm
-            cpp/benchmark_genai
             # Don't install prompt_lookup_decoding_lm because it doesn't use openvino_genai library and is not verified yet.
             cpp/speculative_decoding_lm
             cpp/text2image
@@ -33,10 +33,10 @@ install(DIRECTORY
 
 install(DIRECTORY
             python/beam_search_causal_lm
+            python/benchmark_genai
             python/chat_sample
             python/greedy_causal_lm
             python/multinomial_causal_lm
-            python/benchmark_genai
             python/speculative_decoding_lm
             python/text2image
             python/visual_language_chat
