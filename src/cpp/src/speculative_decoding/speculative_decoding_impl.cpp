@@ -11,10 +11,6 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-bool operator==(const SchedulerConfig& lhs, const SchedulerConfig& rhs) {
-    return ov::Any(lhs).as<std::string>() == ov::Any(rhs).as<std::string>();
-}
-
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::filesystem::path& main_models_path,
     const SchedulerConfig& main_scheduler_config,
@@ -48,7 +44,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
         auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
 
         size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
-               draft_cache_size = main_scheduler_config.cache_size * k;
+               draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
         if (draft_cache_size == 0) {
             main_cache_size -= main_cache_size > 1 ? 1 : 0;
             draft_cache_size = 1;
@@ -158,6 +154,10 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
             m_draft_generations.erase(request_id);
         }
         auto updated_seq_info = update_sequence_info[request_id];
+        // several prompt phase
+        if (updated_seq_info.inserted_tokens_cnt == 0) {
+            continue;
+        }
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
@@ -203,6 +203,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     while (has_non_finished_requests() && continue_generation) {
         step();
         if (streamer_ptr) {
+            // not generated tokens like several prompt phase
+            if (!main_generations.at(0).get()->can_read()) {
+                continue;
+            }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
             OPENVINO_ASSERT(1 <= token.size());
             OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
