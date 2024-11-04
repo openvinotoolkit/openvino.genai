@@ -758,7 +758,7 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
-      - run: diff py.txt ref.txt
+      - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           source ./ov/setupvars.sh
