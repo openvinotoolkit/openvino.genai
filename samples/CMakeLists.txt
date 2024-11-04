@@ -23,6 +23,7 @@ install(DIRECTORY
             cpp/greedy_causal_lm
             cpp/lora_greedy_causal_lm
             cpp/multinomial_causal_lm
+            cpp/benchmark_genai
             # Don't install prompt_lookup_decoding_lm because it doesn't use openvino_genai library and is not verified yet.
             cpp/speculative_decoding_lm
             cpp/text2image
@@ -35,6 +36,7 @@ install(DIRECTORY
             python/chat_sample
             python/greedy_causal_lm
             python/multinomial_causal_lm
+            python/benchmark_genai
             python/speculative_decoding_lm
             python/text2image
             python/visual_language_chat
