@@ -11,6 +11,18 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+bool is_tokenizers_are_equal(Tokenizer& lhs, Tokenizer& rhs) {
+    std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
+    ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
+               encoded_string_rhs = rhs.encode(test_string).input_ids;
+    
+    ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
+              shape_rhs = encoded_string_rhs.get_shape();
+
+    return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
+           lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
+}
+
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::filesystem::path& main_models_path,
     const SchedulerConfig& main_scheduler_config,
@@ -66,6 +78,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer(main_models_path, tokenizer_properties),
               draft_model_tokenizer(draft_models_path, tokenizer_properties);
+
+    // todo: remove this condition after support of CVS-154103
+    OPENVINO_ASSERT(is_tokenizers_are_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     
     m_tokenizer = main_model_tokenizer;
 
@@ -127,7 +142,9 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
+    // std::cout << "======================" << std::endl;
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
+        // std::cout << "REQUEST_ID: " << candidate.first << " draft_len: " << candidate.second.at(0).token_ids.size() << std::endl;
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
@@ -141,6 +158,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
+        // std::cout << "REQUEST_ID: " << checked_sequence.first << " main_len: " << checked_sequence.second.at(0).token_ids.size() << std::endl;
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
@@ -161,6 +179,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
+        // std::cout << "REQUEST_ID: " << request_id << " num_mathces: " << (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt) << std::endl;
     }
 }
 
