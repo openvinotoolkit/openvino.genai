@@ -370,12 +370,12 @@ import numpy as np
 pipe = ov_genai.LLMPipeline(models_path, "CPU")
 result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
 perf_metrics = result.perf_metrics
-print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f} ms')
 
 raw_metrics = perf_metrics.raw_metrics
 generate_duration = np.array(raw_metrics.generate_durations)
 tok_detok_duration = np.array(raw_metrics.tokenization_durations) - np.array(raw_metrics.detokenization_durations)
-pure_inference_duration = np.sum(generate_duration - tok_detok_duration) / 1000 # in seconds
+pure_inference_duration = np.sum(generate_duration - tok_detok_duration) / 1000 # in milliseconds
 print(f'Pure Inference duration: {pure_inference_duration:.2f} ms')
 ```
 
