@@ -88,7 +88,7 @@ public:
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
     bool echo = false;
-    int logprobs = 0;
+    size_t logprobs = 0;
     
     std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
