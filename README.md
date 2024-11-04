@@ -210,7 +210,7 @@ int main(int argc, char* argv[]) {
 ```
 ### Sample notebooks using this API
 
-(TBD)
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+Image+pipeline+and+OpenVINO+with+Generate+API)
 
 </details>
 

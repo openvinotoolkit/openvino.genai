@@ -3,8 +3,9 @@
 
 #pragma once
 
+#include <cstdint>
+#include <cstring>
 #include <vector>
-#include <numeric>
 
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
@@ -29,10 +30,7 @@ struct clip_image_f32 {
     std::vector<float> buf;
 };
 
-/** interpret bytes as an image file with length bytes_length, and use the result to populate img */
-bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
-
-bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
+void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overridden to false depending on model configuration */
