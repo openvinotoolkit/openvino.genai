@@ -29,6 +29,7 @@ from .py_openvino_genai import (
     PerfMetrics,
     RawPerfMetrics,
     SchedulerConfig,
+    Scheduler,
     StopCriteria,
     StreamerBase,
     TokenizedInputs,
