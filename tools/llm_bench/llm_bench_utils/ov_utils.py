@@ -12,6 +12,7 @@ import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 import openvino.runtime.opset13 as opset
+from transformers import pipeline
 
 
 def generate_simplified(self, *args, **kwargs):
@@ -324,12 +325,9 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-
-    from transformers import pipeline
     pipe = pipeline(
         "automatic-speech-recognition",
         model=ov_model,
-        chunk_length_s=30,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor
     )

@@ -46,7 +46,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             max_new_tokens=max_gen_tokens,
             # 'task' and 'language' parameters are supported for multilingual models only
             language=speech_language,
-            task="transcribe",
+            task="translate",
             return_timestamps=ret_timestamps
         )
         end = time.perf_counter()
@@ -55,13 +55,18 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         result_text = result_text.texts[0]
     else:
         start = time.perf_counter()
-        result_text = pipe(raw_speech, generate_kwargs={"task": 'translate'}, return_timestamps=ret_timestamps)["text"]
+        result_text = pipe(
+            raw_speech,
+            generate_kwargs={"task": 'translate', "language": speech_language},
+            return_timestamps=ret_timestamps
+        )["text"]
         end = time.perf_counter()
         tm_list = whisper_hook.get_time_list()
         tm_infer_list = whisper_hook.get_time_infer_list()
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
-
+    log.debug('latency of all infers:')
+    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
     generation_time = end - start
     out_data = processor.tokenizer(result_text, return_tensors='pt')
     out_tokens = out_data['input_ids'] if 'input_ids' in out_data else out_data
