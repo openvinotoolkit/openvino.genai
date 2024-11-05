@@ -314,7 +314,7 @@ jobs:
         env:
           PYTHONPATH: "./build"
       - name: Visualizing and Comparing generated output
-        run: >
+        run: |
           python -c "
           with open("cpp.txt", 'r') as f:
             greedy_cp = f.read()
@@ -603,7 +603,7 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_greedy.txt
-          diff predicted_prompt_lookup.txt predictions_greedy.txt
+          diff predictions_prompt_lookup.txt predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
