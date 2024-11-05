@@ -9,7 +9,8 @@ from optimum.intel.openvino import (
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
     OVLatentConsistencyModelPipeline,
-    OVStableDiffusionXLPipeline
+    OVStableDiffusionXLPipeline,
+    OVModelForSpeechSeq2Seq
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -41,6 +42,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm2': OVModelForCausalLM,
     'chatglm3': OVModelForCausalLM,
     'chatglm': OVChatGLMModel,
+    'whisper': OVModelForSpeechSeq2Seq,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -56,7 +58,7 @@ PT_MODEL_CLASSES_MAPPING = {
 
 USE_CASES = {
     'image_gen': ['stable-diffusion-', 'ssd-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike'],
-    'text2speech': ['whisper'],
+    'speech2text': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
     'text_gen': [

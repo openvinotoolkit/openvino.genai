@@ -15,6 +15,7 @@ import llm_bench_utils.output_json
 import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
+import task.speech_to_text_generation as bench_speech
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 mem_consumption = MemConsumption()
@@ -46,6 +47,7 @@ def get_argprser():
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
     parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None,
                         help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
+    parser.add_argument('--media', default=None, help='Media file path for speech or visual models.')
     parser.add_argument(
         '-ic',
         '--infer_count',
@@ -153,6 +155,7 @@ CASE_TO_BENCH = {
     'image_gen': bench_image.run_image_generation_benchmark,
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
+    'speech2text': bench_speech.run_speech_2_txt_benchmark,
 }
 
 
