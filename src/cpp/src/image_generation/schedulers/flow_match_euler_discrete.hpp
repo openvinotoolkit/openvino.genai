@@ -53,7 +53,7 @@ private:
     size_t m_num_inference_steps;
 
     void init_step_index();
-    float sigma_to_t(float simga);
+    double sigma_to_t(double simga);
 };
 
 } // namespace genai
