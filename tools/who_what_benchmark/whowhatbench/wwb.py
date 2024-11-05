@@ -10,18 +10,19 @@ import json
 import logging
 import os
 
+import openvino as ov
 import openvino_genai
 import pandas as pd
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
 from optimum.exporters.tasks import TasksManager
 from optimum.intel import OVPipelineForText2Image
-from optimum.intel.openvino import OVModelForCausalLM
+from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from PIL import Image
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModelForVision2Seq
 
-from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
+from whowhatbench import EVALUATOR_REGISTRY
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -152,7 +153,7 @@ def load_text2image_model(
     return model
 
 
-def load_visual_text_genai_pipeline(model_dir, device="CPU"):
+def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
     except ImportError:
@@ -160,7 +161,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU"):
         exit(-1)
     logger.info("Using OpenVINO GenAI API")
     return GenAIModelWrapper(
-        openvino_genai.VLMPipeline(model_dir, device),
+        openvino_genai.VLMPipeline(model_dir, device, **ov_config),
         model_dir,
         "visual-text"
     )
@@ -169,26 +170,29 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU"):
 def load_visual_text_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
-    if use_genai:
-        model = load_text2image_genai_pipeline(model_id, device, ov_config)
-    elif use_hf:
-        model = DiffusionPipeline.from_pretrained(
-            model_id, trust_remote_code=True)
+    if use_hf:
+        logger.info("Using HF Transformers API")
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        model = AutoModelForVision2Seq.from_pretrained(
+            model_id, trust_remote_code=True, device_map=device.lower()
+        )
+    elif use_genai:
+        model = load_visual_text_genai_pipeline(model_id, device, ov_config)
+
     else:
         try:
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+            model = OVModelForVisualCausalLM.from_pretrained(
+                model_id, trust_remote_code=True, device=device, ov_config=ov_options
             )
         except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = TEXT2IMAGEPipeline.from_pretrained(
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            model = OVModelForVisualCausalLM.from_pretrained(
                 model_id,
                 config=config,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
+                ov_config=ov_options,
             )
     return model
 
@@ -207,12 +211,12 @@ def load_model(
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai)
-    elif MODELTYPE2TASK[model_type] == "text-to-image":
+    elif model_type == "text-to-image":
         return load_text2image_model(
             model_type, model_id, device, ov_options, use_hf, use_genai
         )
     elif model_type == "visual-text":
-        return load_visual_text_model(model_id, device, ov_config, use_hf, use_genai)
+        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -448,7 +452,7 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
     out = model.generate(question, config)
-    return out
+    return out.texts[0]
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
@@ -464,13 +468,11 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
 
 
 def genai_gen_visual_text(model, prompt, image, processor, max_new_tokens, crop_question):
-    config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = max_new_tokens
-    config.do_sample = False
-    model.set_chat_template("{'role: 'user', 'content': [{'type': 'text', 'text': 'What are these?'}, {'type': 'image'}]}")
-    image_data = Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
-    out = model.generate(prompt, images=[image_data], generation_config=config)
-    return out
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
+    model.start_chat("{'role': 'user', 'content': [{'type': 'text'}, {'type': 'image'}]}")
+    out = model.generate(prompt, images=[image_data], do_sample=False, max_new_tokens=max_new_tokens)
+    model.finish_chat()
+    return out.texts[0]
 
 
 def create_evaluator(base_model, args):
@@ -537,6 +539,7 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
+        print("optimized_model: ", e["optimized_model"])
         for l1, l2 in zip(
             e["source_model"].splitlines(), e["optimized_model"].splitlines()
         ):
@@ -612,7 +615,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics.csv"))
 
     if args.verbose and args.target_model is not None:
-        if args.model_type == "text":
+        if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type:
             print_image_results(evaluator)
