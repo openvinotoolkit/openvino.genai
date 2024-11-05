@@ -731,8 +731,6 @@ jobs:
       - uses: ./.github/actions/install_python_deps
       - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
-          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
-          python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
@@ -797,9 +795,8 @@ jobs:
       - uses: ./.github/actions/install_python_deps
       - name: Download and convert InternVL2 model
         run: |
-          # Lowering optimum and transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
-          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
-          python -m pip install -U "optimum<1.23" --no-dependencies
+          # Lowering transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
+          python -m pip install -U "transformers<4.45.0"
           source ./ov/setupvars.sh
           optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
       - name: Download images
