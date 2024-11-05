@@ -713,7 +713,7 @@ jobs:
           echo "Chat sample python" passed
 
 
-  visual_language_chat_sample-ubuntu:
+  visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -722,21 +722,13 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat py_openvino_genai -j
-      - name: Install dependencies
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
           python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
@@ -774,6 +766,23 @@ jobs:
           <<< $'What is unusual on this image?'
         env:
           PYTHONPATH: "./build/"
+  
+  visual_language_chat_sample-ubuntu-llava_1_5:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
@@ -785,6 +794,23 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
+
+  visual_language_chat_sample-ubuntu-llava_next:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps        
       - name: Download and convert LLaVa-Next model
         run: |
           source ./ov/setupvars.sh
@@ -795,6 +821,23 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
+
+  visual_language_chat_sample-ubuntu-internvl2:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert InternVL2 model
         run: |
           source ./ov/setupvars.sh
