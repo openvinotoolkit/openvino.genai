@@ -1,9 +1,6 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import math
-import openvino
-import openvino_tokenizers
 import openvino_genai as ov_genai
 import pytest
 from typing import Dict, Tuple
@@ -12,15 +9,14 @@ from ov_genai_test_utils import (
     get_chat_models_list,
     read_model,
     load_tok,
-    model_tmp_path,
     get_chat_templates,
     get_continuous_batching,
 )
 
 
 configs = [
-    dict(max_new_tokens=20),
-    dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
 ]
 
 
