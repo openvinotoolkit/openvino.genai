@@ -45,8 +45,8 @@ char generation_config_docstring[] = R"(
     include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
     stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
     echo:           if set to true, the model will echo the prompt in the output.
-    logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned (default: 0).
-                    Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. Default: 0.
+    logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                    Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
 
     Beam search specific parameters:
     num_beams:         number of beams for beam search. 1 disables beam search.
