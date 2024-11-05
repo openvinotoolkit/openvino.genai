@@ -802,6 +802,7 @@ jobs:
       - name: Download and convert InternVL2 model
         run: |
           # Lowering optimum and transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
+          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
           python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
