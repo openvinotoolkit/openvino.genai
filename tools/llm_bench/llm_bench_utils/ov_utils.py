@@ -216,8 +216,6 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     if cb:
         log.info("Continuous Batching mode activated")
         default_cb_config = {"cache_size": 1}
-        if "GPU" in device:
-            default_cb_config["block_size"] = 16
         scheduler_config = openvino_genai.SchedulerConfig()
         scheduler_params = kwargs.get("cb_config") or default_cb_config
         if scheduler_params:
