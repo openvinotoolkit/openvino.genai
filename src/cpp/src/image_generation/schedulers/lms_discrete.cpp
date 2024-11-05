@@ -263,5 +263,9 @@ void LMSDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Gen
     OPENVINO_THROW("Not implemented");
 }
 
+void LMSDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
+    OPENVINO_THROW("LMSDiscreteScheduler doesn't support set_timesteps_with_sigma");
+}
+
 } // namespace genai
 } // namespace ov

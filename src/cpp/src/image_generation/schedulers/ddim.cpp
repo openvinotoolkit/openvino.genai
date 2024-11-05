@@ -225,5 +225,9 @@ void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator>
     }
 }
 
+void DDIMScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
+    OPENVINO_THROW("DDIMScheduler doesn't support set_timesteps_with_sigma");
+}
+
 } // namespace genai
 } // namespace ov

@@ -19,6 +19,8 @@ class IScheduler : public Scheduler {
 public:
     virtual void set_timesteps(size_t num_inference_steps, float strength) = 0;
 
+    virtual void set_timesteps_with_sigma(std::vector<float> sigma, float mu) = 0;
+
     virtual std::vector<std::int64_t> get_timesteps() const = 0;
 
     virtual std::vector<float> get_float_timesteps() const = 0;

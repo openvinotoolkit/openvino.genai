@@ -25,6 +25,16 @@ void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_bat
     ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
 }
 
+ov::Tensor tensor_batch_copy(const ov::Tensor input, const size_t num_images_per_prompt, size_t batch_size_multiplier) {
+    ov::Shape repeated_shape = input.get_shape();
+    repeated_shape[0] *= num_images_per_prompt;
+    ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
+    for (size_t n = 0; n < num_images_per_prompt; ++n) {
+        batch_copy(input, tensor_repeated, 0, n);
+    }
+    return tensor_repeated;
+}
+
 const std::string get_class_name(const std::filesystem::path& root_dir) {
     const std::filesystem::path model_index_path = root_dir / "model_index.json";
     std::ifstream file(model_index_path);

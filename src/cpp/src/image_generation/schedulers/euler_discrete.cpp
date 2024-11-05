@@ -319,5 +319,9 @@ void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<G
     }
 }
 
+void EulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
+    OPENVINO_THROW("EulerDiscreteScheduler doesn't support set_timesteps_with_sigma");
+}
+
 }  // namespace genai
 }  // namespace ov

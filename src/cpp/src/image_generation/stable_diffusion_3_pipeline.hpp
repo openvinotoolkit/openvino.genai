@@ -32,18 +32,6 @@ void padding_right(const float* src, float* res, const ov::Shape src_size, const
     }
 }
 
-ov::Tensor tensor_batch_copy(const ov::Tensor input, const size_t num_images_per_prompt, size_t batch_size_multiplier) {
-    ov::Shape repeated_shape = input.get_shape();
-    repeated_shape[0] *= num_images_per_prompt;
-    ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
-
-    for (size_t n = 0; n < num_images_per_prompt; ++n) {
-        batch_copy(input, tensor_repeated, 0, n);
-    }
-
-    return tensor_repeated;
-}
-
 ov::Tensor split_2d_by_batch(const ov::Tensor input, size_t batch_num) {
     ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1]});
 
