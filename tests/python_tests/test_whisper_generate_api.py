@@ -480,12 +480,21 @@ def test_longform_audio_return_timestamps_multilingual(model_descr, test_sample)
         return_timestamps=True,
     )
 
+    streamer_result = ""
+
+    def streamer(word: str) -> bool:
+        nonlocal streamer_result
+        streamer_result += word
+        return False
+
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
+        streamer=streamer,
     )
 
     assert genai_result.texts[0] == expected["text"]
+    assert streamer_result == expected["text"]
 
     assert len(genai_result.chunks) == len(expected["chunks"])
 
@@ -515,12 +524,21 @@ def test_longform_audio_return_timestamps_en(model_descr, test_sample):
         return_timestamps=True,
     )
 
+    streamer_result = ""
+
+    def streamer(word: str) -> bool:
+        nonlocal streamer_result
+        streamer_result += word
+        return False
+
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
+        streamer=streamer,
     )
 
     assert genai_result.texts[0] == expected["text"]
+    assert streamer_result == expected["text"]
 
     assert len(genai_result.chunks) == len(expected["chunks"])
 

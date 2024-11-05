@@ -220,6 +220,27 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     return streamer;
 }
 
+ov::genai::ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
+    ov::genai::ChunkStreamerVariant streamer = std::monostate();
+
+    std::visit(overloaded {
+    [&streamer](const std::function<bool(py::str)>& py_callback){
+        // Wrap python streamer with manual utf-8 decoding. Do not rely
+        // on pybind automatic decoding since it raises exceptions on incomplete strings.
+        auto callback_wrapped = [py_callback](std::string subword) -> bool {
+            auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+            return py_callback(py::reinterpret_borrow<py::str>(py_str));
+        };
+        streamer = callback_wrapped;
+    },
+    [&streamer](std::shared_ptr<ChunkStreamerBase> streamer_cls){
+        streamer = streamer_cls;
+    },
+    [](std::monostate none){ /*streamer is already a monostate */ }
+    }, py_streamer);
+    return streamer;
+}
+
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs) {
     if (!config.has_value() && kwargs.empty())
         return std::nullopt;

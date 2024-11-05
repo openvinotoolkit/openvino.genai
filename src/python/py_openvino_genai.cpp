@@ -10,6 +10,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 #include "py_utils.hpp"
 
@@ -19,6 +20,7 @@ namespace pyutils = ov::genai::pybind::utils;
 using ov::genai::DecodedResults;
 using ov::genai::EncodedResults;
 using ov::genai::StreamerBase;
+using ov::genai::ChunkStreamerBase;
 using ov::genai::StringInputs;
 using ov::genai::draft_model;
 
@@ -76,6 +78,28 @@ class ConstructableStreamer: public StreamerBase {
     }
 };
 
+class ConstructableChunkStreamer: public ChunkStreamerBase {
+    bool put(int64_t token) override {
+        PYBIND11_OVERRIDE_PURE(
+            bool,  // Return type
+            ChunkStreamerBase,  // Parent class
+            put,  // Name of function in C++ (must match Python name)
+            token  // Argument(s)
+        );
+    }
+    bool put_chunk(std::vector<int64_t> tokens) override {
+        PYBIND11_OVERRIDE_PURE(
+            bool,  // Return type
+            ChunkStreamerBase,  // Parent class
+            put_chunk,  // Name of function in C++ (must match Python name)
+            tokens  // Argument(s)
+        );
+    }
+    void end() override {
+        PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
+    }
+};
+
 } // namespace
 
 
@@ -109,6 +133,12 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops")
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
+
+    py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>>(m, "ChunkStreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
+        .def(py::init<>())
+        .def("put", &ChunkStreamerBase::put, "Put is called every time new token is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops")
+        .def("put_chunk", &ChunkStreamerBase::put_chunk, "Put is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops")
+        .def("end", &ChunkStreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     init_tokenizer(m);
     init_perf_metrics(m);

@@ -194,7 +194,7 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
                                         const OptionalWhisperGenerationConfig& config,
-                                        const pyutils::PyBindStreamerVariant& py_streamer,
+                                        const pyutils::PyBindChunkStreamerVariant& py_streamer,
                                         const py::kwargs& kwargs) {
     // whisper config should initialized from generation_config.json in case of only kwargs provided
     // otherwise it would be initialized with default values which is unexpected for kwargs use case
@@ -203,7 +203,7 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    ov::genai::ChunkStreamerVariant streamer = pyutils::pystreamer_to_chunk_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
 }
@@ -249,18 +249,17 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readonly("chunks", &WhisperDecodedResults::chunks);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline", "Automatic speech recognition pipeline")
-        .def(py::init([](const std::filesystem::path& models_path,
-                         const std::string& device,
-                         const py::kwargs& kwargs) {
-                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<WhisperPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
-             }),
-             py::arg("models_path"),
-             "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
-             py::arg("device"),
-             "device on which inference will be done",
-             "openvino.properties map",
-             R"(
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                return std::make_unique<WhisperPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
+            py::arg("device"),
+            "device on which inference will be done",
+            "openvino.properties map",
+            R"(
             WhisperPipeline class constructor.
             models_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
@@ -271,7 +270,7 @@ void init_whisper_pipeline(py::module_& m) {
             [](WhisperPipeline& pipe,
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer,
+               const pyutils::PyBindChunkStreamerVariant& streamer,
                const py::kwargs& kwargs) {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },

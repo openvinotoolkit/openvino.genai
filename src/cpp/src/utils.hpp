@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "visual_language/processor_config.hpp"
@@ -50,6 +51,7 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 

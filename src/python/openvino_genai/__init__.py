@@ -31,6 +31,7 @@ from .py_openvino_genai import (
     SchedulerConfig,
     StopCriteria,
     StreamerBase,
+    ChunkStreamerBase,
     TokenizedInputs,
     Tokenizer,
     WhisperGenerationConfig,

@@ -60,18 +60,18 @@ public:
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
-                                   StreamerVariant streamer) override {
+                                   ChunkStreamerVariant streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         config.validate();
 
-        std::shared_ptr<StreamerBase> streamer_ptr;
+        std::shared_ptr<ChunkStreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
             streamer_ptr = nullptr;
-        } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+        } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
             streamer_ptr = *streamer_obj;
         } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-            streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
 
         auto generate_result = ov::genai::whisper_generate(config,
@@ -114,6 +114,19 @@ public:
     }
 };
 
+std::pair<std::string, Any> chunk_streamer(ChunkStreamerVariant func) {
+    if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(*streamer_obj)};
+    } else {
+        auto callback = std::get<std::function<bool(std::string)>>(func);
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
+    }
+}
+
+std::pair<std::string, Any> whisper_generation_config(const WhisperGenerationConfig& config) {
+    return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
+}
+
 }  // namespace genai
 }  // namespace ov
 
@@ -132,7 +145,7 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
 
 ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
                                                                       OptionalWhisperGenerationConfig generation_config,
-                                                                      StreamerVariant streamer) {
+                                                                      ChunkStreamerVariant streamer) {
     return m_impl->generate(raw_speech_input, generation_config, streamer);
 }
 
@@ -142,7 +155,7 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    return m_impl->generate(raw_speech_input, config, utils::get_streamer_from_map(config_map));
+    return m_impl->generate(raw_speech_input, config, utils::get_chunk_streamer_from_map(config_map));
 }
 
 ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {
