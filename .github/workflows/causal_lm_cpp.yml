@@ -310,7 +310,7 @@ jobs:
       - name: Run greedy_causal_lam Python sample - Chatglm3-6b
         run: > 
           . ./ov/setupvars.sh
-          && /samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "Why sun is yellow?" | tee py.txt
+          && samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "Why sun is yellow?" | tee py.txt
         env:
           PYTHONPATH: "./build"
       - name: Visualizing and Comparing generated output
@@ -603,7 +603,7 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_greedy.txt
-          diff predicted_prompt_lookup predictions_greedy.txt
+          diff predicted_prompt_lookup.txt predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
