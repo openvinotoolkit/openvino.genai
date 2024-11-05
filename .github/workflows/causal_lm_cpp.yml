@@ -302,13 +302,32 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
-      - run: > 
+      - name: Run greedy_causal_lam C++ sample - Chatglm3-6b
+        run: > 
           . ./ov/setupvars.sh
-          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ 69 "why is sun yellow?"
+          && ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "Why sun is yellow?" | tee cpp.txt
+        timeout-minutes: 2
+      - name: Run greedy_causal_lam Python sample - Chatglm3-6b
+        run: > 
+          . ./ov/setupvars.sh
+          && /samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "Why sun is yellow?" | tee py.txt
         env:
           PYTHONPATH: "./build"
-
-
+      - name: Visualizing and Comparing generated output
+        run: >
+          python -c"
+          with open("cpp.txt", 'r') as f:
+            greedy_cp = f.read()
+          with open("py.txt", 'r') as f:
+            greedy_py = f.read()
+          print(f"Generated with C++ sample: {greedy_cp}")
+          print(f"Generated with Python sample: {greedy_py}")
+          "
+          diff cp.txt py.txt
+          echo "Why sun is yellow?" passed
+        env:
+          PYTHONPATH: "./build"
+          
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -584,12 +603,14 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_greedy.txt
+          diff predicted_prompt_lookup predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
+          print(predicted_greedy)
+          print(predicted_prompt_lookup)
           "
           echo "Prompt lookup" passed
 
