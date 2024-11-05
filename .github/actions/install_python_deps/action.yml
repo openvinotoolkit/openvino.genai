@@ -1,0 +1,14 @@
+name: 'Install Python Dependencies'
+inputs:
+  ov_dir:
+    description: 'Directory where OpenVINO is installed'
+    default: './ov'
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Install Python dependencies
+      run: |
+        source ${{ inputs.ov_dir }}/setupvars.sh
+        python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+        python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
