@@ -34,7 +34,6 @@ quenstions = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_chat_compare_with_HF(model_descr, generation_config: Dict):
-    device = 'CPU'
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
@@ -50,7 +49,7 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         
-        answer = model_opt.generate(**tokenized, **generation_config, do_sample=False, repetition_penalty = None)
+        answer = model_opt.generate(**tokenized, **generation_config, repetition_penalty = None)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
@@ -71,7 +70,6 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
 @pytest.mark.nightly
 def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict):
     # compares with HF when history in ov_genai is save as a text
-    device = 'CPU'
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
@@ -87,7 +85,7 @@ def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict)
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         
-        answer = model_opt.generate(**tokenized, **generation_config, do_sample=False, repetition_penalty = None)
+        answer = model_opt.generate(**tokenized, **generation_config, repetition_penalty=None)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
         
