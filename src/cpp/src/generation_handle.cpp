@@ -71,6 +71,6 @@ std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
         results.push_back(partial_result.second);
     }
     std::sort(results.begin(), results.end(), [](const GenerationOutput& lhs, const GenerationOutput& rhs) { return std::fabs(lhs.score) > std::fabs(rhs.score); });
-    results.resize(m_sampling_params.num_return_sequences);
+    results.resize(std::min(m_sampling_params.num_return_sequences, results.size()));
     return results;
 }
