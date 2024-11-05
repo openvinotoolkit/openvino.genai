@@ -82,6 +82,7 @@ class ConstructableStreamer: public StreamerBase {
 PYBIND11_MODULE(py_openvino_genai, m) {
     m.doc() = "Pybind11 binding for OpenVINO GenAI library";
 
+    init_perf_metrics(m);
     py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) { return pyutils::handle_utf8((std::vector<std::string>)dr); })
@@ -111,9 +112,8 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     init_tokenizer(m);
-    init_perf_metrics(m);
-    init_generation_config(m);
     init_lora_adapter(m);
+    init_generation_config(m);
 
     init_continuous_batching_pipeline(m);
     init_llm_pipeline(m);

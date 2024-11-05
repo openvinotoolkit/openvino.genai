@@ -212,6 +212,16 @@ void init_image_generation_pipelines(py::module_& m) {
             update_image_generation_config_from_kwargs(config, kwargs);
         });
 
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
+    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
+        .value("AUTO", ov::genai::Scheduler::Type::AUTO)
+        .value("LCM", ov::genai::Scheduler::Type::LCM)
+        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
+        .value("DDIM", ov::genai::Scheduler::Type::DDIM)
+        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
+        .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
+    image_generation_scheduler.def("from_config", &ov::genai::Scheduler::from_config);
+
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](
             const std::filesystem::path& models_path
@@ -274,15 +284,4 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
-
-    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
-        .def("from_config", &ov::genai::Scheduler::from_config);
-
-    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
-        .value("AUTO", ov::genai::Scheduler::Type::AUTO)
-        .value("LCM", ov::genai::Scheduler::Type::LCM)
-        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
-        .value("DDIM", ov::genai::Scheduler::Type::DDIM)
-        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
-        .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
 }

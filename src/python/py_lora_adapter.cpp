@@ -44,7 +44,7 @@ void init_lora_adapter(py::module_& m) {
          ov::genai::AdapterConfig::Mode mode) {
             return std::make_unique<ov::genai::AdapterConfig>(mode);
         }),
-        py::arg("mode") = ov::genai::AdapterConfig::Mode::MODE_AUTO);
+        py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
 
     adapter_config.def(py::init([](
         const ov::genai::Adapter& adapter, 
@@ -54,7 +54,7 @@ void init_lora_adapter(py::module_& m) {
         }),
         py::arg("adapter"),
         py::arg("alpha"),
-        py::arg("mode") = ov::genai::AdapterConfig::Mode::MODE_AUTO);
+        py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
     
     adapter_config.def(py::init([](
         const ov::genai::Adapter& adapter, 
@@ -62,7 +62,7 @@ void init_lora_adapter(py::module_& m) {
             return std::make_unique<ov::genai::AdapterConfig>(adapter, mode);
         }),
         py::arg("adapter"),
-        py::arg("mode") = ov::genai::AdapterConfig::Mode::MODE_AUTO);
+        py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
     
     adapter_config.def(py::init([](
         const std::vector<ov::genai::Adapter>& adapters, 
@@ -70,7 +70,7 @@ void init_lora_adapter(py::module_& m) {
             return std::make_unique<ov::genai::AdapterConfig>(adapters, mode);
         }),
         py::arg("adapters"),
-        py::arg("mode") = ov::genai::AdapterConfig::Mode::MODE_AUTO);
+        py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
 
     adapter_config.def(py::init([](
         const std::vector<std::pair<ov::genai::Adapter, float>>& adapters, 
@@ -78,7 +78,7 @@ void init_lora_adapter(py::module_& m) {
             return std::make_unique<ov::genai::AdapterConfig>(adapters, mode);
         }),
         py::arg("adapters"),
-        py::arg("mode") = ov::genai::AdapterConfig::Mode::MODE_AUTO);
+        py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
     adapter_config.def(
         "__bool__", 
         [](ov::genai::AdapterConfig& self
