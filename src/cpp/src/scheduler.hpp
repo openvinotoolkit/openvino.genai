@@ -15,7 +15,6 @@
 namespace ov::genai {
 class Scheduler {
     bool m_can_use_partial_preemption;
-    size_t m_block_size;
 
     SchedulerConfig m_config;
     BlockManager m_block_manager;
@@ -40,8 +39,7 @@ public:
     explicit Scheduler(size_t block_size, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
             m_can_use_partial_preemption(can_use_partial_preemption),
             m_config(config),
-            m_block_size(block_size),
-            m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, m_block_size, num_layers) {
+            m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
 
@@ -82,7 +80,7 @@ public:
     }
 
     const size_t get_block_size() const {
-        return m_block_size;
+        return m_block_manager.get_block_size();
     }
 
     const bool has_block_table(uint64_t seq_id) {
@@ -150,12 +148,13 @@ private:
             logical_blocks_released = m_block_manager.free_group_partially(sequence_group, blocks_needed);
         }
 
+        size_t block_size = get_block_size();
         // calculate the number of preempted tokens
-        auto tokens_in_last_block = processed_tokens % m_block_size;
+        auto tokens_in_last_block = processed_tokens % block_size;
         if (tokens_in_last_block == 0) {
-            tokens_in_last_block = m_block_size;
+            tokens_in_last_block = block_size;
         }
-        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * m_block_size;
+        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
@@ -231,16 +230,17 @@ private:
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
 
                 // apply KV cache limitations
-                size_t currently_allocated_token_slots = sequence_group->get_num_blocks() * m_block_size;
+                size_t block_size = get_block_size();
+                size_t currently_allocated_token_slots = sequence_group->get_num_blocks() * block_size;
                 size_t occupied_token_slots = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 OPENVINO_ASSERT(currently_allocated_token_slots >= occupied_token_slots, "internal error");
                 size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
                        required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
-                size_t num_required_blocks = (required_slots + m_block_size - 1) / m_block_size, num_free_blocks = m_block_manager.num_free_blocks();
+                size_t num_required_blocks = (required_slots + block_size - 1) / block_size, num_free_blocks = m_block_manager.num_free_blocks();
                 size_t num_scheduled_blocks = std::min(num_required_blocks, num_free_blocks);
                 // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
                 // and total "scheduled capacity"
-                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * m_block_size);
+                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * block_size);
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
@@ -368,7 +368,8 @@ private:
                     break;
 
                 // apply KV cache limitations
-                const size_t num_required_blocks = (sequence_len + m_block_size - 1) / m_block_size;
+                size_t block_size = get_block_size();
+                const size_t num_required_blocks = (sequence_len + block_size - 1) / block_size;
                 if (!m_block_manager.can_allocate_blocks(num_required_blocks))
                     break;
 

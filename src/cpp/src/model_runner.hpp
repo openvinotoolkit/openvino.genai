@@ -31,7 +31,7 @@ class ModelRunner {
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
     size_t m_num_decoder_layers, m_block_size;
-    bool m_collect_attention_scores, m_use_cache_eviction;
+    bool m_collect_attention_scores;
 public:
     /**
      * Constructs the ModelRunner.
@@ -41,10 +41,9 @@ public:
      * @param collect_attention_scores If true, then after each `forward` call the ModelRunner will collect and make available the per-token attention
      * scores for each decoder layer, so that these can be used in per-step cache optimizations (such as cache eviction algorithm).
      */
-    ModelRunner(ov::InferRequest request, size_t block_size, size_t num_decoder_layers = 1, bool collect_attention_scores = false, bool use_cache_eviction = false) :
+    ModelRunner(ov::InferRequest request, size_t block_size, size_t num_decoder_layers = 1, bool collect_attention_scores = false) :
         m_request(std::move(request)),
         m_block_size(block_size),
-        m_use_cache_eviction(use_cache_eviction),
         m_num_decoder_layers(num_decoder_layers),
         m_collect_attention_scores(collect_attention_scores) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
@@ -185,7 +184,7 @@ public:
             timer.end();
         }
 
-        if (m_collect_attention_scores && m_use_cache_eviction) {
+        if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
 
@@ -199,7 +198,7 @@ private:
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         std::vector<std::string> tensor_names = {"block_indices"};
 
-        if (m_use_cache_eviction) {
+        if (m_collect_attention_scores) {
             tensor_names.resize(m_num_decoder_layers);
             for (size_t i = 0; i < tensor_names.size(); i++) {
                 tensor_names[i] = std::string("block_indices.") + std::to_string(i);
