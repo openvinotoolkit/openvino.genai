@@ -315,7 +315,7 @@ jobs:
           PYTHONPATH: "./build"
       - name: Visualizing and Comparing generated output
         run: >
-          python -c"
+          python -c "
           with open("cpp.txt", 'r') as f:
             greedy_cp = f.read()
           with open("py.txt", 'r') as f:
