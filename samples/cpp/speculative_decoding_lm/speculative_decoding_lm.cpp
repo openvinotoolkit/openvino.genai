@@ -29,14 +29,11 @@ int main(int argc, char* argv[]) try {
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.cache_size = 5;
 
-    ov::genai::SchedulerConfig draft_scheduler_config;
-    draft_scheduler_config.cache_size = 5;
-
     // Different devices require different block sizes, so different scheduler configs need to be set.
     ov::genai::LLMPipeline pipe(
         main_model_path,
         main_device,
-        ov::genai::draft_model(draft_model_path, draft_device, ov::genai::scheduler_config(draft_scheduler_config)),
+        ov::genai::draft_model(draft_model_path, draft_device),
         ov::genai::scheduler_config(scheduler_config));
 
     auto streamer = [](std::string subword) {

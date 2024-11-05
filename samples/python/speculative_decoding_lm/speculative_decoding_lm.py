@@ -29,11 +29,7 @@ def main():
     # cache params
     scheduler_config.cache_size = 2
 
-    draft_scheduler_config = openvino_genai.SchedulerConfig()
-    # cache params
-    draft_scheduler_config.cache_size = 2
-
-    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, scheduler_config=draft_scheduler_config)
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
 
     pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, scheduler_config=scheduler_config, draft_model=draft_model)
     
