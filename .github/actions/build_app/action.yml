@@ -20,4 +20,4 @@ runs:
       run: |
         source ${{ inputs.ov_dir }}/setupvars.sh
         cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ inputs.build_dir }}
-        cmake --build ${{ inputs.build_dir }} --config Release ${{ inputs.build_target && '--target ' + inputs.build_target || '' }} -j
+        cmake --build ${{ inputs.build_dir }} --config Release ${{ inputs.build_target && format('--target {0}', inputs.build_target) || '' }} -j
