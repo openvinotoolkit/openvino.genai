@@ -275,8 +275,7 @@ void init_image_generation_pipelines(py::module_& m) {
             (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
 
-    auto image_generation_scheduler = py::class_<ov::genai::Scheduler>(m, "Scheduler", "Scheduler for image generation pipelines.")
-        .def(py::init<>())
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
         .def("from_config", &ov::genai::Scheduler::from_config);
 
     py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
