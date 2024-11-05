@@ -131,6 +131,13 @@ def get_argprser():
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     llm_bench_utils.model_utils.add_stateful_model_arguments(parser)
     parser.add_argument("--genai", action="store_true", help="Use OpenVINO GenAI optimized pipelines for benchmarking")
+    parser.add_argument(
+        "--lora",
+        nargs='*',
+        required=False,
+        default=None,
+        help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
+    parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument(
