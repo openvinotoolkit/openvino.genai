@@ -9,6 +9,7 @@ from ov_genai_test_utils import (
     get_chat_models_list,
     read_model,
     load_tok,
+    model_tmp_path,
     get_chat_templates,
     get_continuous_batching,
 )
