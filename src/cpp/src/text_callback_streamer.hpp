@@ -26,7 +26,7 @@ protected:
     size_t print_len = 0;
 };
 
-class ChunkTextCallbackStreamer : public TextCallbackStreamer, public ChunkStreamerBase {
+class ChunkTextCallbackStreamer : private TextCallbackStreamer, public ChunkStreamerBase {
 public:
     bool put(int64_t token) override;
     bool put_chunk(std::vector<int64_t> tokens) override;
