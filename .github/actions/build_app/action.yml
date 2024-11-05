@@ -16,6 +16,7 @@ runs:
   using: "composite"
   steps:
     - name: Build app
+      shell: bash
       run: |
         source ${{ inputs.ov_dir }}/setupvars.sh
         cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ inputs.build_dir }}

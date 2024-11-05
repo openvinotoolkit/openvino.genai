@@ -8,6 +8,7 @@ runs:
   using: "composite"
   steps:
     - name: Install Python dependencies
+      shell: bash
       run: |
         source ${{ inputs.ov_dir }}/setupvars.sh
         python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
