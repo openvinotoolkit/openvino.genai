@@ -783,10 +783,12 @@ jobs:
         with:
           build_target: 'visual_language_chat py_openvino_genai'
       - uses: ./.github/actions/install_python_deps
-      - name: Download and convert LLaVa 1.5 model and an image
+      - name: Download and convert LLaVa 1.5 model
         run: |
           source ./ov/setupvars.sh
           optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
+      - name: Download images
+        run: |
           wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - LLaVa 1.5
         run: >
@@ -810,11 +812,14 @@ jobs:
       - uses: ./.github/actions/build_app
         with:
           build_target: 'visual_language_chat py_openvino_genai'
-      - uses: ./.github/actions/install_python_deps        
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert LLaVa-Next model
         run: |
           source ./ov/setupvars.sh
           optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
+      - name: Download images
+        run: |
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - LLaVa-Next
         run: >
           source ./ov/setupvars.sh
@@ -840,8 +845,13 @@ jobs:
       - uses: ./.github/actions/install_python_deps
       - name: Download and convert InternVL2 model
         run: |
+          # Lowering optimum and transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
+          python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
+      - name: Download images
+        run: |
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - InternVL2
         run: >
           source ./ov/setupvars.sh
