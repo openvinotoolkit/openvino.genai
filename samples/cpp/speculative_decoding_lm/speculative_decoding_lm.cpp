@@ -26,23 +26,11 @@ int main(int argc, char* argv[]) try {
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
     std::string main_device = "CPU", draft_device = "CPU";
 
-    // Perform the inference
-    auto get_default_block_size = [](const std::string& device) {
-        const size_t cpu_block_size = 32;
-        const size_t gpu_block_size = 16;
-
-        bool is_gpu = device.find("GPU") != std::string::npos;
-
-        return is_gpu ? gpu_block_size : cpu_block_size;
-    };
-
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.cache_size = 5;
-    scheduler_config.block_size = get_default_block_size(main_device);
 
     ov::genai::SchedulerConfig draft_scheduler_config;
     draft_scheduler_config.cache_size = 5;
-    draft_scheduler_config.block_size = get_default_block_size(draft_device);
 
     // Different devices require different block sizes, so different scheduler configs need to be set.
     ov::genai::LLMPipeline pipe(
