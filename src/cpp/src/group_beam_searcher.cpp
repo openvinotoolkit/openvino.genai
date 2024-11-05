@@ -3,12 +3,15 @@
 
 #include <openvino/runtime/tensor.hpp>
 
+#include <cassert>
+
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
+#include "lm_encoding.hpp"
 
 namespace {
 
-// Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
+// Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
         return {haystack.begin(), haystack.end()};
@@ -312,37 +315,6 @@ std::vector<std::vector<std::vector<Beam>>> finalize(GroupBeamSearcher&& group_b
     return finalized;
 }
 
-void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
-    ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
-    ov::Shape original_shape = original_mask.get_shape();
-    attention_mask.copy_to(original_mask);
-
-    ov::Shape new_shape{next_beams.size(), original_mask.get_shape().at(1) + 1};
-    attention_mask.set_shape(new_shape);
-
-    for (size_t beam_id = 0; beam_id < next_beams.size(); beam_id++) {
-        const size_t original_prompt_offset = next_beams.at(beam_id) * original_shape.at(1);
-        const size_t result_prompt_offset = beam_id * new_shape.at(1);
-
-        int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
-        const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
-
-        std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
-        attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
-    }
-}
-
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape().at(0);
-    const size_t sequence_length = attention_mask.get_shape().at(1);
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
-        position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
-    }
-}
-
 void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
     request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {0, 0}));
     request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {0}));
@@ -362,14 +334,15 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
                            std::optional<int32_t> selected_beam_idx) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
                     "number of beams should be divisible by number of groups");
-
-    // Initialize beam search
+    
     auto batch_size = input_ids.get_shape().at(0);
+    auto sequence_length = input_ids.get_shape().at(1);
+    
+    // Initialize beam search.
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     std::vector<std::vector<int64_t>> prompts;
     prompts.reserve(batch_size);
     for (size_t batch = 0; batch < batch_size; batch++) {
-        size_t sequence_length = input_ids.get_shape().at(1);
         size_t batch_offset = batch * sequence_length;
         const int64_t* prompt_start = prompt_data + batch_offset;
         prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
@@ -389,7 +362,7 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
     lm.set_tensor("beam_idx", beam_idx);
 
     Parameters parameters{std::move(prompts)};
-    parameters.max_new_tokens = config.max_new_tokens;
+    parameters.max_new_tokens = config.get_max_new_tokens(sequence_length);
     parameters.eos_token_id = config.eos_token_id;
     parameters.n_groups = config.num_beam_groups;
     parameters.group_size = config.num_beams / config.num_beam_groups;
@@ -401,11 +374,20 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
 
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
-    
+
+    // Reserve for performance counters.
+    std::vector<std::chrono::steady_clock::time_point> new_token_times;
+    std::vector<size_t> batch_sizes;
+    new_token_times.reserve(parameters.max_new_tokens);
+    batch_sizes.reserve(parameters.max_new_tokens);
+
     for (size_t length_count = 0; ; ++length_count) {
         lm.infer();
 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
+        new_token_times.emplace_back(std::chrono::steady_clock::now());
+        batch_sizes.emplace_back(batch_size);
+
         if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
             // Break the cycle before masks are extended in update_attention_mask_with_beams.
             // If generation is continued, attention_mask length should be equal to KV cache size.
@@ -434,6 +416,9 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
     int32_t res_selected_beam_idx = 0;
     results.scores.reserve(config.num_return_sequences * result.size());
     results.tokens.reserve(config.num_return_sequences * result.size());
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    raw_perf_counters.m_new_token_times = new_token_times;
+    raw_perf_counters.m_batch_sizes = batch_sizes;
     
     // align output with HF
     for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
@@ -462,7 +447,7 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
             results.tokens.push_back(std::move(beam->get().tokens));
         }
     }
-
+    
     return {results, res_selected_beam_idx};
 }
 

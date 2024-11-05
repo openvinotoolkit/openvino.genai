@@ -8,10 +8,10 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT 1>' ['<PROMPT 2>' ...]");
     }
     auto prompts = std::vector<std::string>(argv + 2, argv + argc);
-    std::string model_path = argv[1];
+    std::string models_path = argv[1];
 
     std::string device = "CPU";  // GPU can be used as well
-    ov::genai::LLMPipeline pipe(model_path, device);
+    ov::genai::LLMPipeline pipe(models_path, device);
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 20;
@@ -24,9 +24,13 @@ int main(int argc, char* argv[]) try {
     auto beams = pipe.generate(prompts, config);
     std::cout << beams << '\n';
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }

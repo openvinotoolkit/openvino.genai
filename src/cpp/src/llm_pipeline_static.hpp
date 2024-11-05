@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <filesystem>
+
 #include "llm_pipeline_base.hpp"
 
 namespace ov {
@@ -23,6 +25,16 @@ public:
         const ov::AnyMap& config
     );
 
+    void setupAndCompileModels(
+        const std::filesystem::path& path,
+        const std::string& device,
+        ov::AnyMap& pipeline_config);
+
+    void setupAndImportModels(
+        const std::filesystem::path& path,
+        const std::string& device,
+        ov::AnyMap& pipeline_config);
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
@@ -42,9 +54,15 @@ private:
 
 private:
     struct KVCacheDesc {
+        uint32_t max_prompt_size;
         uint32_t total_size;
         uint32_t num_stored_tokens;
+        uint32_t dim;
     };
+
+    // FIXME: Ideally, we don't need to keep those
+    std::shared_ptr<ov::Model> m_kvcache_model;
+    std::shared_ptr<ov::Model> m_prefill_model;
 
     KVCacheDesc m_kvcache_desc;
     ov::InferRequest m_kvcache_request;

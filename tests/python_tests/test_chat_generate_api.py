@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 import openvino
 import openvino_tokenizers
 import openvino_genai as ov_genai
@@ -12,7 +13,8 @@ from ov_genai_test_utils import (
     read_model,
     load_tok,
     model_tmp_path,
-    get_chat_templates
+    get_chat_templates,
+    get_continuous_batching,
 )
 
 
@@ -40,9 +42,8 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     chat_history_ov = []
     chat_prompt = ''
     
-    # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
-    # Need to regenerate openvino_tokenizer/detokenizer.
-    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
+    # Will set add_special_tokens=False inside pipeline when start_chat() is called.
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
 
     pipe.start_chat()    
     for prompt in quenstions:
@@ -117,7 +118,7 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
     # Need to regenerate openvino_tokenizer/detokenizer.
     model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
-    pipe_with_kv_cache = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    pipe_with_kv_cache = ov_genai.LLMPipeline(path, device, **{"ENABLE_MMAP": False})
   
     pipe_with_kv_cache.start_chat()
     for question in quenstions:
@@ -141,7 +142,7 @@ conversation = [
     {'role': 'user', 'content': '1+1='},
     {'role': 'assistant', 'content': '1 + 1 = 2'},
     {'role': 'user', 'content': 'What is the previous answer?'},
-    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. \n Please ask me your next question.'},
+    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. Please ask me your next question.'},
     {'role': 'user', 'content': 'Why is the sun yellow?'},
     {'role': 'assistant', 'content': 'Because it emits yeloow light.'},
     {'role': 'user', 'content': 'What was my first question?'},
@@ -157,7 +158,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
     model_id, path, tokenizer, opt_model, pipe = read_model(get_models_list()[0])
     
     full_history_str_hf = tokenizer.apply_chat_template(conversation, 
-        add_generation_prompt=False, 
+        add_generation_prompt=False,
         tokenize=False,
         **tokenizer_config)
     
@@ -167,3 +168,57 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         print(f'hf reference: {full_history_str_hf}')
         print(f'ov_genai out: {full_history_str}')
     assert full_history_str == full_history_str_hf
+
+
+@pytest.mark.parametrize("generation_config", configs[1:])
+@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.precommit
+def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Dict):
+    model_id, path, tokenizer, model, stateful = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    cb = get_continuous_batching(path)
+    stateful.start_chat()
+    cb.start_chat()
+    for question in quenstions:
+        generated = cb.generate(question, **generation_config)
+        reference = stateful.generate(question, **generation_config)
+        assert generated == reference
+    # Test that finish_chat() doesn't fail just in case.
+    cb.finish_chat()
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_set_chat_template():
+    model_descr = get_chat_models_list()[0]
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    pipe.get_tokenizer().set_chat_template("{% for message in messages %}{{ message['content'] }}{% endfor %}")
+    pipe.start_chat()
+    generated = pipe.generate("a", max_new_tokens=1)
+    pipe.finish_chat()
+    reference = pipe.generate("a", max_new_tokens=1)
+    assert generated == reference
+
+prompts = [
+    '1+1=',
+    'What is the previous answer?',
+    'Why is the Sun yellow?',
+    'What was my first question?',
+    ['Why is the Sun yellow?'],
+    "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+    "מחרוזת בדיקה",
+    "Multiline\nstring!\nWow!",
+]
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("add_special_tokens", [True, False])
+@pytest.mark.parametrize("prompt", prompts)
+def test_add_special_tokens(add_special_tokens, prompt):
+    import numpy as np
+    model_descr = get_chat_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    genai_tokenzier = pipe.get_tokenizer()
+    
+    # Calling encode with add_special_tokens will set state flag.
+    res_genai = genai_tokenzier.encode(prompt, add_special_tokens).input_ids.data
+    res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
+    assert np.all(res_genai == res_hf)

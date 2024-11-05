@@ -1,4 +1,2 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-optimum[openvino]==1.20.0
-einops==0.8.0  # For Qwen
-transformers_stream_generator==0.0.5  # For Qwen
+-r ./deployment-requirements.txt
+-r ./export-requirements.txt

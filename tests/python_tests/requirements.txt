@@ -1,6 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-optimum[openvino]==1.21.2
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git
+numpy<2.0.0; sys_platform == 'darwin'
+onnx==1.16.1
 pytest
+tools/who_what_benchmark
+
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
 rjieba
@@ -25,3 +29,7 @@ timm
 tiktoken
 # - microsoft/biogpt
 sacremoses
+# - openai/whisper-base
+librosa
+soundfile
+datasets

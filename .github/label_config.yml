@@ -1,8 +1,0 @@
-# https://github.com/actions/labeler
-
-# Add label to the PRs changing files under llm_bench/
-llm_bench:
-- changed-files:
-  - any-glob-to-any-file:
-    - 'llm_bench/**'
-    - '.github/workflows/llm_bench-python.yml'

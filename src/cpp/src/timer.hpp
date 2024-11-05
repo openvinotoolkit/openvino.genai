@@ -26,7 +26,11 @@ public:
         m_total += std::chrono::duration<double, std::milli>(m_end - m_start).count();
     }
 
+    float get_duration() const {
+        return m_total / 1000.;
+    }
+
     ~ManualTimer() {
-        std::cout << m_title << ": " << m_total / 1000. << " secs" << std::endl;
+        // std::cout << m_title << ": " << m_total / 1000. << " secs" << std::endl;
     }
 };

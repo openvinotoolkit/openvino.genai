@@ -6,7 +6,7 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
@@ -14,6 +14,8 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 ```
 
 ## Run:
+
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `chat_sample TinyLlama-1.1B-Chat-v1.0`
 
@@ -34,3 +36,11 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u25aa' in position 
 If you encounter the error described in the example when sample is printing output to the Windows console, it is likely due to the default Windows encoding not supporting certain Unicode characters. To resolve this:
 1. Enable Unicode characters for Windows cmd - open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 2. Enable UTF-8 mode by setting environment variable `PYTHONIOENCODING="utf8"`.
+
+#### Missing chat template
+
+If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model.
+The following template can be used as a default, but it may not work properly with every model:
+```
+"chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
+```

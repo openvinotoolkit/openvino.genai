@@ -5,8 +5,11 @@
 #include <openvino/core/except.hpp>
 #include "openvino/genai/generation_config.hpp"
 
+
+using namespace ov::genai;
+
 TEST(GenerationConfigTest, invalid_temperature) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.temperature = -0.1;
     config.do_sample = true;
@@ -14,7 +17,7 @@ TEST(GenerationConfigTest, invalid_temperature) {
 }
 
 TEST(GenerationConfigTest, valid_temperature) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.temperature = 0.1;
@@ -22,7 +25,7 @@ TEST(GenerationConfigTest, valid_temperature) {
 }
 
 TEST(GenerationConfigTest, invalid_top_p) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.top_p = -0.5;
@@ -32,7 +35,7 @@ TEST(GenerationConfigTest, invalid_top_p) {
 }
 
 TEST(GenerationConfigTest, valid_top_p) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.top_p = 0.1;
@@ -40,7 +43,7 @@ TEST(GenerationConfigTest, valid_top_p) {
 }
 
 TEST(GenerationConfigTest, invalid_repeatition_penalty) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.repetition_penalty = -3.0;
@@ -50,7 +53,7 @@ TEST(GenerationConfigTest, invalid_repeatition_penalty) {
 }
 
 TEST(GenerationConfigTest, valid_repeatition_penalty) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.repetition_penalty = 1.8;
@@ -60,7 +63,7 @@ TEST(GenerationConfigTest, valid_repeatition_penalty) {
 }
 
 TEST(GenerationConfigTest, invalid_presence_penalty) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.presence_penalty = 3.0;
@@ -70,7 +73,7 @@ TEST(GenerationConfigTest, invalid_presence_penalty) {
 }
 
 TEST(GenerationConfigTest, valid_presence_penalty) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.presence_penalty = 1.8;
@@ -80,7 +83,7 @@ TEST(GenerationConfigTest, valid_presence_penalty) {
 }
 
 TEST(GenerationConfigTest, invalid_frequency_penalty) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.frequency_penalty = 3.0;
@@ -90,11 +93,51 @@ TEST(GenerationConfigTest, invalid_frequency_penalty) {
 }
 
 TEST(GenerationConfigTest, valid_frequency_penalty) {
-    ov::genai::GenerationConfig config;
+    GenerationConfig config;
     config.max_new_tokens = 20;
     config.do_sample = true;
     config.frequency_penalty = 1.8;
     EXPECT_NO_THROW(config.validate());
     config.frequency_penalty = -2.0;
+    EXPECT_NO_THROW(config.validate());
+}
+
+ov::genai::GenerationConfig speculative_decoding_multinomial() {
+    auto speculative_decoding_multinomial_config = ov::genai::multinomial();
+    speculative_decoding_multinomial_config.num_assistant_tokens = 5;
+    return speculative_decoding_multinomial_config;
+}
+
+ov::genai::GenerationConfig speculative_decoding_greedy() {
+    auto speculative_decoding_greedy_config = ov::genai::greedy();
+    speculative_decoding_greedy_config.assistant_confidence_threshold = 0.4f;
+    return speculative_decoding_greedy_config;
+}
+
+TEST(GenerationConfigTest, invalid_static_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0.2;
+    EXPECT_THROW(config.validate(), ov::Exception);
+}
+
+TEST(GenerationConfigTest, valid_static_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0;
+    EXPECT_NO_THROW(config.validate());
+}
+
+TEST(GenerationConfigTest, invalid_dynamic_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0.5;
+    EXPECT_THROW(config.validate(), ov::Exception);
+}
+
+TEST(GenerationConfigTest, valid_dynamic_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.assistant_confidence_threshold = 0.5;
+    config.num_assistant_tokens = 0;
     EXPECT_NO_THROW(config.validate());
 }

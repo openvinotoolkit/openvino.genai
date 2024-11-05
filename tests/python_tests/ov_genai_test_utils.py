@@ -57,6 +57,33 @@ def get_models_list():
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
 
+def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
+    precommit_models = [
+        "openai/whisper-tiny",
+        "openai/whisper-tiny.en",
+        "distil-whisper/distil-small.en",
+    ]
+    if multilingual:
+        precommit_models = ["openai/whisper-tiny"]
+    if en_only:
+        precommit_models = ["openai/whisper-tiny.en", "distil-whisper/distil-small.en"]
+    if tiny_only:
+        precommit_models = ["openai/whisper-tiny"]
+
+    nightly_models = []
+
+    if pytest.run_marker == "precommit":
+        model_ids = precommit_models
+    else:
+        model_ids = nightly_models
+
+    if pytest.selected_model_ids:
+        model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
+
+    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
+    return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
+
+
 def get_chat_models_list():
     precommit_models = [
         "Qwen/Qwen2-0.5B-Instruct",
@@ -85,7 +112,7 @@ def get_chat_templates():
 
     skipped_models = {
         # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
-        # Need to enable and unskip, since it's preset in continious batching and has >100 000 downloads.
+        # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
         "openchat/openchat-3.5-0106",
         
         # These models fail even on HF so no need to check if applying chat matches.
@@ -103,37 +130,35 @@ def get_chat_templates():
         # TODO: Need to support chat templates in more models: CVS-145963
         # Either ov_genai is unable to parse chat_template or results do not match with HF.
         "meta-llama/Meta-Llama-3-8B-Instruct",
-        "databricks/dbrx-instruct",
+        "databricks/dbrx-instruct", # Chat template is not supported by Jinja2Cpp
         "mosaicml/mpt-30b-chat",
-        "deepseek-ai/deepseek-coder-6.7b-instruct",
-        "maldv/winter-garden-7b-alpha",
-        "ishorn5/RTLCoder-Deepseek-v1.1",
+        "deepseek-ai/deepseek-coder-6.7b-instruct", # Chat template is not supported by Jinja2Cpp
+        "maldv/winter-garden-7b-alpha", # Chat template is not supported by Jinja2Cpp
+        "ishorn5/RTLCoder-Deepseek-v1.1", # Chat template is not supported by Jinja2Cpp
+        "openchat/openchat-3.5-0106",
         "casperhansen/llama-3-70b-instruct-awq",
         "TheBloke/deepseek-coder-33B-instruct-GPTQ",
         "AI-Sweden-Models/gpt-sw3-356m-instruct",
         "google/gemma-7b-it",
         "THUDM/cogvlm2-llama3-chat-19B",
         "KnutJaegersberg/internlm-20b-llama",
-        "alpindale/WizardLM-2-8x22B",
         "maywell/Synatra-Mixtral-8x7B",
         "MediaTek-Research/Breeze-7B-Instruct-v1_0",
         "bofenghuang/vigostral-7b-chat",
-        "meetkai/functionary-small-v2.5",
-        "nvidia/Llama3-ChatQA-1.5-8B",
+        "meetkai/functionary-small-v2.5", # Chat template is not supported by Jinja2Cpp
         "openchat/openchat-3.6-8b-20240522",
         "tenyx/TenyxChat-7B-v1",
         "LoneStriker/TinyLlama-1.1B-32k-Instruct-3.0bpw-h6-exl2",
         "yam-peleg/Hebrew-Gemma-11B-V2",
-        "shenzhi-wang/Llama3-8B-Chinese-Chat",
+        "shenzhi-wang/Llama3-8B-Chinese-Chat", # AssertionError
         "nlpai-lab/KULLM3",
         "HuggingFaceH4/zephyr-7b-gemma-sft-v0.1",
-        "MediaTek-Research/Breeze-7B-Instruct-v0_1",
-        "shanchen/llama3-8B-slerp-biomed-chat-chinese",
+        "MediaTek-Research/Breeze-7B-Instruct-v0_1", 
+        "shanchen/llama3-8B-slerp-biomed-chat-chinese", # AssertionError
         "MLP-KTLim/llama-3-Korean-Bllossom-8B",
-        "lucyknada/microsoft_WizardLM-2-7B",
-        "aloobun/CosmicBun-8B",
+        "aloobun/CosmicBun-8B", # Chat template is not supported by Jinja2Cpp
         "codellama/CodeLlama-70b-Instruct-hf",
-        "gorilla-llm/gorilla-openfunctions-v2",
+        "gorilla-llm/gorilla-openfunctions-v2", # Chat template is not supported by Jinja2Cpp
         "BramVanroy/Llama-2-13b-chat-dutch"
     }
     from tokenizer_configs import get_tokenizer_configs
@@ -148,7 +173,7 @@ def read_model(params, **tokenizer_kwargs):
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
-    if path.exists():
+    if (path / "openvino_model.xml").exists():
         opt_model = OVModelForCausalLM.from_pretrained(path, trust_remote_code=True, 
                                                        compile=False, device='CPU')
     else:
@@ -172,7 +197,7 @@ def read_model(params, **tokenizer_kwargs):
         path,
         tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False}),
+        ov_genai.LLMPipeline(path, 'CPU', **{'ENABLE_MMAP': False}),
     )
 
 
@@ -195,7 +220,7 @@ def model_tmp_path(tmpdir_factory):
     for pattern in ['*.xml', '*.bin']:
         for src_file in path.glob(pattern):
             if src_file.is_file():
-                shutil.copy(src_file, temp_path / src_file.name)    
+                shutil.copy(src_file, temp_path / src_file.name)
     yield model_id, Path(temp_path)
 
 
@@ -208,7 +233,7 @@ def load_tok(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return ov_genai.Tokenizer(str(temp_path))
+    return ov_genai.Tokenizer(temp_path)
 
 
 def load_pipe(configs: List[Tuple], temp_path):
@@ -220,4 +245,11 @@ def load_pipe(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return ov_genai.LLMPipeline(str(temp_path))
+    return ov_genai.LLMPipeline(temp_path, 'CPU')
+
+
+@functools.lru_cache(1)
+def get_continuous_batching(path):
+    scheduler_config = ov_genai.SchedulerConfig()
+    scheduler_config.cache_size = 1
+    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', **{"scheduler_config": scheduler_config})

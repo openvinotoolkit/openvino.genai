@@ -12,6 +12,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple
 
+TESTS_ROOT = Path(__file__).parent
 
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -48,6 +49,32 @@ def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
+def get_greedy_with_single_stop_string() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.min_new_tokens = 15
+    generation_config.max_new_tokens = 50
+    generation_config.stop_strings = {"anag"} # expected match on "manage"
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_greedy_with_multiple_stop_strings() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.min_new_tokens = 1
+    generation_config.max_new_tokens = 50
+    generation_config.stop_strings = {".", "software", "Intel"}
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_greedy_with_multiple_stop_strings_no_match() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.min_new_tokens = 1
+    generation_config.max_new_tokens = 50
+    generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
+    generation_config.include_stop_str_in_output = True
+    return generation_config
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -66,6 +93,36 @@ def get_beam_search_min_and_max_tokens() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
     generation_config.num_return_sequences = generation_config.num_beams
+    return generation_config
+
+def get_beam_search_with_single_stop_string() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
+    generation_config.max_new_tokens = 50
+    generation_config.num_return_sequences = generation_config.num_beams
+    generation_config.stop_strings = {"open sour"}  # expected match on "open source"
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_beam_search_with_multiple_stop_strings() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
+    generation_config.max_new_tokens = 50
+    generation_config.num_return_sequences = generation_config.num_beams
+    generation_config.stop_strings = {".", "software", "Intel"}
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
+    generation_config.max_new_tokens = 30
+    generation_config.num_return_sequences = generation_config.num_beams
+    generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
+    generation_config.include_stop_str_in_output = True
     return generation_config
 
 def get_multinomial_temperature() -> GenerationConfig:
@@ -174,7 +231,7 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
         get_greedy(),
         get_beam_search(),
         get_greedy(),
-        get_beam_search()
+        get_beam_search(),
     ]
     return (prompts, generation_configs)
 
@@ -212,6 +269,8 @@ def convert_to_hf(
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
     kwargs['max_new_tokens'] = generation_config.max_new_tokens
+    if generation_config.stop_strings:
+        kwargs['stop_strings'] = generation_config.stop_strings
 
     # copy default parameters
     kwargs['eos_token_id'] = default_generation_config.eos_token_id
@@ -251,7 +310,8 @@ def run_hugging_face(
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = inputs['input_ids'].numel()
-        generate_outputs = model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'], generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
+        generate_outputs = model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'], generation_config=convert_to_hf(model.generation_config, generation_config),
+                                        return_dict_in_generate=True, tokenizer=hf_tokenizer)
         all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
         generation_result = GenerationResult()
@@ -268,15 +328,15 @@ def run_hugging_face(
 
 
 def run_continuous_batching(
-    model_path : Path,
+    models_path : Path,
     scheduler_config : SchedulerConfig,
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {}, {})
     output = pipe.generate(prompts, generation_configs)
     del pipe
-    shutil.rmtree(model_path)
+    shutil.rmtree(models_path)
     return output
 
 
@@ -303,14 +363,14 @@ def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, ge
     for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
         assert hf_text == ov_text
 
-def save_ov_model_from_optimum(model, hf_tokenizer, model_path: Path):
-    model.save_pretrained(model_path)
+def save_ov_model_from_optimum(model, hf_tokenizer, models_path: Path):
+    model.save_pretrained(models_path)
     # convert tokenizers as well
     from openvino_tokenizers import convert_tokenizer
     from openvino import serialize
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, skip_special_tokens=True)
-    serialize(tokenizer, model_path / "openvino_tokenizer.xml")
-    serialize(detokenizer, model_path / "openvino_detokenizer.xml")
+    serialize(tokenizer, models_path / "openvino_tokenizer.xml")
+    serialize(detokenizer, models_path / "openvino_detokenizer.xml")
 
 def get_model_and_tokenizer(model_id: str, use_optimum = True):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -320,18 +380,18 @@ def get_model_and_tokenizer(model_id: str, use_optimum = True):
 
 def generate_and_compare_with_hf(model_id: str, prompts: List[str], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig, tmp_path: Path):
     use_optimum = True
-    model_path : Path = tmp_path / model_id
+    models_path : Path = tmp_path / model_id
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum)
 
     if use_optimum:
-        save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+        save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
     hf_results = run_hugging_face(model=model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
-    _generate_and_compare_with_reference_results(model_path, prompts, hf_results, generation_configs, scheduler_config)
+    _generate_and_compare_with_reference_results(models_path, prompts, hf_results, generation_configs, scheduler_config)
 
 
-def _generate_and_compare_with_reference_results(model_path: Path, prompts: List[str], reference_results: List[GenerationResult], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
-    ov_results : List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts, generation_configs)
+def _generate_and_compare_with_reference_results(models_path: Path, prompts: List[str], reference_results: List[GenerationResult], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
+    ov_results : List[GenerationResult] = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     assert len(prompts) == len(reference_results)
     assert len(prompts) == len(ov_results)
@@ -341,8 +401,8 @@ def _generate_and_compare_with_reference_results(model_path: Path, prompts: List
         compare_results(ref_result, ov_result, generation_config)
 
 
-def generate_and_compare_with_reference_text(model_path: Path, prompts: List[str], reference_texts_per_prompt: List[List[str]], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
-    ov_results : List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts, generation_configs)
+def generate_and_compare_with_reference_text(models_path: Path, prompts: List[str], reference_texts_per_prompt: List[List[str]], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
+    ov_results : List[GenerationResult] = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     assert len(prompts) == len(reference_texts_per_prompt)
     assert len(prompts) == len(ov_results)
@@ -366,3 +426,15 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
 
 
 DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+
+def get_image_by_link(link):
+    from PIL import Image
+    import requests
+    from openvino import Tensor
+    import numpy as np
+
+    image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, 3, image.size[1], image.size[0])
+    return Tensor(image_data)

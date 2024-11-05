@@ -79,6 +79,8 @@ meta-llama/CodeLlama-7b-hf
 meta-llama/Llama-2-7b-chat-hf
 meta-llama/Llama-2-7b-hf
 meta-llama/Meta-Llama-3-8B-Instruct
+meta-llama/Meta-Llama-3.1-8B
+meta-llama/Meta-Llama-3.1-8B-Instruct
 microsoft/DialoGPT-large
 microsoft/DialoGPT-medium
 microsoft/Orca-2-7b
@@ -116,5 +118,5 @@ stabilityai/stablelm-3b-4e1t
 tiiuae/falcon-7b
 tiiuae/falcon-rw-7b
 togethercomputer/RedPajama-INCITE-Chat-3B-v1
-# xverse/XVERSE-7B-Chat: Transfomers - Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3
-# xverse/XVERSE-MoE-A4.2B: Transfomers - Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3
+# xverse/XVERSE-7B-Chat: Transformers - Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3
+# xverse/XVERSE-MoE-A4.2B: Transformers - Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3

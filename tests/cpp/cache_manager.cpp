@@ -22,7 +22,7 @@ TEST(TestCacheManager, general_test) {
     size_t num_decoder_layers = 12;
     device_config.set_model_params(12, 64, num_decoder_layers);
 
-    auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config);
+    auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, core);
 
     size_t allocated_bytes = 0;
     for (size_t i = 0; i < num_decoder_layers; i++) {

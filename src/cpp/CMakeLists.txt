@@ -6,15 +6,17 @@
 
 include(FetchContent)
 
-FetchContent_Declare(nlohmann_json
-    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
-    URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
-FetchContent_MakeAvailable(nlohmann_json)
+if(NOT TARGET nlohmann_json)
+    FetchContent_Declare(nlohmann_json
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/bcc0e30f17f17f738ec2a7a31316d6efbe78a0e0.tar.gz
-        URL_HASH SHA256=f76547deb323240e7d181ecda6f658757ea5eb07ce772cf39e8bd20467412164)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/86dfb939b5c2beb7fabddae2df386be4e7fb9507.tar.gz
+        URL_HASH SHA256=c222e2407316a573561bd74dfd1cd7b34b359f5481ac59529b3de355162ef9f7)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -29,22 +31,45 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
 
+        # options for Jinja2Cpp dependencies
+        option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
+
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
+
+        if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
+            target_compile_options(jinja2cpp PRIVATE -Wno-undef)
+        endif()
+        if(SUGGEST_OVERRIDE_SUPPORTED)
+            target_compile_options(jinja2cpp PRIVATE -Wno-suggest-override)
+        endif()
+
+        target_compile_definitions(jinja2cpp PUBLIC JINJA2CPP_LINK_AS_SHARED=0)
     endif()
 endfunction()
+
+FetchContent_Declare(safetensors.h
+    URL https://github.com/hsnyder/safetensors.h/archive/974a85d7dfd6e010558353226638bb26d6b9d756.tar.gz
+    URL_HASH SHA256=9aaf5961609601cf9aaa96582a207bce7c6e5fbf57ed2cc669bb7bde6a937d4b)
+FetchContent_MakeAvailable(safetensors.h)
 
 ov_genai_build_jinja2cpp()
 
 # Library
 
-file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
+if(TARGET openvino_tokenizers)
+    add_dependencies(${TARGET_NAME} openvino_tokenizers)
+endif()
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>")
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
@@ -56,18 +81,18 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
-# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
+# Extract two last digits from OpenVINOGenAI_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
 string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${OpenVINOGenAI_VERSION_MAJOR})
 if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
     # Don't pack symlinks but append version hash to the name for wheel
     set_target_properties(${TARGET_NAME} PROPERTIES
         SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX}.${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH})
-elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND APPELE)
+elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND APPLE)
     set_target_properties(${TARGET_NAME} PROPERTIES
         SUFFIX .${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else()
     set_target_properties(${TARGET_NAME} PROPERTIES
-        VERSION ${CMAKE_PROJECT_VERSION}
+        VERSION ${OpenVINOGenAI_VERSION}
         SOVERSION ${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH})
 endif()
 

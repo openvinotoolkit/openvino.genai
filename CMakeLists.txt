@@ -17,29 +17,28 @@ elseif(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel ...")
 endif()
 
-project(OpenVINOGenAI
-        VERSION 2024.3.0.0
-        DESCRIPTION "OpenVINO GenAI"
-        HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
-        LANGUAGES CXX)
-
-option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
-option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
-
-# Find OpenVINODeveloperPackage first to compile with SDL flags
-find_package(OpenVINODeveloperPackage QUIET
-             PATHS "${OpenVINO_DIR}")
-if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
 endif()
 
-# check that SDPA to PA transformtion exists
-get_target_property(ov_include_dirs openvino::runtime INTERFACE_INCLUDE_DIRECTORIES)
-find_file(spda_to_pa_header sdpa_to_paged_attention.hpp
-    PATHS ${ov_include_dirs}
-    PATH_SUFFIXES openvino/pass
-    DOC "Path to sdpa_to_paged_attention.hpp header"
-    NO_CACHE REQUIRED NO_DEFAULT_PATH)
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
+
+project(OpenVINOGenAI
+        VERSION 2024.5.0.0
+        DESCRIPTION "OpenVINO GenAI"
+        HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
+        LANGUAGES CXX C)
+
+# Find OpenVINODeveloperPackage first to compile with SDL flags
+find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
+             COMPONENTS Runtime
+             PATHS "${OpenVINO_DIR}")
+if(NOT OpenVINODeveloperPackage_FOUND)
+    find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
+                 COMPONENTS Runtime)
+endif()
 
 include(cmake/features.cmake)
 
@@ -57,34 +56,28 @@ if(ENABLE_PYTHON)
     endif()
 endif()
 
-if(ENABLE_PYTHON)
-    # the following two calls are required for cross-compilation
-    if(OpenVINODeveloperPackage_DIR)
-        ov_find_python3(REQUIRED)
-        ov_detect_python_module_extension()
-    else()
-        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
-            find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-        else()
-            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-        endif()
-    endif()
+if(WIN32 OR APPLE)
+  set(CMAKE_DEBUG_POSTFIX "d")
 endif()
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
+add_subdirectory(tools/continuous_batching)
 add_subdirectory(tests/cpp)
 
 install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
-install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
-install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
-set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+if(NOT DEFINED CPACK_ARCHIVE_COMPONENT_INSTALL)
+    set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+endif()
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 # Workaround https://gitlab.kitware.com/cmake/cmake/-/issues/2614
-set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_licenses)
+set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
-endif() 
+endif()
+if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
+    set(CPACK_GENERATOR "ZIP")
+endif()
 include(CPack)

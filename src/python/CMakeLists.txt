@@ -3,10 +3,11 @@
 #
 
 include(FetchContent)
+
 FetchContent_Declare(
     pybind11
-    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.12.0.tar.gz
-    URL_HASH SHA256=bf8f242abd1abcd375d516a7067490fb71abd79519a282d22b6e4d19282185a7
+    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.13.5.tar.gz
+    URL_HASH SHA256=b1e209c42b3a9ed74da3e0b25a4f4cd478d89d5efbb48f04b277df427faf6252
 )
 FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules
@@ -17,9 +18,12 @@ if(NOT pybind11_POPULATED)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
-pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
-target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
-set_target_properties(py_generate_pipeline PROPERTIES
+file(GLOB python_sources "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+
+pybind11_add_module(py_openvino_genai ${python_sources})
+target_link_libraries(py_openvino_genai PRIVATE openvino::genai)
+target_include_directories(py_openvino_genai PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizers_path.hpp
+set_target_properties(py_openvino_genai PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
@@ -32,7 +36,7 @@ if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
     # RPATH for wheel is mandatory to find openvino_genai library. It
     # must be forced because GenAI may be built with OpenVINO targeting
     # archive. Such OpenVINO configurations sets
-    # CMAKE_SKIP_INSTALL_RPATH to ON because it relyes on setupvars.sh.
+    # CMAKE_SKIP_INSTALL_RPATH to ON because it relies on setupvars.sh.
     set(CMAKE_SKIP_INSTALL_RPATH OFF)
 endif()
 # setting RPATH / LC_RPATH depending on platform
@@ -49,14 +53,14 @@ elseif(APPLE)
 endif()
 
 if(rpaths)
-    set_target_properties(py_generate_pipeline PROPERTIES INSTALL_RPATH "${rpaths}")
+    set_target_properties(py_openvino_genai PROPERTIES INSTALL_RPATH "${rpaths}")
 endif()
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
               "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
         DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
-install(TARGETS py_generate_pipeline
+install(TARGETS py_openvino_genai
         LIBRARY DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 
@@ -74,6 +78,6 @@ install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
 
 # wheel_genai component is used for wheel generation in pyproject.toml.
 # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
-install(TARGETS openvino_genai py_generate_pipeline
+install(TARGETS openvino_genai py_openvino_genai
         LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
         RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)

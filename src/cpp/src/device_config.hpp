@@ -20,7 +20,7 @@ class DeviceConfig {
     std::string m_device;
 
 public:
-    DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device) {
+    DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
         m_device = device;
 
         // keep information about blocsk
@@ -29,8 +29,44 @@ public:
         if (m_device == "CPU") {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
             m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-        } else if (m_device == "GPU") {
-            OPENVINO_ASSERT("GPU is not currently supported. Please, remove this assert and fill configuration");
+
+            // if user sets precision hint, kv cache type should be changed
+            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
+            if (inference_precision_it != plugin_config.end()) {
+                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
+                if (inference_precision == ov::element::f32) {
+                    m_kv_cache_type = ov::element::f32;
+                } else if (inference_precision == ov::element::f16) {
+                    m_kv_cache_type = ov::element::f16;
+                } else if (inference_precision == ov::element::bf16) {
+                    m_kv_cache_type = ov::element::bf16;
+                } else {
+                    // use default f32
+                    m_kv_cache_type = ov::element::f32;
+                }
+            }
+
+            // if user sets ov::kv_cache_precision hint
+            const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
+            if (kv_cache_precision_it != plugin_config.end()) {
+                const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
+                m_kv_cache_type = kv_cache_precision;
+            }
+        } else if (m_device.find("GPU") != std::string::npos) {
+            auto inference_precision = core.get_property(device, ov::hint::inference_precision);
+            m_kv_cache_type = inference_precision == ov::element::f16 ? ov::element::f16 : ov::element::f32;
+
+            // if user sets precision hint, kv cache type should be changed
+            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
+            if (inference_precision_it != plugin_config.end()) {
+                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
+                if (inference_precision == ov::element::f16) {
+                    m_kv_cache_type = ov::element::f16;
+                } else {
+                    // use default f32
+                    m_kv_cache_type = ov::element::f32;
+                }
+            }
         } else {
             OPENVINO_THROW(m_device, " is not supported by OpenVINO Continuous Batching");
         }
@@ -41,7 +77,6 @@ public:
         }
         else {
             m_cache_size = scheduling_config.cache_size;
-
         }
     }
 
@@ -49,6 +84,16 @@ public:
         m_num_kv_heads = num_kv_heads;
         m_head_size = head_size;
         m_num_decoder_layers = num_decoder_layers;
+
+        if (m_device == "CPU") {
+            // Scale, zero point and quantized data will be stored together.
+            // The layout for per token per head:
+            // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
+            // so, we have to extend head_size by 8, which is sizeof(float)
+            // for scale and sizeof(float) for zeropoint
+            if (m_kv_cache_type == ov::element::u8)
+                m_head_size += 8;
+        }
 
         if (m_num_kv_blocks == 0) {
             OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
@@ -60,6 +105,14 @@ public:
                                                             m_num_kv_heads,
                                                             m_block_size,
                                                             m_head_size};
+
+        if (m_device.find("GPU") != std::string::npos) {
+            // Update key shape, as the key's shape is different from the value's shape
+            m_key_cache_shape = ov::Shape{m_num_kv_blocks,
+                                          m_num_kv_heads,
+                                          m_head_size,
+                                          m_block_size};
+        }
     }
 
     std::string get_device() const {

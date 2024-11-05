@@ -18,6 +18,26 @@ enum class GenerationStatus {
     DROPPED_BY_HANDLE = 4 // Status set when generation handle is dropped
 };
 
+struct EncodedGenerationResult {
+    // request ID - obsolete when handle API is approved as handle will connect results with prompts.
+    uint64_t m_request_id;
+
+    // in a generic case we have multiple generation results per initial prompt
+    // depending on sampling parameters (e.g. beam search or parallel sampling)
+    std::vector<std::vector<int64_t>> m_generation_ids;
+    // scores
+    std::vector<float> m_scores;
+
+    // Status of generation
+    GenerationStatus m_status = GenerationStatus::RUNNING;
+};
+
+enum class GenerationFinishReason {
+    NONE = 0, // Default value, when generation is not yet finished
+    STOP = 1, // Generation finished naturally, by reaching end of sequence token
+    LENGTH = 2 // Generation finished by reaching max_new_tokens limit
+};
+
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
     uint64_t m_request_id;
@@ -33,8 +53,10 @@ struct GenerationResult {
 };
 
 struct GenerationOutput {
-    std::vector<int64_t> generated_token_ids;
+    std::vector<int64_t> generated_ids;
+    std::vector<float> generated_log_probs;
     float score;
+    GenerationFinishReason finish_reason;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
@@ -44,10 +66,12 @@ class GenerationStream;
 class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params;
+
+    bool is_dropped();
  
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
-    m_generation_stream(generation_stream),
+    m_generation_stream(std::move(generation_stream)),
     m_sampling_params(sampling_params) {};
 
     ~GenerationHandleImpl();
@@ -60,11 +84,14 @@ public:
 
     bool can_read();
 
+    void drop();
+
+    GenerationOutputs back();
     // Reads result of a generation for single iteration
     GenerationOutputs read();
     // Reads all generated tokens for all sequences
     std::vector<GenerationOutput> read_all();
 };
 
-using GenerationHandle = std::unique_ptr<GenerationHandleImpl>;
+using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;
 }

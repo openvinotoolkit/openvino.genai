@@ -4,9 +4,9 @@
 #pragma once
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/runtime/core.hpp"
 
-#include <openvino/openvino.hpp>
-#include <nlohmann/json.hpp>
+#include "visual_language/processor_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -24,57 +24,47 @@ ov::Tensor extend_attention(ov::Tensor attention_mask);
 
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
 
-template <typename>
-struct json_type_traits {};
-
-template <>
-struct json_type_traits<int> { static constexpr auto json_value_t = nlohmann::json::value_t::number_integer; };
-
-template <>
-struct json_type_traits<int64_t> { static constexpr auto json_value_t = nlohmann::json::value_t::number_integer; };
-
-template <>
-struct json_type_traits<size_t> { static constexpr auto json_value_t = nlohmann::json::value_t::number_unsigned; };
-
-template <>
-struct json_type_traits<float> { static constexpr auto json_value_t = nlohmann::json::value_t::number_float; };
-
-template <>
-struct json_type_traits<std::string> { static constexpr auto json_value_t = nlohmann::json::value_t::string; };
-
-template <>
-struct json_type_traits<bool> { static constexpr auto json_value_t = nlohmann::json::value_t::boolean; };
-
-/// @brief reads value to param if T argument type is aligned with value stores in json
-/// if types are not compatible leave param unchanged
-template <typename T>
-void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
-    if (data.contains(name)) {
-        if constexpr (std::is_integral_v<T>) {
-            if (data[name].is_number_integer() || data[name].is_number_unsigned()) {
-                param = data[name].get<T>();
-            }
-        } else if (data[name].type() == json_type_traits<T>::json_value_t) {
-            param = data[name].get<T>();
-        }
-    }
-}
+template <typename T> struct OmitOptional { using value = T; };
+template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
 
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
-    if (config_map.count(name)) {
-        param = config_map.at(name).as<T>();
+    auto it = config_map.find(name);
+    if (it != config_map.end()) {
+        param = it->second.as<typename OmitOptional<T>::value>();
     }
 }
 
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
+const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path);
+template<typename Config = ov::genai::GenerationConfig>
+Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
+    auto config_file_path = models_path / config_name;
+    if (std::filesystem::exists(config_file_path)) {
+        return Config{(config_file_path).string()};
+    } else {
+        return Config{};
+    }
+}
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
+
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+);
+
+std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties);
+
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
+
+void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
+
+ov::Core singleton_core();
 
 }  // namespace utils
 }  // namespace genai

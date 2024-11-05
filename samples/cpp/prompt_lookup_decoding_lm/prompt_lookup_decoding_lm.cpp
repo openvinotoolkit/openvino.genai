@@ -1,17 +1,42 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <string_view>
 #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
+#include <string_view>
 
 namespace {
 
 // only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-// threfore usually SEQ_LEN_AXIS = 2
-constexpr size_t SEQ_LEN_AXIS = 2;
+
+size_t get_seq_len_axis(std::shared_ptr<ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // therefore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
+
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        if (op->get_type_name() != kv_node_type_name) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
 
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
@@ -44,12 +69,13 @@ struct TextStreamer {
             print_len = 0;
             return;
         }
-        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+        constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
+        if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
             // Don't print incomplete text
             return;
         } else if (text.size() > print_len) {
             // It is possible to have a shorter text after adding new token.
-            // Print to output only if text lengh is increaeseds.
+            // Print to output only if text length is increaeseds.
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
             print_len = text.size();
         }
@@ -58,7 +84,7 @@ struct TextStreamer {
     void end() {
         std::string text = detokenize(detokenizer, token_cache);
         if (text.size() <= print_len)
-            return ;
+            return;
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
         print_len = 0;
@@ -67,18 +93,19 @@ struct TextStreamer {
 
 ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
-    // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
-    // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0,
-                    "Cannot trim key/values with sequence length axis = ",
-                    seq_len_axis);
+    // Trim kv tensor on sequence length axis
+    // key/values tensor shape example: [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+    // Sequence length axis position may vary from one model to another
 
-    auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_kv_heads = shape[1];
-    size_t old_seq_len = shape[2];
-    size_t head_size = shape[3];
+
+    OPENVINO_ASSERT(seq_len_axis < shape.size(),
+                    "Sequence length axis: ",
+                    seq_len_axis,
+                    " should be less than shape size: ",
+                    shape.size());
+
+    size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
 
@@ -86,14 +113,16 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (old_seq_len == new_seq_len)
         return tensor;
 
+    shape[seq_len_axis] = new_seq_len;
+
     if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
         tensor.set_shape(shape);
         return tensor;
     }
 
     ov::Coordinate new_shape_begin{0, 0, 0, 0};
-    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
+    ov::Coordinate new_shape_end{shape};
+
     auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
 
     return new_tensor;
@@ -198,7 +227,11 @@ int main(int argc, char* argv[]) try {
         core.compile_model(model_dir + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
 
-    ov::InferRequest model = core.compile_model(model_dir + "/openvino_model.xml", "CPU").create_infer_request();
+    std::shared_ptr<ov::Model> ov_model = core.read_model(model_dir + "/openvino_model.xml");
+
+    size_t seq_len_axis = get_seq_len_axis(ov_model);
+
+    ov::InferRequest model = core.compile_model(ov_model, "CPU").create_infer_request();
 
     model.set_tensor("input_ids", input_ids);
     model.set_tensor("attention_mask", attention_mask);
@@ -206,7 +239,7 @@ int main(int argc, char* argv[]) try {
     ov::Tensor position_ids = model.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    uint64_t seq_len = input_ids.get_shape()[1];
+    size_t seq_len = input_ids.get_shape()[1];
 
     // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
     model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
@@ -228,7 +261,7 @@ int main(int argc, char* argv[]) try {
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
-    // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
+    // Prompt lookup decoding is a speculative decoding technique where the draft model replaced
     // with string matching in the prompt to generate candidate token sequences.
     int max_sequence_length = 100;
     PromptLookupCandidateGenerator candidateGenerator{3, 5};
@@ -257,7 +290,7 @@ int main(int argc, char* argv[]) try {
         data_logits = logits.data<float>();  // [BATCH_SIZE, 1 + candidates_size, vocab_size]
 
         // 1. accept current out token (if not eos)
-        // 2. check if it matches apropriate candidate
+        // 2. check if it matches appropriate candidate
         //      2.1 if it's match, continue - accept next token
         //      2.2 it it's mismatch, stop iteration but still accept current token as it was last token generated by
         //      model from a valid sequence.
@@ -288,7 +321,7 @@ int main(int argc, char* argv[]) try {
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
-        update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
+        update_kv_cache(model, seq_len_axis, seq_len);
 
         first_token = out_token;
     }
@@ -301,9 +334,13 @@ int main(int argc, char* argv[]) try {
     // it is called for education purposes:
     model.reset_state();
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }
