@@ -768,64 +768,20 @@ jobs:
           PYTHONPATH: "./build/"
   
   visual_language_chat_sample-ubuntu-llava_1_5:
-    runs-on: ubuntu-22.04-16-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - uses: ./.github/actions/install_openvino
-        with:
-          ov_link: ${{ env.l_u22_ov_link }}
-      - uses: ./.github/actions/build_app
-        with:
-          build_target: 'visual_language_chat py_openvino_genai'
-      - uses: ./.github/actions/install_python_deps
-      - name: Download and convert LLaVa 1.5 model
-        run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
-      - name: Download images
-        run: |
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat C++ sample - LLaVa 1.5
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
+    uses: ./.github/workflows/job_vlm_sample_llava.yml
+    with:
+      model_id: llava-hf/llava-1.5-7b-hf
+      model_dir: llava_1_5_7b_ov
+    inherit:
+      env: inherit
 
   visual_language_chat_sample-ubuntu-llava_next:
-    runs-on: ubuntu-22.04-16-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - uses: ./.github/actions/install_openvino
-        with:
-          ov_link: ${{ env.l_u22_ov_link }}
-      - uses: ./.github/actions/build_app
-        with:
-          build_target: 'visual_language_chat py_openvino_genai'
-      - uses: ./.github/actions/install_python_deps
-      - name: Download and convert LLaVa-Next model
-        run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
-      - name: Download images
-        run: |
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat C++ sample - LLaVa-Next
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
+    uses: ./.github/workflows/job_vlm_sample_llava.yml
+    with:
+      model_id: llava-hf/llava-v1.6-mistral-7b-hf
+      model_dir: llava_v1_6_mistral_7b_ov
+    inherit:
+      env: inherit
 
   visual_language_chat_sample-ubuntu-internvl2:
     runs-on: ubuntu-22.04-16-cores
