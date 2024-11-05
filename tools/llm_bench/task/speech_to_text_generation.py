@@ -46,7 +46,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             max_new_tokens=max_gen_tokens,
             # 'task' and 'language' parameters are supported for multilingual models only
             language=speech_language,
-            task="translate",
+            task="transcribe",
             return_timestamps=ret_timestamps
         )
         end = time.perf_counter()
