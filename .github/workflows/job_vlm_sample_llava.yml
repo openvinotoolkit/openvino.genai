@@ -3,6 +3,9 @@ name: visual_language_chat sample - LLaVA
 on:
   workflow_call:
     inputs:
+      ov_link:
+        required: true
+        type: string
       model_id:
         required: true
         type: string
@@ -22,7 +25,7 @@ jobs:
           python-version: 3.11
       - uses: ./.github/actions/install_openvino
         with:
-          ov_link: ${{ env.l_u22_ov_link }}
+          ov_link: ${{ inputs.ov_link }}
       - uses: ./.github/actions/build_app
         with:
           build_target: 'visual_language_chat py_openvino_genai'
