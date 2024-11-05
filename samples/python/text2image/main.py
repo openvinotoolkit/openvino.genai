@@ -3,45 +3,55 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-
+import openvino
 import openvino_genai
-from PIL import Image
-import numpy as np
 import torch
+import numpy as np
 
+from PIL import Image
 
 class Generator(openvino_genai.Generator):
-    def __init__(self, seed, mu=0.0, sigma=1.0):
+    def __init__(self, seed):
         openvino_genai.Generator.__init__(self)
-        self.mu = mu
-        self.sigma = sigma
         self.generator = torch.Generator(device='cpu').manual_seed(seed)
 
     def next(self):
-        return torch.randn(1, generator=self.generator).item()
+        return torch.randn(1, generator=self.generator, dtype=torch.float32).item()
 
+    def randn_tensor(self, shape: openvino.Shape):
+        torch_tensor = torch.randn(list(shape), generator=self.generator, dtype=torch.float32)
+        return openvino.Tensor(torch_tensor.numpy())
+
+
+def read_image(path: str) -> openvino.Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic.getdata()).reshape(1, pic.size[1], pic.size[0], 3).astype(np.uint8)
+    return openvino.Tensor(image_data)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
     parser.add_argument('prompt')
+    parser.add_argument('image')
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
-    random_generator = Generator(42)  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
-    pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
+    pipe = openvino_genai.Image2ImagePipeline(args.model_dir, device)
+
+    initial_image = read_image(args.image)
+    _, H, W, _ = list(initial_image.shape)
 
     image_tensor = pipe.generate(
         args.prompt,
-        width=512,
-        height=512,
-        num_inference_steps=20,
-        num_images_per_prompt=1,
-        random_generator=random_generator
+        read_image(args.image),
+        width=W,
+        height=H,
+        strength=0.6,
+        generator=Generator(42)
     )
 
     image = Image.fromarray(image_tensor.data[0])
-    image.save("image.bmp")
+    image.save("/home/devuser/ilavreno/openvino.genai/genai_image.bmp")
 
 
 if '__main__' == __name__:

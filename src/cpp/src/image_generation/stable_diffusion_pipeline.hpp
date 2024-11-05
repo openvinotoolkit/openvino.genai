@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
+#include "image_generation/vae.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
@@ -14,6 +15,7 @@
 
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
+#include "debug_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -165,6 +167,7 @@ public:
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        const float vae_scaling_factor = m_vae->get_config().scaling_factor;
 
         ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
@@ -172,6 +175,11 @@ public:
 
         if (initial_image) {
             latent = m_vae->encode(initial_image);
+            latent = DiagonalGaussianDistribution(latent).sample(generation_config.generator);
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i) {
+                latent_data[i] *= vae_scaling_factor;
+            }
             m_scheduler->add_noise(latent, generation_config.generator);
         } else {
             latent = generation_config.generator->randn_tensor(latent_shape);

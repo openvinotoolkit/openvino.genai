@@ -200,10 +200,6 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     };
 }
 
-void LCMScheduler::set_random_generator(std::shared_ptr<Generator> generator) {
-    m_generator = generator;
-}
-
 std::vector<int64_t> LCMScheduler::get_timesteps() const {
     return m_timesteps;
 }

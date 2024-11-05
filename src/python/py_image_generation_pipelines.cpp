@@ -10,6 +10,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -212,6 +213,17 @@ void init_image_generation_pipelines(py::module_& m) {
             update_image_generation_config_from_kwargs(config, kwargs);
         });
 
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
+        .def("from_config", &ov::genai::Scheduler::from_config);
+
+    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
+        .value("AUTO", ov::genai::Scheduler::Type::AUTO)
+        .value("LCM", ov::genai::Scheduler::Type::LCM)
+        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
+        .value("DDIM", ov::genai::Scheduler::Type::DDIM)
+        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
+        .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
+
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](
             const std::filesystem::path& models_path
@@ -275,14 +287,69 @@ void init_image_generation_pipelines(py::module_& m) {
             (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
 
-    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
-        .def("from_config", &ov::genai::Scheduler::from_config);
 
-    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
-        .value("AUTO", ov::genai::Scheduler::Type::AUTO)
-        .value("LCM", ov::genai::Scheduler::Type::LCM)
-        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
-        .value("DDIM", ov::genai::Scheduler::Type::DDIM)
-        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
-        .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
+    auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
+        .def(py::init([](
+            const std::filesystem::path& models_path
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Image2ImagePipeline>(models_path);
+        }),
+        py::arg("models_path"), "folder with exported model files.",
+        R"(
+            Image2ImagePipeline class constructor.
+            models_path (str): Path to the folder with exported model files.
+        )")
+
+        .def(py::init([](
+            const std::filesystem::path& models_path,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Image2ImagePipeline>(models_path, device, text2image_kwargs_to_any_map(kwargs, true));
+        }),
+        py::arg("models_path"), "folder with exported model files.",
+        py::arg("device"), "device on which inference will be done",
+        R"(
+            Image2ImagePipeline class constructor.
+            models_path (str): Path with exported model files.
+            device (str): Device to run the model on (e.g., CPU, GPU).
+            kwargs: Image2ImagePipeline properties
+        )")
+        .def("get_generation_config", &ov::genai::Image2ImagePipeline::get_generation_config)
+        .def("set_generation_config", &ov::genai::Image2ImagePipeline::set_generation_config)
+        .def("set_scheduler", &ov::genai::Image2ImagePipeline::set_scheduler)
+        .def("reshape", &ov::genai::Image2ImagePipeline::reshape)
+        .def("stable_diffusion", &ov::genai::Image2ImagePipeline::stable_diffusion)
+        .def("latent_consistency_model", &ov::genai::Image2ImagePipeline::latent_consistency_model)
+        .def("stable_diffusion_xl", &ov::genai::Image2ImagePipeline::stable_diffusion_xl)
+        .def(
+            "compile",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& device,
+                const py::kwargs& kwargs
+            ) {
+                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+            },
+            py::arg("device"), "device on which inference will be done",
+            R"(
+                Compiles the model.
+                device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )")
+        .def(
+            "generate",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& prompt,
+                const ov::Tensor& initial_image,
+                const py::kwargs& kwargs
+            ) {
+                ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
+                return py::cast(pipe.generate(prompt, initial_image, params));
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("initial_image"), "Initial image",
+            (text2image_generate_docstring + std::string(" \n ")).c_str()
+        );
 }

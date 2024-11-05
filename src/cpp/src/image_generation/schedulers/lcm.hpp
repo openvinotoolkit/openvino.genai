@@ -56,8 +56,6 @@ public:
 
     void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
 
-    void set_random_generator(std::shared_ptr<Generator> generator);
-
 private:
     Config m_config;
 
@@ -67,7 +65,6 @@ private:
     float m_sigma_data;
 
     std::vector<int64_t> m_timesteps;
-    std::shared_ptr<Generator> m_generator;
 
     std::vector<float> threshold_sample(const std::vector<float>& flat_sample);
 };

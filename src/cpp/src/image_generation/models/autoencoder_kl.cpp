@@ -171,14 +171,9 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
     ppp.input().preprocess()
         .convert_layout()
         .convert_element_type(ov::element::f32)
-        .scale(255.0f / 2.0f)
+        // this is less accurate that in VaeImageProcessor::normalize
+        .scale(255.0 / 2.0)
         .mean(1.0f);
-
-    // apply m_config.scaling_factor as last step
-    ppp.output().postprocess().custom([scaling_factor = m_config.scaling_factor](const ov::Output<ov::Node>& port) {
-        auto c_scaling_factor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scaling_factor);
-        return std::make_shared<ov::op::v1::Multiply>(port, c_scaling_factor);
-    });
 
     ppp.build();
 }
@@ -187,9 +182,10 @@ void AutoencoderKL::merge_vae_image_post_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
     // scale and shift input before VAE decoder
-    ppp.input().preprocess()
-        .scale(m_config.scaling_factor)
-        .mean(-m_config.shift_factor);
+    if (m_config.scaling_factor != 1.0f)
+        ppp.input().preprocess().scale(m_config.scaling_factor);
+    if (m_config.shift_factor != 0.0f)
+        ppp.input().preprocess().mean(-m_config.shift_factor);
 
     // apply VaeImageProcessor normalization steps
     // https://github.com/huggingface/diffusers/blob/v0.30.1/src/diffusers/image_processor.py#L159
