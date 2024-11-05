@@ -31,6 +31,6 @@ public:
     }
 
     ~ManualTimer() {
-        std::cout << m_title << ": " << m_total / 1000. << " secs" << std::endl;
+        // std::cout << m_title << ": " << m_total / 1000. << " secs" << std::endl;
     }
 };
