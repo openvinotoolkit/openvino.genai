@@ -3,15 +3,15 @@ name: visual_language_chat sample - LLaVA
 on:
   workflow_call:
     inputs:
-      ov_link:
-        required: true
-        type: string
       model_id:
         required: true
         type: string
       model_dir:
         required: true
         type: string
+
+env:
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241031_x86_64.tgz
 
 jobs:
   visual_language_chat_sample-ubuntu-llava:
@@ -25,7 +25,7 @@ jobs:
           python-version: 3.11
       - uses: ./.github/actions/install_openvino
         with:
-          ov_link: ${{ inputs.ov_link }}
+          ov_link: ${{ env.l_u22_ov_link }}
       - uses: ./.github/actions/build_app
         with:
           build_target: 'visual_language_chat py_openvino_genai'
