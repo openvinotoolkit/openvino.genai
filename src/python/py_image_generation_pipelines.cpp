@@ -22,13 +22,16 @@ namespace genai {
 
 /// Trampoline class to support inheritance from Generator in Python
 class PyGenerator : public ov::genai::Generator {
-    public:
-    using ov::genai::Generator::Generator;
-
+public:
     float next() override {
         PYBIND11_OVERRIDE_PURE(float, Generator, next);
     }
+
+    ov::Tensor randn_tensor(const ov::Shape& shape) override {
+        PYBIND11_OVERRIDE(ov::Tensor, Generator, randn_tensor, shape);
+    }
 };
+
 } // namespace genai
 } // namespace ov
 
@@ -54,7 +57,7 @@ auto text2image_generate_docstring = R"(
     height: int - height of resulting images,
     width: int - width of resulting images,
     num_inference_steps: int - number of inference steps,
-    random_generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
+    generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
     adapters: LoRA adapters
     strength: strength for image to image generation. 1.0f means initial image is fully noised
 
@@ -90,16 +93,16 @@ void update_image_generation_config_from_kwargs(
             config.width = py::cast<int64_t>(value);
         } else if (key == "num_inference_steps") {
             config.num_inference_steps = py::cast<size_t>(value);
-        } else if (key == "random_generator") {
+        } else if (key == "generator") {
             auto py_generator = py::cast<std::shared_ptr<ov::genai::Generator>>(value);
-            config.random_generator = py_generator;
+            config.generator = py_generator;
         } else if (key == "adapters") {
             config.adapters = py::cast<ov::genai::AdapterConfig>(value);
         } else if (key == "strength") {
             config.strength = py::cast<float>(value);
         } else {
             throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                        "Use help(openvino_genai.Text2ImagePipeline.GenerationConfig) to get list of acceptable parameters."));
+                                        "Use help(openvino_genai.ImageGenerationConfig) to get list of acceptable parameters."));
         }
     }
 }
@@ -131,9 +134,9 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
             params.insert({ov::genai::width(std::move(py::cast<int64_t>(value)))});
         } else if (key == "num_inference_steps") {
             params.insert({ov::genai::num_inference_steps(std::move(py::cast<size_t>(value)))});
-        } else if (key == "random_generator") {
+        } else if (key == "generator") {
             auto py_generator =py::cast<std::shared_ptr<ov::genai::Generator>>(value);
-            params.insert({ov::genai::random_generator(std::move(py_generator))});
+            params.insert({ov::genai::generator(std::move(py_generator))});
         } else if (key == "adapters") {
             params.insert({ov::genai::adapters(std::move(py::cast<ov::genai::AdapterConfig>(value)))});
         } else if (key == "strength") {
@@ -169,7 +172,7 @@ void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
 
-    // init text2image models
+    // init image generation models
     init_clip_text_model(m);
     init_clip_text_model_with_projection(m);
     init_unet2d_condition_model(m);
@@ -184,16 +187,17 @@ void init_image_generation_pipelines(py::module_& m) {
         ) {
             return std::make_unique<ov::genai::CppStdGenerator>(seed);
         }))
-        .def("next", &ov::genai::CppStdGenerator::next);
+        .def("next", &ov::genai::CppStdGenerator::next)
+        .def("randn_tensor", &ov::genai::CppStdGenerator::randn_tensor);
 
-    py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for Text2Image pipeline.")
+    py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())
         .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)
         .def_readwrite("prompt_3", &ov::genai::ImageGenerationConfig::prompt_3)
         .def_readwrite("negative_prompt", &ov::genai::ImageGenerationConfig::negative_prompt)
         .def_readwrite("negative_prompt_2", &ov::genai::ImageGenerationConfig::negative_prompt_2)
         .def_readwrite("negative_prompt_3", &ov::genai::ImageGenerationConfig::negative_prompt_3)
-        .def_readwrite("random_generator", &ov::genai::ImageGenerationConfig::random_generator)
+        .def_readwrite("generator", &ov::genai::ImageGenerationConfig::generator)
         .def_readwrite("guidance_scale", &ov::genai::ImageGenerationConfig::guidance_scale)
         .def_readwrite("height", &ov::genai::ImageGenerationConfig::height)
         .def_readwrite("width", &ov::genai::ImageGenerationConfig::width)
@@ -271,11 +275,10 @@ void init_image_generation_pipelines(py::module_& m) {
             (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
 
-    auto text2image_scheduler = py::class_<ov::genai::Scheduler>(m, "Scheduler", "Scheduler for image generation pipelines.")
-        .def(py::init<>())
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
         .def("from_config", &ov::genai::Scheduler::from_config);
 
-    py::enum_<ov::genai::Scheduler::Type>(text2image_scheduler, "Type")
+    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
         .value("AUTO", ov::genai::Scheduler::Type::AUTO)
         .value("LCM", ov::genai::Scheduler::Type::LCM)
         .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)

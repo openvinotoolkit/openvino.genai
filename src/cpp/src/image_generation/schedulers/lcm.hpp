@@ -16,7 +16,7 @@ namespace genai {
 
 class LCMScheduler : public IScheduler {
 public:
-    // values from https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_lcm.py#L190
+    // values from https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_lcm.py#L197-L214
     struct Config {
         size_t num_train_timesteps = 1000;
         float beta_start = 0.00085f, beta_end = 0.012f;
@@ -52,9 +52,9 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
+    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
 
-    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const override;
+    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
 
     void set_random_generator(std::shared_ptr<Generator> generator);
 

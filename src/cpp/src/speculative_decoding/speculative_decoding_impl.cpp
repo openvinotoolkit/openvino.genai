@@ -11,8 +11,16 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-bool operator==(const SchedulerConfig& lhs, const SchedulerConfig& rhs) {
-    return ov::Any(lhs).as<std::string>() == ov::Any(rhs).as<std::string>();
+bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
+    std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
+    ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
+               encoded_string_rhs = rhs.encode(test_string).input_ids;
+    
+    ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
+              shape_rhs = encoded_string_rhs.get_shape();
+
+    return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
+           lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
@@ -48,7 +56,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
         auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
 
         size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
-               draft_cache_size = main_scheduler_config.cache_size * k;
+               draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
         if (draft_cache_size == 0) {
             main_cache_size -= main_cache_size > 1 ? 1 : 0;
             draft_cache_size = 1;
@@ -70,6 +78,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer(main_models_path, tokenizer_properties),
               draft_model_tokenizer(draft_models_path, tokenizer_properties);
+
+    // todo: remove this condition after support of CVS-154103
+    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     
     m_tokenizer = main_model_tokenizer;
 
@@ -82,7 +93,8 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  ov::genai::GenerationConfig sampling_params) {
-    m_draft_pipeline->add_request(request_id, input_ids, sampling_params);
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
@@ -90,7 +102,8 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  ov::genai::GenerationConfig sampling_params) {
-    m_draft_pipeline->add_request(request_id, prompt, sampling_params);
+    std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
@@ -112,12 +125,18 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
+    // this blocks adding new requests during step as it may break coherence between main and draft models
+    std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
+    m_draft_pipeline->pull_awaiting_requests();
+    m_main_pipeline->pull_awaiting_requests();
+
     // generate candidates by draft model
     ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
     draft_timer.start();
     m_draft_pipeline->multistep();
     draft_timer.end();
     m_sd_metrics.draft_duration += draft_timer.get_duration();
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     // to generate num_matches statistic
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
@@ -133,6 +152,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     m_main_pipeline->step();
     main_timer.end();
     m_sd_metrics.main_duration += main_timer.get_duration();
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
@@ -145,10 +165,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto request_id = draft_request.first;
         if (!main_generated_requests.count(request_id)) {
             m_draft_pipeline->finish_request(request_id);
-            // in case of some requests not to started, unlock generation of next request
-            m_draft_pipeline->unlock_next_request_generation();
+            // remove draft_generation_handle from queue
+            m_draft_generations.erase(request_id);
         }
         auto updated_seq_info = update_sequence_info[request_id];
+        // several prompt phase
+        if (updated_seq_info.inserted_tokens_cnt == 0) {
+            continue;
+        }
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
@@ -175,18 +199,16 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         }
     }, streamer);
 
-    std::vector<GenerationHandle> main_generations, draft_generations;
+    std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
 
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
-        draft_sampling_params.max_new_tokens = draft_sampling_params.max_new_tokens + 1;
-        draft_sampling_params.min_new_tokens = draft_sampling_params.min_new_tokens + 1;
         draft_sampling_params.ignore_eos = true;
-        draft_generations.push_back(m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params));
-        // decrease generation len to generate last token by main model
+        std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
 
     std::vector<EncodedGenerationResult> results;
@@ -196,6 +218,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     while (has_non_finished_requests() && continue_generation) {
         step();
         if (streamer_ptr) {
+            // not generated tokens like several prompt phase
+            if (!main_generations.at(0).get()->can_read()) {
+                continue;
+            }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
             OPENVINO_ASSERT(1 <= token.size());
             OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
@@ -210,7 +236,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     if (streamer_ptr) {
         streamer_ptr->end();
     }
-    draft_generations.clear();
 
     for (size_t generation_idx = 0; generation_idx < main_generations.size(); ++generation_idx) {
         const auto& generation = main_generations[generation_idx];

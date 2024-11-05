@@ -8,12 +8,13 @@
 #include "openvino/genai/tokenizer.hpp"
 
 #include "visual_language/vlm_config.hpp"
-#include "visual_language/image_embedder.hpp"
+#include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
 
 #include "sampler.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
+#include "lm_encoding.hpp"
 
 using namespace ov::genai;
 
@@ -24,120 +25,8 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr size_t BATCH_SIZE = 1;
 
-EncodedGenerationResult get_lm_encoded_results(
-    ov::InferRequest& language,
-    EmbeddingsModel& embeding,
-    const ov::Tensor& inputs_embeds,
-    const std::shared_ptr<StreamerBase>& streamer_ptr,
-    Sampler& sampler,
-    std::vector<SequenceGroup::Ptr> requests
-) {
-    SequenceGroup::Ptr request = requests.back();
-    GenerationHandle generation = std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), request->get_sampling_parameters());
-
-    language.set_tensor("inputs_embeds", inputs_embeds);
-
-    size_t history_len = language.get_tensor("attention_mask").get_shape().at(1);
-    language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
-    std::fill_n(language.get_tensor("attention_mask").data<int64_t>(), language.get_tensor("attention_mask").get_size(), 1);
-
-    language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
-    std::iota(language.get_tensor("position_ids").data<int64_t>(), language.get_tensor("position_ids").data<int64_t>() + language.get_tensor("position_ids").get_size(), history_len);
-
-    language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
-    language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-
-    language.infer();
-
-    int64_t sequence_len = language.get_tensor("logits").get_shape().at(1);
-    request->schedule_tokens(sequence_len);
-
-    sampler.sample(requests, language.get_tensor("logits"));
-
-    auto hidden_size = inputs_embeds.get_shape()[2];
-    language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, hidden_size});
-    language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
-
-    while (!request->has_finished()) {
-        request->schedule_tokens(1);
-        size_t num_sequences = request->num_running_seqs();
-        size_t total_num_tokens = request->get_num_scheduled_tokens() * num_sequences;
-
-        ov::Tensor
-            input_ids(ov::element::i64, {total_num_tokens, 1}),
-            position_ids(ov::element::i64, {total_num_tokens, 1}),
-            beam_idx(ov::element::i32, { total_num_tokens });
-
-        int64_t
-            * input_ids_data = input_ids.data<int64_t>(),
-            * position_ids_data = position_ids.data<int64_t>();
-
-        size_t num_scheduled_tokens = request->get_num_scheduled_tokens();
-        size_t group_position_id = request->get_num_processed_tokens();
-        for (Sequence::Ptr& sequence : request->get_running_sequences()) {
-            for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id) {
-                // compute token for current sequence
-                input_ids_data[token_id] = position_id < request->get_prompt_len() ?
-                    request->get_prompt_ids()[position_id] :
-                    sequence->get_generated_ids()[position_id - request->get_prompt_len()];
-
-                position_ids_data[token_id] = position_id;
-            }
-            // apply strides to shift to a next sequence
-            input_ids_data += num_scheduled_tokens;
-            position_ids_data += num_scheduled_tokens;
-        }
-        
-        const ov::Tensor& embed_prompt_tensor = embeding.infer(input_ids);
-
-        language.set_tensor("inputs_embeds", embed_prompt_tensor);
-
-        language.get_tensor("attention_mask").set_shape({ total_num_tokens, language.get_tensor("attention_mask").get_shape()[1] + 1 });
-        std::fill_n(language.get_tensor("attention_mask").data<int64_t>(), language.get_tensor("attention_mask").get_size(), 1);
-
-        language.set_tensor("position_ids", position_ids);
-
-        std::vector<int32_t> beam_idxs = sampler.get_beam_idxs(request);
-        int32_t *beam_idx_data = beam_idx.data<int32_t>();
-        copy(beam_idxs.begin(), beam_idxs.end(), beam_idx_data);
-        language.set_tensor("beam_idx", beam_idx);
-
-        language.infer();
-
-        if (streamer_ptr) {
-            // first sequence
-            int64_t out_token = request.get()->operator[](0)->get_generated_ids().back();
-            if (streamer_ptr->put(out_token)) {
-                break;
-            }
-        }
-
-        sampler.sample(requests, language.get_tensor("logits"));
-    }
-
-    if (streamer_ptr) {
-        streamer_ptr->end();
-    }
-
-    EncodedGenerationResult result;
-    result.m_request_id = 1;
-    std::vector<GenerationOutput> generation_outputs = generation->read_all();
-    std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
-        return r1.score > r2.score;
-    });
-
-    auto num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, generation_outputs.size());
-    for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-        const auto& generation_output = generation_outputs[generation_output_idx];
-        result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
-        result.m_scores.push_back(generation_output.score);
-    }
-    result.m_status = generation->get_status();
-
-    return result;
-}
-
 } // namespace
+
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
 public:
@@ -232,12 +121,21 @@ public:
         OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
                         "Currently streaming is possible only for greedy or multinomial decoding");
 
-        EncodedGenerationResult encoded_result = get_lm_encoded_results(m_language, m_embedding, inputs_embeds, streamer_ptr, sampler, requests);
+        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds.get_shape()[1] }};
+        std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
+
+        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds.get_shape()[1] }};
+        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
+
+        ov::genai::EncodedResults encoded_result;
+        int32_t m_selected_beam = 0;
+        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
+                                                                                      position_ids, m_embedding, std::nullopt);
 
         DecodedResults decoded;
-        for (size_t idx = 0; idx < encoded_result.m_generation_ids.size(); ++idx) {
-            decoded.texts.push_back(m_tokenizer.decode(encoded_result.m_generation_ids.at(idx)));
-            decoded.scores.push_back(encoded_result.m_scores.at(idx));
+        for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
+            decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
+            decoded.scores.push_back(encoded_result.scores.at(idx));
         }
 
         std::string decoded_results = decoded.texts.at(0);

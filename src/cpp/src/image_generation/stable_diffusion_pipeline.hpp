@@ -7,8 +7,6 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 
-#include "image_generation/schedulers/lcm.hpp"
-
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
@@ -174,29 +172,14 @@ public:
 
         if (initial_image) {
             latent = m_vae->encode(initial_image);
-            if (generation_config.num_images_per_prompt > 1) {
-                ov::Tensor batched_latent(ov::element::f32, latent_shape);
-                for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                    batch_copy(latent, batched_latent, 0, n);
-                }
-                latent = batched_latent;
-            }
-
-            m_scheduler->add_noise(latent, generation_config.random_generator);
+            m_scheduler->add_noise(latent, generation_config.generator);
         } else {
-            latent.set_shape(latent_shape);
-
-            size_t amount = 0;
-            std::cout << "LCMScheduler::prepare_latents: ";
+            latent = generation_config.generator->randn_tensor(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
-            std::generate_n(latent.data<float>(), latent.get_size(), [&]() -> float {
-                float value = generation_config.random_generator->next();
-                if (amount++ < 20)
-                    std::cout << value << " ";
-                return value * m_scheduler->get_init_noise_sigma();
-            });
-            std::cout << std::endl;
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] *= m_scheduler->get_init_noise_sigma();
         }
 
         return latent;
@@ -224,17 +207,13 @@ public:
         m_clip_text_encoder->set_adapters(generation_config.adapters);
         m_unet->set_adapters(generation_config.adapters);
 
-        if (generation_config.random_generator == nullptr) {
-            OPENVINO_ASSERT(false);
+        if (generation_config.generator == nullptr) {
             uint32_t seed = time(NULL);
-            generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
-        } else {
-            // std::shared_ptr<LCMScheduler> lcm = std::dynamic_pointer_cast<LCMScheduler>(m_scheduler);
-            // OPENVINO_ASSERT(lcm != nullptr);
-            // lcm->set_random_generator(generation_config.random_generator);
+            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
+        std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
             batch_size_multiplier > 1);
 
         // replicate encoder hidden state to UNet model
@@ -275,13 +254,10 @@ public:
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
+            batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
-            } else {
-                // just assign to save memory copy
-                latent_cfg = latent;
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -291,9 +267,10 @@ public:
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
-            noisy_residual_tensor.set_shape(noise_pred_shape);
 
             if (batch_size_multiplier > 1) {
+                noisy_residual_tensor.set_shape(noise_pred_shape);
+
                 // perform guidance
                 float* noisy_residual = noisy_residual_tensor.data<float>();
                 const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
@@ -307,7 +284,7 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step);
+            auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
@@ -320,7 +297,7 @@ public:
 
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale >= 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
+        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
     }
 
     void initialize_generation_config(const std::string& class_name) override {
@@ -363,9 +340,9 @@ private:
         OPENVINO_ASSERT(generation_config.prompt_2 == std::nullopt, "Prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
         if (is_lcm) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by ", pipeline_name);
         } else if (!is_classifier_free_guidance) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale < 1.0");
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used when guidance scale <= 1.0");
         }
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);

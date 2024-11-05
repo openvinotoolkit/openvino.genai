@@ -12,6 +12,8 @@
 namespace ov {
 namespace genai {
 
+size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path);
+
 UNet2DConditionModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -28,19 +30,7 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
     m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model((root_dir / "openvino_model.xml").string());
-
-    // compute VAE scale factor
-    {
-        // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
-        std::filesystem::path vae_config_path = root_dir.parent_path() / "vae_decoder" / "config.json";
-        std::ifstream file(vae_config_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
-        nlohmann::json data = nlohmann::json::parse(file);
-
-        std::vector<size_t> block_out_channels;
-        utils::read_json_param(data, "block_out_channels", block_out_channels);
-        m_vae_scale_factor = std::pow(2, block_out_channels.size() - 1);
-    }
+    m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir,
@@ -109,7 +99,7 @@ void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov:
 }
 
 void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
-    if(adapters) {
+    if (adapters) {
         m_adapter_controller.apply(m_request, *adapters);
     }
 }

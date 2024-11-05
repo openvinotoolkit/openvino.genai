@@ -22,6 +22,16 @@
 namespace ov {
 namespace genai {
 
+size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path) {
+    std::ifstream file(vae_config_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
+    nlohmann::json data = nlohmann::json::parse(file);
+
+    std::vector<size_t> block_out_channels;
+    utils::read_json_param(data, "block_out_channels", block_out_channels);
+    return std::pow(2, block_out_channels.size() - 1);
+}
+
 AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -176,8 +186,10 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
 void AutoencoderKL::merge_vae_image_post_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
-    // scale input before VAE decoder
-    ppp.input().preprocess().scale(m_config.scaling_factor);
+    // scale and shift input before VAE decoder
+    ppp.input().preprocess()
+        .scale(m_config.scaling_factor)
+        .mean(-m_config.shift_factor);
 
     // apply VaeImageProcessor normalization steps
     // https://github.com/huggingface/diffusers/blob/v0.30.1/src/diffusers/image_processor.py#L159

@@ -29,11 +29,14 @@ def main():
 
     device = 'CPU'  # GPU can be used as well
     random_generator = Generator(42)  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
-    # print(f'--- {random_generator.next()}')
-
     pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
+
     image_tensor = pipe.generate(
         args.prompt,
+        width=512,
+        height=512,
+        num_inference_steps=20,
+        num_images_per_prompt=1,
         random_generator=random_generator
     )
 
