@@ -26,7 +26,7 @@ if(POLICY CMP0169)
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2024.5.0.0
+        VERSION 2025.0.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
