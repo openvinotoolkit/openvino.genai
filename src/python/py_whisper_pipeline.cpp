@@ -14,6 +14,7 @@
 
 namespace py = pybind11;
 using ov::genai::ChunkStreamerBase;
+using ov::genai::ChunkStreamerVariant;
 using ov::genai::DecodedResults;
 using ov::genai::OptionalWhisperGenerationConfig;
 using ov::genai::RawSpeechInput;
@@ -218,25 +219,24 @@ class ConstructableChunkStreamer : public ChunkStreamerBase {
     }
 };
 
-ov::genai::ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
-    ov::genai::ChunkStreamerVariant streamer = std::monostate();
-
-    std::visit(pyutils::overloaded{[&streamer](const std::function<bool(py::str)>& py_callback) {
-                                       // Wrap python streamer with manual utf-8 decoding. Do not rely
-                                       // on pybind automatic decoding since it raises exceptions on incomplete strings.
-                                       auto callback_wrapped = [py_callback](std::string subword) -> bool {
-                                           auto py_str =
-                                               PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                                           return py_callback(py::reinterpret_borrow<py::str>(py_str));
-                                       };
-                                       streamer = callback_wrapped;
-                                   },
-                                   [&streamer](std::shared_ptr<ChunkStreamerBase> streamer_cls) {
-                                       streamer = streamer_cls;
-                                   },
-                                   [](std::monostate none) { /*streamer is already a monostate */ }},
-               py_streamer);
-    return streamer;
+ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
+    return std::visit(
+        pyutils::overloaded{[](const std::function<bool(py::str)>& py_callback) {
+                                // Wrap python streamer with manual utf-8 decoding. Do not rely
+                                // on pybind automatic decoding since it raises exceptions on incomplete
+                                // strings.
+                                return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> bool {
+                                    auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                                    return py_callback(py::reinterpret_borrow<py::str>(py_str));
+                                });
+                            },
+                            [](std::shared_ptr<ChunkStreamerBase> streamer_cls) {
+                                return static_cast<ChunkStreamerVariant>(streamer_cls);
+                            },
+                            [](std::monostate none) {
+                                return static_cast<ChunkStreamerVariant>(none);
+                            }},
+        py_streamer);
 }
 
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
@@ -251,7 +251,7 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    ov::genai::ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
+    ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
 }
