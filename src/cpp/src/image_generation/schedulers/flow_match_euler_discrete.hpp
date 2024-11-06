@@ -47,6 +47,7 @@ private:
 
     std::vector<float> m_sigmas;
     std::vector<float> m_timesteps;
+    std::vector<float> m_schedule_timesteps;
 
     float m_sigma_min, m_sigma_max;
     size_t m_step_index, m_begin_index;

@@ -558,7 +558,7 @@ public:
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
 
-        for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; ++inference_step) {
+        for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
                 batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);

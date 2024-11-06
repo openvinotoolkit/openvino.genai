@@ -177,7 +177,7 @@ public:
         ov::Tensor latent(ov::element::f32, {});
 
         if (initial_image) {
-            latent = m_vae->encode(initial_image);
+            latent = m_vae->encode(initial_image, generation_config.generator);
             m_scheduler->add_noise(latent, generation_config.generator);
         } else {
             latent = generation_config.generator->randn_tensor(latent_shape);
@@ -387,7 +387,7 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
-        for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
+        for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
             batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {

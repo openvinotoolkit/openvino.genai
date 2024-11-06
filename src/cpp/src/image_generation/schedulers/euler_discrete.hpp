@@ -58,7 +58,9 @@ private:
     std::vector<int64_t> m_timesteps;
     size_t m_num_inference_steps;
 
-    size_t m_step_index;
+    int m_step_index, m_begin_index;
+
+    size_t _index_for_timestep(int64_t timestep) const;
 };
 
 } // namespace genai
