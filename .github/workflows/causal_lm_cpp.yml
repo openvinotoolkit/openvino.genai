@@ -788,7 +788,6 @@ jobs:
       - run: diff cpp2.txt py2.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
-          python -m pip install git+https://github.com/huggingface/optimum-intel.git --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
           wget https://llava-vl.github.io/static/images/monalisa.jpg
