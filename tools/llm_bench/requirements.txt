@@ -20,3 +20,4 @@ onnx<=1.16.1
 einops
 transformers_stream_generator
 bitsandbytes
+librosa # For Whisper

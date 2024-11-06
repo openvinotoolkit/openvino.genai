@@ -55,7 +55,7 @@ private:
     Config m_config;
 
     std::vector<float> m_alphas_cumprod, m_sigmas;
-    std::vector<int64_t> m_timesteps;
+    std::vector<int64_t> m_timesteps, m_schedule_timesteps;
     size_t m_num_inference_steps;
 
     int m_step_index, m_begin_index;

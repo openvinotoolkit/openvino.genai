@@ -351,5 +351,17 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             py::arg("initial_image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& prompt,
+                const py::kwargs& kwargs
+            ) {
+                ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
+                return py::cast(pipe.generate(prompt, params));
+            },
+            py::arg("prompt"), "Input string",
+            (text2image_generate_docstring + std::string(" \n ")).c_str()
         );
 }

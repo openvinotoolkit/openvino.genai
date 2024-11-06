@@ -43,10 +43,10 @@ def main():
 
     image_tensor = pipe.generate(
         args.prompt,
-        read_image(args.image),
-        width=W,
-        height=H,
-        strength=0.8,
+        # read_image(args.image),
+        # width=W,
+        # height=H,
+        # strength=0.8,
         generator=Generator(42)
     )
 

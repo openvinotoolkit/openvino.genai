@@ -32,8 +32,8 @@ auto raw_perf_metrics_docstring = R"(
     :param m_times_to_first_token: Times to the first token for each call in microseconds.
     :type m_times_to_first_token: List[MicroSeconds]
 
-    :param m_new_token_times: Time points for each new token generated.
-    :type m_new_token_times: List[TimePoint]
+    :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+    :type m_new_token_times: List[MilliSeconds]
 
     :param m_batch_sizes: Batch sizes for each generate call.
     :type m_batch_sizes: List[int]
@@ -109,6 +109,22 @@ std::vector<float> get_ms(const T& instance, U T::*member) {
     return res;
 }
 
+template <typename T, typename U>
+std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
+    // Converts c++ duration to double so that it can be used in Python.
+    // Use double instead of float bacuse timestamp in ms contains 14 digits
+    // while float only allows to store ~7 significant digits.
+    // And the current timestamp (number of secs from 1970) is already 11 digits.
+    std::vector<double> res;
+    const auto& timestamps = instance.*member;
+    res.reserve(timestamps.size());
+    std::transform(timestamps.begin(), timestamps.end(), std::back_inserter(res),
+                   [](const auto& timestamp) { 
+                        return std::chrono::duration<double, std::milli>(timestamp.time_since_epoch()).count(); 
+                    });
+    return res;
+}
+
 } // namespace
 
 void init_perf_metrics(py::module_& m) {
@@ -125,6 +141,9 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
             return get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
+        })
+        .def_property_readonly("m_new_token_times", [](const RawPerfMetrics &rw) {
+            return timestamp_to_ms(rw, &RawPerfMetrics::m_new_token_times);
         })
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
             return get_ms(rw, &RawPerfMetrics::m_durations);
