@@ -195,7 +195,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         mem_consumption.start_collect_memory_consumption()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
-    generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"])
+    generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], do_sample=False)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
