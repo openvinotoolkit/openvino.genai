@@ -13,7 +13,6 @@ import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -161,8 +160,9 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     pipe, pretrain_time, use_genai = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
+
     iter_data_list = []
-    input_image_list = get_image_prompt(args)
+    input_image_list = model_utils.get_image_param_from_prompt_file(args)
     if framework == "ov" and not use_genai:
         stable_diffusion_hook.new_text_encoder(pipe)
         stable_diffusion_hook.new_unet(pipe)
@@ -212,16 +212,3 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if not use_genai:
         metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_image_prompt(args):
-    input_image_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'prompt')
-    if is_json_data is True:
-        image_param_list = parse_json_data.parse_image_json_data(output_data_list)
-        if len(image_param_list) > 0:
-            for image_data in image_param_list:
-                input_image_list.append(image_data)
-    else:
-        input_image_list.append({'prompt': output_data_list[0]})
-    return input_image_list

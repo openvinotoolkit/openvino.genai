@@ -16,7 +16,6 @@ from transformers import set_seed
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -124,6 +123,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
+        loop_idx='',
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
@@ -237,6 +237,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     )
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
+        loop_idx='',
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_list),
         out_size=num_tokens,
@@ -347,6 +348,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
+        loop_idx='',
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_list),
         out_size=num_tokens,
@@ -397,7 +399,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    input_text_list = get_text_prompt(args)
+    input_text_list = model_utils.get_prompts(args)
     if args['prompt_index'] is None:
         prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
         text_list = input_text_list
@@ -450,16 +452,3 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_text_prompt(args):
-    text_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'prompt')
-    if is_json_data is True:
-        text_param_list = parse_json_data.parse_text_json_data(output_data_list)
-        if len(text_param_list) > 0:
-            for text in text_param_list:
-                text_list.append(text)
-    else:
-        text_list.append(output_data_list[0])
-    return text_list

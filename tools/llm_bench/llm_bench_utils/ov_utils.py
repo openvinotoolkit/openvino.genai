@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig, AutoProcessor
+from transformers import AutoConfig
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -12,7 +12,6 @@ import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 import openvino.runtime.opset13 as opset
-from transformers import pipeline
 
 
 def generate_simplified(self, *args, **kwargs):
@@ -324,61 +323,6 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
-
-
-def create_genai_speech_2_txt_model(model_path, device, **kwargs):
-    import openvino_genai as ov_genai
-    if kwargs.get("genai", False) is False:
-        raise RuntimeError('==Failure the command line does not set --genai ==')
-    if is_genai_available(log_msg=True) is False:
-        raise RuntimeError('==Failure genai is not enable ==')
-    start = time.perf_counter()
-    genai_pipe = ov_genai.WhisperPipeline(model_path, device.upper())
-    end = time.perf_counter()
-    from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
-    processor = AutoProcessor.from_pretrained(model_path)
-    return genai_pipe, processor, from_pretrained_time, True
-
-
-def create_speech_2txt_model(model_path, device, **kwargs):
-    """Create speech generation model.
-
-    - model_path: can be model_path or IR path
-    - device: can be CPU
-    - model_type:
-    """
-    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-    model_type = kwargs.get('model_type', default_model_type)
-    model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
-    model_path = Path(model_path)
-    model_path_existed = model_path.exists()
-    # load model
-    if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
-    else:
-        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
-            if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
-            else:
-                return create_genai_speech_2_txt_model(model_path, device, **kwargs)
-        start = time.perf_counter()
-        ov_model = model_class.from_pretrained(
-            model_path,
-            device=device
-        )
-        end = time.perf_counter()
-    from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
-    processor = AutoProcessor.from_pretrained(model_path)
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=ov_model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor
-    )
-
-    return pipe, processor, from_pretrained_time, False
 
 
 def is_genai_available(log_msg=False):
