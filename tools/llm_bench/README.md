@@ -170,4 +170,4 @@ OpenVINO is by default built with [oneTBB](https://github.com/oneapi-src/oneTBB/
 ## 7. Additional Resources
 
 - **Error Troubleshooting:** Check the [NOTES.md](./doc/NOTES.md) for solutions to known issues.
-- **Image Generation Configuration:** Refer to [IMAGE_GEN.md](./doc/IMAGE_GEN.md) for setting parameters for image generation models.
+- **Syntax and attributes of prompt file:** Refer to [PROMPT.md](./doc/PROMPT.md) for writing a prompt file.
