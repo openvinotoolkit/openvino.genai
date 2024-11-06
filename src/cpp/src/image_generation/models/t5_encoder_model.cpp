@@ -17,9 +17,6 @@ std::filesystem::path get_tokenizer_path_by_text_encoder(const std::filesystem::
 T5EncoderModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
-
-    // nlohmann::json data = nlohmann::json::parse(file);
-    // using utils::read_json_param;
 }
 
 T5EncoderModel::T5EncoderModel(const std::filesystem::path& root_dir) :
@@ -59,27 +56,13 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
     std::optional<AdapterConfig> adapters;
-    // TODO:
-    // if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
-    //     adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_te"));
-    //     m_adapter_controller = AdapterController(m_model, *adapters, device);
-    //     compiled_model = core.compile_model(m_model, device, *filtered_properties);
-    // } else {
     compiled_model = core.compile_model(m_model, device, properties);
-    // }
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
 
     return *this;
 }
-
-// void T5EncoderModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
-//     if(adapters) {
-//         m_adapter_controller.apply(m_request, *adapters);
-//     }
-// }
-
 
 ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
@@ -97,7 +80,7 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt) {
     size_t current_batch_idx = 0;
 
     perform_tokenization(pos_prompt,
-                         ov::Tensor(input_ids, {current_batch_idx    , 0},
+                         ov::Tensor(input_ids, {current_batch_idx, 0},
                                                {current_batch_idx + 1, m_config.max_sequence_length}));
 
     // text embeddings

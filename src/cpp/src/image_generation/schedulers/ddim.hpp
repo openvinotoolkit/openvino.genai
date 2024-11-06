@@ -51,6 +51,8 @@ public:
 
     void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
 
+   float calculate_shift(size_t image_seq_len) override;
+
 private:
     Config m_config;
 

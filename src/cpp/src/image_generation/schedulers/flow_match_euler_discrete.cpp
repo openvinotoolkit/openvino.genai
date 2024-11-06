@@ -155,6 +155,7 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float
     m_sigmas.clear();
     m_sigmas = sigma;
     float shift = m_config.shift;
+
     // fill sigma
     if (m_config.use_dynamic_shifting) {
         float exp_mu = std::exp(mu);
@@ -166,12 +167,25 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float
             m_sigmas[i] = shift * m_sigmas[i] / (1 + (shift - 1) * m_sigmas[i]);
         }
     }
+
     // fill timesteps
     for (size_t i = 0; i < m_sigmas.size(); ++i) {
         m_timesteps.push_back(m_sigmas[i] * m_config.num_train_timesteps);
     }
     m_sigmas.push_back(0);
     m_step_index = -1, m_begin_index = -1;
+}
+
+float  FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
+    size_t base_seq_len = m_config.base_image_seq_len;
+    size_t max_seq_len = m_config.max_image_seq_len;
+    float base_shift = m_config.base_shift;
+    float max_shift = m_config.max_shift;
+
+    float m = (max_shift - base_shift) / (max_seq_len - base_seq_len);
+    float b = base_shift - m * base_seq_len;
+    float mu = image_seq_len * m + b;
+    return mu;
 }
 
 }  // namespace genai

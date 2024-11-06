@@ -33,6 +33,10 @@ public:
         ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) = 0;
 
     virtual void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const = 0;
+
+    virtual float calculate_shift(size_t image_seq_len) = 0;
+
+    struct Config;
 };
 
 } // namespace genai

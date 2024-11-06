@@ -226,7 +226,11 @@ void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator>
 }
 
 void DDIMScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
-    OPENVINO_THROW("DDIMScheduler doesn't support set_timesteps_with_sigma");
+    OPENVINO_THROW("DDIMScheduler doesn't support `set_timesteps_with_sigma` method");
+}
+
+float DDIMScheduler::calculate_shift(size_t image_seq_len) {
+    OPENVINO_THROW("DDIMScheduler doesn't support `calculate_shift` method");
 }
 
 } // namespace genai

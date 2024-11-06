@@ -11,6 +11,8 @@
 namespace ov {
 namespace genai {
 
+size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path);
+
 FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -18,16 +20,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
     nlohmann::json data = nlohmann::json::parse(file);
     using utils::read_json_param;
 
-    // read_json_param(data, "patch_size", patch_size);
     read_json_param(data, "in_channels", in_channels);
-    // read_json_param(data, "num_layers", num_layers);
-    // read_json_param(data, "attention_head_dim", attention_head_dim);
-    // read_json_param(data, "num_attention_heads", num_attention_heads);
-    // read_json_param(data, "joint_attention_dim", joint_attention_dim);
-    // read_json_param(data, "pooled_projection_dim", pooled_projection_dim);
-    // read_json_param(data, "guidance_embeds", guidance_embeds);
-    // read_json_param(data, "num_single_layers", num_single_layers);
-
 
     file.close();
 
@@ -42,9 +35,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
-
-    // compute VAE scale factor
-    m_vae_scale_factor = std::pow(2, m_config.block_out_channels.size());
+    m_vae_scale_factor = ov::genai::get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir,
@@ -71,29 +62,35 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
     // encoder_hidden_states=prompt_embeds,
     // pooled_projections=pooled_prompt_embeds,
 
-    // height /= m_vae_scale_factor;
-    // width /= m_vae_scale_factor;
+    std::cout << "batch_size " << batch_size << std::endl;
+    std::cout << "tokenizer_model_max_length " << tokenizer_model_max_length << std::endl;
 
-    // std::map<std::string, ov::PartialShape> name_to_shape;
+    height /= m_vae_scale_factor;
+    width /= m_vae_scale_factor;
 
-    // for (auto&& input : m_model->inputs()) {
-    //     std::string input_name = input.get_any_name();
-    //     name_to_shape[input_name] = input.get_partial_shape();
-    //     if (input_name == "timestep") {
-    //         name_to_shape[input_name][0] = batch_size;
-    //     } else if (input_name == "hidden_states") {
-    //         name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
-    //     } else if (input_name == "encoder_hidden_states") {
-    //         name_to_shape[input_name][0] = batch_size;
-    //         name_to_shape[input_name][1] =
-    //             tokenizer_model_max_length *
-    //             2;  // x2 is necessary because of the concatenation of prompt_embeds and t5_prompt_embeds
-    //     } else if (input_name == "pooled_projections") {
-    //         name_to_shape[input_name][0] = batch_size;
-    //     }
-    // }
+    std::map<std::string, ov::PartialShape> name_to_shape;
 
-    // m_model->reshape(name_to_shape);
+    for (auto&& input : m_model->inputs()) {
+        std::string input_name = input.get_any_name();
+        name_to_shape[input_name] = input.get_partial_shape();
+        if (input_name == "timestep") {
+            name_to_shape[input_name][0] = 1;
+        } else if (input_name == "hidden_states") {
+            // `pack_latents` reshapes to:
+            // batch_size, h_half * w_half, num_channels_latents * 4
+            name_to_shape[input_name] = {batch_size, height * width / 4, name_to_shape[input_name][2]};
+        } else if (input_name == "encoder_hidden_states") {
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
+        } else if (input_name == "pooled_projections") {
+            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1]};
+        } else if (input_name == "img_ids") {
+            name_to_shape[input_name] = {height * width / 4, name_to_shape[input_name][1]};
+        } else if (input_name == "txt_ids") {
+            name_to_shape[input_name] = {tokenizer_model_max_length, name_to_shape[input_name][1]};
+        }
+    }
+
+    m_model->reshape(name_to_shape);
 
     return *this;
 }
@@ -111,10 +108,6 @@ FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& devic
 void FluxTransformer2DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
-}
-
-size_t FluxTransformer2DModel::get_vae_scale_factor() const {
-    return m_vae_scale_factor;
 }
 
 ov::Tensor FluxTransformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {

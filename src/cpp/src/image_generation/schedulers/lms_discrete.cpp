@@ -267,5 +267,9 @@ void LMSDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, fl
     OPENVINO_THROW("LMSDiscreteScheduler doesn't support set_timesteps_with_sigma");
 }
 
+float LMSDiscreteScheduler::calculate_shift(size_t image_seq_len) {
+    OPENVINO_THROW("LMSDiscreteScheduler doesn't support `calculate_shift` method");
+}
+
 } // namespace genai
 } // namespace ov

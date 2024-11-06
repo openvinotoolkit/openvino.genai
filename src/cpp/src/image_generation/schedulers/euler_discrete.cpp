@@ -323,5 +323,9 @@ void EulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, 
     OPENVINO_THROW("EulerDiscreteScheduler doesn't support set_timesteps_with_sigma");
 }
 
+float EulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
+    OPENVINO_THROW("EulerDiscreteScheduler doesn't support `calculate_shift` method");
+}
+
 }  // namespace genai
 }  // namespace ov
