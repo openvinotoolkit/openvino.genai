@@ -49,38 +49,36 @@ ov::Tensor pack_latents(ov::Tensor latents, size_t batch_size, size_t num_channe
     return permuted_latents;
 }
 
-ov::Tensor unpack_latents(ov::Tensor latents, size_t height, size_t width, size_t vae_scale_factor) {
-    ov::Shape latents_shape = latents.get_shape();
-    size_t batch_size = latents_shape[0];
-    size_t channels = latents_shape[2];
+ov::Tensor unpack_latents(const ov::Tensor latents, size_t height, size_t width, size_t vae_scale_factor) {
+    auto shape = latents.get_shape();
+    size_t batch_size = shape[0];
+    size_t num_patches = shape[1];
+    size_t channels = shape[2];
 
-    height = height / vae_scale_factor;
-    width = width / vae_scale_factor;
+    height /= vae_scale_factor;
+    width /= vae_scale_factor;
 
-    // latents to (batch_size, height // 2, width // 2, channels // 4, 2, 2)
-    ov::Shape reshaped_shape = {batch_size, height / 2, width / 2, channels / 4, 2, 2};
-    latents.set_shape(reshaped_shape);
+    // Reshape to (batch_size, height, width, channels / 4, 2, 2)
+    ov::Shape shape_step1 = {batch_size, height, width, channels / 4, 2, 2};
+    
+    ov::Tensor latents_step1 = latents;
+    latents_step1.set_shape(shape_step1);
 
-    // Permute to (0, 3, 1, 4, 2, 5)
-    ov::Shape permuted_shape = {batch_size, channels / 4, height / 2, 2, width / 2, 2};
-    ov::Tensor permuted_latents = ov::Tensor(latents.get_element_type(), permuted_shape);
+    // Permute (batch_size, height, width, channels / 4, 2, 2) -> (batch_size, channels / 4, height, 2, width, 2)
+    const float* latents_step1_data = latents_step1.data<float>();
+    ov::Shape shape_step2 = {batch_size, channels / 4, height, 2, width, 2};
+    ov::Tensor latents_step2(ov::element::f32, shape_step2);
+    float* latents_step2_data = latents_step2.data<float>();
 
-    auto* src_data = latents.data<float>();
-    auto* dst_data = permuted_latents.data<float>();
-
-    // Permutation:
-    for (int b = 0; b < batch_size; ++b) {
-        for (int c4 = 0; c4 < channels / 4; ++c4) {
-            for (int h2 = 0; h2 < height / 2; ++h2) {
-                for (int w2 = 0; w2 < width / 2; ++w2) {
-                    for (int h3 = 0; h3 < 2; ++h3) {
-                        for (int w3 = 0; w3 < 2; ++w3) {
-                            int src_index = ((b * (height / 2) + h2) * (width / 2) + w2) * (channels / 4) * 4 +
-                                            (c4 * 4 + h3 * 2 + w3);
-                            int dst_index =
-                                ((b * (channels / 4) + c4) * (height / 2) * 2 + h2 * 2 + h3) * (width / 2) * 2 +
-                                w2 * 2 + w3;
-                            dst_data[dst_index] = src_data[src_index];
+    for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t c = 0; c < channels / 4; ++c) {
+            for (size_t h = 0; h < height; ++h) {
+                for (size_t w = 0; w < width; ++w) {
+                    for (size_t i = 0; i < 2; ++i) {
+                        for (size_t j = 0; j < 2; ++j) {
+                            size_t src_idx = (((b * height + h) * width + w) * (channels / 4) + c) * 4 + i * 2 + j;
+                            size_t dst_idx = ((((((b * (channels / 4) + c) * height + h) * 2 + i) * width + w) * 2 + j));
+                            latents_step2_data[dst_idx] = latents_step1_data[src_idx];
                         }
                     }
                 }
@@ -88,11 +86,11 @@ ov::Tensor unpack_latents(ov::Tensor latents, size_t height, size_t width, size_
         }
     }
 
-    // (batch_size, channels // (2 * 2), height, width)
-    ov::Shape final_shape = {batch_size, channels / 4, height, width};
-    permuted_latents.set_shape(final_shape);
+    // Reshape to (batch_size, channels / (2 * 2), height * 2, width * 2)
+    ov::Shape output_shape = {batch_size, channels / 4, height * 2, width * 2};
+    latents_step2.set_shape(output_shape);
 
-    return permuted_latents;
+    return latents_step2;
 }
 
 ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
@@ -415,6 +413,30 @@ public:
         std::cout << "generation_config.height " << generation_config.height << std::endl;
         std::cout << "generation_config.width " << generation_config.width << std::endl;
         std::cout << "vae_scale_factor " << vae_scale_factor << std::endl;
+
+        std::vector<float> inp(64*2);
+        std::iota(inp.begin(), inp.end(), 0.0f);
+
+        ov::Tensor inp_tensor(ov::element::f32, {1, 2, 64});
+        for(int i = 0; i < inp_tensor.get_size(); ++i) {
+            inp_tensor.data<float>()[i] = inp[i];
+        }
+
+        std::cout << "inp" << std::endl;
+        for (int i = 0; i < inp_tensor.get_size(); ++i){
+            std::cout <<  inp_tensor.data<float>()[i] << " ";
+        }
+        std::cout << std::endl;
+
+        ov::Tensor res = unpack_latents(inp_tensor, 32, 16, 16);
+
+        std::cout << "res" << std::endl;
+        for (int i = 0; i < res.get_size(); ++i){
+            std::cout <<  res.data<float>()[i] << " ";
+        }
+        std::cout << std::endl;
+
+
 
         latents = unpack_latents(latents, generation_config.height, generation_config.width, vae_scale_factor);
         std::cout << "latents 1" << std::endl;
