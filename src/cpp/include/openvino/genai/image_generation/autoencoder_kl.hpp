@@ -13,6 +13,7 @@
 #include "openvino/runtime/properties.hpp"
 
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -74,7 +75,7 @@ public:
 
     ov::Tensor decode(ov::Tensor latent);
 
-    ov::Tensor encode(ov::Tensor image);
+    ov::Tensor encode(ov::Tensor image, std::shared_ptr<Generator> generator);
 
     const Config& get_config() const;
 
