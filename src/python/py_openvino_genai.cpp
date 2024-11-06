@@ -10,6 +10,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
+
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -108,7 +109,6 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops")
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
-
 
     init_tokenizer(m);
     init_perf_metrics(m);

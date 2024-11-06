@@ -40,7 +40,7 @@ struct WhisperDecodedResultChunk {
 
     // end of chunk in seconds
     // -1.0f if chunk started but model did not predict an ending timestamp
-    // can happen if audio is cut off in the middle of a words
+    // can happen if audio is cut off in the middle of a word
     float end_ts = -1.0f;
     std::string text;
 };

@@ -23,8 +23,7 @@ bool TextCallbackStreamer::put(int64_t token) {
         return on_finalized_subword_callback(res.str());
     }
 
-    // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
-    constexpr char replacement[] = "\xef\xbf\xbd";
+    constexpr char replacement[] = "\xef\xbf\xbd"; // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
         // Don't print incomplete text
         return on_finalized_subword_callback(res.str());
@@ -42,7 +41,7 @@ void TextCallbackStreamer::end() {
     std::stringstream res;
     std::string text = m_tokenizer.decode(m_tokens_cache);
     if (text.size() <= print_len)
-        return;
+        return ;
     res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
     m_tokens_cache.clear();
     print_len = 0;
