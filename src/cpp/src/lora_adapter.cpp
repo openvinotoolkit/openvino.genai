@@ -581,7 +581,7 @@ NodePtr decompression_convert (NodePtr node) {
 // Defines `evaluate` method that compute a model by a given signature and input tensors.
 class InferRequestSignatureCache {
 
-    // Infer request with additiona input-output pairs that bypassed from input to output to eliminate Parameter -> Result pairs from the OV model
+    // Infer request with additional input-output pairs that are bypassed from input to output to eliminate Parameter -> Result pairs from the OV model
     struct RequestWithBypass {
         ov::InferRequest request;
         std::vector<std::pair<size_t, size_t>> bypass; // a set of index pairs [j, k], where j is an index of input tensor to be forwarded to k-th output tensor
@@ -597,9 +597,6 @@ public:
     bool exist (const Signature& signature) {
         return requests.count(signature);
     }
-
-    // void insert (const Signature& signature, std::shared_ptr<ov::Model> model) {
-    // }
 
     void insert (const Signature& signature, ov::ResultVector& results, ov::ParameterVector& parameters) {
         // Detect Parameter -> Result patterns and do not allow them to be included into compiled model to avoid unnecessary overheads, and handle them via a bypass.
