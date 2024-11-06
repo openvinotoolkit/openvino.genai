@@ -6,34 +6,30 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
-#include "utils.hpp"
-
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
+#include "utils.hpp"
 
 namespace {
 
-ov::Tensor pack_latents(ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
-    ov::Shape reshaped_shape = {batch_size, num_channels_latents, height / 2, 2, width / 2, 2};
-    latents.set_shape(reshaped_shape);
+ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
+    // Reshape to (batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
+    ov::Shape final_shape = {batch_size, (height / 2) * (width / 2), num_channels_latents * 4};
+    ov::Tensor permuted_latents = ov::Tensor(latents.get_element_type(), final_shape);
+
+    float* src_data = latents.data<float>();
+    float* dst_data = permuted_latents.data<float>();
 
     // Permute to (0, 2, 4, 1, 3, 5)
-    ov::Shape permuted_shape = {batch_size, height / 2, width / 2, num_channels_latents, 2, 2};
-    ov::Tensor permuted_latents = ov::Tensor(latents.get_element_type(), permuted_shape);
-
-    auto* src_data = latents.data<float>();
-    auto* dst_data = permuted_latents.data<float>();
-
-    // Permutation:
-    for (int b = 0; b < batch_size; ++b) {
-        for (int h2 = 0; h2 < height / 2; ++h2) {
-            for (int w2 = 0; w2 < width / 2; ++w2) {
-                for (int c = 0; c < num_channels_latents; ++c) {
-                    for (int h3 = 0; h3 < 2; ++h3) {
-                        for (int w3 = 0; w3 < 2; ++w3) {
-                            int src_index = ((b * num_channels_latents + c) * (height / 2) + h2) * 2 * (width / 2) * 2 +
+    for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t h2 = 0; h2 < height / 2; ++h2) {
+            for (size_t w2 = 0; w2 < width / 2; ++w2) {
+                for (size_t c = 0; c < num_channels_latents; ++c) {
+                    for (size_t h3 = 0; h3 < 2; ++h3) {
+                        for (size_t w3 = 0; w3 < 2; ++w3) {
+                            size_t src_index = ((b * num_channels_latents + c) * (height / 2) + h2) * 2 * (width / 2) * 2 +
                                             (h3 * width / 2 + w2) * 2 + w3;
-                            int dst_index = ((b * (height / 2) + h2) * (width / 2) + w2) * num_channels_latents * 4 +
+                            size_t dst_index = ((b * (height / 2) + h2) * (width / 2) + w2) * num_channels_latents * 4 +
                                             (c * 4 + h3 * 2 + w3);
                             dst_data[dst_index] = src_data[src_index];
                         }
@@ -43,33 +39,24 @@ ov::Tensor pack_latents(ov::Tensor latents, size_t batch_size, size_t num_channe
         }
     }
 
-    ov::Shape final_shape = {batch_size, (height / 2) * (width / 2), num_channels_latents * 4};
-    permuted_latents.set_shape(final_shape);
-
     return permuted_latents;
 }
 
 ov::Tensor unpack_latents(const ov::Tensor latents, size_t height, size_t width, size_t vae_scale_factor) {
-    auto shape = latents.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_patches = shape[1];
-    size_t channels = shape[2];
+    auto latents_shape = latents.get_shape();
+    size_t batch_size = latents_shape[0], channels = latents_shape[2];
 
     height /= vae_scale_factor;
     width /= vae_scale_factor;
 
-    // Reshape to (batch_size, height, width, channels / 4, 2, 2)
-    ov::Shape shape_step1 = {batch_size, height, width, channels / 4, 2, 2};
-    
-    ov::Tensor latents_step1 = latents;
-    latents_step1.set_shape(shape_step1);
+    // Reshape to (batch_size, channels / 4, height * 2, width * 2)
+    ov::Shape output_shape = {batch_size, channels / 4, height * 2, width * 2};
+    ov::Tensor permuted_latents = ov::Tensor(latents.get_element_type(), output_shape);
 
-    // Permute (batch_size, height, width, channels / 4, 2, 2) -> (batch_size, channels / 4, height, 2, width, 2)
-    const float* latents_step1_data = latents_step1.data<float>();
-    ov::Shape shape_step2 = {batch_size, channels / 4, height, 2, width, 2};
-    ov::Tensor latents_step2(ov::element::f32, shape_step2);
-    float* latents_step2_data = latents_step2.data<float>();
+    const float* src_data = latents.data<float>();
+    float* dst_data = permuted_latents.data<float>();
 
+    // Permute (0, 3, 1, 4, 2, 5)
     for (size_t b = 0; b < batch_size; ++b) {
         for (size_t c = 0; c < channels / 4; ++c) {
             for (size_t h = 0; h < height; ++h) {
@@ -77,8 +64,9 @@ ov::Tensor unpack_latents(const ov::Tensor latents, size_t height, size_t width,
                     for (size_t i = 0; i < 2; ++i) {
                         for (size_t j = 0; j < 2; ++j) {
                             size_t src_idx = (((b * height + h) * width + w) * (channels / 4) + c) * 4 + i * 2 + j;
-                            size_t dst_idx = ((((((b * (channels / 4) + c) * height + h) * 2 + i) * width + w) * 2 + j));
-                            latents_step2_data[dst_idx] = latents_step1_data[src_idx];
+                            size_t dst_idx =
+                                ((((((b * (channels / 4) + c) * height + h) * 2 + i) * width + w) * 2 + j));
+                            dst_data[dst_idx] = src_data[src_idx];
                         }
                     }
                 }
@@ -86,19 +74,14 @@ ov::Tensor unpack_latents(const ov::Tensor latents, size_t height, size_t width,
         }
     }
 
-    // Reshape to (batch_size, channels / (2 * 2), height * 2, width * 2)
-    ov::Shape output_shape = {batch_size, channels / 4, height * 2, width * 2};
-    latents_step2.set_shape(output_shape);
-
-    return latents_step2;
+    return permuted_latents;
 }
 
 ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
-    ov::Shape shape = {height, width, 3};
-    ov::Tensor latent_image_ids(ov::element::f32, shape);
+    ov::Tensor latent_image_ids(ov::element::f32, {height * width, 3});
     auto* data = latent_image_ids.data<float>();
 
-    std::fill(data, data + height * width * 3, 0.0f);
+    std::fill(data, data + height * width * 3, 0.0);
 
     for (size_t i = 0; i < height; ++i) {
         for (size_t j = 0; j < width; ++j) {
@@ -107,12 +90,8 @@ ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t wid
         }
     }
 
-    ov::Shape reshaped_shape = {height * width, 3};
-    latent_image_ids.set_shape(reshaped_shape);
-    
     return latent_image_ids;
 }
-
 
 }  // namespace
 
@@ -121,8 +100,7 @@ namespace genai {
 
 class FluxPipeline : public DiffusionPipeline {
 public:
-    FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
-        DiffusionPipeline(pipeline_type) {
+    FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -165,10 +143,10 @@ public:
     }
 
     FluxPipeline(PipelineType pipeline_type,
-                const std::filesystem::path& root_dir,
-                const std::string& device,
-                const ov::AnyMap& properties) :
-        DiffusionPipeline(pipeline_type) {
+                 const std::filesystem::path& root_dir,
+                 const std::string& device,
+                 const ov::AnyMap& properties)
+        : DiffusionPipeline(pipeline_type) {
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -246,7 +224,8 @@ public:
         m_transformer->compile(device, properties);
     }
 
-    ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    ov::Tensor prepare_latents(ov::Tensor initial_image,
+                               const ImageGenerationConfig& generation_config) const override {
         const size_t vae_scale_factor = m_vae_decoder->get_vae_scale_factor();
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
                                m_transformer->get_config().in_channels,
@@ -254,7 +233,6 @@ public:
                                generation_config.width / vae_scale_factor};
 
         ov::Tensor latent = generation_config.generator->randn_tensor(latent_shape);
-
 
         return latent;
     }
@@ -267,8 +245,6 @@ public:
         generation_config.update_generation_config(properties);
 
         const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
-
-        std::cout << "vae_scale_factor " << vae_scale_factor << std::endl;
 
         if (generation_config.height < 0)
             generation_config.height = m_default_sample_size * vae_scale_factor;
@@ -320,41 +296,25 @@ public:
         // }
         // std::cout << std::endl;
 
-        // ov::Tensor res = prepare_latent_image_ids(16, 4, 4);
-        // std::cout << "res" << std::endl;
-        // for (int i = 0; i < res.get_size(); ++i){
-        //     std::cout << res.data<float>()[i] << " ";
-        // }
-        // std::cout << std::endl;
-
         size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
         size_t height = 2 * generation_config.height / vae_scale_factor;
         size_t width = 2 * generation_config.width / vae_scale_factor;
 
         ov::Tensor latents_inp = prepare_latents(initial_image, generation_config);
-        ov::Tensor latents = pack_latents(latents_inp,
-                                          generation_config.num_images_per_prompt,
-                                          num_channels_latents,
-                                          height,
-                                          width);
+        ov::Tensor latents = pack_latents(latents_inp, generation_config.num_images_per_prompt, num_channels_latents, height, width);
         ov::Tensor latent_image_ids = prepare_latent_image_ids(generation_config.num_images_per_prompt, height / 2, width / 2);
 
         std::cout << "latents" << std::endl;
-        for (int i = 0; i<10; ++i){
+        for (int i = 0; i < 10; ++i) {
             std::cout << latents.data<float>()[i] << " ";
         }
         std::cout << std::endl;
 
         std::cout << "latent_image_ids" << std::endl;
-        for (int i = 0; i<10; ++i){
+        for (int i = 0; i < 10; ++i) {
             std::cout << latent_image_ids.data<float>()[i] << " ";
         }
         std::cout << std::endl;
-
-        // std::cout << "pooled_projections " << pooled_prompt_embeds.get_shape() << std::endl;
-        // std::cout << "encoder_hidden_states " << prompt_embeds.get_shape() << std::endl;
-        // std::cout << "txt_ids" << text_ids.get_shape() << std::endl;
-        // std::cout << "img_ids" << latent_image_ids.get_shape() << std::endl;
 
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds);
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
@@ -380,13 +340,13 @@ public:
             std::fill_n(timestep_data, timestep_size, (timesteps[inference_step] / 1000));
 
             std::cout << "latents input" << std::endl;
-            for (int i = 0; i<10; ++i){
+            for (int i = 0; i < 10; ++i) {
                 std::cout << latents.data<float>()[i] << " ";
             }
             std::cout << std::endl;
 
             std::cout << "timestep" << std::endl;
-            for (int i = 0; i<timestep_size; ++i){
+            for (int i = 0; i < timestep_size; ++i) {
                 std::cout << timestep.data<float>()[i] << " ";
             }
             std::cout << std::endl;
@@ -394,7 +354,7 @@ public:
             ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
 
             std::cout << "noise_pred_tensor" << std::endl;
-            for (int i = 0; i<10; ++i){
+            for (int i = 0; i < 10; ++i) {
                 std::cout << noise_pred_tensor.data<float>()[i] << " ";
             }
             std::cout << std::endl;
@@ -402,54 +362,13 @@ public:
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, generation_config.generator);
             latents = scheduler_step_result["latent"];
 
-            std::cout << "latents step" << std::endl;
-            for (int i = 0; i<10; ++i){
-                std::cout << latents.data<float>()[i] << " ";
-            }
-            std::cout << std::endl;
         }
-
-        std::cout << "latents 1 shape " << latents.get_shape() << std::endl;
-        std::cout << "generation_config.height " << generation_config.height << std::endl;
-        std::cout << "generation_config.width " << generation_config.width << std::endl;
-        std::cout << "vae_scale_factor " << vae_scale_factor << std::endl;
-
-        std::vector<float> inp(64*2);
-        std::iota(inp.begin(), inp.end(), 0.0f);
-
-        ov::Tensor inp_tensor(ov::element::f32, {1, 2, 64});
-        for(int i = 0; i < inp_tensor.get_size(); ++i) {
-            inp_tensor.data<float>()[i] = inp[i];
-        }
-
-        std::cout << "inp" << std::endl;
-        for (int i = 0; i < inp_tensor.get_size(); ++i){
-            std::cout <<  inp_tensor.data<float>()[i] << " ";
-        }
-        std::cout << std::endl;
-
-        ov::Tensor res = unpack_latents(inp_tensor, 32, 16, 16);
-
-        std::cout << "res" << std::endl;
-        for (int i = 0; i < res.get_size(); ++i){
-            std::cout <<  res.data<float>()[i] << " ";
-        }
-        std::cout << std::endl;
-
-
 
         latents = unpack_latents(latents, generation_config.height, generation_config.width, vae_scale_factor);
-        std::cout << "latents 1" << std::endl;
-        for (int i = 0; i<10; ++i){
-            std::cout << latents.data<float>()[i] << " ";
-        }
-        std::cout << std::endl;
-
         return m_vae_decoder->decode(latents);
     }
 
 private:
-
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_transformer != nullptr);
         assert(m_vae_decoder != nullptr);
@@ -482,7 +401,9 @@ private:
 
         const char* const pipeline_name = "Flux";
 
-        OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt,
+                        "Negative prompt is not used by ",
+                        pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt,
                         "Negative prompt 2 is not used by ",
                         pipeline_name);
