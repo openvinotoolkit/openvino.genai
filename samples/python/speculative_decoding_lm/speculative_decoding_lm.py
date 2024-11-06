@@ -33,7 +33,8 @@ def main():
 
     pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, scheduler_config=scheduler_config, draft_model=draft_model)
     
-    config = openvino_genai.GenerationConfig()
+    config = pipe.get_generation_config()
+    config.do_sample = False
     config.max_new_tokens = 100
     # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
     # add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration

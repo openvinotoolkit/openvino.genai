@@ -79,7 +79,6 @@ import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(models_path)
 
 config = {'max_new_tokens': 100, 'num_beam_groups': 3, 'num_beams': 15, 'diversity_penalty': 1.5}
-pipe.set_generation_config(config)
 
 pipe.start_chat()
 while True:
@@ -87,7 +86,7 @@ while True:
     prompt = input()
     if prompt == 'Stop!':
         break
-    print(pipe(prompt, max_new_tokens=200))
+    print(pipe(prompt, **config))
 pipe.finish_chat()
 ```
 
@@ -116,7 +115,7 @@ int main(int argc, char* argv[]) {
     std::string models_path = argv[1];
     ov::genai::LLMPipeline pipe(models_path, "CPU");
 
-    ov::genai::GenerationConfig config;
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 256;
     config.num_beam_groups = 3;
     config.num_beams = 15;
@@ -137,7 +136,7 @@ int main(int argc, char* argv[]) {
     std::string models_path = argv[1];
     ov::genai::LLMPipeline pipe(models_path, "CPU");
 
-    ov::genai::GenerationConfig config;
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 100;
     config.num_beam_groups = 3;
     config.num_beams = 15;

@@ -36,11 +36,12 @@ int main(int argc, char* argv[]) try {
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
   
-    ov::genai::GenerationConfig config;
+    ov::genai::LLMPipeline pipe(models_path, device);
+
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    config.do_sample = false;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
 
-    ov::genai::LLMPipeline pipe(models_path, device);
-    
     for (size_t i = 0; i < num_warmup; i++)
         pipe.generate(prompt, config);
     

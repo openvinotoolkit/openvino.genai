@@ -63,7 +63,8 @@ def main():
         enable_compile_cache["CACHE_DIR"] = "vlm_cache"
     pipe = openvino_genai.VLMPipeline(args.model_dir, device, **enable_compile_cache)
 
-    config = openvino_genai.GenerationConfig()
+    config = pipe.get_generation_config()
+    config.do_sample = False
     config.max_new_tokens = 100
 
     pipe.start_chat()

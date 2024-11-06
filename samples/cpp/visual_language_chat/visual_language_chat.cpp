@@ -25,7 +25,8 @@ int main(int argc, char* argv[]) try {
     }
     ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
 
-    ov::genai::GenerationConfig generation_config;
+    ov::genai::GenerationConfig generation_config = pipe.get_generation_config();
+    generation_config.do_sample = false;
     generation_config.max_new_tokens = 100;
 
     std::string prompt;
