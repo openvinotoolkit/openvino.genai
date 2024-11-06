@@ -67,7 +67,6 @@ void init_clip_text_model(py::module_& m) {
             return std::make_unique<ov::genai::CLIPTextModel::Config>(config_path);
         }))
         .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModel::Config::max_position_embeddings)
-        .def_readwrite("hidden_size", &ov::genai::CLIPTextModel::Config::hidden_size)
         .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModel::Config::num_hidden_layers);
 
     clip_text_model.def("get_config", &ov::genai::CLIPTextModel::get_config);
@@ -309,7 +308,6 @@ void init_clip_text_model_with_projection(py::module_& m) {
             return std::make_unique<ov::genai::CLIPTextModelWithProjection::Config>(config_path);
         }))
         .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModelWithProjection::Config::max_position_embeddings)
-        .def_readwrite("hidden_size", &ov::genai::CLIPTextModelWithProjection::Config::hidden_size)
         .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModelWithProjection::Config::num_hidden_layers);
 
     clip_text_model_with_projection.def("reshape", &ov::genai::CLIPTextModelWithProjection::reshape);

@@ -38,9 +38,9 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
+    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
 
-    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const override;
+    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
 
 private:
     Config m_config;
@@ -53,7 +53,7 @@ private:
     size_t m_num_inference_steps;
 
     void init_step_index();
-    float sigma_to_t(float simga);
+    double sigma_to_t(double simga);
 };
 
 } // namespace genai

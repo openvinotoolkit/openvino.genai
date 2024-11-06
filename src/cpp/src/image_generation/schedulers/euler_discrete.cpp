@@ -194,9 +194,7 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
     m_sigmas.push_back(sigma_last);
 }
 
-std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_pred,
-                                                               ov::Tensor latents,
-                                                               size_t inference_step) {
+std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
@@ -284,7 +282,7 @@ void EulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inferen
     }
 }
 
-void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
+void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_euler_discrete.py#L686
     OPENVINO_THROW("Not implemented");
 }

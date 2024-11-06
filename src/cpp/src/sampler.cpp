@@ -231,20 +231,19 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
 }
 
 
-std::vector<int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
-    std::vector<int32_t> next_beams;
+std::map<size_t, int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
+    std::map<size_t, int32_t> next_beams;
 
     for (Group& group : m_groups) {
         if (!group.done) {
             for (Beam& beam : group.ongoing) {
-                next_beams.push_back(beam.m_global_beam_idx);
+                next_beams.insert({beam.m_sequence->get_id(), beam.m_global_beam_idx});
             }
         }
     }
 
     return next_beams;
 }
-
 
 void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
@@ -493,24 +492,37 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
     return Logits{logits_data, vocab_size};
 }
 
-Token Sampler::_greedy_sample(const Logits& logits) const {
+Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     // For greedy sampling we do not expect sorting or shrinking considered tokens
     // so we can operate directly on the data buffer
-    float max_value = -std::numeric_limits<float>::infinity();
-    size_t max_index = 0;
+    size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
+    std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
+    std::vector<size_t> top_indexes(m, 0);
+
     for (size_t i = 0; i < logits.m_size; ++i) {
-        if (logits.m_data[i] > max_value) {
-            max_value = logits.m_data[i];
-            max_index = i;
+        if (logits.m_data[i] > top_values.back()) {
+            top_values.back() = logits.m_data[i];
+            top_indexes.back() = i;
+
+            for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
+                std::swap(top_values[j], top_values[j - 1]);
+                std::swap(top_indexes[j], top_indexes[j - 1]);
+            }
         }
     }
 
-    // apply log softmax to max value
-    float log_sum = std::log(std::accumulate(
-        logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
-            return accumulated + std::exp(to_add - max_value);
-    }));
-    max_value = -log_sum;
+    size_t max_index = top_indexes.front();
+    float max_value = 0.0;
+
+    if (top_logprobs) {
+        // apply log softmax to max value
+        max_value = top_values.front();
+        float log_sum = std::log(std::accumulate(
+            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
+                return accumulated + std::exp(to_add - max_value);
+        }));
+        max_value = -log_sum;
+    }
 
     return Token(max_value, max_index);
 }
@@ -577,28 +589,32 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     return dropped_seq_ids;
 }
 
-void register_new_token(const Token& sampled_token_id,
+void register_new_token(const Token& sampled_token,
                         Sequence::Ptr running_sequence,
                         LogitProcessor& logit_processor,
                         bool is_extend_sequence,
                         bool is_validation_mode_enabled) {
-    logit_processor.register_new_generated_token(sampled_token_id.m_index);
+    logit_processor.register_new_generated_token(sampled_token.m_index);
     if (is_extend_sequence) {
-        running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
+        running_sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
     }
     if (!is_validation_mode_enabled &&
-        std::fabs(sampled_token_id.m_log_prob) < logit_processor.get_assistant_confidence_threshold()) { 
+        std::fabs(std::exp(sampled_token.m_log_prob)) < logit_processor.get_assistant_confidence_threshold()) {
         auto sequence_group = running_sequence->get_sequence_group_ptr();
         sequence_group->pause_generation(true);
     }
 };
 
-std::vector<int32_t> Sampler::get_beam_idxs(SequenceGroup::CPtr sequence_group) {
+std::map<size_t, int32_t> Sampler::get_beam_idxs(SequenceGroup::CPtr sequence_group) {
     size_t request_id = sequence_group->get_request_id();
     auto beam_searcher = m_beam_search_info.find(request_id);
     if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
-        return std::vector<int32_t>(sequence_group->num_running_seqs(), 0);
+        std::map<size_t, int32_t> beams;
+        for (auto& seq : sequence_group->get_running_sequences())
+            beams.insert({seq->get_id(), 0});
+        return beams;
     }
+
     return beam_searcher->second.get_beam_idxs();
 }
 
@@ -700,7 +716,7 @@ bool Sampler::validate_candidate(
 }
 
 float get_p_prime(Sequence::Ptr& running_sequence,
-                  const Token& sampled_token_id,
+                  const Token& sampled_token,
                   size_t token_offset) {
     auto generated_log_probs = running_sequence->get_generated_log_probs();
     auto it_log_prob = generated_log_probs.rbegin();
@@ -717,7 +733,7 @@ float get_p_prime(Sequence::Ptr& running_sequence,
         return 1.f;
     }
     
-    float p_n = std::exp(sampled_token_id.m_log_prob),
+    float p_n = std::exp(sampled_token.m_log_prob),
           q_n = std::exp(*it_log_prob),
           p_prime = std::max(0.f, (p_n - q_n)) / std::log(cumulative_prob);
 
@@ -787,10 +803,10 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, token_offset);
                         logit_processor.apply(logit_vector);
 
-                        Token sampled_token_id;
+                        Token sampled_token;
                         bool is_generate_n_tokens = false;
                         if (sampling_params.is_greedy_decoding()) {
-                            sampled_token_id = { _greedy_sample(logit_vector) };
+                            sampled_token = { _greedy_sample(logit_vector, sampling_params.logprobs) };
                         } else {
                             // is_multinomial()
                             is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
@@ -803,23 +819,23 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                                 const auto forked_seq_ids = create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
                                 sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                             }
-                            sampled_token_id = sampled_token_ids.front();
+                            sampled_token = sampled_token_ids.front();
                             // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
                             if (!is_validation_passed) {
-                                float p_prime = get_p_prime(running_sequence, sampled_token_id, token_offset + 1);
+                                float p_prime = get_p_prime(running_sequence, sampled_token, token_offset + 1);
                                 max_removed_tokens_per_request = std::max(max_removed_tokens_per_request, token_offset);
                                 // update prob only in case candidate prob > sampled token prob
                                 if (p_prime > 0.f) {
-                                    auto prob = std::exp(sampled_token_id.m_log_prob);
+                                    auto prob = std::exp(sampled_token.m_log_prob);
                                     prob /= p_prime;
-                                    sampled_token_id.m_log_prob = std::log(prob);
+                                    sampled_token.m_log_prob = std::log(prob);
                                 }
                             }
                         }
                         // flag to add sampled token to generated sequence or extend logit processors only
                         bool is_extend_sequence = token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
                         if (is_validation_mode_enabled && !is_extend_sequence) {
-                            is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id,
+                            is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token,
                                                                       is_extend_sequence, max_removed_tokens_per_request, sampling_params.do_sample);
                             // doing resample in case of non accepted tokens in specualtive sampling
                             if (!is_validation_passed && sampling_params.do_sample) {
@@ -828,10 +844,10 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             // update log prob just while validation process
                             if (!is_extend_sequence) {
                                 OPENVINO_ASSERT(generated_and_verified_len < running_sequences[running_sequence_id]->get_generated_len());
-                                running_sequence->update_generated_log_prob(generated_and_verified_len, sampled_token_id.m_log_prob);
+                                running_sequence->update_generated_log_prob(generated_and_verified_len, sampled_token.m_log_prob);
                             }
                         }
-                        register_new_token(sampled_token_id, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
+                        register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
                         // to exit from sampling in case of failed token validation
                         if (!is_validation_passed) {
                             break;

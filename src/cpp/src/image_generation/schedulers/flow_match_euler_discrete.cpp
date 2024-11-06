@@ -40,10 +40,8 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& s
     int32_t num_train_timesteps = m_config.num_train_timesteps;
     float shift = m_config.shift;
 
-    auto linspaced = linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
-    for (auto it = linspaced.rbegin(); it != linspaced.rend(); ++it) {
-        m_timesteps.push_back(*it);
-    }
+    m_timesteps = linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
+    std::reverse(m_timesteps.begin(), m_timesteps.end());
 
     std::transform(m_timesteps.begin(),
                    m_timesteps.end(),
@@ -66,7 +64,7 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& s
     m_sigma_max = m_sigmas[0], m_sigma_min = m_sigmas.back();
 }
 
-float FlowMatchEulerDiscreteScheduler::sigma_to_t(float sigma) {
+double FlowMatchEulerDiscreteScheduler::sigma_to_t(double sigma) {
     return sigma * m_config.num_train_timesteps;
 }
 
@@ -79,33 +77,35 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     float shift = m_config.shift;
 
     using numpy_utils::linspace;
-    m_timesteps = linspace<float>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
+    std::vector<double> timesteps = linspace<double>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
 
-    for (const float& i : m_timesteps) {
-        m_sigmas.push_back(i / num_train_timesteps);
+    std::vector<double> sigmas(timesteps.size());
+    for (size_t i = 0; i < sigmas.size(); ++i) {
+        sigmas[i] = timesteps[i] / num_train_timesteps;
     }
 
     OPENVINO_ASSERT(!m_config.use_dynamic_shifting,
                     "Parameter 'use_dynamic_shifting' is not supported. Please, add support.");
 
-    for (size_t i = 0; i < m_sigmas.size(); ++i) {
-        m_sigmas[i] = shift * m_sigmas[i] / (1 + (shift - 1) * m_sigmas[i]);
+    m_sigmas.resize(sigmas.size());
+    m_timesteps.resize(sigmas.size());
+
+    for (size_t i = 0; i < sigmas.size(); ++i) {
+        m_sigmas[i] = shift * sigmas[i] / (1.0 + (shift - 1.0) * sigmas[i]);
         m_timesteps[i] = m_sigmas[i] * num_train_timesteps;
     }
-    m_sigmas.push_back(0);
+    m_sigmas.push_back(0.0f);
 
     m_step_index = -1, m_begin_index = -1;
 }
 
-std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tensor noise_pred,
-                                                                        ov::Tensor latents,
-                                                                        size_t inference_step) {
+std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
 
-    float* model_output_data = noise_pred.data<float>();
-    float* sample_data = latents.data<float>();
+    const float* model_output_data = noise_pred.data<const float>();
+    const float* sample_data = latents.data<const float>();
 
     if (m_step_index == -1)
         init_step_index();
@@ -145,7 +145,7 @@ void FlowMatchEulerDiscreteScheduler::init_step_index() {
     m_step_index = (m_begin_index == -1) ? 0 : m_begin_index;
 }
 
-void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> rng_generator) const {
+void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_flow_match_euler_discrete.py#L117
     OPENVINO_THROW("Not implemented");
 }

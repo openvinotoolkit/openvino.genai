@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) try {
 
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU";  // GPU can be used as well
+    std::string device = "CPU";  // GPU, NPU can be used as well
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 

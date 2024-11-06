@@ -23,8 +23,8 @@ public:
         size_t in_channels = 3;
         size_t latent_channels = 4;
         size_t out_channels = 3;
-        float scaling_factor = 0.18215f;
-        float shift_factor = 0.0609f;
+        float scaling_factor = 1.0f;
+        float shift_factor = 0.0f;
         std::vector<size_t> block_out_channels = { 64 };
 
         explicit Config(const std::filesystem::path& config_path);

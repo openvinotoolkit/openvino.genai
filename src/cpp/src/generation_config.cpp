@@ -46,6 +46,8 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "eos_token_id", eos_token_id);
     // note that echo is not present in HF GenerationConfig
     read_json_param(data, "echo", echo);
+    // note that logprobs is not present in HF GenerationConfig
+    read_json_param(data, "logprobs", logprobs);
 
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
@@ -95,6 +97,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
     read_anymap_param(config_map, "echo", echo);
+    read_anymap_param(config_map, "logprobs", logprobs);
     read_anymap_param(config_map, "adapters", adapters);
 }
 
