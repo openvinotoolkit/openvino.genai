@@ -24,6 +24,22 @@ uint32_t align_to(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
+enum class GenerateHint {
+    FAST_COMPILE,
+    BEST_PERF
+};
+
+GenerateHint str_to_hint(const std::string& str) {
+    if (str == "FAST_COMPILE") {
+        return GenerateHint::FAST_COMPILE;
+    }
+    if (str == "BEST_PERF") {
+        return GenerateHint::BEST_PERF;
+    }
+    OPENVINO_THROW("Unsupported \"GENERATE_HINT\" provided: " +
+                   str + ". Please select either \"FAST_COMPILE\" or \"BEST_PERF\".");
+}
+
 std::shared_ptr<ov::Model> cvt_kvcache_to_fp16(const std::shared_ptr<ov::Model>& model) {
     ov::preprocess::PrePostProcessor ppp(model);
 
@@ -279,8 +295,12 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
 }
 
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
-                                       const std::optional<NPUDesc>& npudesc) {
+                                       const std::optional<NPUDesc>& npudesc,
+                                       const GenerateHint hint) {
     auto config = get_default_common_config(model);
+    if (hint == GenerateHint::BEST_PERF) {
+        config.emplace("NPUW_ONLINE_PIPELINE", "NONE");
+    }
     // NB: Unconditionally set for generation model
     config.emplace("NPUW_DQ", "YES");
     if (npudesc.has_value() && npudesc->arch == "4000") {
@@ -418,8 +438,10 @@ void StaticLLMPipeline::setupAndCompileModels(
     auto prefill_config = pop_or_default(
         properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
+    // NB: GENERATE_HINT is only applicable for default generate config!
+    auto generate_hint = str_to_hint(pop_or_default(properties, "GENERATE_HINT", "FAST_COMPILE"));
     auto generate_config = pop_or_default(
-        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc)
+        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc, generate_hint)
     );
     merge_config_with(prefill_config, properties);
     merge_config_with(generate_config, properties);
