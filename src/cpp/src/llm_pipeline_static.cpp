@@ -20,6 +20,10 @@
 
 namespace {
 
+uint32_t align_to(uint32_t value, uint32_t alignment) {
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
 std::shared_ptr<ov::Model> cvt_kvcache_to_fp16(const std::shared_ptr<ov::Model>& model) {
     ov::preprocess::PrePostProcessor ppp(model);
 
@@ -404,7 +408,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
     // (7) Reshape both models to static shape
-    const uint32_t kMaxPromptLen = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMaxPromptLen = align_to(pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u), 64u);
     const uint32_t kMinResponseLen = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
     KVAxesPosition axes = get_kv_axes(get_model_type_from_json(models_path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
