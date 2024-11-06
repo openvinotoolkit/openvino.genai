@@ -439,7 +439,7 @@ void StaticLLMPipeline::setupAndCompileModels(
         properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
     );
     // NB: GENERATE_HINT is only applicable for default generate config!
-    auto generate_hint = str_to_hint(pop_or_default(properties, "GENERATE_HINT", "FAST_COMPILE"));
+    auto generate_hint = str_to_hint(pop_or_default<std::string>(properties, "GENERATE_HINT", "FAST_COMPILE"));
     auto generate_config = pop_or_default(
         properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc, generate_hint)
     );
