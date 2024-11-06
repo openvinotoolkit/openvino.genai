@@ -1,22 +1,24 @@
+from .utils import patch_diffusers
+
+patch_diffusers()
+
 import argparse
 import difflib
-import os
 import json
-import pandas as pd
-from PIL import Image
 import logging
+import os
+
+import pandas as pd
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
-from optimum.intel.openvino import OVModelForCausalLM
-from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
-from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
-
 from optimum.exporters.tasks import TasksManager
 from optimum.intel import OVPipelineForText2Image
+from optimum.intel.openvino import OVModelForCausalLM
+from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
+from PIL import Image
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
-import openvino_genai
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
-
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,9 +43,11 @@ class GenAIModelWrapper:
         self.model_type = model_type
 
         if model_type == "text":
-            self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            self.config = AutoConfig.from_pretrained(
+                model_dir, trust_remote_code=True)
         elif model_type == "text-to-image":
-            self.config = DiffusionPipeline.load_config(model_dir, trust_remote_code=True)
+            self.config = DiffusionPipeline.load_config(
+                model_dir, trust_remote_code=True)
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
@@ -52,46 +56,42 @@ class GenAIModelWrapper:
             return getattr(self.model, attr)
 
 
-def load_text_genai_pipeline(model_dir, device="CPU"):
+def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
     except ImportError:
-        logger.error("Failed to import openvino_genai package. Please install it.")
+        logger.error(
+            "Failed to import openvino_genai package. Please install it.")
         exit(-1)
     logger.info("Using OpenVINO GenAI API")
-    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device), model_dir, "text")
+    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
 
 
 def load_text_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
-    if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
-    else:
-        ov_options = None
-
     if use_hf:
         logger.info("Using HF Transformers API")
         model = AutoModelForCausalLM.from_pretrained(
             model_id, trust_remote_code=True, device_map=device.lower()
         )
     elif use_genai:
-        model = load_text_genai_pipeline(model_id, device)
+        model = load_text_genai_pipeline(model_id, device, ov_config)
     else:
         try:
             model = OVModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_options
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
         except ValueError:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            config = AutoConfig.from_pretrained(
+                model_id, trust_remote_code=True)
             model = OVModelForCausalLM.from_pretrained(
                 model_id,
                 config=config,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_options,
+                ov_config=ov_config,
             )
 
     return model
@@ -102,15 +102,16 @@ TEXT2IMAGE_TASK2CLASS = {
 }
 
 
-def load_text2image_genai_pipeline(model_dir, device="CPU"):
+def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
     except ImportError:
-        logger.error("Failed to import openvino_genai package. Please install it.")
+        logger.error(
+            "Failed to import openvino_genai package. Please install it.")
         exit(-1)
     logger.info("Using OpenVINO GenAI API")
     return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device),
+        openvino_genai.Text2ImagePipeline(model_dir, device=device, **ov_config),
         model_dir,
         "text-to-image"
     )
@@ -119,32 +120,28 @@ def load_text2image_genai_pipeline(model_dir, device="CPU"):
 def load_text2image_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
-    if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
-    else:
-        ov_options = None
-
     if use_genai:
-        model = load_text2image_genai_pipeline(model_id, device)
+        model = load_text2image_genai_pipeline(model_id, device, ov_config)
     elif use_hf:
-        model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
+        model = DiffusionPipeline.from_pretrained(
+            model_id, trust_remote_code=True)
     else:
         TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
 
         try:
             model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_options
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
         except ValueError:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            config = AutoConfig.from_pretrained(
+                model_id, trust_remote_code=True)
             model = TEXT2IMAGEPipeline.from_pretrained(
                 model_id,
                 config=config,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_options,
+                ov_config=ov_config,
             )
 
     return model
@@ -158,11 +155,17 @@ def load_model(
     if model_id is None:
         return None
 
+    if ov_config:
+        with open(ov_config) as f:
+            ov_options = json.load(f)
+    else:
+        ov_options = {}
+
     if model_type == "text":
-        return load_text_model(model_id, device, ov_config, use_hf, use_genai)
+        return load_text_model(model_id, device, ov_options, use_hf, use_genai)
     elif MODELTYPE2TASK[model_type] == "text-to-image":
         return load_text2image_model(
-            model_type, model_id, device, ov_config, use_hf, use_genai
+            model_type, model_id, device, ov_options, use_hf, use_genai
         )
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -199,61 +202,61 @@ def parse_args():
     parser.add_argument(
         "--base-model",
         default=None,
-        help="Model to ground truth generation.",
+        help="Model for ground truth generation.",
     )
     parser.add_argument(
         "--target-model",
         default=None,
-        help="Model to comparison with base_model. Usually it is compressed, quantized version of base_model.",
+        help="Model to compare against the base_model. Usually it is compressed, quantized version of base_model.",
     )
     parser.add_argument(
         "--tokenizer",
         default=None,
-        help="Tokenizer for divergency metric. If not defined then will be load from base_model or target_model.",
+        help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
     )
 
     parser.add_argument(
         "--gt-data",
         default=None,
-        help="CSV file with base_model generation. If defined and exists then base_model will not used."
-        "I defined and not exists them will be generated by base_model evaluation.",
+        help="CSV file containing GT outputs from base_model. If defined and exists then base_model will not used."
+        " If the files does not exist, it will be generated by base_model evaluation.",
     )
     parser.add_argument(
         "--model-type",
         type=str,
         choices=["text", "text-to-image"],
         default="text",
-        help="Indicated the model type, e.g. 'text' - for causal text generation, 'text-to-image' - for image generation.",
+        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation.",
     )
     parser.add_argument(
         "--data-encoder",
         type=str,
         default="sentence-transformers/all-mpnet-base-v2",
         help="Model for measurement of similarity between base_model and target_model."
-        "By default it is sentence-transformers/all-mpnet-base-v2,"
-        "but for Chinese LLMs better to use sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2.",
+        " By default it is sentence-transformers/all-mpnet-base-v2,"
+        " but for Chinese LLMs, better to use sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2.",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
-        "Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
-        "If None then internal list of prompts will be used.",
+        " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
+        " If None then internal list of prompts will be used.",
     )
     parser.add_argument(
         "--dataset-field",
         type=str,
         default="text",
         help="The name of field in dataset for prompts. For example question or context in squad."
-        "Will be used only if dataset is defined.",
+        " Will be used only if dataset is defined.",
     )
     parser.add_argument(
         "--split",
         type=str,
         default=None,
         help="Split of prompts from dataset (for example train, validation, train[:32])."
-        "Will be used only if dataset is defined.",
+        " Will be used only if dataset is defined.",
     )
     parser.add_argument(
         "--output",
@@ -325,8 +328,14 @@ def parse_args():
 
 
 def check_args(args):
-    assert not (args.base_model is None and args.target_model is None)
-    assert not (args.base_model is None and args.gt_data is None)
+    if args.base_model is None and args.target_model is None:
+        raise ValueError(
+            "Wether --base-model or --target-model should be provided")
+    if args.base_model is None and args.gt_data is None:
+        raise ValueError("Wether --base-model or --gt-data should be provided")
+    if args.target_model is None and args.gt_data is None:
+        raise ValueError(
+            "Wether --target-model or --gt-data should be provided")
 
 
 def load_tokenizer(args):
@@ -375,11 +384,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 
 def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
-    config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = max_new_tokens
-    config.do_sample = False
-    out = model.generate(question, config)
-    return out
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
@@ -388,7 +393,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
         width=model.resolution[0],
         height=model.resolution[1],
         num_inference_steps=num_inference_steps,
-        random_generator=generator
+        generator=generator,
     )
     image = Image.fromarray(image_tensor.data[0])
     return image
@@ -440,7 +445,8 @@ def get_evaluator(base_model, args):
 
 def print_text_results(evaluator):
     metric_of_interest = "similarity"
-    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
+    worst_examples = evaluator.worst_examples(
+        top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         ref_text = ""
         actual_text = ""
@@ -465,7 +471,8 @@ def print_text_results(evaluator):
 
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
-    worst_examples = evaluator.worst_examples(top_k=1, metric=metric_of_interest)
+    worst_examples = evaluator.worst_examples(
+        top_k=1, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         logger.info(
             "--------------------------------------------------------------------------------------"

@@ -1,6 +1,6 @@
 # speculative_decoding_lm C++ sample that supports most popular models like LLaMA 3
 
-Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alonside with the main model.
+Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alongside with the main model.
 
 Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
 
@@ -12,7 +12,7 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
@@ -21,6 +21,8 @@ optimum-cli export openvino --trust-remote-code --model meta-llama/Llama-2-7b-ch
 ```
 
 ## Run
+
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `speculative_decoding_lm TinyLlama-1.1B-Chat-v1.0 Llama-2-7b-chat-hf "Why is the Sun yellow?"`
 

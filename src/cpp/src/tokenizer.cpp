@@ -114,7 +114,7 @@ public:
         : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
 
-        OPENVINO_ASSERT(tokenizer_path.extension() != ".xml", "ov_tokenizer_path should be a path to a dir not a xml file");
+        OPENVINO_ASSERT(tokenizer_path.extension() != ".xml", "'tokenizer_path' parameter should be a path to a dir not a xml file");
 
         const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
         OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");

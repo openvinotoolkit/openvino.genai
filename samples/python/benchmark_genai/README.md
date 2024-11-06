@@ -6,14 +6,17 @@ This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The 
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
+
 ## Usage
+
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 ```sh
 python benchmark_genai.py [OPTIONS]

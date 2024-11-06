@@ -141,6 +141,8 @@ def analyze_args(args):
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
     model_args['genai'] = args.genai
+    model_args['lora'] = args.lora
+    model_args['lora_alphas'] = args.lora_alphas
     model_args["use_cb"] = args.use_cb
     model_args['devices'] = args.device
     model_args['prompt_index'] = [] if args.prompt_index is not None else None
@@ -272,3 +274,13 @@ def get_model_precision(model_name_list):
         if model_precision != 'unknown':
             break
     return model_precision
+
+
+def init_timestamp(num_iters, prompt_list, prompt_idx_list):
+    iter_timestamp = {}
+    for num in range(num_iters + 1):
+        iter_timestamp[num] = {}
+        for idx, input_text in enumerate(prompt_list):
+            p_idx = prompt_idx_list[idx]
+            iter_timestamp[num][p_idx] = {}
+    return iter_timestamp

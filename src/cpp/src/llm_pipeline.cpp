@@ -18,28 +18,11 @@
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "sampler.hpp"
+#include "lm_encoding.hpp"
 
 namespace ov {
 namespace genai {
-
-ov::genai::EncodedResults greedy_decoding(
-    ov::InferRequest& model_runner,
-    ov::Tensor prompts,
-    ov::Tensor attention_mask,
-    const GenerationConfig sampling_params,
-    const std::shared_ptr<StreamerBase> streamer,
-    std::optional<ov::Tensor> position_ids
-);
-
-ov::genai::EncodedResults multinominal_decoding(
-    ov::InferRequest& model_runner,
-    ov::Tensor prompts,
-    ov::Tensor attention_mask,
-    GenerationConfig sampling_params,
-    std::shared_ptr<StreamerBase> streamer,
-    std::optional<ov::Tensor> position_ids
-);
 
 std::pair<EncodedResults, int32_t> beam_search(
     ov::InferRequest& lm,
@@ -59,6 +42,7 @@ public:
     std::optional<int32_t> m_selected_beam = std::nullopt;
     ChatHistory m_history;
     std::string m_templated_chat_history = {};
+    TokenizedInputs m_tokenized_chat_history;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -82,8 +66,8 @@ public:
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
-            m_generation_config.adapters.set_tensor_name_prefix("base_model.model.model.");
-            m_adapter_controller = AdapterController(model, m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+            m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
         } else {
@@ -142,6 +126,7 @@ public:
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
+                m_tokenized_chat_history = new_chat_tokens;
                 // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
             } else {
                 encoded_input = m_tokenizer.encode(prompt);
@@ -213,6 +198,9 @@ public:
             config.eos_token_id = m_generation_config.eos_token_id;
         config.validate();
 
+        // Stateful pipeline does not provide logprobs for prompt tokens
+        OPENVINO_ASSERT(config.echo == false, "Echo is not supported in the stateful pipeline");
+
         std::shared_ptr<StreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
             streamer_ptr = nullptr;
@@ -268,19 +256,40 @@ public:
         }
 
         ov::genai::EncodedResults result;
-        if (config.is_greedy_decoding()) {
-            result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask,
-                                                config, streamer_ptr, position_ids);
-            m_selected_beam = 0;
-        } else if (config.is_beam_search()) {
+        if (config.is_beam_search() && is_chat_conversation) {
             std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask,
                                                             config, position_ids, m_selected_beam);
-        } else if (config.is_multinomial()) {
-            result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask,
-                                           config, streamer_ptr, position_ids);
-            m_selected_beam = 0;
         } else {
-            OPENVINO_THROW("No decoding algorithm found for provided configuration parameters.");
+            std::vector<SequenceGroup::Ptr> requests;
+            size_t block_size = 1;
+            bool enable_prefix_caching = false;
+
+            config.stop_token_ids.insert(config.eos_token_id);
+            for (size_t request_id = 0; request_id < batch_size; request_id++) {
+                SequenceGroup::Ptr sequence_group;
+                if (is_chat_conversation && !m_is_cache_empty) {
+                    sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenized_chat_history.input_ids, config, block_size, enable_prefix_caching);
+                    sequence_group->update_processed_tokens_num(m_tokenized_chat_history.input_ids.get_shape().at(1) - 1);
+                } else {
+                    size_t seq_len = input_ids.get_shape().at(1);
+                    size_t batch_offset = request_id * seq_len;
+                    const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
+                    std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
+                    // in case of multi batch scenario, remove eos_token_id at start of prompt
+                    auto real_prompt_start = std::find_if(tokenized_prompt.begin(), tokenized_prompt.end(), [&config](int64_t token) { return token != config.eos_token_id; });
+                    tokenized_prompt.erase(tokenized_prompt.begin(), real_prompt_start);
+
+                    sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size, enable_prefix_caching);
+                    sequence_group->update_processed_tokens_num(tokenized_prompt.size() - 1);
+                }
+
+                sequence_group->set_sequence_group_ptr(sequence_group);
+                requests.push_back(sequence_group);
+            }
+
+            Sampler sampler = Sampler(m_tokenizer);
+            std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr,
+                                                                                  sampler, requests, position_ids, std::nullopt, m_selected_beam);
         }
 
         if (!is_chat_conversation) {

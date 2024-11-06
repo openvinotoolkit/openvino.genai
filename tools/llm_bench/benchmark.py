@@ -16,7 +16,7 @@ import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
 
-
+DEFAULT_TORCH_THREAD_NUMS = 16
 mem_consumption = MemConsumption()
 
 
@@ -129,6 +129,13 @@ def get_argprser():
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     llm_bench_utils.model_utils.add_stateful_model_arguments(parser)
     parser.add_argument("--genai", action="store_true", help="Use OpenVINO GenAI optimized pipelines for benchmarking")
+    parser.add_argument(
+        "--lora",
+        nargs='*',
+        required=False,
+        default=None,
+        help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
+    parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument(
@@ -136,6 +143,7 @@ def get_argprser():
         action='store_true',
         help='Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
     )
+    parser.add_argument('--set_torch_thread', default=0, type=num_infer_count_type, help='Set the number of Torch thread. ')
 
     return parser.parse_args()
 
@@ -171,17 +179,24 @@ def main():
                 log.warning("It is recommended to set the environment variable OMP_WAIT_POLICY to PASSIVE, "
                             "so that OpenVINO inference can use all CPU resources without waiting.")
             original_torch_thread_nums = torch.get_num_threads()
-            if model_args['num_beams'] > 1:
-                torch.set_num_threads(int(original_torch_thread_nums / 2))
+            if args.set_torch_thread > 0:
+                torch.set_num_threads(int(args.set_torch_thread))
             else:
-                torch.set_num_threads(1)
+                half_nums_of_torch_threads = original_torch_thread_nums / 2
+                if model_args['num_beams'] > 1:
+                    torch.set_num_threads(int(half_nums_of_torch_threads))
+                else:
+                    if half_nums_of_torch_threads > DEFAULT_TORCH_THREAD_NUMS:
+                        torch.set_num_threads(DEFAULT_TORCH_THREAD_NUMS)
+                    else:
+                        torch.set_num_threads(int(half_nums_of_torch_threads))
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
     try:
-        iter_data_list, pretrain_time = CASE_TO_BENCH[model_args['use_case']](
+        iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
             model_path, framework, args.device, model_args, args.num_iters, mem_consumption)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
@@ -200,6 +215,7 @@ def main():
                     iter_data_list,
                     pretrain_time,
                     model_precision,
+                    iter_timestamp
                 )
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
@@ -211,6 +227,7 @@ def main():
                     iter_data_list,
                     pretrain_time,
                     model_precision,
+                    iter_timestamp
                 )
     except Exception:
         log.error('An exception occurred')

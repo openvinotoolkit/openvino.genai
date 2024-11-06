@@ -11,7 +11,7 @@ def streamer(subword):
         print(subword, end='', flush=True) 
         # Return flag corresponds whether generation should be stopped. 
         # False means continue generation. 
-        return False 
+        return False
 
 def main():
     parser = argparse.ArgumentParser()
@@ -23,12 +23,11 @@ def main():
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
     main_device = 'CPU'  # GPU can be used as well
-    draft_device = main_device
+    draft_device = 'CPU'
 
     scheduler_config = openvino_genai.SchedulerConfig()
     # cache params
     scheduler_config.cache_size = 2
-    scheduler_config.block_size = 32
 
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
 
@@ -36,7 +35,11 @@ def main():
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
+    # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
+    # add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5
+    # add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
+    # config.assistant_confidence_threshold = 0.4
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
