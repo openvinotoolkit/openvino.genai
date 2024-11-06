@@ -175,20 +175,6 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     return streamer;
 }
 
-ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& config_map) {
-    ov::genai::ChunkStreamerVariant streamer = std::monostate();
-
-    if (config_map.count(STREAMER_ARG_NAME)) {
-        auto any_val = config_map.at(STREAMER_ARG_NAME);
-        if (any_val.is<std::shared_ptr<ov::genai::ChunkStreamerBase>>()) {
-            streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
-        } else if (any_val.is<std::function<bool(std::string)>>()) {
-            streamer = any_val.as<std::function<bool(std::string)>>();
-        }
-    }
-    return streamer;
-}
-
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
     if (config_map.count(CONFIG_ARG_NAME))
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();

@@ -221,7 +221,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
     std::vector<int64_t> output_tokens{output_token};
 
-    if (!return_timestamps && streamer && streamer->put({output_token})) {
+    if (!return_timestamps && streamer && streamer->put(output_token)) {
         return {true, output_tokens};
     }
 
@@ -251,7 +251,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
         output_tokens.push_back(output_token);
 
-        if (!return_timestamps && streamer && streamer->put({output_token})) {
+        if (!return_timestamps && streamer && streamer->put(output_token)) {
             return {true, output_tokens};
         }
     }

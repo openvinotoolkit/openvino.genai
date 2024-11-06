@@ -13,6 +13,7 @@
 #include "tokenizers_path.hpp"
 
 namespace py = pybind11;
+using ov::genai::ChunkStreamerBase;
 using ov::genai::DecodedResults;
 using ov::genai::OptionalWhisperGenerationConfig;
 using ov::genai::RawSpeechInput;
@@ -23,6 +24,8 @@ using ov::genai::WhisperDecodedResultChunk;
 using ov::genai::WhisperDecodedResults;
 using ov::genai::WhisperGenerationConfig;
 using ov::genai::WhisperPipeline;
+using PyBindChunkStreamerVariant =
+    std::variant<std::function<bool(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -126,6 +129,10 @@ auto whisper_generation_config_docstring = R"(
     :type return_timestamps: bool
 )";
 
+auto streamer_base_docstring = R"(
+    Base class for chunk streamers. In order to use inherit from from this class.
+)";
+
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
                                                                   const py::kwargs& kwargs) {
     if (!config.has_value() && kwargs.empty())
@@ -191,10 +198,51 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     return res_config;
 }
 
+class ConstructableChunkStreamer : public ChunkStreamerBase {
+    bool put(int64_t token) override {
+        PYBIND11_OVERRIDE_PURE(bool,               // Return type
+                               ChunkStreamerBase,  // Parent class
+                               put,                // Name of function in C++ (must match Python name)
+                               token               // Argument(s)
+        );
+    }
+    bool put_chunk(std::vector<int64_t> tokens) override {
+        PYBIND11_OVERRIDE_PURE(bool,               // Return type
+                               ChunkStreamerBase,  // Parent class
+                               put_chunk,          // Name of function in C++ (must match Python name)
+                               tokens              // Argument(s)
+        );
+    }
+    void end() override {
+        PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
+    }
+};
+
+ov::genai::ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
+    ov::genai::ChunkStreamerVariant streamer = std::monostate();
+
+    std::visit(pyutils::overloaded{[&streamer](const std::function<bool(py::str)>& py_callback) {
+                                       // Wrap python streamer with manual utf-8 decoding. Do not rely
+                                       // on pybind automatic decoding since it raises exceptions on incomplete strings.
+                                       auto callback_wrapped = [py_callback](std::string subword) -> bool {
+                                           auto py_str =
+                                               PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                                           return py_callback(py::reinterpret_borrow<py::str>(py_str));
+                                       };
+                                       streamer = callback_wrapped;
+                                   },
+                                   [&streamer](std::shared_ptr<ChunkStreamerBase> streamer_cls) {
+                                       streamer = streamer_cls;
+                                   },
+                                   [](std::monostate none) { /*streamer is already a monostate */ }},
+               py_streamer);
+    return streamer;
+}
+
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
                                         const OptionalWhisperGenerationConfig& config,
-                                        const pyutils::PyBindChunkStreamerVariant& py_streamer,
+                                        const PyBindChunkStreamerVariant& py_streamer,
                                         const py::kwargs& kwargs) {
     // whisper config should initialized from generation_config.json in case of only kwargs provided
     // otherwise it would be initialized with default values which is unexpected for kwargs use case
@@ -203,7 +251,7 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    ov::genai::ChunkStreamerVariant streamer = pyutils::pystreamer_to_chunk_streamer(py_streamer);
+    ov::genai::ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
 }
@@ -212,6 +260,23 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
 void init_whisper_pipeline(py::module_& m) {
     m.doc() = "Pybind11 binding for Whisper Pipeline";
+
+    py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>>(
+        m,
+        "ChunkStreamerBase",
+        streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
+        .def(py::init<>())
+        .def("put",
+             &ChunkStreamerBase::put,
+             "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
+             "should be stopped, if return true generation stops")
+        .def("put_chunk",
+             &ChunkStreamerBase::put_chunk,
+             "Put is called every time new token chunk is generated. Returns a bool flag to indicate whether "
+             "generation should be stopped, if return true generation stops")
+        .def("end",
+             &ChunkStreamerBase::end,
+             "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig>(m, "WhisperGenerationConfig", whisper_generation_config_docstring)
@@ -270,7 +335,7 @@ void init_whisper_pipeline(py::module_& m) {
             [](WhisperPipeline& pipe,
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
-               const pyutils::PyBindChunkStreamerVariant& streamer,
+               const PyBindChunkStreamerVariant& streamer,
                const py::kwargs& kwargs) {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },

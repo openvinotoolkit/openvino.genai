@@ -18,6 +18,18 @@ using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
+/**
+ * @brief base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
+ *
+ * @param m_tokenizer tokenizer
+ */
+class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
+public:
+    /// @brief put is called every time new token chunk is generated,
+    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
+    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
+};
+
 // Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
 using ChunkStreamerVariant =
     std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
@@ -28,7 +40,7 @@ struct WhisperDecodedResultChunk {
 
     // end of chunk in seconds
     // -1.0f if chunk started but model did not predict an ending timestamp
-    // can happen if audio is cut off in the middle of a word
+    // can happen if audio is cut off in the middle of a words
     float end_ts = -1.0f;
     std::string text;
 };

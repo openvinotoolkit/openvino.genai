@@ -7,7 +7,6 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace py = pybind11;
 using ov::genai::StreamerBase;
@@ -17,7 +16,6 @@ namespace ov::genai::pybind::utils {
 // When StreamerVariant is used utf-8 decoding is done by pybind and can lead to exception on incomplete texts.
 // Therefore strings decoding should be handled with PyUnicode_DecodeUTF8(..., "replace") to not throw errors.
 using PyBindStreamerVariant = std::variant<std::function<bool(py::str)>, std::shared_ptr<StreamerBase>, std::monostate>;
-using PyBindChunkStreamerVariant = std::variant<std::function<bool(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -45,6 +43,5 @@ std::string ov_tokenizers_module_path();
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
-ov::genai::ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer);
 
 }  // namespace ov::genai::pybind::utils

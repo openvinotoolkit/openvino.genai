@@ -25,17 +25,5 @@ public:
     virtual ~StreamerBase();
 };
 
-/**
- * @brief base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
- *
- * @param m_tokenizer tokenizer
- */
-class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
-public:
-    /// @brief put is called every time new token chunk is generated,
-    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
-};
-
 }  // namespace genai
 }  // namespace ov

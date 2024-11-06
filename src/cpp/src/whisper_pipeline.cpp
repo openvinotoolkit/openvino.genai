@@ -8,8 +8,8 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
+#include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
@@ -24,6 +24,20 @@ ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap&
     } else {
         return std::nullopt;
     }
+}
+
+ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::ChunkStreamerVariant streamer = std::monostate();
+
+    if (config_map.count(ov::genai::utils::STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(ov::genai::utils::STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::ChunkStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
+        } else if (any_val.is<std::function<bool(std::string)>>()) {
+            streamer = any_val.as<std::function<bool(std::string)>>();
+        }
+    }
+    return streamer;
 }
 }  // namespace
 
@@ -155,7 +169,7 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    return m_impl->generate(raw_speech_input, config, utils::get_chunk_streamer_from_map(config_map));
+    return m_impl->generate(raw_speech_input, config, get_chunk_streamer_from_map(config_map));
 }
 
 ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {
