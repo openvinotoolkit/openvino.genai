@@ -114,7 +114,7 @@ public:
     }
 };
 
-std::pair<std::string, Any> chunk_streamer(ChunkStreamerVariant func) {
+std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(*streamer_obj)};
     } else {
@@ -123,7 +123,7 @@ std::pair<std::string, Any> chunk_streamer(ChunkStreamerVariant func) {
     }
 }
 
-std::pair<std::string, Any> whisper_generation_config(const WhisperGenerationConfig& config) {
+std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
 }
 

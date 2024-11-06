@@ -110,6 +110,6 @@ public:
     void set_generation_config(const WhisperGenerationConfig& config);
 };
 
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> chunk_streamer(ChunkStreamerVariant func);
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> whisper_generation_config(const WhisperGenerationConfig& config);
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(ChunkStreamerVariant func);
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config);
 }  // namespace ov::genai
