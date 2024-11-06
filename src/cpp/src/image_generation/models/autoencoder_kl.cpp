@@ -186,8 +186,10 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
 void AutoencoderKL::merge_vae_image_post_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
-    // scale input before VAE decoder
-    ppp.input().preprocess().scale(m_config.scaling_factor);
+    // scale and shift input before VAE decoder
+    ppp.input().preprocess()
+        .scale(m_config.scaling_factor)
+        .mean(-m_config.shift_factor);
 
     // apply VaeImageProcessor normalization steps
     // https://github.com/huggingface/diffusers/blob/v0.30.1/src/diffusers/image_processor.py#L159

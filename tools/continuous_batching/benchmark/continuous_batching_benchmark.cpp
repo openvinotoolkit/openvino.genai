@@ -485,20 +485,10 @@ int main(int argc, char* argv[]) try {
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
-    auto get_default_block_size = [](const std::string& device) {
-        const size_t cpu_block_size = 32;
-        const size_t gpu_block_size = 16;
-
-        bool is_gpu = device.find("GPU") != std::string::npos;
-
-        return is_gpu ? gpu_block_size : cpu_block_size;
-    };
-
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = max_batch_size,
     scheduler_config.cache_size = cache_size,
-    scheduler_config.block_size = get_default_block_size(device),
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
     scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
     if (use_cache_eviction) {

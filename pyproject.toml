@@ -1,6 +1,6 @@
 [project]
 name = "openvino-genai"
-version = "2024.5.0.0"
+version = "2025.0.0.0"
 description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
 requires-python = ">=3.9"
 readme = {file = "src/README.md", content-type="text/markdown"}
@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "openvino_tokenizers~=2024.5.0.0.dev"
+    "openvino_tokenizers~=2025.0.0.0.dev"
 ]
 
 [tool.py-build-cmake.module]
