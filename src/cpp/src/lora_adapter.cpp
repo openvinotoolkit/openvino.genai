@@ -209,6 +209,11 @@ LoRATensors group_lora_tensors(const ConstantMap& tensors, const LoRAPartsParser
 // Squeeze all dimensions from the right of the shape producing a tensor of 2D shape.
 NodePtr squeeze_2d (const ov::Output<ov::Node>& input) {
     auto shape = v0::Constant::create(ov::element::i32, {2}, std::vector<int>{0, 0});
+    auto dims = static_cast<std::vector<ov::Dimension>>(input.get_partial_shape());
+    OPENVINO_ASSERT(
+        dims.end() == std::find_if(dims.begin() + 2, dims.end(), [](const ov::Dimension& d) { return d.get_max_length() > 1; }),
+        "LoRA adapter with not pointwise Convolutional kernel is not supported."
+    );
     auto reshape = std::make_shared<v1::Reshape>(input, shape->output(0), true);
     return reshape;
 }
