@@ -326,8 +326,10 @@ struct LoRAParametersByWeightGetter {
         ov::Dimension rank = ov::Dimension::dynamic();
         if(dynamic_lora_rank) {
             // Leave rank dynamic if at least one adapter exist for a give node.
-            if(weight_getter.end() ==
-                std::find_if(weight_getter.begin(), weight_getter.end(), [node](const LoRAWeightGetter& getter) {
+            // It is important to go over all weight_getter's because they record used LoRA tensors to
+            // be able to report unused tensors later.
+            // Hence, avoid find_if here and use an std algorithm that goes over all elements in a sequence.
+            if(!std::count_if(weight_getter.begin(), weight_getter.end(), [node](const LoRAWeightGetter& getter) {
                     return bool(getter(node->get_friendly_name()));
             })) {
                 return std::nullopt;
