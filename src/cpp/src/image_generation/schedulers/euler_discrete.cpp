@@ -298,7 +298,6 @@ void EulerDiscreteScheduler::scale_model_input(ov::Tensor sample, size_t inferen
 size_t EulerDiscreteScheduler::_index_for_timestep(int64_t timestep) const {
     for (size_t i = 0; i < m_schedule_timesteps.size(); ++i) {
         if (timestep == m_schedule_timesteps[i]) {
-            std::cout << "found index " << i << std::endl;
             return i;
         }
     }
@@ -309,9 +308,6 @@ size_t EulerDiscreteScheduler::_index_for_timestep(int64_t timestep) const {
 void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     const int64_t latent_timestep = m_timesteps.front();
     const float sigma = m_sigmas[_index_for_timestep(latent_timestep)];
-
-    std::cout << "latent_timestep = " << latent_timestep << std::endl;
-    std::cout << "sigma = " << sigma << std::endl;
 
     ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
 

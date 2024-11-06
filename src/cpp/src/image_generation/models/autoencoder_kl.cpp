@@ -46,7 +46,7 @@ public:
     ov::Tensor sample(std::shared_ptr<Generator> generator) const {
         OPENVINO_ASSERT(generator, "Generator must not be nullptr");
 
-        ov::Tensor rand_tensor =  generator->randn_tensor(m_mean.get_shape());
+        ov::Tensor rand_tensor = generator->randn_tensor(m_mean.get_shape());
 
         float * rand_tensor_data = rand_tensor.data<float>();
         const float * mean_data = m_mean.data<float>();
