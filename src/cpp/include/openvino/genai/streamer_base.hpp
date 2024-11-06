@@ -13,7 +13,7 @@ namespace genai {
  *
  * @param m_tokenizer tokenizer
  */
-class StreamerBase {
+class OPENVINO_GENAI_EXPORTS StreamerBase {
 public:
     /// @brief put is called every time new token is decoded,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
@@ -22,7 +22,7 @@ public:
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
     virtual void end() = 0;
 
-    virtual ~StreamerBase() = default;
+    virtual ~StreamerBase();
 };
 
 /**
@@ -30,7 +30,7 @@ public:
  *
  * @param m_tokenizer tokenizer
  */
-class ChunkStreamerBase : public StreamerBase {
+class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
 public:
     /// @brief put is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
