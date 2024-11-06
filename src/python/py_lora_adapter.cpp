@@ -86,10 +86,10 @@ void init_lora_adapter(py::module_& m) {
             return bool(self);
         });
 
-    adapter_config.def("set_alpha", &ov::genai::AdapterConfig::set_alpha);
-    adapter_config.def("get_alpha", &ov::genai::AdapterConfig::get_alpha);
-    adapter_config.def("remove", &ov::genai::AdapterConfig::remove);
+    adapter_config.def("set_alpha", &ov::genai::AdapterConfig::set_alpha, py::arg("adapter"), py::arg("alpha"));
+    adapter_config.def("get_alpha", &ov::genai::AdapterConfig::get_alpha, py::arg("adapter"));
+    adapter_config.def("remove", &ov::genai::AdapterConfig::remove, py::arg("adapter"));
     adapter_config.def("get_adapters", &ov::genai::AdapterConfig::get_adapters);
-    adapter_config.def("add", static_cast<ov::genai::AdapterConfig& (ov::genai::AdapterConfig::*)(const ov::genai::Adapter&, float)>(&ov::genai::AdapterConfig::add));
-    adapter_config.def("add", static_cast<ov::genai::AdapterConfig& (ov::genai::AdapterConfig::*)(const ov::genai::Adapter&)>(&ov::genai::AdapterConfig::add));
+    adapter_config.def("add", static_cast<ov::genai::AdapterConfig& (ov::genai::AdapterConfig::*)(const ov::genai::Adapter&, float)>(&ov::genai::AdapterConfig::add), py::arg("adapter"), py::arg("alpha"));
+    adapter_config.def("add", static_cast<ov::genai::AdapterConfig& (ov::genai::AdapterConfig::*)(const ov::genai::Adapter&)>(&ov::genai::AdapterConfig::add), py::arg("adapter"));
 }

@@ -187,7 +187,7 @@ void init_llm_pipeline(py::module_& m) {
         .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &LLMPipeline::set_generation_config);
+        .def("set_generation_config", &LLMPipeline::set_generation_config, py::arg("config"));
 
     py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
         .def(py::init([](

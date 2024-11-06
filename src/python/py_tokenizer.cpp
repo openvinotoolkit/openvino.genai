@@ -22,7 +22,7 @@ using ov::genai::Tokenizer;
 
 void init_tokenizer(py::module_& m) {
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
-        .def(py::init<ov::Tensor, ov::Tensor>())
+        .def(py::init<ov::Tensor, ov::Tensor>(), py::arg("input_ids"), py::arg("attention_mask"))
         .def_readwrite("input_ids", &TokenizedInputs::input_ids)
         .def_readwrite("attention_mask", &TokenizedInputs::attention_mask);
 
