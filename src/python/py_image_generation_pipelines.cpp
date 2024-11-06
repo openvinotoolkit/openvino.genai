@@ -191,6 +191,17 @@ void init_image_generation_pipelines(py::module_& m) {
         .def("next", &ov::genai::CppStdGenerator::next)
         .def("randn_tensor", &ov::genai::CppStdGenerator::randn_tensor, py::arg("shape"));
 
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
+        .def("from_config", &ov::genai::Scheduler::from_config);
+
+    py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
+        .value("AUTO", ov::genai::Scheduler::Type::AUTO)
+        .value("LCM", ov::genai::Scheduler::Type::LCM)
+        .value("LMS_DISCRETE", ov::genai::Scheduler::Type::LMS_DISCRETE)
+        .value("DDIM", ov::genai::Scheduler::Type::DDIM)
+        .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
+        .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
+
     py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())
         .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)

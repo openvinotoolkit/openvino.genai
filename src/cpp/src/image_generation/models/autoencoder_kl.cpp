@@ -22,6 +22,48 @@
 namespace ov {
 namespace genai {
 
+class DiagonalGaussianDistribution {
+public:
+    explicit DiagonalGaussianDistribution(ov::Tensor parameters)
+        : m_parameters(parameters) {
+        ov::Shape shape = parameters.get_shape();
+        OPENVINO_ASSERT(shape[0] == 1, "Batch size must be 1");
+        shape[1] /= 2;
+
+        m_mean = ov::Tensor(parameters.get_element_type(), shape, parameters.data());
+        m_std = ov::Tensor(m_mean.get_element_type(), shape);
+        ov::Tensor logvar(parameters.get_element_type(), shape, m_mean.data<float>() + m_mean.get_size());
+
+        float * logvar_data = logvar.data<float>();
+        float * std_data = m_std.data<float>();
+
+        for (size_t i = 0; i < logvar.get_size(); ++i) {
+            logvar_data[i] = std::min(std::max(logvar_data[i], -30.0f), 20.0f);
+            std_data[i] = std::exp(0.5 * logvar_data[i]);
+        }
+    }
+
+    ov::Tensor sample(std::shared_ptr<Generator> generator) const {
+        OPENVINO_ASSERT(generator, "Generator must not be nullptr");
+
+        ov::Tensor rand_tensor = generator->randn_tensor(m_mean.get_shape());
+
+        float * rand_tensor_data = rand_tensor.data<float>();
+        const float * mean_data = m_mean.data<float>();
+        const float * std_data = m_std.data<float>();
+
+        for (size_t i = 0; i < rand_tensor.get_size(); ++i) {
+            rand_tensor_data[i] = mean_data[i] + std_data[i] * rand_tensor_data[i];
+        }
+
+        return rand_tensor;
+    }
+
+private:
+    ov::Tensor m_parameters;
+    ov::Tensor m_mean, m_std;
+};
+
 size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path) {
     std::ifstream file(vae_config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
@@ -141,12 +183,34 @@ ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
     return m_decoder_request.get_output_tensor();
 }
 
-ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
+ov::Tensor AutoencoderKL::encode(ov::Tensor image, std::shared_ptr<Generator> generator) {
     OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
 
     m_encoder_request.set_input_tensor(image);
     m_encoder_request.infer();
-    return m_encoder_request.get_output_tensor();
+
+    ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
+
+    ov::CompiledModel compiled_model = m_encoder_request.get_compiled_model();
+    auto outputs = compiled_model.outputs();
+    OPENVINO_ASSERT(outputs.size() == 1, "AutoencoderKL encoder model is expected to have a single output");
+
+    const std::string output_name = outputs[0].get_any_name();
+    if (output_name == "latent_sample") {
+        latent = output;
+    } else if (output_name == "latent_parameters") {
+        latent = DiagonalGaussianDistribution(output).sample(generator);
+    } else {
+        OPENVINO_THROW("Unexpected output name for AutoencoderKL encoder '", output_name, "'");
+    }
+
+    // apply shift and scaling factor
+    float * latent_data = latent.data<float>();
+    for (size_t i = 0; i < latent.get_size(); ++i) {
+        latent_data[i] = (latent_data[i] - m_config.shift_factor) * m_config.scaling_factor;
+    }
+
+    return latent;
 }
 
 const AutoencoderKL::Config& AutoencoderKL::get_config() const {
@@ -171,14 +235,9 @@ void AutoencoderKL::merge_vae_image_pre_processing() const {
     ppp.input().preprocess()
         .convert_layout()
         .convert_element_type(ov::element::f32)
-        .scale(255.0f / 2.0f)
+        // this is less accurate that in VaeImageProcessor::normalize
+        .scale(255.0 / 2.0)
         .mean(1.0f);
-
-    // apply m_config.scaling_factor as last step
-    ppp.output().postprocess().custom([scaling_factor = m_config.scaling_factor](const ov::Output<ov::Node>& port) {
-        auto c_scaling_factor = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, scaling_factor);
-        return std::make_shared<ov::op::v1::Multiply>(port, c_scaling_factor);
-    });
 
     ppp.build();
 }
@@ -187,9 +246,10 @@ void AutoencoderKL::merge_vae_image_post_processing() const {
     ov::preprocess::PrePostProcessor ppp(m_decoder_model);
 
     // scale and shift input before VAE decoder
-    ppp.input().preprocess()
-        .scale(m_config.scaling_factor)
-        .mean(-m_config.shift_factor);
+    if (m_config.scaling_factor != 1.0f)
+        ppp.input().preprocess().scale(m_config.scaling_factor);
+    if (m_config.shift_factor != 0.0f)
+        ppp.input().preprocess().mean(-m_config.shift_factor);
 
     // apply VaeImageProcessor normalization steps
     // https://github.com/huggingface/diffusers/blob/v0.30.1/src/diffusers/image_processor.py#L159
