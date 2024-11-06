@@ -978,7 +978,7 @@ jobs:
           .\build\tools\continuous_batching\benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-macos:
-    runs-on: macos-12
+    runs-on: macos-13
     defaults:
       run:
         shell: bash

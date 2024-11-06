@@ -22,30 +22,28 @@ TEST(TestScheduler, general_test) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 6;
-    configs.at(0).block_size = 4;
     configs.at(0).dynamic_split_fuse = false;
     configs.at(0).max_num_seqs = 5;
     configs.at(1).max_num_batched_tokens = 32;
     configs.at(1).num_kv_blocks = 6;
-    configs.at(1).block_size = 4;
     configs.at(1).dynamic_split_fuse = true;
     configs.at(1).max_num_seqs = 5;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
         SequenceGroup::Ptr sequence_group3 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx2 = (*sequence_group3)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
                                                                         
         
         // schedule 3 sequence groups that use 6 kv blocks 
-        Scheduler scheduler = Scheduler(scheduler_config);
+        Scheduler scheduler = Scheduler(4, scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         std::vector<uint64_t> ref_ids = {0, 1, 2};
@@ -111,14 +109,12 @@ TEST(TestScheduler, general_test) {
 
 SchedulerConfig get_scheduler_config(size_t max_num_batched_tokens,
                                      size_t num_kv_blocks,
-                                     size_t block_size,
                                      bool dynamic_split_fuse,
                                      size_t max_num_seqs,
                                      std::optional<ov::genai::CacheEvictionConfig> cache_eviction_config = std::nullopt) {
     auto retval = SchedulerConfig();
     retval.max_num_batched_tokens = max_num_batched_tokens;
     retval.num_kv_blocks = num_kv_blocks;
-    retval.block_size = block_size;
     retval.dynamic_split_fuse = dynamic_split_fuse;
     retval.max_num_seqs = max_num_seqs;
     retval.use_cache_eviction = false;
@@ -133,22 +129,22 @@ const ov::genai::CacheEvictionConfig LONG_EVICTION_CONFIG = ov::genai::CacheEvic
 
 using AppendSlotsSchedulerTest = ::testing::TestWithParam<SchedulerConfig>;
 const std::vector<SchedulerConfig> APPEND_SLOTS_TEST_CASES = {
-        get_scheduler_config(32, 5, 4, false, 5),
-        get_scheduler_config(32, 5, 4, true, 5),
+        get_scheduler_config(32, 5, false, 5),
+        get_scheduler_config(32, 5, true, 5),
 };
 
 TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto scheduler_config = GetParam();
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(scheduler_config);
+    Scheduler scheduler = Scheduler(4, scheduler_config);
     auto out1 = scheduler.schedule(requests);
 
     std::vector<uint64_t> ref_ids = {0, 1};
@@ -194,29 +190,29 @@ INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, AppendSlotsSchedulerTest,
 
 using PartialPreemptionSchedulerTest = ::testing::TestWithParam<SchedulerConfig>;
 const std::vector<SchedulerConfig> PARTIAL_PREEMPTION_TEST_CASES = {
-        get_scheduler_config(32, 6, 4, false, 5),
-        get_scheduler_config(32, 6, 4, true, 5),
+        get_scheduler_config(32, 6, false, 5),
+        get_scheduler_config(32, 6, true, 5),
 
         // Cache eviction should not impact preemption for cache eviction's max_cache_size larger than the sequence lengths at preemption time
-        get_scheduler_config(32, 6, 4, false, 5, LONG_EVICTION_CONFIG),
-        get_scheduler_config(32, 6, 4, true, 5, LONG_EVICTION_CONFIG)
+        get_scheduler_config(32, 6, false, 5, LONG_EVICTION_CONFIG),
+        get_scheduler_config(32, 6, true, 5, LONG_EVICTION_CONFIG)
 };
 
 TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     auto scheduler_config = GetParam();
     std::vector<uint64_t> tokens1 = {0,1,2,3,4,5,6,7,8,9,10};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens1.size()}, tokens1.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     std::vector<uint64_t> tokens2 = {0,1,2,3,4,5,6,7};
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens2.size()}, tokens2.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
 
     // schedule 2 sequence groups that use 5 kv blocks
-    Scheduler scheduler = Scheduler(scheduler_config);
+    Scheduler scheduler = Scheduler(4, scheduler_config);
     auto out0 = scheduler.schedule(requests);
 
     for (auto seq: requests) {
@@ -288,10 +284,8 @@ INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, PartialPreemptionSchedulerTest
 TEST(TestScheduler, test_partial_preemption_beam_search) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).num_kv_blocks = 10;
-    configs.at(0).block_size = 4;
     configs.at(0).dynamic_split_fuse = false;
     configs.at(1).num_kv_blocks = 10;
-    configs.at(1).block_size = 4;
     configs.at(1).dynamic_split_fuse = true;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3};
@@ -299,11 +293,11 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         // create beam search group
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::beam_search(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::beam_search(), 4, scheduler_config.enable_prefix_caching);
         sequence_group->set_sequence_group_ptr(sequence_group);
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-        Scheduler scheduler = Scheduler(scheduler_config);
+        Scheduler scheduler = Scheduler(4, scheduler_config);
         auto out = scheduler.schedule(requests);
         for (auto sequence: sequence_group->get_not_finished_sequences()) {
             sequence->append_token(token, 0.7);
@@ -348,7 +342,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         // create group, which requires 1 block
         SequenceGroup::Ptr sequence_group_greedy = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         sequence_group_greedy->set_sequence_group_ptr(sequence_group_greedy);
 
         // set greedy group at the beginning of list to make it higher priority
@@ -397,27 +391,25 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 6;
-    configs.at(0).block_size = 4;
     configs.at(0).dynamic_split_fuse = false;
     configs.at(0).max_num_seqs = 5;
     configs.at(1).max_num_batched_tokens = 32;
     configs.at(1).num_kv_blocks = 6;
-    configs.at(1).block_size = 4;
     configs.at(1).dynamic_split_fuse = true;
     configs.at(1).max_num_seqs = 5;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                                ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
                                                                         
         
         // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
-        Scheduler scheduler = Scheduler(scheduler_config);
+        Scheduler scheduler = Scheduler(4, scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         for (auto seq: requests) {
@@ -499,13 +491,11 @@ TEST(TestScheduler, prefix_caching_test) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 100;
-    configs.at(0).block_size = 4;
     configs.at(0).dynamic_split_fuse = false;
     configs.at(0).max_num_seqs = 5;
     configs.at(0).enable_prefix_caching = true;
     configs.at(1).max_num_batched_tokens = 32;
     configs.at(1).num_kv_blocks = 100;
-    configs.at(1).block_size = 4;
     configs.at(1).dynamic_split_fuse = true;
     configs.at(1).max_num_seqs = 5;
     configs.at(1).enable_prefix_caching = true;
@@ -513,7 +503,7 @@ TEST(TestScheduler, prefix_caching_test) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(scheduler_config);
+        Scheduler scheduler = Scheduler(4, scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -521,7 +511,7 @@ TEST(TestScheduler, prefix_caching_test) {
             std::vector<uint64_t> tokens = histrory_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    ov::genai::greedy(), 4, 
                                                                                     scheduler_config.enable_prefix_caching);
             sequence_group->set_sequence_group_ptr(sequence_group);
             scheduler.restore_cached_blocks(sequence_group);
@@ -567,18 +557,16 @@ TEST(TestScheduler, prefix_caching_test) {
 TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).num_kv_blocks = 100;
-    configs.at(0).block_size = 4;
     configs.at(0).dynamic_split_fuse = false;
     configs.at(0).enable_prefix_caching = true;
     configs.at(1).num_kv_blocks = 100;
-    configs.at(1).block_size = 4;
     configs.at(1).dynamic_split_fuse = true;
     configs.at(1).enable_prefix_caching = true;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(scheduler_config);
+        Scheduler scheduler = Scheduler(4, scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -586,11 +574,11 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
             std::vector<uint64_t> tokens = histrory_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    ov::genai::greedy(), 4, 
                                                                                     scheduler_config.enable_prefix_caching);
 
             SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    ov::genai::greedy(), 4, 
                                                                                     scheduler_config.enable_prefix_caching);
             sequence_group1->set_sequence_group_ptr(sequence_group1);
             sequence_group2->set_sequence_group_ptr(sequence_group2);
@@ -644,23 +632,21 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
 TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).num_kv_blocks = 10;
-    configs.at(0).block_size = 32;
     configs.at(0).dynamic_split_fuse = false;
     configs.at(0).enable_prefix_caching = true;
     configs.at(1).num_kv_blocks = 10;
-    configs.at(1).block_size = 32;
     configs.at(1).dynamic_split_fuse = true;
     configs.at(1).enable_prefix_caching = true;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         // schedule prompt
-        Scheduler scheduler = Scheduler(scheduler_config);
+        Scheduler scheduler = Scheduler(32, scheduler_config);
 
         size_t chat_iterations = 2;
 
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {prompt_tokens.size()}, prompt_tokens.data()),
-                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    ov::genai::greedy(), 32, 
                                                                                     scheduler_config.enable_prefix_caching);
 
             sequence_group->set_sequence_group_ptr(sequence_group);
@@ -700,23 +686,22 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 6;
-    scheduler_config.block_size = 4;
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 5;
 
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(scheduler_config, 1, can_use_partial_preemption);
+    Scheduler scheduler = Scheduler(4, scheduler_config, 1, can_use_partial_preemption);
     auto out1 = scheduler.schedule(requests);
 
     for (auto req : requests)
@@ -776,22 +761,21 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 6;
-    scheduler_config.block_size = 4;
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 5;
 
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(scheduler_config, 1, can_use_partial_preemption);
+    Scheduler scheduler = Scheduler(4, scheduler_config, 1, can_use_partial_preemption);
     scheduler.schedule(requests);
     for (auto req: requests)
         req->finish_iteration();
@@ -885,7 +869,6 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
 
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 6;
-    scheduler_config.block_size = 2;
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 5;
     scheduler_config.use_cache_eviction = true;
@@ -897,17 +880,17 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
                                                                          ov::Tensor(ov::element::i64, {tokens1.size()},
                                                                                     tokens1.data()),
                                                                          ov::genai::greedy(),
-                                                                         scheduler_config.block_size,
+                                                                         2,
                                                                          scheduler_config.enable_prefix_caching);
     std::vector<uint64_t> tokens2 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}; // 5 full blocks, larger than eviction arena size (3 blocks) - will start evicting already at prompt stage
     auto idx1 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens2.size()}, tokens2.data()),
-                                                                         ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+                                                                         ov::genai::greedy(), 2, scheduler_config.enable_prefix_caching);
     auto idx2 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
 
-    Scheduler scheduler = Scheduler(scheduler_config);
+    Scheduler scheduler = Scheduler(2, scheduler_config);
     // prompt phase - schedules 1 block for seq 1, 5 blocks for seq 2
     auto out = scheduler.schedule(requests);
 

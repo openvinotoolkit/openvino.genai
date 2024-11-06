@@ -25,14 +25,14 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
-scheduler_params_list = [({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
-                         ({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
-                         ({"num_kv_blocks": 10, "block_size": 32, "dynamic_split_fuse": True}, get_greedy_seq_len_300()),
-                         ({"num_kv_blocks": 10, "block_size": 32, "dynamic_split_fuse": False}, get_greedy_seq_len_300()),
-                         ({"num_kv_blocks": 34, "block_size": 32, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
-                         ({"num_kv_blocks": 34, "block_size": 32, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
-                         ({"num_kv_blocks": 100, "block_size": 32, "dynamic_split_fuse": True}, get_beam_search_seq_len_300()),
-                         ({"num_kv_blocks": 100, "block_size": 32, "dynamic_split_fuse": False}, get_beam_search_seq_len_300())]
+scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
+                         ({"num_kv_blocks": 2, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
+                         ({"num_kv_blocks": 10, "dynamic_split_fuse": True}, get_greedy_seq_len_300()),
+                         ({"num_kv_blocks": 10, "dynamic_split_fuse": False}, get_greedy_seq_len_300()),
+                         ({"num_kv_blocks": 34, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
+                         ({"num_kv_blocks": 34, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
+                         ({"num_kv_blocks": 100, "dynamic_split_fuse": True}, get_beam_search_seq_len_300()),
+                         ({"num_kv_blocks": 100, "dynamic_split_fuse": False}, get_beam_search_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_preemption(tmp_path, params):
@@ -92,7 +92,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     models_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "block_size": 32, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
 
 
@@ -174,5 +174,5 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "block_size": 32, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, generation_configs, scheduler_config)
