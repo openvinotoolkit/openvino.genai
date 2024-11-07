@@ -50,11 +50,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     // Create unet object
     auto unet = ov::genai::UNet2DConditionModel(root_dir / "unet");
 
-    // Given the guidance scale, etc., calculate the batch size.
-    int unet_batch_size = 1;
-    if (guidance_scale > 1.0f && unet.get_config().time_cond_proj_dim < 0) {
-        unet_batch_size = 2;
-    }
+    // Set batch size based on classifier free guidance condition.
+    int unet_batch_size = unet.do_classifier_free_guidance(guidance_scale)  ? 2 : 1;
 
     // Create the text encoder.
     auto text_encoder = ov::genai::CLIPTextModel(root_dir / "text_encoder");
