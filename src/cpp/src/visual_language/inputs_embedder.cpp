@@ -161,7 +161,7 @@ protected:
             ov::Shape reshaped_image_shape = reshaped_image.get_shape();
             for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
                 ov::Tensor single_image{
-                    ov::element::u8,
+                    reshaped_image.get_element_type(),
                     {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
                     reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
                 };

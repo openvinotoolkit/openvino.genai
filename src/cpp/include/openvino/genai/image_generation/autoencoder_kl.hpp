@@ -13,6 +13,7 @@
 #include "openvino/runtime/properties.hpp"
 
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -23,8 +24,8 @@ public:
         size_t in_channels = 3;
         size_t latent_channels = 4;
         size_t out_channels = 3;
-        float scaling_factor = 0.18215f;
-        float shift_factor = 0.0609f;
+        float scaling_factor = 1.0f;
+        float shift_factor = 0.0f;
         std::vector<size_t> block_out_channels = { 64 };
 
         explicit Config(const std::filesystem::path& config_path);
@@ -74,7 +75,7 @@ public:
 
     ov::Tensor decode(ov::Tensor latent);
 
-    ov::Tensor encode(ov::Tensor image);
+    ov::Tensor encode(ov::Tensor image, std::shared_ptr<Generator> generator);
 
     const Config& get_config() const;
 
