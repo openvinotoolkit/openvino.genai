@@ -743,13 +743,10 @@ jobs:
           python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           mkdir images
-      - name: Generate reference - tiny-random-minicpmv-2_6
+      - name: Generate images - tiny-random-minicpmv-2_6
         shell: python
         run: |
-          from optimum.intel.openvino import OVModelForVisualCausalLM
-          from transformers import AutoProcessor
           from PIL import Image
           import numpy as np
           import requests
@@ -759,20 +756,7 @@ jobs:
           lines_image = Image.fromarray(lines)
           lines_image.save("images/lines.png")
           cat = Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw).convert('RGB')
-          shrunk_cat = cat.resize(res)  # Resize is different in C++ impl, there's also sin and cos calc in double but it has smaller effect.
-          shrunk_cat.save("images/shrunk_cat.png")
-          lines = Image.open("images/lines.png").convert('RGB')
-          shrunk_cat = Image.open("images/shrunk_cat.png").convert('RGB')
-          model_id = "katuni4ka/tiny-random-minicpmv-2_6"
-          processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-          prompt = processor.tokenizer.apply_chat_template([{"role": "user", "content": "(<image>./</image>)\n(<image>./</image>)\nDescribe the images?"}], tokenize=False, add_generation_prompt=True)
-          inputs = processor([prompt], [lines, shrunk_cat], return_tensors="pt")
-          model = OVModelForVisualCausalLM.from_pretrained("tiny-random-minicpmv-2_6", device="CPU", trust_remote_code=True)
-          result = model.generate(**inputs, max_new_tokens=99)
-          decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
-          print(decoded)
-          with open("ref.txt", "w") as f:
-              f.write(f"question:\n{decoded}\n----------\nquestion:\n")
+          cat.save("images/cat.png")
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
@@ -801,14 +785,14 @@ jobs:
         run: >
           set -o pipefail
           && source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.png
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/cat.png
           <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
           && source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.png
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/cat.png
           <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
