@@ -38,7 +38,7 @@ public:
 
     virtual WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                            OptionalWhisperGenerationConfig generation_config,
-                                           StreamerVariant streamer) = 0;
+                                           ChunkStreamerVariant streamer) = 0;
 
     virtual ~WhisperPipelineImplBase() = default;
 };
