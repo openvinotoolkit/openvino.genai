@@ -780,7 +780,6 @@ jobs:
         env:
           PYTHONPATH: "./build/"
       - run: diff cpp.txt py.txt
-      - run: mogrify -format png cat.jpg
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
