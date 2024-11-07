@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text_callback_streamer.hpp"
+// #include "openvino/genai/streamer_base.hpp"
 
 namespace ov {
 namespace genai {
@@ -48,6 +49,8 @@ void TextCallbackStreamer::end() {
     on_finalized_subword_callback(res.str());
     return;
 }
+
+ov::genai::StreamerBase::~StreamerBase() = default;
 
 }  // namespace genai
 }  // namespace ov
