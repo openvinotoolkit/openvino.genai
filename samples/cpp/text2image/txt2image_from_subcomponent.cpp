@@ -86,6 +86,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::Tensor image = pipe.generate(prompt,
                                          ov::genai::width(width),
                                          ov::genai::height(height),
+                                         ov::genai::guidance_scale(guidance_scale),
                                          ov::genai::num_inference_steps(number_of_inference_steps_per_image));
 
         imwrite("image_" + std::to_string(imagei) + ".bmp", image, true);
