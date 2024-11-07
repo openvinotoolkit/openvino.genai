@@ -735,8 +735,20 @@ jobs:
           python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           mkdir images
+      - name: Generate images - tiny-random-minicpmv-2_6
+        shell: python
+        run: |
+          from PIL import Image
+          import numpy as np
+          import requests
+          res = 28, 28
+          lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
+          lines = lines.reshape([*res, 3])
+          lines_image = Image.fromarray(lines)
+          lines_image.save("images/lines.png")
+          cat = Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw).convert('RGB')
+          cat.save("images/cat.png")
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
@@ -752,20 +764,38 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
+      - name: Encode cpp.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
+      - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?'
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/cat.png
+          <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?'
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/cat.png
+          <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
-  
+      - name: Encode cpp2.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp2.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp2.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
+      - run: diff cpp2.txt py2.txt
+
   visual_language_chat_sample-ubuntu-llava_1_5:
     uses: ./.github/workflows/job_vlm_sample_llava.yml
     with:
@@ -809,7 +839,6 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
-
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
