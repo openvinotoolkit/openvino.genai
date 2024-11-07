@@ -70,15 +70,9 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
 
-    const size_t prompt_len = prompts_shape[1];
-    const size_t max_new_tokens = sequence_groups.at(0)->get_sampling_parameters().get_max_new_tokens(prompt_len);
-
     // Initialize results and performance metrics.
     EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
-    raw_perf_counters.m_new_token_times.reserve(max_new_tokens);
-    raw_perf_counters.m_batch_sizes.reserve(max_new_tokens);
-    raw_perf_counters.m_token_infer_durations.reserve(max_new_tokens);
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs

@@ -11,8 +11,16 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-bool operator==(const SchedulerConfig& lhs, const SchedulerConfig& rhs) {
-    return ov::Any(lhs).as<std::string>() == ov::Any(rhs).as<std::string>();
+bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
+    std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
+    ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
+               encoded_string_rhs = rhs.encode(test_string).input_ids;
+    
+    ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
+              shape_rhs = encoded_string_rhs.get_shape();
+
+    return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
+           lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
@@ -48,7 +56,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
         auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
 
         size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
-               draft_cache_size = main_scheduler_config.cache_size * k;
+               draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
         if (draft_cache_size == 0) {
             main_cache_size -= main_cache_size > 1 ? 1 : 0;
             draft_cache_size = 1;
@@ -70,6 +78,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer(main_models_path, tokenizer_properties),
               draft_model_tokenizer(draft_models_path, tokenizer_properties);
+
+    // todo: remove this condition after support of CVS-154103
+    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     
     m_tokenizer = main_model_tokenizer;
 
@@ -158,6 +169,10 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
             m_draft_generations.erase(request_id);
         }
         auto updated_seq_info = update_sequence_info[request_id];
+        // several prompt phase
+        if (updated_seq_info.inserted_tokens_cnt == 0) {
+            continue;
+        }
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
@@ -203,6 +218,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     while (has_non_finished_requests() && continue_generation) {
         step();
         if (streamer_ptr) {
+            // not generated tokens like several prompt phase
+            if (!main_generations.at(0).get()->can_read()) {
+                continue;
+            }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
             OPENVINO_ASSERT(1 <= token.size());
             OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());

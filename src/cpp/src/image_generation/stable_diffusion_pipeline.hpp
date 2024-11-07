@@ -168,10 +168,10 @@ public:
 
         ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
-        ov::Tensor latent(ov::element::f32, {});
+        ov::Tensor latent;
 
         if (initial_image) {
-            latent = m_vae->encode(initial_image);
+            latent = m_vae->encode(initial_image, generation_config.generator);
             if (generation_config.num_images_per_prompt > 1) {
                 ov::Tensor batched_latent(ov::element::f32, latent_shape);
                 for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
@@ -179,7 +179,6 @@ public:
                 }
                 latent = batched_latent;
             }
-
             m_scheduler->add_noise(latent, generation_config.generator);
         } else {
             latent = generation_config.generator->randn_tensor(latent_shape);
@@ -198,6 +197,11 @@ public:
                         const ov::AnyMap& properties) override {
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
+
+        if (!initial_image) {
+            // in case of typical text to image generation, we need to ignore 'strength'
+            generation_config.strength = 1.0f;
+        }
 
         // Stable Diffusion pipeline
         // see https://huggingface.co/docs/diffusers/using-diffusers/write_own_pipeline#deconstruct-the-stable-diffusion-pipeline
@@ -220,7 +224,8 @@ public:
             generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt,
+        std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
             batch_size_multiplier > 1);
 
         // replicate encoder hidden state to UNet model
@@ -260,14 +265,11 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
-        for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; inference_step++) {
+        for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
+            batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
-            } else {
-                // just assign to save memory copy
-                latent_cfg = latent;
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -277,9 +279,10 @@ public:
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
-            noisy_residual_tensor.set_shape(noise_pred_shape);
 
             if (batch_size_multiplier > 1) {
+                noisy_residual_tensor.set_shape(noise_pred_shape);
+
                 // perform guidance
                 float* noisy_residual = noisy_residual_tensor.data<float>();
                 const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
@@ -349,29 +352,26 @@ private:
         OPENVINO_ASSERT(generation_config.prompt_2 == std::nullopt, "Prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
         if (is_lcm) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used by ", pipeline_name);
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by ", pipeline_name);
         } else if (!is_classifier_free_guidance) {
-            OPENVINO_ASSERT(generation_config.negative_prompt.empty(), "Negative prompt is not used when guidance scale <= 1.0");
+            OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used when guidance scale <= 1.0");
         }
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
-            if (initial_image) {
-                ov::Shape initial_image_shape = initial_image.get_shape();
-                size_t height = initial_image_shape[1], width = initial_image_shape[2];
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
+            ov::Shape initial_image_shape = initial_image.get_shape();
+            size_t height = initial_image_shape[1], width = initial_image_shape[2];
 
-                OPENVINO_ASSERT(generation_config.height == height,
-                    "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
-                OPENVINO_ASSERT(generation_config.width == width,
-                    "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
-            }
-
+            OPENVINO_ASSERT(generation_config.height == height,
+                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
+            OPENVINO_ASSERT(generation_config.width == width,
+                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
                 "'Strength' generation parameter must be withion [0, 1] range");
         } else {
-            OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
+            OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
         }
     }
 

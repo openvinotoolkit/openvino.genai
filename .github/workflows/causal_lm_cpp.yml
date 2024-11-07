@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241028_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241028_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241028_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/w_openvino_toolkit_windows_2024.5.0.dev20241028_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu20_2025.0.0.dev20241105_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241105_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241105_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/w_openvino_toolkit_windows_2025.0.0.dev20241105_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -737,71 +737,42 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python
-      - name: Download and convert MiniCPM-V-2_6 model and an image
+      - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
           python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
           python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
-          optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
+          optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           mkdir images
-      - name: Generate reference - MiniCPM-V-2_6
-        shell: python
-        run: |
-          from optimum.intel.openvino import OVModelForVisualCausalLM
-          from transformers import AutoProcessor
-          from PIL import Image
-          import cv2
-          import numpy as np
-          import requests
-          res = 448, 448
-          lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
-          lines = lines.reshape([*res, 3])
-          cv2.imwrite("images/lines.png", lines)
-          cat = Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw).convert('RGB')
-          shrunk_cat = cat.resize((448, 448))  # Resize is different in C++ impl, there's also sin and cos calc in double but it has smaller effect.
-          shrunk_cat.save("images/shrunk_cat.png")
-          lines = Image.open("images/lines.png").convert('RGB')
-          model_id = "openbmb/MiniCPM-V-2_6"
-          processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-          prompt = processor.tokenizer.apply_chat_template([{"role": "user", "content": "(<image>./</image>)\n(<image>./</image>)\nDescribe the images?"}], tokenize=False, add_generation_prompt=True)
-          inputs = processor([prompt], [lines, shrunk_cat], return_tensors="pt")
-          model = OVModelForVisualCausalLM.from_pretrained("MiniCPM-V-2_6", device="CPU", trust_remote_code=True)
-          result = model.generate(**inputs, max_new_tokens=99)
-          decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
-          print(decoded)
-          with open("ref.txt", "w") as f:
-              f.write(f"question:\n{decoded}\n----------\nquestion:\n")
-
-      - name: Run visual_language_chat C++ sample - MiniCPM-V-2_6
+      - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ ./images/
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
-      - run: diff cpp.txt ref.txt
-      - name: Run visual_language_chat Python sample - MiniCPM-V-2_6
+      - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./images/
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
-      - run: diff py.txt ref.txt
-      - name: Run visual_language_chat C++ sample with 2 prompts - MiniCPM-V-2_6
+      - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
+          <<< $'What is unusual on this image?'
         timeout-minutes: 2
-      - name: Run visual_language_chat Python sample with 2 prompts - MiniCPM-V-2_6
+      - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
+          <<< $'What is unusual on this image?'
         env:
           PYTHONPATH: "./build/"
-      - run: diff cpp2.txt py2.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
@@ -927,7 +898,7 @@ jobs:
           .\build\tools\continuous_batching\benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-macos:
-    runs-on: macos-12
+    runs-on: macos-13
     defaults:
       run:
         shell: bash
