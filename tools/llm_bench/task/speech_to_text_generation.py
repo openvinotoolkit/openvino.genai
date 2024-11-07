@@ -50,7 +50,13 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             return_timestamps=ret_timestamps
         )
         end = time.perf_counter()
-        tm_list = np.array(result_text.perf_metrics.raw_metrics.m_durations) / 1000 / 1000
+        perf_metrics = result_text.perf_metrics
+        first_token_time = perf_metrics.get_ttft().mean / args["batch_size"]
+        second_tokens_durations = (
+            np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
+            - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1]) / args["batch_size"]
+        ).tolist()
+        tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = []
         result_text = result_text.texts[0]
     else:
