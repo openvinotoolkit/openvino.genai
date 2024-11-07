@@ -314,7 +314,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         EncodedGenerationResult result;
         result.m_request_id = 1;
         std::vector<GenerationOutput> generation_outputs = generation->read_all();
-        for (const auto& generation_output : generation_outputs) {
+        std::sort(generation_outputs.begin(), generation_outputs.end(), [=] (GenerationOutput& r1, GenerationOutput& r2) {
+            return r1.score > r2.score;
+        });
+
+        auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
+        for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
+            const auto& generation_output = generation_outputs[generation_output_idx];
             result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
             result.m_scores.push_back(generation_output.score);
         }
