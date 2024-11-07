@@ -99,7 +99,15 @@ jobs:
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
-  stable_diffusion_1_5_cpp-windows:
+      - name: Run Python LoRA fuse app
+        run: |
+          source openvino_sd_cpp/bin/activate
+          source ./ov/setupvars.sh
+          python ./samples/python/text2image/lora_fuse.py ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "curly-haired unicorn in the forest, anime, line" ./models/soulcard.safetensors 0.7
+        env:
+          PYTHONPATH: ${{ env.build_dir }}
+
+    stable_diffusion_1_5_cpp-windows:
     runs-on: windows-2019
     defaults:
       run:
@@ -183,6 +191,14 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           $env:Path += "${{ env.build_dir }}\openvino_genai"
           python .\samples\python\text2image\lora.py .\models\dreamlike-art-dreamlike-anime-1.0\FP16 "curly-haired unicorn in the forest, anime, line" .\models\soulcard.safetensors 0.7
+        env:
+          PYTHONPATH: ${{ env.build_dir }}
+      - name: Run Python LoRA app
+        run: |
+          . "./openvino_sd_cpp/Scripts/Activate.ps1"
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          $env:Path += "${{ env.build_dir }}\openvino_genai"
+          python .\samples\python\text2image\lora_fuse.py .\models\dreamlike-art-dreamlike-anime-1.0\FP16 "curly-haired unicorn in the forest, anime, line" .\models\soulcard.safetensors 0.7
         env:
           PYTHONPATH: ${{ env.build_dir }}
 

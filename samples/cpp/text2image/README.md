@@ -5,6 +5,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 There are three sample files:
  - [`main.cpp`](./main.cpp) demonstrates basic usage of the text to image pipeline
  - [`lora.cpp`](./lora.cpp) shows how to apply LoRA adapters to the pipeline
+ - [`lora_fuse.cpp`](./lora_fuse.cpp) shows how to maximize performance of LoRA adapters by fusing them into base model weights
  - [`txt2image_from_subcomponent.cpp`](./txt2image_from_subcomponent.cpp) shows how to assemble a txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
 
 Users can change the sample code and play with the following generation parameters:

@@ -36,7 +36,11 @@ def main():
     prompt = args.prompt
 
     device = "CPU"  # GPU can be used as well
-    adapter_config = openvino_genai.AdapterConfig()
+
+    # MODE_FUSE instructs pipeline to fuse adapter tensors into original model weights loaded into memory
+    # giving the same performance level for inference as for the original model. After doing it you cannot
+    # change adapter dynamically without re-initializing the pipeline from scratch.
+    adapter_config = openvino_genai.AdapterConfig(openvino_genai.AdapterConfig.Mode.MODE_FUSE)
 
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     for i in range(int(len(adapters) / 2)):
@@ -54,16 +58,6 @@ def main():
                           num_inference_steps=20)
 
     image_write("lora.bmp", image)
-    print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
-    image = pipe.generate(prompt,
-                          # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
-                          adapters=openvino_genai.AdapterConfig(),
-                          generator=Generator(42),
-                          width=512,
-                          height=896,
-                          num_inference_steps=20
-                          )
-    image_write("baseline.bmp", image)
 
 
 if '__main__' == __name__:
