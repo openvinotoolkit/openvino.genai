@@ -178,22 +178,22 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
-    pt_inputs = tokenizer(input_text_list, return_tensors="pt")
-    input_token_size = pt_inputs.input_ids.shape[1]
-    if args['batch_size'] > 1:
-        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
-        out_str += " Batch_size={}, ".format(args['batch_size'])
-        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
-        if args['infer_count'] is not None:
-            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
-        log.info(out_str)
-
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    tokenizer = model.get_tokenizer()
+    input_data = tokenizer.encode(input_text_list)
+    num_input_tokens = input_data.input_ids.shape[1]
+    if args['batch_size'] > 1:
+        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str += " Batch_size={}, ".format(args['batch_size'])
+        out_str += 'all input token size after padding: {} * {}, '.format(num_input_tokens, args['batch_size'])
+        if args['infer_count'] is not None:
+            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
+        log.info(out_str)
     start = time.perf_counter()
     generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], do_sample=False)
     end = time.perf_counter()
@@ -206,12 +206,12 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         mem_consumption.clear_max_memory_consumption()
 
     generation_time = end - start
-    generated_tokens = [tokenizer(text).input_ids for text in generated_text]
+    generated_tokens = [tokenizer.encode(text).input_ids.data for text in generated_text]
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
-        generated_text_len = len(generated_tokens[bs_idx])
+        generated_text_len = generated_tokens[bs_idx].shape[-1]
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
             log.error('Output token size is over max output token size!')
@@ -228,7 +228,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     else:
         log.warning("No generated tokens")
-    tm_list = np.array(perf_metrics.raw_metrics.m_durations) / 1000 / 1000
+    first_token_time = (perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000) / args["batch_size"]
+    second_tokens_durations = (
+        np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
+        - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1]) / args["batch_size"]
+    ).tolist()
+
+    tm_list = np.array([first_token_time] + second_tokens_durations) / 1000
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     tokenization_time = (
@@ -237,7 +243,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     )
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        in_size=input_token_size * args['batch_size'],
+        in_size=num_input_tokens * args['batch_size'],
         infer_count=len(tm_list),
         out_size=num_tokens,
         gen_time=generation_time,
@@ -288,12 +294,11 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
-    pt_inputs = tokenizer(input_text_list, return_tensors="pt")
-    input_token_size = pt_inputs.input_ids.shape[1]
     pipe_tokenizer = model.get_tokenizer()
     tok_encode_start = time.perf_counter()
     input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
+    input_token_size = input_data.input_ids.shape[1]
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
@@ -310,7 +315,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     start = time.perf_counter()
-    generated_tokens = model.generate(input_data, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer).tokens
+    generated_tokens = model.generate(input_data, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer, do_sample=False).tokens
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
