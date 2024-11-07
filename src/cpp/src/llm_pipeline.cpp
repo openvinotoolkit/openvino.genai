@@ -188,10 +188,10 @@ public:
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
 
-            std::cout << "[LOG_DEBUG] Apply SDPA..." << std::endl;
-            ov::pass::Manager manager;
-            manager.register_pass<ScaledDotProductAttentionDecomposition>();
-            manager.run_passes(model);
+            //std::cout << "[LOG_DEBUG] Apply SDPA..." << std::endl;
+            //ov::pass::Manager manager;
+            //manager.register_pass<ScaledDotProductAttentionDecomposition>();
+            //manager.run_passes(model);
 
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
