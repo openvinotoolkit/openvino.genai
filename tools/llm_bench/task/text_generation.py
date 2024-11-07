@@ -229,8 +229,9 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     else:
         log.warning("No generated tokens")
     first_token_time = (perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000) / args["batch_size"]
-    second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_new_token_times[1:]) - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1]) / args["batch_size"]).tolist()
-    
+    second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_new_token_times[1:])
+        - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1]) / args["batch_size"]).tolist()
+
     tm_list = np.array([first_token_time] + second_tokens_durations) / 1000
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
