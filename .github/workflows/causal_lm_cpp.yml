@@ -779,6 +779,13 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
+      - name: Encode cpp.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
       - run: diff cpp.txt ref.txt
       - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
         run: >
@@ -788,13 +795,6 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
-      - name: Encode cpp.txt with Python encoding instead of terminal one
-        shell: python
-        run: |
-          with open("cpp.txt", "rb") as f:
-            content = f.read().decode("utf-8", "replace")
-          with open("cpp.txt", "wb") as f:
-            f.write(content.encode("utf-8"))
       - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
