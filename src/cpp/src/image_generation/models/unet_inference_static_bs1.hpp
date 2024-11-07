@@ -92,40 +92,45 @@ public:
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
 
-        char* pSample = (char *)sample.data();
+        OPENVINO_ASSERT(sample.get_shape()[0] == m_native_batch_size,
+                        "sample batch size must match native batch size");
+
+        char* pSample = (char*)sample.data();
         size_t sample_batch_stride_bytes = sample.get_strides()[0];
+
+        auto out_sample = ov::Tensor(sample.get_element_type(), sample.get_shape());
+        char* pOutSample = (char*)out_sample.data();
+        size_t out_sample_batch_stride_bytes = out_sample.get_strides()[0];
+
+        auto bs1_sample_shape = sample.get_shape();
+        bs1_sample_shape[0] = 1;
 
         for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i].set_tensor("timestep", timestep);
 
-            auto sample_bs1 = m_requests[i].get_tensor("sample");
+            //wrap a portion of sample tensor as a batch-1 tensor, as set this as input tensor.
+            {
+                ov::Tensor bs1_wrapper(sample.get_element_type(), bs1_sample_shape, pSample, sample.get_strides());
+                m_requests[i].set_tensor("sample", bs1_wrapper);
+            }
 
-            // wrap current pSample location as batch-1 tensor.
-            ov::Tensor bs1_wrapper(sample_bs1.get_element_type(), sample_bs1.get_shape(), pSample, sample.get_strides());
+            // wrap a portion of out_sample tensor as a batch-1 tensor, as set this as output tensor.
+            {
+                ov::Tensor bs1_wrapper(sample.get_element_type(), bs1_sample_shape, pOutSample, out_sample.get_strides());
+                m_requests[i].set_tensor("out_sample", bs1_wrapper);
+            }
 
-            // copy it to infer request batch-1 tensor
-            bs1_wrapper.copy_to(sample_bs1);
-
-            //increment pSample to start location of next batch (using stride)
+            // increment pSample & pOutSample to start location of next batch (using stride)
             pSample += sample_batch_stride_bytes;
+            pOutSample += out_sample_batch_stride_bytes;
 
             // kick off infer for this request.
             m_requests[i].start_async();
         }
 
-        auto out_sample = ov::Tensor(sample.get_element_type(), sample.get_shape());
-
-        char* pOutSample = (char *)out_sample.data();
-        size_t out_sample_batch_stride_bytes = out_sample.get_strides()[0];
         for (int i = 0; i < m_native_batch_size; i++) {
             // wait for infer to complete.
             m_requests[i].wait();
-
-            auto out_sample_bs1 = m_requests[i].get_tensor("out_sample");
-            ov::Tensor bs1_wrapper(out_sample_bs1.get_element_type(), out_sample_bs1.get_shape(), pOutSample, out_sample.get_strides());
-            out_sample_bs1.copy_to(bs1_wrapper);
-
-            pOutSample += out_sample_batch_stride_bytes;
         }
 
         return out_sample;
