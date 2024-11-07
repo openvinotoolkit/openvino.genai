@@ -7,6 +7,7 @@
 
 #include "openvino/pass/stateful_to_stateless.hpp"
 
+// NB: decompose SDPA
 #include "openvino/pass/matcher_pass.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
@@ -410,9 +411,11 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
                                        const std::optional<NPUDesc>& npudesc,
                                        const GenerateHint hint) {
     auto config = get_default_common_config(model);
-    //if (hint == GenerateHint::BEST_PERF) {
-    config.emplace("NPUW_ONLINE_PIPELINE", "NONE");
-    //}
+	if (hint == GenerateHint::BEST_PERF) {
+    	config.emplace("NPUW_ONLINE_PIPELINE", "NONE");
+	}
+    std::cout << "[LOG_DEBUG] SUMP SUBS" << std::endl;
+    config.emplace("NPUW_DUMP_SUBS", "YES");
     // NB: Unconditionally set for generation model
     config.emplace("NPUW_DQ", "YES");
     if (npudesc.has_value() && npudesc->arch == "4000") {
@@ -465,22 +468,98 @@ void drop_cache_dir(ov::AnyMap& config) {
     }
 }
 
-//std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
-    //const auto kStartOutputKVCacheLayers = 1u;
-    //for (int i = kStartOutputKVCacheLayers; i < model->outputs().size(); ++i) {
-        //auto kvout  = model->output(i);
-        //auto kvrslt = kvout.get_node();
-        //auto kvcat  = kvrslt->inputs()[0].get_source_output().get_node();
-        //auto kvval  = kvcat->inputs()[1].get_source_output();
-        //kvval.set_names({kvout.get_any_name()});
-        //kvrslt->inputs()[0].replace_source_output(kvval);
-    //}
-    //model->validate_nodes_and_infer_types();
-    //return model;
-//}
+std::shared_ptr<ov::Model> transpose_value_tensors(const std::shared_ptr<ov::Model>& model) {
+    const auto original_parameters = model->get_parameters();
 
-//std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
-//}
+    std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
+
+    for (auto node : model->get_ops()) {
+        if (node->get_friendly_name().find("Concat") != std::string::npos) {
+            auto param = node->input(0).get_source_output().get_node();
+            auto transpose = node->input(1).get_source_output().get_node();
+
+            std::string in0_name = param->get_type_name();
+            std::string in1_name = transpose->get_type_name();
+
+            if (in0_name.find("Parameter") != std::string::npos &&
+                in1_name.find("Transpose") != std::string::npos) {
+                // Create new param
+                auto shape = param->get_shape();
+                std::swap(shape[2], shape[3]);
+
+                auto new_param = std::make_shared<ov::opset13::Parameter>(param->get_element_type(), shape);
+                new_param->set_friendly_name(param->get_friendly_name());
+
+                new_params.push_back(new_param);
+                for (auto input_port : param->output(0).get_target_inputs()) {
+                    input_port.replace_source_output(new_param);
+                }
+
+                auto order_cst = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{4}, {0, 2, 3, 1});
+                auto new_transpose = std::make_shared<ov::opset13::Transpose>(transpose->input_value(0),
+                                                                              order_cst->output(0));
+                new_transpose->set_friendly_name(transpose->get_friendly_name());
+                node->input(1).replace_source_output(new_transpose->output(0));
+
+                auto new_concat = std::make_shared<ov::opset13::Concat>(
+                    ov::OutputVector{new_param->output(0), new_transpose->output(0)}, 3
+                );
+                new_concat->set_friendly_name(node->get_friendly_name());
+                for (auto input_port : node->output(0).get_target_inputs()) {
+                    input_port.replace_source_output(new_concat);
+                }
+            }
+        }
+
+        if (ov::is_type<ov::opset13::MatMul>(node)) {
+            auto softmax = node->input(0).get_source_output().get_node();
+            auto concat  = node->input(1).get_source_output().get_node();
+            if (std::string{softmax->get_type_name()}.find("Softmax") != std::string::npos &&
+                std::string{concat->get_type_name()}.find("Concat") != std::string::npos) {
+                auto matmul = std::static_pointer_cast<ov::opset13::MatMul>(node);
+                matmul->set_transpose_b(true);
+            }
+        }
+
+    }
+    model->add_parameters(new_params);
+    return model;
+}
+
+namespace opp = ov::pass::pattern;
+class TransposeVMatMul : public ov::pass::MatcherPass {
+public:
+    TransposeVMatMul() {
+        std::cout << "create pattern" << std::endl;
+        auto param = opp::wrap_type<ov::op::v0::Parameter>();
+        auto transpose = opp::wrap_type<ov::op::v1::Transpose>({opp::any_input(), opp::any_input()});
+        auto concat = opp::wrap_type<ov::op::v0::Concat>({param, transpose});
+        auto softmax = opp::wrap_type<ov::op::v1::Softmax>({opp::any_input()});
+        auto matmul = opp::wrap_type<ov::op::v0::MatMul>({softmax, concat});
+
+        auto callback = [=](ov::pass::pattern::Matcher& m) {
+            std::cout << "FOUND MATCH" << std::endl;
+            auto& node_to_output = m.get_pattern_value_map();
+
+            auto matched_node_param     = node_to_output.at(param).get_node_shared_ptr();
+            auto matched_node_concat    = node_to_output.at(concat).get_node_shared_ptr();
+            auto matched_node_transpose = node_to_output.at(transpose).get_node_shared_ptr();
+            auto matched_node_matmul    = node_to_output.at(matmul).get_node_shared_ptr();
+
+            auto matched_param     = std::static_pointer_cast<ov::op::v0::Parameter>(matched_node_param);
+            auto matched_concat    = std::static_pointer_cast<ov::op::v0::Parameter>(matched_node_concat);
+            auto matched_transpose = std::static_pointer_cast<ov::op::v0::Parameter>(matched_node_transpose);
+            auto matched_matmul    = std::static_pointer_cast<ov::op::v0::MatMul>(matched_node_matmul);
+
+            std::cout << "passed all checks, pattern is found" << std::endl;
+            throw 1;
+
+            return true;
+        };
+        register_matcher(std::make_shared<opp::Matcher>(matmul, "TransposeVMatMul"), std::move(callback));
+    }
+};
+
 
 } // anonymous namespace
 
@@ -532,8 +611,8 @@ void StaticLLMPipeline::setupAndCompileModels(
         1) Read the template model - this will be kvcache model
         2) Expose KV-cache input and output layers from kvcache model
         3) Align u4 ZP constants - TODO: get rid of this step in future
-        4) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
-        5) Clone the model - this will be prefill
+        4) Clone the model - this will be prefill
+        5) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
         6) Reshape both models to static shape
         7) Compile both models
     */
@@ -542,25 +621,20 @@ void StaticLLMPipeline::setupAndCompileModels(
 
     // NB: Get information about NPU if available
     auto npudesc = extract_npu_descriptor(core);
-
     // (1) Read the template model - this will be kvcache model
     m_kvcache_model = core.read_model((models_path / "openvino_model.xml").string());
-
-    ov::pass::Manager manager;
-    manager.register_pass<ScaledDotProductAttentionDecomposition>();
-    manager.run_passes(m_kvcache_model);
-
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
     // (3) Align u4 ZP constants
     align_u4_zp_constants(m_kvcache_model);
-    // (4) Replace KV-tensors for the entire cache to tensors only for new token
-    m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
-    // (5) Convert kvcache tensors to fp16 precision
-    m_kvcache_model = cvt_kvcache_to_fp16(m_kvcache_model);
-    // (6) Clone the model - this will be prefill
+    // (4) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
+    // (5) Replace KV-tensors for the entire cache to tensors only for new token and decompose SDPA
+	std::cout << "[LOG_DEBUG] Apply SDPA..." << std::endl;
+	ov::pass::Manager manager;
+	manager.register_pass<ScaledDotProductAttentionDecomposition>();
+	manager.run_passes(m_kvcache_model);
     // (7) Reshape both models to static shape
     const uint32_t kMaxPromptLen = align_to(pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u), 64u);
     const uint32_t kMinResponseLen = align_to(pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u), 64u);
@@ -568,6 +642,20 @@ void StaticLLMPipeline::setupAndCompileModels(
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
+
+    //ov::save_model(m_kvcache_model, "kvcache-model.xml");
+
+    std::cout << "transpose tensors" << std::endl;
+	ov::pass::Manager m2;
+	m2.register_pass<TransposeVMatMul>();
+	m2.run_passes(m_kvcache_model);
+    //transpose_value_tensors(m_kvcache_model);
+    std::cout << "transpose tensors - done" << std::endl;
+
+    m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
+    // (6) Convert kvcache tensors to fp16 precision
+    m_kvcache_model = cvt_kvcache_to_fp16(m_kvcache_model);
+    m_prefill_model = cvt_kvcache_to_fp16(m_prefill_model);
     // (8) Compile both model
     auto prefill_config = pop_or_default(
         properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
@@ -583,19 +671,13 @@ void StaticLLMPipeline::setupAndCompileModels(
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
 
-    //m_kvcache_request = core.compile_model(
-        //m_kvcache_model, device, generate_config
-    //).create_infer_request();
-    //m_prefill_request = core.compile_model(
-        //m_prefill_model, device, prefill_config
-    //).create_infer_request();
-
-    m_kvcache_request = core.compile_model(
-        m_kvcache_model, "CPU"
-    ).create_infer_request();
-    m_prefill_request = core.compile_model(
-        m_prefill_model, "CPU"
-    ).create_infer_request();
+    ov::save_model(m_kvcache_model, "model-wo-sdpa.xml");
+	m_kvcache_request = core.compile_model(
+		m_kvcache_model, device, generate_config
+	).create_infer_request();
+	m_prefill_request = core.compile_model(
+		m_prefill_model, device, prefill_config
+	).create_infer_request();
 }
 
 void StaticLLMPipeline::setupAndImportModels(
