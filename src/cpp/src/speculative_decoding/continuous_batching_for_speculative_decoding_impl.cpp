@@ -174,6 +174,7 @@ init_request(
             sequence->append_token(token_ids[i], log_probs[i]);
             if (is_update_logit_processor) {
                 logit_processor.register_new_generated_token(token_ids[i]);
+                logit_processor.update_generated_len(sequence->get_generated_len());
             }
         }
 
@@ -258,7 +259,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         if (request->get_context_len() < request->get_prompt_len() && result.inserted_tokens_cnt == 0) {
             return result;
         }
-        size_t generated_len = request->get_context_len() - request->get_prompt_len();
+        size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
         if (num_processed_tokens > 0) {
             request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt);
             generated_len -= result.removed_tokens_cnt;
@@ -283,9 +284,18 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::multistep() {
+    bool to_generate = false;
+    // skip first token generation by draft model to make results aligned with continuous batching results
+    for (const auto& request : m_requests) {
+        if (request->get_num_processed_tokens() == 0 && request->get_num_tokens_to_validate() == 0) {
+            request->pause_generation(true);
+        } else {
+            to_generate = true;
+        }
+    }
+
     size_t generated_tokens_cnt = 0;
     // cycle to generate several tokens per one iteration for speculative decoding case
-    bool to_generate = true;
     while (to_generate) {
         generated_tokens_cnt++;
 
@@ -297,12 +307,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             if (!sampling_params.is_speculative_decoding()) {
                 // generate only one token in case of non speculative decoding
                 request->pause_generation(true);
+            } else if (request->get_num_processed_tokens() >= request->get_prompt_len() &&
+                (request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= sampling_params.max_new_tokens - 1) {
+                request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
                 request->pause_generation(true);
             } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt && sampling_params.assistant_confidence_threshold == 0.f) {
-                request->pause_generation(true);
-            } else if (request->get_context_len() >= request->get_prompt_len() &&
-                (request->get_context_len() - request->get_prompt_len()) >= sampling_params.max_new_tokens - 1) {
                 request->pause_generation(true);
             } else if (sampling_params.max_new_tokens == 0) {
                 request->pause_generation(true);

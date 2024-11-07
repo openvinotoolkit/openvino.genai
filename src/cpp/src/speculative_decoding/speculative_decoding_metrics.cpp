@@ -95,4 +95,35 @@ void SpeculativeDecodingMetrics::set_generated_len(int64_t request_id, size_t ge
     m_generated_len.insert({ request_id, generated_len });
 }
 
+size_t SpeculativeDecodingMetrics::get_generated_len(int64_t request_id) {
+    return m_generated_len.at(request_id);
+}
+
+std::vector<int64_t> SpeculativeDecodingMetrics::get_requests_id() {
+    std::vector<int64_t> result;
+    for (const auto& req : m_generated_len) {
+        result.push_back(req.first);
+    }
+    return result;
+}
+
+void SpeculativeDecodingMetrics::print_acceptance_rates() {
+    for (const auto& a : m_acceptance_rate) {
+        std::cout << "Request_id: " << a.first << " ||| ";
+        for (const auto& b : a.second) {
+            std::cout << b << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+void SpeculativeDecodingMetrics::clean_up() {
+    m_acceptance_rate.clear();
+    m_draft_accepted_tokens.clear();
+    m_generated_len.clear();
+    draft_duration = 0;
+    main_duration = 0;
+    total_duration = 0;
+}
+
 }
