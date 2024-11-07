@@ -905,9 +905,9 @@ EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const Proce
 }
 
 EncodedImage VisionEncoder::encode_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
-    auto [pixel_values, image_size, num_img_tokens] = phi3_v::get_pixel_values_phi3_v(image, config);
-    // m_vision_encoder.set_input_tensor();
+    // TODO: drop num_img_tokens
+    const auto& [pixel_values, image_size, num_img_tokens] = phi3_v::get_pixel_values_phi3_v(image, config);
+    m_vision_encoder.set_input_tensor(pixel_values);
     m_vision_encoder.infer();
-
-    return {};
+    return {m_vision_encoder.get_output_tensor(), image_size};
 }
