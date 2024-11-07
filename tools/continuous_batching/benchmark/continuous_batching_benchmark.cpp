@@ -260,7 +260,7 @@ public:
         auto sampling_params = dataset->m_sampling_params[request_id];
         if (is_speculative_decoding_enabled) {
             // to enable static speculative decoding
-            sampling_params.num_assistant_tokens = 5;
+            sampling_params.num_assistant_tokens = 2;
             // to enable dynamic speculative decoding
             // sampling_params.assistant_confidence_threshold = 0.4f;
         }
