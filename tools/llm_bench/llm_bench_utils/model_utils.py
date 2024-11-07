@@ -7,25 +7,32 @@ import json
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
+import librosa
 
 
-def get_prompts(args):
-    prompts_list = []
-    if args['prompt'] is None and args['prompt_file'] is None:
+def get_param_from_file(args, input_key):
+    is_json_data = False
+    data_list = []
+    if args[input_key] is None and args['prompt_file'] is None:
         if args['use_case'] == 'text_gen':
-            prompts_list.append('What is OpenVINO?')
+            data_list.append('What is OpenVINO?')
         elif args['use_case'] == 'code_gen':
-            prompts_list.append('def print_hello_world():')
-    elif args['prompt'] is not None and args['prompt_file'] is not None:
-        raise RuntimeError('== prompt and prompt file should not exist together ==')
+            data_list.append('def print_hello_world():')
+        elif args['use_case'] == 'image_gen':
+            data_list.append('sailing ship in storm by Leonardo da Vinci')
+        else:
+            raise RuntimeError(f'== {input_key} and prompt file is empty ==')
+    elif args[input_key] is not None and args['prompt_file'] is not None:
+        raise RuntimeError(f'== {input_key} and prompt file should not exist together ==')
     else:
-        if args['prompt'] is not None:
-            if args['prompt'] != '':
-                prompts_list.append(args['prompt'])
+        if args[input_key] is not None:
+            if args[input_key] != '':
+                data_list.append(args[input_key])
             else:
-                raise RuntimeError('== prompt should not be empty string ==')
+                raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
             input_prompt_list = args['prompt_file']
+            is_json_data = True
             for input_prompt in input_prompt_list:
                 if input_prompt.endswith('.jsonl'):
                     if os.path.exists(input_prompt):
@@ -33,63 +40,17 @@ def get_prompts(args):
                         with open(input_prompt, 'r', encoding='utf-8') as f:
                             for line in f:
                                 data = json.loads(line)
-                                if 'prompt' in data:
-                                    if data['prompt'] != '':
-                                        prompts_list.append(data['prompt'])
-                                    else:
-                                        raise RuntimeError(f'== prompt in prompt file:{input_prompt} should not be empty string ==')
-                                else:
-                                    raise RuntimeError(f'== key word "prompt" does not exist in prompt file:{input_prompt} ==')
+                                data_list.append(data)
                     else:
                         raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
                 else:
                     raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
-    return prompts_list
+    return data_list, is_json_data
 
 
-def get_image_param_from_prompt_file(args):
-    image_param_list = []
-    if args['prompt'] is None and args['prompt_file'] is None:
-        image_param_list.append({'prompt' : 'sailing ship in storm by Leonardo da Vinci'})
-    elif args['prompt'] is not None and args['prompt_file'] is not None:
-        raise RuntimeError('== prompt and prompt file should not exist together ==')
-    else:
-        if args['prompt'] is not None:
-            if args['prompt'] != '':
-                image_param_list.append({'prompt' : args['prompt']})
-            else:
-                raise RuntimeError('== prompt should not be empty string ==')
-        else:
-            input_prompt_list = args['prompt_file']
-            for input_prompt in input_prompt_list:
-                if input_prompt.endswith('.jsonl'):
-                    if os.path.exists(input_prompt):
-                        log.info(f'Read prompts from {input_prompt}')
-                        with open(input_prompt, 'r', encoding='utf-8') as f:
-                            for line in f:
-                                image_param = {}
-                                data = json.loads(line)
-                                if 'prompt' in data:
-                                    if data['prompt'] != '':
-                                        image_param['prompt'] = data['prompt']
-                                    else:
-                                        raise RuntimeError('== prompt in prompt file:{input_prompt} should not be empty string ==')
-                                else:
-                                    raise RuntimeError(f'== key word "prompt" does not exist in prompt file:{input_prompt} ==')
-                                if 'width' in data:
-                                    image_param['width'] = int(data['width'])
-                                if 'height' in data:
-                                    image_param['height'] = int(data['height'])
-                                if 'steps' in data:
-                                    image_param['steps'] = int(data['steps'])
-                                if 'guidance_scale' in data:
-                                    image_param['guidance_scale'] = float(data['guidance_scale'])
-                                image_param_list.append(image_param)
-                    else:
-                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
-                else:
-                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
-    return image_param_list
+def read_wav(filepath, sampling_rate):
+    raw_speech = librosa.load(filepath, sr=sampling_rate)
+    return raw_speech[0]
 
 
 def set_default_param_for_ov_config(ov_config):
@@ -132,6 +93,7 @@ def analyze_args(args):
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
+    model_args['media'] = args.media
 
     has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:
@@ -273,7 +235,7 @@ def get_model_precision(model_name_list):
                 break
         if model_precision != 'unknown':
             break
-    return model_precision
+    return '' if model_precision == 'unknown' else model_precision
 
 
 def init_timestamp(num_iters, prompt_list, prompt_idx_list):
