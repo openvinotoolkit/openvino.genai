@@ -745,6 +745,20 @@ jobs:
           optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           mkdir images
+      - name: Generate reference - tiny-random-minicpmv-2_6
+        shell: python
+        run: |
+          from PIL import Image
+          import numpy as np
+          import requests
+          res = 28, 28
+          lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
+          lines = lines.reshape([*res, 3])
+          lines_image = Image.fromarray(lines)
+          lines_image.save("images/lines.png")
+          cat = Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw).convert('RGB')
+          shrunk_cat = cat.resize(res)  # Resize is different in C++ impl, there's also sin and cos calc in double but it has smaller effect.
+          shrunk_cat.save("images/shrunk_cat.png")
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
@@ -768,18 +782,19 @@ jobs:
         env:
           PYTHONPATH: "./build/"
       - run: diff cpp.txt py.txt
+      - run: mogrify -format png cat.jpg
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
           && source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.png
           <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
           && source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.png
           <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
