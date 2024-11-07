@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241031_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241031_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241031_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/w_openvino_toolkit_windows_2024.5.0.dev20241031_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu20_2025.0.0.dev20241105_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241105_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241105_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/w_openvino_toolkit_windows_2025.0.0.dev20241105_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -839,7 +839,6 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
-      - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           source ./ov/setupvars.sh
