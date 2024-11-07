@@ -516,6 +516,14 @@ public:
     }
 
     /**
+     * Gets the block size.
+     * @return Block size.
+     */
+    const size_t get_block_size() const {
+        return m_block_size;
+    }
+
+    /**
      * Frees a number of blocks with highest logical index from all sequences within a sequence group.
      * @param sequence_group The sequence group to free blocks from.
      * @param num_required_blocks The number of blocks to be freed. Will free an equal

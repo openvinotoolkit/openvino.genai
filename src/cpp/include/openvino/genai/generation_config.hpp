@@ -42,6 +42,8 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
  * @param stop_token_ids vector of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
  * @param echo if set to true, output will include user prompt (default: false).
+ * @param logprobs number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+ *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
  *
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
@@ -86,6 +88,7 @@ public:
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
     bool echo = false;
+    size_t logprobs = 0;
     
     std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
