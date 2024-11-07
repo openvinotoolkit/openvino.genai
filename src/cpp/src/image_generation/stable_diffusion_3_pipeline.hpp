@@ -261,6 +261,11 @@ public:
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
+        if (!initial_image) {
+            // in case of typical text to image generation, we need to ignore 'strength'
+            generation_config.strength = 1.0f;
+        }
+
         const auto& transformer_config = m_transformer->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale)
                                                  ? 2
@@ -557,27 +562,18 @@ public:
 
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
-        ov::Tensor timestep;
 
-        for (size_t inference_step = 0; inference_step < generation_config.num_inference_steps; ++inference_step) {
+        for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
                 batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
-                batch_copy(latent,
-                           latent_cfg,
-                           0,
-                           generation_config.num_images_per_prompt,
-                           generation_config.num_images_per_prompt);
-
-                size_t timestep_size = generation_config.num_images_per_prompt * batch_size_multiplier;
-                timestep = ov::Tensor(ov::element::f32, {timestep_size});
-                std::fill_n(timestep.data<float>(), timestep.get_size(), timesteps[inference_step]);
+                batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             } else {
                 // just assign to save memory copy
                 latent_cfg = latent;
-                timestep = ov::Tensor(ov::element::f32, {1}, &timesteps[inference_step]);
             }
 
+            ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
@@ -601,12 +597,6 @@ public:
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
-        }
-
-        float* latent_data = latent.data<float>();
-        for (size_t i = 0; i < latent.get_size(); ++i) {
-            latent_data[i] = (latent_data[i] / m_vae->get_config().scaling_factor) +
-                             m_vae->get_config().shift_factor;
         }
 
         return m_vae->decode(latent);
@@ -665,16 +655,14 @@ private:
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_3 == std::nullopt,
                         "Negative prompt 3 is not used when guidance scale < 1.0");
 
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
-            if (initial_image) {
-                ov::Shape initial_image_shape = initial_image.get_shape();
-                size_t height = initial_image_shape[1], width = initial_image_shape[2];
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
+            ov::Shape initial_image_shape = initial_image.get_shape();
+            size_t height = initial_image_shape[1], width = initial_image_shape[2];
 
-                OPENVINO_ASSERT(generation_config.height == height,
-                    "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
-                OPENVINO_ASSERT(generation_config.width == width,
-                    "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
-            }
+            OPENVINO_ASSERT(generation_config.height == height,
+                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
+            OPENVINO_ASSERT(generation_config.width == width,
+                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
 
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
                 "'Strength' generation parameter must be withion [0, 1] range");

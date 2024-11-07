@@ -86,7 +86,7 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
 }
 
 void CLIPTextModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
-    if(adapters) {
+    if (adapters) {
         m_adapter_controller.apply(m_request, *adapters);
     }
 }

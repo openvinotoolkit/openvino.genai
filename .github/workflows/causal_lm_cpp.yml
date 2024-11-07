@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241031_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241031_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241031_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17253-b9a94c3f8b8/w_openvino_toolkit_windows_2024.5.0.dev20241031_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu20_2025.0.0.dev20241105_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241105_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241105_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/w_openvino_toolkit_windows_2025.0.0.dev20241105_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -774,14 +774,16 @@ jobs:
               f.write(f"question:\n{decoded}\n----------\nquestion:\n")
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
       - run: diff cpp.txt ref.txt
       - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee py.txt
         env:
@@ -789,13 +791,15 @@ jobs:
       - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
           <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
+          set -o pipefail
+          && source ./ov/setupvars.sh
           && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
           <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
@@ -926,7 +930,7 @@ jobs:
           .\build\tools\continuous_batching\benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-macos:
-    runs-on: macos-12
+    runs-on: macos-13
     defaults:
       run:
         shell: bash

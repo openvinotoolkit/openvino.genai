@@ -304,6 +304,7 @@ mean_tpot 3.80
 
 >**Note**: If the input prompt is just a string, the generate function returns only a string without perf_metrics. To obtain perf_metrics, provide the prompt as a list with at least one element or call generate with encoded inputs.
 
+#### Accumulating metrics
 Several `perf_metrics` can be added to each other. In that case `raw_metrics` are concatenated and mean/std values are recalculated. This accumulates statistics from several `generate()` calls
 
 ```cpp
@@ -336,6 +337,61 @@ print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
 print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
 print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
 print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
+```
+
+#### Using raw performance metrics
+In addition to mean and standard deviation values, the `perf_metrics` object has a `raw_metrics` field. This field stores raw data, including:
+
+- Timestamps for each batch of generated tokens
+- Batch sizes for each timestamp
+- Tokenization durations
+- Detokenization durations
+- Other relevant metrics
+
+These metrics can be use for more fine grained analysis, such as getting exact calculating median values, percentiles, etc. Below are a few examples of how to use raw metrics.
+
+Getting timestamps for each generated token:
+```python
+import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+raw_metrics = perf_metrics.raw_metrics
+
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
+print(f'Timestamps: {" ms, ".join(f"{i:.2f}" for i in raw_metrics.m_new_token_times)}')
+```
+
+Getting pure inference time without tokenizatin and detokenization duration:
+```python
+import openvino_genai as ov_genai
+import numpy as np
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f} ms')
+
+raw_metrics = perf_metrics.raw_metrics
+generate_duration = np.array(raw_metrics.generate_durations)
+tok_detok_duration = np.array(raw_metrics.tokenization_durations) - np.array(raw_metrics.detokenization_durations)
+pure_inference_duration = np.sum(generate_duration - tok_detok_duration) / 1000 # in milliseconds
+print(f'Pure Inference duration: {pure_inference_duration:.2f} ms')
+```
+
+Example of using raw metrics to calculate median value of generate duration:
+```python
+import openvino_genai as ov_genai
+import numpy as np
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+raw_metrics = perf_metrics.raw_metrics
+
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
+durations = np.array(raw_metrics.m_new_token_times[1:]) - np.array(raw_metrics.m_new_token_times[:-1])
+print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
 For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/benchmark_genai/README.md) and C++ [benchmark_genai](../samples/cpp/benchmark_genai/README.md) samples.

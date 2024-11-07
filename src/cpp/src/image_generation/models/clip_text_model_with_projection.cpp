@@ -62,7 +62,7 @@ CLIPTextModelWithProjection& CLIPTextModelWithProjection::compile(const std::str
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
     std::optional<AdapterConfig> adapters;
-    if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
         adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_te"));
         m_adapter_controller = AdapterController(m_model, *adapters, device);
         compiled_model = core.compile_model(m_model, device, *filtered_properties);
@@ -77,7 +77,7 @@ CLIPTextModelWithProjection& CLIPTextModelWithProjection::compile(const std::str
 }
 
 void CLIPTextModelWithProjection::set_adapters(const std::optional<AdapterConfig>& adapters) {
-    if(adapters) {
+    if (adapters) {
         m_adapter_controller.apply(m_request, *adapters);
     }
 }
