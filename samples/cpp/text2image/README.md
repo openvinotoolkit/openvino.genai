@@ -62,6 +62,9 @@ With adapter | Without adapter
 :---:|:---:
 ![](./lora.bmp) | ![](./baseline.bmp)
 
+# Fuse LoRA adapters into model weights
+
+To maximize inference performance using a LoRA adapter, refer to `lora_fuse.cpp`, which demonstrates fusing the adapter into the model weights. This approach achieves the same performance as the base model without a LoRA adapter but removes the flexibility to switch adapters between generate calls. This mode is ideal when performing multiple generations with the same LoRA adapters and blending alpha parameters, and when model recompilation on adapter changes is feasible. The example outputs the resulting image as `lora.bmp`.
 
 ## Note
 
