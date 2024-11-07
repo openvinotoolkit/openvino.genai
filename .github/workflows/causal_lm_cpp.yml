@@ -788,6 +788,13 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
+      - name: Encode cpp.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
       - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
@@ -804,6 +811,13 @@ jobs:
           <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
+      - name: Encode cpp2.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp2.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp2.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
       - run: diff cpp2.txt py2.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
