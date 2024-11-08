@@ -25,6 +25,7 @@ class Generator(openvino_genai.Generator):
 
 def read_image(path: str) -> openvino.Tensor:
     pic = Image.open(path).convert("RGB")
+    print(f"pic.size = {pic.size}")
     image_data = np.array(pic.getdata()).reshape(1, pic.size[1], pic.size[0], 3).astype(np.uint8)
     return openvino.Tensor(image_data)
 
@@ -33,6 +34,7 @@ def main():
     parser.add_argument('model_dir')
     parser.add_argument('prompt')
     parser.add_argument('image')
+    parser.add_argument('mask')
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -40,13 +42,14 @@ def main():
 
     initial_image = read_image(args.image)
     _, H, W, _ = list(initial_image.shape)
+    mask_image = read_image(args.image)
 
     image_tensor = pipe.generate(
         args.prompt,
-        # read_image(args.image),
-        # width=W,
-        # height=H,
-        # strength=0.8,
+        initial_image,
+        mask_image,
+        width=W,
+        height=H,
         generator=Generator(42)
     )
 

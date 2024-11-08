@@ -14,6 +14,8 @@
 
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
+#include "debug_utils.hpp"
+#include "numpy_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -170,7 +172,7 @@ public:
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
         ov::Tensor latent;
 
-        if (initial_image) {
+        if (initial_image && false) {
             latent = m_vae->encode(initial_image, generation_config.generator);
             if (generation_config.num_images_per_prompt > 1) {
                 ov::Tensor batched_latent(ov::element::f32, latent_shape);
@@ -194,6 +196,7 @@ public:
 
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
+                        ov::Tensor mask,
                         const ov::AnyMap& properties) override {
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
@@ -258,11 +261,26 @@ public:
 
         // preparate initial latents
         ov::Tensor latent = prepare_latents(initial_image, generation_config);
+        read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, true);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
+
+        ov::Shape mask_shape{batch_size_multiplier, size_t(1), 
+            static_cast<size_t>(generation_config.height / vae_scale_factor) *
+            static_cast<size_t>(generation_config.width / vae_scale_factor)},
+            mask_latent_shape = mask_shape;
+        mask_latent_shape[1] = 1;
+
+        ov::Tensor mask_(ov::element::f32, mask_shape);
+        ov::Tensor masked_image_latent(ov::element::f32, mask_latent_shape);
+
+        {
+            read_tensor("/home/devuser/ilavreno/openvino.genai/mask.txt", mask_, true);
+            read_tensor("/home/devuser/ilavreno/openvino.genai/masked_image_latents.txt", masked_image_latent, true);
+        }
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
@@ -273,6 +291,29 @@ public:
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
+
+            ov::Shape final_shape{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
+            ov::Tensor final_input(ov::element::f32, final_shape);
+            {
+                // void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+                ov::Shape temp_shape = final_shape;
+                temp_shape[1] = unet_config.in_channels - 1;
+                ov::Tensor tmp(ov::element::f32, temp_shape);
+
+                latent_cfg.set_shape(ov::Shape{latent_shape_cfg[0], latent_shape_cfg[1], latent_shape_cfg[2] * latent_shape_cfg[3]});
+
+                numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), masked_image_latent.data<float>(), tmp.data<float>(), latent_cfg.get_shape(), masked_image_latent.get_shape());
+                numpy_utils::concat_3d_by_cols(tmp.data<float>(), mask_.data<float>(), final_input.data<float>(), temp_shape, mask_.get_shape());
+
+                final_input.set_shape(ov::Shape{final_shape[0], final_shape[1], latent_shape_cfg[2], latent_shape_cfg[3]});
+            }
+            latent_cfg = final_input;
+
+            {
+                std::stringstream stream;
+                stream << "/home/devuser/ilavreno/openvino.genai/latent_model_input_" << inference_step << ".txt";
+                read_tensor(stream.str(), latent_cfg, false);
+            }
 
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_unet->infer(latent_cfg, timestep);
@@ -321,10 +362,10 @@ private:
         m_generation_config.height = unet_config.sample_size * vae_scale_factor;
         m_generation_config.width = unet_config.sample_size * vae_scale_factor;
 
-        if (class_name == "StableDiffusionPipeline") {
+        if (class_name == "StableDiffusionPipeline" || class_name == "StableDiffusionInpaintPipeline") {
             m_generation_config.guidance_scale = 7.5f;
             m_generation_config.num_inference_steps = 50;
-            m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.8f : 1.0f;
+            m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 1.0f : 1.0f;
         } else if (class_name == "LatentConsistencyModelPipeline") {
             m_generation_config.guidance_scale = 8.5f;
             m_generation_config.num_inference_steps = 4;

@@ -200,6 +200,7 @@ public:
 
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
+                        ov::Tensor mask,
                         const ov::AnyMap& properties) override {
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);

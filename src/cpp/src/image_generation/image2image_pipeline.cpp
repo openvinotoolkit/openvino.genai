@@ -20,7 +20,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" || 
-        class_name == "LatentConsistencyModelPipeline")   {
+        class_name == "LatentConsistencyModelPipeline" ||
+        class_name == "StableDiffusionInpaintPipeline")   {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
@@ -35,7 +36,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" ||
-        class_name == "LatentConsistencyModelPipeline") {
+        class_name == "LatentConsistencyModelPipeline" ||
+        class_name == "StableDiffusionInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
@@ -126,12 +128,17 @@ void Image2ImagePipeline::compile(const std::string& device, const ov::AnyMap& p
 }
 
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
-    return m_impl->generate(positive_prompt, {}, properties);
+    return m_impl->generate(positive_prompt, {}, {}, properties);
 }
 
 ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
-    return m_impl->generate(positive_prompt, initial_image, properties);
+    return m_impl->generate(positive_prompt, initial_image, {}, properties);
+}
+
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
+    return m_impl->generate(positive_prompt, initial_image, mask, properties);
 }
 
 }  // namespace genai

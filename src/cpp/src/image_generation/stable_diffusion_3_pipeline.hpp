@@ -256,6 +256,7 @@ public:
 
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
+                        ov::Tensor mask,
                         const ov::AnyMap& properties) override {
         using namespace numpy_utils;
         ImageGenerationConfig generation_config = m_generation_config;
