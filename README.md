@@ -113,17 +113,36 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code Mi
 
 ### Run generation using VLMPipeline API in Python
 
+See [Visual Language Chat](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat) for a demo application.
+
+Run the following command to download a sample image:
+
+```sh
+curl -O "https://storage.openvinotoolkit.org/test_data/images/dog.jpg"
+```
+
 ```python
+import numpy as np
+import openvino as ov
 import openvino_genai as ov_genai
-#Will run model on CPU, GPU is a possible option
-pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
-rgb = read_image("cat.jpg")
-print(pipe.generate(prompt, image=rgb, max_new_tokens=100))
+from PIL import Image
+
+# Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
+pipe = ov_genai.VLMPipeline("/home/ubuntu/models/MiniCPM-V-2_6", "CPU")
+config = ov_genai.GenerationConfig()
+config.max_new_tokens = 32
+
+image = Image.open("dog.jpg")
+image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
+image_data = ov.Tensor(image_data)  
+
+prompt = "Can you describe the image?"
+print(pipe.generate(prompt, image=image_data, generation_config=config))  
 ```
 
 ### Run generation using VLMPipeline in C++
 
-Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details). See [Visual Language Chat](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) for a demo application.
 
 ```cpp
 #include "load_image.hpp"
