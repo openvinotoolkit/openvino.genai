@@ -128,7 +128,7 @@ import openvino_genai as ov_genai
 from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
-pipe = ov_genai.VLMPipeline("/home/ubuntu/models/MiniCPM-V-2_6", "CPU")
+pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
 config = ov_genai.GenerationConfig()
 config.max_new_tokens = 32
 
