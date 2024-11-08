@@ -130,7 +130,7 @@ from PIL import Image
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
 pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
 config = ov_genai.GenerationConfig()
-config.max_new_tokens = 32
+config.max_new_tokens = 100
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
