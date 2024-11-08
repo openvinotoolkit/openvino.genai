@@ -74,6 +74,7 @@ public:
     // To change the adding special tokens mode we use a statefull subgraph, 
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;  
+    bool m_older_than_24_5 = false;
     
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
@@ -90,6 +91,9 @@ public:
         // need to set state variable.
         // If requested mode matches the stored state set, then don't touch states.
         if (add_special_tokens == m_add_special_tokens) {
+            return;
+        }
+        if (m_older_than_24_5) {
             return;
         }
         
@@ -128,6 +132,11 @@ public:
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
         auto ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
+        if (ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") == 1) {
+            m_older_than_24_5 = false;
+        } else {
+            m_older_than_24_5 = true;
+        }
         
         ov::pass::Manager manager;
         manager.register_pass<MakeCombineSegmentsSatateful>();
