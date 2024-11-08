@@ -259,6 +259,24 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     return {false, output_tokens};
 }
 
+template <typename T>
+void filter_by_ranges(std::vector<T>& container, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
+    std::vector<T> result{container.begin(), container.begin() + offset};
+    for (auto [start, end] : ranges) {
+        result.insert(result.end(), container.begin() + offset + start, container.begin() + offset + end);
+    }
+
+    container = result;
+}
+
+void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
+                                size_t offset,
+                                std::vector<std::pair<size_t, size_t>> ranges) {
+    filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
+    filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
+    filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
+}
+
 }  // namespace
 
 namespace ov {
@@ -328,6 +346,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                                   config,
                                                                   feature_extractor.nb_max_frames,
                                                                   time_precision);
+
+            filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 
