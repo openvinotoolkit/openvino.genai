@@ -11,7 +11,9 @@ int main(int argc, char* argv[]) try {
     std::string models_path = argv[1];
 
     std::string device = "NPU";  // GPU, NPU can be used as well
-    ov::genai::LLMPipeline pipe(models_path, device);
+                                 //
+    ov::AnyMap pipeline_config = { { "USE_OPT_LAYOUT", "YES" } };
+    ov::genai::LLMPipeline pipe(models_path, device, pipeline_config);
     
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
