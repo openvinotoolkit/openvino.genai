@@ -21,6 +21,18 @@ env:
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241105_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/w_openvino_toolkit_windows_2025.0.0.dev20241105_x86_64.zip
 jobs:
+  check_formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for incorrect line endings
+        run: |
+          git grep -n '[^ -~]' -- ':(exclude)model_api/python/README.md'
+      - name: Check formatting with dos2unix
+        run: |
+          dos2unix .github/actions/*
+      - name: Verify no unexpected files
+        run: |
+          git diff --name-only --diff-filter=A
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:
