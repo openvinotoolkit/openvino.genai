@@ -146,10 +146,7 @@ public:
         auto keep_dim_last = register_new_node<v0::Squeeze>(k_next_dim, zero_i);
         auto k_dims_before_transpose = register_new_node<v4::Range>(zero_i, keep_dim_last, one_i, element::i32);
 
-        auto transpose_dims =
-            register_new_node<v0::Concat>(OutputVector{k_dims_before_transpose, k_last_dim, k_next_dim}, 0);
-        auto k_transposed = register_new_node<v1::Transpose>(key, transpose_dims);
-        auto scaled_atten = register_new_node<v0::MatMul>(q_scaled, k_transposed)->output(0);
+        auto scaled_atten = register_new_node<v0::MatMul>(q_scaled, key, false, true)->output(0);
         minus_inf = register_new_node<v1::ConvertLike>(minus_inf, scaled_atten);
 
         if (node->get_causal() || node->get_input_size() > 3) {
