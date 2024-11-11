@@ -94,6 +94,9 @@ public:
             return;
         }
         if (m_older_than_24_5) {
+            // Changing add_special_tokens at runtime was introduced in
+            // 24.5. Older tokenizers sill allow manipulating their
+            // state but the effect is incorrect.
             return;
         }
         
@@ -132,11 +135,7 @@ public:
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
         auto ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
-        if (ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") == 1) {
-            m_older_than_24_5 = false;
-        } else {
-            m_older_than_24_5 = true;
-        }
+        m_older_than_24_5 = ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") != 1;
         
         ov::pass::Manager manager;
         manager.register_pass<MakeCombineSegmentsSatateful>();
