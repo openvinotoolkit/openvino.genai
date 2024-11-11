@@ -45,10 +45,11 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     set_seed(args['seed'])
     input_text = image_param['prompt']
     input_args = collects_input_args(image_param, args['model_type'], args['model_name'])
-    log.info(
-        f"[{'warm-up' if num == 0 else num}][P{image_id}] Input params: Batch_size={args['batch_size']}, "
-        f'steps={input_args["num_inference_steps"]}, width={input_args["width"]}, height={input_args["height"]}, guidance_scale={input_args["guidance_scale"]}'
-    )
+    out_str = f"Input params: Batch_size={args['batch_size']}, " \
+              f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
+    if 'guidance_scale' in input_args:
+        out_str += f", guidance_scale={input_args['guidance_scale']}"
+    log.info(f"[{'warm-up' if num == 0 else num}][P{image_id}]{out_str}")
 
     result_md5_list = []
     max_rss_mem_consumption = ''
@@ -107,10 +108,12 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     set_seed(args['seed'])
     input_text = image_param['prompt']
     input_args = collects_input_args(image_param, args['model_type'], args['model_name'])
-    log.info(
-        f"[{'warm-up' if num == 0 else num}][P{image_id}] Input params: Batch_size={args['batch_size']}, "
-        f'steps={input_args["num_inference_steps"]}, width={input_args["width"]}, height={input_args["height"]}, guidance_scale={input_args["guidance_scale"]}'
-    )
+    out_str = f"Input params: Batch_size={args['batch_size']}, " \
+              f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
+    if 'guidance_scale' in input_args:
+        out_str += f", guidance_scale={input_args['guidance_scale']}"
+    log.info(f"[{'warm-up' if num == 0 else num}][P{image_id}] {out_str}")
+
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''

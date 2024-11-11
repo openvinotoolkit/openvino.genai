@@ -49,5 +49,7 @@ void TextCallbackStreamer::end() {
     return;
 }
 
+ov::genai::StreamerBase::~StreamerBase() = default;
+
 }  // namespace genai
 }  // namespace ov
