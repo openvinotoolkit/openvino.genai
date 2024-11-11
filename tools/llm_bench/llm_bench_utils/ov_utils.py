@@ -8,6 +8,7 @@ import openvino as ov
 import logging as log
 import torch
 import time
+import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
@@ -286,7 +287,8 @@ def create_image_gen_model(model_path, device, **kwargs):
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if kwargs.get("genai", False) and is_genai_available(log_msg=True):
-            return create_genai_image_gen_model(model_path, device, ov_config, **kwargs)
+            log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
+            # return create_genai_image_gen_model(model_path, device, ov_config, **kwargs)
 
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
@@ -296,6 +298,39 @@ def create_image_gen_model(model_path, device, **kwargs):
     return ov_model, from_pretrained_time, False
 
 
+def get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config):
+    import openvino_genai
+    text_encoder_type = model_index_data.get("text_encoder", [])
+    if ("CLIPTextModel" in text_encoder_type):
+        text_encoder = openvino_genai.CLIPTextModel(model_path / "text_encoder", device.upper(), **ov_config)
+    else:
+        raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported text encoder type {text_encoder_type}')
+
+    return text_encoder
+
+
+def get_genai_clip_text_encoder_with_projection(model_index_data, model_path, text_encoder_path, device, ov_config):
+    import openvino_genai
+    text_encoder_type = model_index_data.get(text_encoder_path, [])
+    if ("CLIPTextModelWithProjection" in text_encoder_type):
+        text_encoder = openvino_genai.CLIPTextModelWithProjection(model_path / text_encoder_path, device.upper(), **ov_config)
+    else:
+        raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported {text_encoder_path} type {text_encoder_type}')
+
+    return text_encoder
+
+
+def get_genai_unet_model(model_index_data, model_path, device, ov_config):
+    import openvino_genai
+    unet_type = model_index_data.get("unet", [])
+    if ("UNet2DConditionModel" in unet_type):
+        unet = openvino_genai.UNet2DConditionModel(model_path / "unet", device.upper(), **ov_config)
+    else:
+        raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported UNet type {unet_type}')
+
+    return unet
+
+
 def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
 
@@ -303,8 +338,43 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     if adapter_config:
         ov_config['adapters'] = adapter_config
 
+    data = {}
+    with open(str(model_path / "model_index.json"), 'r') as f:
+        data = json.load(f)
+
+    model_class_name = data.get("_class_name", "")
+
     start = time.perf_counter()
-    t2i_pipe = openvino_genai.Text2ImagePipeline(model_path, device.upper(), **ov_config)
+
+    scheduler_type = data.get("scheduler", ["", ""])[1]
+    if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler", "FlowMatchEulerDiscreteScheduler"]):
+        scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
+        log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
+
+        vae_type = data.get("vae", [])
+        if ("AutoencoderKL" in vae_type):
+            vae = openvino_genai.AutoencoderKL(model_path / "vae_decoder", device.upper(), **ov_config)
+        else:
+            raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported vae decoder type {vae_type}')
+
+        if model_class_name == "StableDiffusionPipeline":
+            text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
+            unet = get_genai_unet_model(data, model_path, device, ov_config)
+            t2i_pipe = openvino_genai.Text2ImagePipeline.stable_diffusion(scheduler, text_encoder, unet, vae)
+        elif model_class_name == "LatentConsistencyModelPipeline":
+            text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
+            unet = get_genai_unet_model(data, model_path, device, ov_config)
+            t2i_pipe = openvino_genai.Text2ImagePipeline.latent_consistency_model(scheduler, text_encoder, unet, vae)
+        elif model_class_name == "StableDiffusionXLPipeline":
+            clip_text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
+            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(data, model_path, "text_encoder_2", device, ov_config)
+            unet = get_genai_unet_model(data, model_path, device, ov_config)
+            t2i_pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae)
+        else:
+            raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
+    else:
+        t2i_pipe = openvino_genai.Text2ImagePipeline(model_path, device.upper(), **ov_config)
+
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return t2i_pipe, end - start, True
