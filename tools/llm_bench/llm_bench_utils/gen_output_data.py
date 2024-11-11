@@ -25,10 +25,10 @@ def gen_iterate_data(
     iter_data['generation_time'] = gen_time
     iter_data['latency'] = latency
     iter_data['result_md5'] = res_md5
-    iter_data['first_token_latency'] = ''
-    iter_data['other_tokens_avg_latency'] = ''
-    iter_data['first_token_infer_latency'] = ''
-    iter_data['other_tokens_infer_avg_latency'] = ''
+    iter_data['first_token_latency'] = -1
+    iter_data['other_tokens_avg_latency'] = -1
+    iter_data['first_token_infer_latency'] = -1
+    iter_data['other_tokens_infer_avg_latency'] = -1
     iter_data['max_rss_mem_consumption'] = max_rss_mem
     iter_data['max_shared_mem_consumption'] = max_shared_mem
     iter_data['max_uss_mem_consumption'] = max_uss_mem

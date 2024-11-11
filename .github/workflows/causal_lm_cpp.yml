@@ -792,7 +792,7 @@ jobs:
           echo "Chat sample python" passed
 
 
-  visual_language_chat_sample-ubuntu:
+  visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -801,29 +801,33 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat py_openvino_genai -j
-      - name: Install dependencies
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
           python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
           python -m pip install -U "optimum<1.23" --no-dependencies
           source ./ov/setupvars.sh
           optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           mkdir images
+      - name: Generate images - tiny-random-minicpmv-2_6
+        shell: python
+        run: |
+          from PIL import Image
+          import numpy as np
+          import requests
+          res = 28, 28
+          lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
+          lines = lines.reshape([*res, 3])
+          lines_image = Image.fromarray(lines)
+          lines_image.save("images/lines.png")
+          cat = Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw).convert('RGB')
+          cat.save("images/cat.png")
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
@@ -839,51 +843,81 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
+      - name: Encode cpp.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
+      - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?'
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/cat.png
+          <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./cat.jpg
-          <<< $'What is unusual on this image?'
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/cat.png
+          <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
-      - name: Download and convert LLaVa 1.5 model and an image
+      - name: Encode cpp2.txt with Python encoding instead of terminal one
+        shell: python
         run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat C++ sample - LLaVa 1.5
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
-      - name: Download and convert LLaVa-Next model
-        run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
-      - name: Run visual_language_chat C++ sample - LLaVa-Next
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
+          with open("cpp2.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp2.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
+      - run: diff cpp2.txt py2.txt
+
+  visual_language_chat_sample-ubuntu-llava_1_5:
+    uses: ./.github/workflows/job_vlm_sample_llava.yml
+    with:
+      model_id: llava-hf/llava-1.5-7b-hf
+      model_dir: llava_1_5_7b_ov
+
+  visual_language_chat_sample-ubuntu-llava_next:
+    uses: ./.github/workflows/job_vlm_sample_llava.yml
+    with:
+      model_id: llava-hf/llava-v1.6-mistral-7b-hf
+      model_dir: llava_v1_6_mistral_7b_ov
+
+  visual_language_chat_sample-ubuntu-internvl2:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert InternVL2 model
         run: |
+          # Lowering transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
+          python -m pip install -U "transformers<4.45.0"
           source ./ov/setupvars.sh
           optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
+      - name: Download images
+        run: |
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - InternVL2
         run: >
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
-
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -1022,9 +1056,9 @@ jobs:
     name: ci/gha_overall_status_causal_lm
     needs: [cpp-multinomial-greedy_causal_lm-ubuntu, cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
             cpp-greedy_causal_lm-Chatglm3-6b, cpp-greedy_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, 
-            cpp-beam_search_causal_lm-Phi-2, cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, 
-            cpp-prompt_lookup_decoding_lm-ubuntu, cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, 
-            cpp-continuous-batching-ubuntu, visual_language_chat_sample-ubuntu,
+            cpp-beam_search_causal_lm-Phi-2, cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
+            cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
+            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest
