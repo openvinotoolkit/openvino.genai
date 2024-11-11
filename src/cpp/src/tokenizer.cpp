@@ -95,7 +95,7 @@ public:
         }
         if (m_older_than_24_5) {
             // Changing add_special_tokens at runtime was introduced in
-            // 24.5. Older tokenizers sill allow manipulating their
+            // 24.5. Older tokenizers still allow manipulating their
             // state but the effect is incorrect.
             return;
         }
