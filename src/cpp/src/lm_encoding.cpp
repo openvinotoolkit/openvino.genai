@@ -86,7 +86,6 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     if (position_ids.has_value())
         m_llm.set_tensor("position_ids", *position_ids);
 
-    m_llm.get_tensor("beam_idx").set_shape({ batch_size });
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
     auto beam_data = beam_idx.data<int32_t>();
     if (selected_beam_idx.has_value())
