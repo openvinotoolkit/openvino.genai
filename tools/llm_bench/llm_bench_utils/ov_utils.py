@@ -343,7 +343,6 @@ def create_genai_speech_2_txt_model(model_path, device, **kwargs):
 
 def create_speech_2txt_model(model_path, device, **kwargs):
     """Create speech generation model.
-
     - model_path: can be model_path or IR path
     - device: can be CPU
     - model_type:
