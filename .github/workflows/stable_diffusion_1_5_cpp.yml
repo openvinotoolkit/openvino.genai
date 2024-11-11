@@ -107,7 +107,7 @@ jobs:
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
-    stable_diffusion_1_5_cpp-windows:
+  stable_diffusion_1_5_cpp-windows:
     runs-on: windows-2019
     defaults:
       run:
