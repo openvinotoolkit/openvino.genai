@@ -1,0 +1,24 @@
+{
+  "name": "genai-node",
+  "type": "module",
+  "version": "2024.5.0-preview",
+  "description": "OpenVINO™ GenAI pipelines for using from Node.js environment",
+  "license": "Apache-2.0",
+  "main": "./lib/module.js",
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "engines": {
+    "node": ">=21.0.0"
+  },
+  "keywords": [
+    "OpenVINO",
+    "OpenVINO GenAI",
+    "GenAI"
+  ],
+  "scripts": {
+    "test": "node --test ./tests/*.test.js"
+  }
+}
