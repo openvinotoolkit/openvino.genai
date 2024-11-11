@@ -2,7 +2,7 @@
 
 Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.Text2ImagePipeline` and uses a text prompt as input source.
 
-There are two sample files:
+There are several sample files:
  - [`main.py`](./main.py) demonstrates basic usage of the text to image pipeline
  - [`lora.py`](./lora.py) shows how to apply LoRA adapters to the pipeline
  - [`lora_fuse.py`](./lora_fuse.py) shows how to maximize performance of LoRA adapters by fusing them into base model weights
