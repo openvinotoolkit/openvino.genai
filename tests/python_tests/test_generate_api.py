@@ -840,3 +840,11 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     assert len(raw_metrics.m_times_to_first_token) > 0
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_batch_switch():
+    pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    pipe.generate(["a"], max_new_tokens=2)
+    pipe.generate(["1", "2"], max_new_tokens=2)
