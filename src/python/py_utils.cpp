@@ -227,7 +227,7 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
     ov::genai::GenerationConfig res_config;
     if(config.has_value())
         res_config = *config;
- 
+    ov::AnyMap map;
     for (const auto& item : kwargs) {
         std::string key = py::cast<std::string>(item.first);
         py::object value = py::cast<py::object>(item.second);
@@ -240,64 +240,12 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
             // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
             return res_config;
         }  
-        if (key == "max_new_tokens") {
-            res_config.max_new_tokens = py::cast<int>(item.second);
-        } else if (key == "min_new_tokens") {
-            res_config.min_new_tokens = py::cast<int>(value);
-        } else if (key == "stop_strings") {
-            res_config.stop_strings = py::cast<std::set<std::string>>(value);
-        } else if (key == "include_stop_str_in_output") {
-            res_config.include_stop_str_in_output = py::cast<bool>(value);
-        } else if (key == "include_stop_str_in_output") {
-            res_config.stop_token_ids = py::cast<std::set<int64_t>>(value);
-        } else if (key == "max_length") {
-            res_config.max_length = py::cast<int>(item.second);
-        } else if (key == "ignore_eos") {
-            res_config.ignore_eos = py::cast<bool>(item.second);
-        } else if (key == "num_beam_groups") {
-            res_config.num_beam_groups = py::cast<int>(item.second);
-        } else if (key == "num_beams") {
-            res_config.num_beams = py::cast<int>(item.second);
-        } else if (key == "diversity_penalty") {
-            res_config.diversity_penalty = py::cast<float>(item.second);
-        } else if (key == "length_penalty") {
-            res_config.length_penalty = py::cast<float>(item.second);
-        } else if (key == "num_return_sequences") {
-            res_config.num_return_sequences = py::cast<int>(item.second);
-        } else if (key == "no_repeat_ngram_size") {
-            res_config.no_repeat_ngram_size = py::cast<int>(item.second);
-        } else if (key == "stop_criteria") {
-            res_config.stop_criteria = py::cast<StopCriteria>(item.second);
-        } else if (key == "temperature") {
-            res_config.temperature = py::cast<float>(item.second);
-        } else if (key == "top_p") {
-            res_config.top_p = py::cast<float>(item.second);
-        } else if (key == "top_k") {
-            res_config.top_k = py::cast<int>(item.second);
-        } else if (key == "do_sample") {
-            res_config.do_sample = py::cast<bool>(item.second);
-        } else if (key == "repetition_penalty") {
-            res_config.repetition_penalty = py::cast<float>(item.second);
-        } else if (key == "presence_penalty") {
-            res_config.presence_penalty = py::cast<float>(value);
-        } else if (key == "frequency_penalty") {
-            res_config.frequency_penalty = py::cast<float>(value);
-        } else if (key == "rng_seed") {
-            res_config.rng_seed = py::cast<int>(value);
-        } else if (key == "assistant_confidence_threshold") {
-            res_config.assistant_confidence_threshold = py::cast<float>(value);
-        } else if (key == "num_assistant_tokens") {
-            res_config.num_assistant_tokens = py::cast<int>(value);
-        } else if (key == "eos_token_id") {
-            res_config.set_eos_token_id(py::cast<int>(item.second));
-        } else if (key == "adapters") {
-            res_config.adapters = py::cast<ov::genai::AdapterConfig>(item.second);
-        } else {
+        if (!generation_config_param_to_property(key, value, map)) {
             throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
                                         "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
         }
     }
-
+    res_config.update_generation_config(map);
     return res_config;
 }
 

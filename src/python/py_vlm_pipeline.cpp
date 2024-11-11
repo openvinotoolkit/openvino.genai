@@ -72,27 +72,18 @@ py::object call_vlm_generate(
     return py::cast(pipe.generate(prompt, images, updated_config, streamer));
 }
 
-ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
+ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool called_from_init=true) {
     ov::AnyMap params = {};
 
     for (const auto& item : kwargs) {
         std::string key = py::cast<std::string>(item.first);
         py::object value = py::cast<py::object>(item.second);
 
-        if (key == "images") {
-            params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(value)))});
-        } else if (key == "image") {
-            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(value)))});
-        } else if (key == "generation_config") {
-            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(value)))});
-        } else if (key == "streamer") {
-            auto py_streamer = py::cast<pyutils::PyBindStreamerVariant>(value);
-            params.insert({ov::genai::streamer(std::move(pyutils::pystreamer_to_streamer(py_streamer)))});
-        } else if (pyutils::generation_config_param_to_property(key, value, params)) {
+        if (pyutils::generation_config_param_to_property(key, value, params)) {
             continue;
         }
         else {
-            if (allow_compile_properties) {
+            if (called_from_init) {
                 // convert arbitrary objects to ov::Any
                 // not supported properties are not checked, as these properties are passed to compile(), which will throw exception in case of unsupported property
                 if (pyutils::py_object_is_any_map(value)) {
@@ -103,9 +94,20 @@ ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_pr
                 }
             }
             else {
-                // generate doesn't run compile(), so only VLMPipeline specific properties are allowed
-                throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                        "Use help(openvino_genai.VLMPipeline.generate) to get list of acceptable parameters."));
+                if (key == "images") {
+                    params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(value)))});
+                } else if (key == "image") {
+                    params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(value)))});
+                } else if (key == "generation_config") {
+                    params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(value)))});
+                } else if (key == "streamer") {
+                    auto py_streamer = py::cast<pyutils::PyBindStreamerVariant>(value);
+                    params.insert({ov::genai::streamer(std::move(pyutils::pystreamer_to_streamer(py_streamer)))});
+                } else {
+                    // generate doesn't run compile(), so only VLMPipeline specific properties are allowed
+                    throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
+                                            "Use help(openvino_genai.VLMPipeline.generate) to get list of acceptable parameters."));
+                }
             }
         }
     }
