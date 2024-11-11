@@ -19,15 +19,7 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS FluxTransformer2DModel {
 public:
     struct Config {
-        // size_t patch_size = 1;
         size_t in_channels = 64;
-        // size_t num_layers = 19;
-        // size_t attention_head_dim = 128;
-        // size_t num_attention_heads = 24;
-        // size_t joint_attention_dim = 4096;
-        // size_t pooled_projection_dim = 768;
-        // bool guidance_embeds = false;
-        // size_t num_single_layers = 38;
 
         std::vector<size_t> block_out_channels = { 128, 256, 512, 512 };
 
@@ -58,8 +50,6 @@ public:
                                                                                   Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
-
-    // void set_adapters(const std::optional<AdapterConfig>& adapters);
 
     void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
 
