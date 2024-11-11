@@ -73,6 +73,11 @@ public:
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
     }
 
     DecodedResults generate(
@@ -81,10 +86,10 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) {
-        // If eos_token_id was not provided, take value
-        if (generation_config.eos_token_id == -1) {
-            generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        }
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (generation_config.eos_token_id == -1)
+            generation_config.eos_token_id = m_generation_config.eos_token_id;
+        generation_config.validate();
 
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
 
