@@ -575,7 +575,9 @@ ov::genai::LLMPipeline::LLMPipeline(
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
         auto& scheduler_config = properties.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, config_without_scheduler_config);
-        // std::cout << "Found custom SchedulerConfig.\n";
+        // std::cout << "Found custom SchedulerConfig.\n
+    } else if ("NPU" == device) {
+        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
@@ -587,8 +589,6 @@ ov::genai::LLMPipeline::LLMPipeline(
             device,
             properties
         );
-    } else if ("NPU" == device) {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
@@ -608,6 +608,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
         auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, config_without_scheduler_config);
+    } else if ("NPU" == device) {
+        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
@@ -618,8 +620,6 @@ ov::genai::LLMPipeline::LLMPipeline(
             device,
             config
         );
-    } else if ("NPU" == device) {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, config);
     }
