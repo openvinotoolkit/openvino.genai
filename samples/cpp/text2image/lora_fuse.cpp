@@ -11,7 +11,11 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
 
-    ov::genai::AdapterConfig adapter_config;
+    // MODE_FUSE instructs pipeline to fuse adapter tensors into original model weights loaded into memory
+    // giving the same performance level for inference as for the original model. After doing it you cannot
+    // change adapter dynamically without re-initializing the pipeline from scratch.
+    ov::genai::AdapterConfig adapter_config(ov::genai::AdapterConfig::MODE_FUSE);
+
     // Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     for(size_t i = 0; i < (argc - 3)/2; ++i) {
         ov::genai::Adapter adapter(argv[3 + 2*i]);
@@ -22,22 +26,13 @@ int32_t main(int32_t argc, char* argv[]) try {
     // LoRA adapters passed to the constructor will be activated by default in next generates
     ov::genai::Text2ImagePipeline pipe(models_path, device, ov::genai::adapters(adapter_config));
 
-    std::cout << "Generating image with LoRA adapters applied, resulting image will be in lora.bmp\n";
+    std::cout << "Generating image with LoRA adapters fused into original weights, resulting image will be in lora.bmp\n";
     ov::Tensor image = pipe.generate(prompt,
         ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20));
     imwrite("lora.bmp", image, true);
-
-    std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
-    image = pipe.generate(prompt,
-        ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
-        ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
-        ov::genai::width(512),
-        ov::genai::height(896),
-        ov::genai::num_inference_steps(20));
-    imwrite("baseline.bmp", image, true);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
