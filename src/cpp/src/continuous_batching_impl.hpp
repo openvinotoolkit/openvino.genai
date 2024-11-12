@@ -26,9 +26,21 @@ protected:
 
     static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
     std::deque<float> m_previous_step_cache_usages;
-    
+
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
+
+    // Pre-allocated per-layer storages for the per-token cache re-rotation coefficients used in cache eviction case
+    std::vector<ov::Tensor> m_rotation_coefficient_stores;
+
+    // Per-layer ROI tensors, reusing storage from the pre-allocated tensors above, that actually represent the
+    // re-rotation coefficients to be sent to the proper model inputs at the *next* pipeline step.
+    std::vector<ov::Tensor> m_next_step_rotation_coefficients;
+
+    using SeqIdToRotatedLogicalBlocksMap = std::map<size_t, std::vector<size_t>>;
+    std::vector<SeqIdToRotatedLogicalBlocksMap> m_next_step_rotated_block_logical_indices_per_sequence;
+
+    std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
@@ -76,4 +88,4 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
 };
-}
+}  // namespace ov::genai
