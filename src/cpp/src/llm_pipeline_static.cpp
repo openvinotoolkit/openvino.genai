@@ -413,12 +413,25 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
     return axes;
 }
 
-std::string get_model_type_from_json(const std::filesystem::path& filepath) {
+struct ModelDesc {
+    std::string type;
+    std::string name_or_path;
+    int num_key_value_heads;
+};
+
+ModelDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
     std::ifstream file(filepath);
     OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
     nlohmann::json config_data = nlohmann::json::parse(file);
-    std::string model_type = config_data["model_type"].get<std::string>();
-    return model_type;
+
+    ModelDesc desc;
+    desc.type = config_data["model_type"].get<std::string>();
+    // NB: In case _name_or_path field isn't presented in config.json
+    if (config_data.contains("_name_or_path")) {
+        desc.name_or_path = config_data["_name_or_path"].get<std::string>();
+    }
+    desc.num_key_value_heads = config_data["num_key_value_heads"].get<int>();
+    return desc;
 }
 
 void reshape_to_static(std::shared_ptr<ov::Model> model,
@@ -659,15 +672,17 @@ void StaticLLMPipeline::setupAndCompileModels(
     // (5) Reshape both models to static shape
     const uint32_t kMaxPromptLen = align_to(pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u), 64u);
     const uint32_t kMinResponseLen = align_to(pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u), 64u);
-    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(models_path / "config.json"));
+    ModelDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+    KVAxesPosition axes = get_kv_axes(model_desc.type);
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len, false};
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (6) Apply opt layout if applicable
     const bool disable_opt_layout = pop_or_default<std::string>(properties, "DISABLE_OPT_LAYOUT", "NO") == "YES";
-    // NB: Try to apply opt transpose by default for all models that have
-    // KV-cache tensors in format [batch, num_heads, seq_len, emb_size]
-    if (m_kvcache_desc.seq_len == 2 && !disable_opt_layout) {
+    // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
+    if ((model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
+        (model_desc.type == "llama" && model_desc.num_key_value_heads == 32))
+         && !disable_opt_layout) {
         std::cout << "[LOG_DEBUG] Try to apply opt layout" << std::endl;
         if (transpose_value_tensors(m_kvcache_model)) {
             // NB: Check if TransposeValueTensors transformation was applied
