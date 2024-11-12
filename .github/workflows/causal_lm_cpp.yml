@@ -325,7 +325,7 @@ jobs:
           print('In python generated')
           print(greedy_py)
           "
-          diff cp.txt py.txt
+          diff cpp.txt py.txt
           echo "Why sun is yellow?" passed
         env:
           PYTHONPATH: "./build"
