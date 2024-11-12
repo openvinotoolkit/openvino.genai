@@ -191,7 +191,19 @@ public:
     }
 };
 
-bool transpose_value_tensors(std::shared_ptr<ov::Model> model) {
+std::shared_ptr<ov::Model> cvt_value_tensors_layout(std::shared_ptr<ov::Model> model) {
+    ov::preprocess::PrePostProcessor ppp(model);
+    for (auto tensor : model->outputs()) {
+        if (tensor.get_any_name().find("value") != std::string::npos) {
+            // NB: [batch, num_heads, seq_len, emb_size] -> [batch, num_heads, emb_size, seq_len]
+            ppp.output(tensor.get_any_name()).model().set_layout(ov::Layout("BHSE"));
+            ppp.output(tensor.get_any_name()).tensor().set_layout(ov::Layout("BHES"));
+        }
+    }
+    return ppp.build();
+}
+
+bool optimize_value_tensors(std::shared_ptr<ov::Model> model) {
     ov::pass::GraphRewrite rewr;
     rewr.add_matcher<ScaledDotProductAttentionDecomposition>();
     TransposeValueTensors::Context ctx;
@@ -206,47 +218,6 @@ bool transpose_value_tensors(std::shared_ptr<ov::Model> model) {
 
     // NB: if new_params is not empty - pass has been applied
     return !ctx.new_params.empty();
-}
-
-ov::Tensor rotate_clockwise(const ov::Tensor& input, ov::Tensor& output) {
-    ov::Shape in_shape = input.get_shape();
-    OPENVINO_ASSERT(in_shape.size() == 4u);
-    OPENVINO_ASSERT(in_shape[0] == 1u);
-
-    const auto in_strides = input.get_strides();
-    const auto IC = in_shape[1];
-    const auto IH = in_shape[2];
-    const auto IW = in_shape[3];
-    const auto IS_C = in_strides[1];
-    const auto IS_H = in_strides[2];
-    const auto IS_W = in_strides[3];
-
-    ov::Shape out_shape = output.get_shape();
-    OPENVINO_ASSERT(out_shape == ov::Shape({1u, IC, IW, IH}));
-
-    auto out_strides = output.get_strides();
-    const auto OS_C = out_strides[1];
-    const auto OS_H = out_strides[2];
-    const auto OS_W = out_strides[3];
-
-    const auto* in_p  = static_cast<uint8_t*>(input.data());
-          auto* out_p = static_cast<uint8_t*>(output.data());
-
-    const auto elem_size = input.get_byte_size() / input.get_size();
-
-    // FIXME: Scalar implementation needs to be optimized!
-    for (size_t c = 0; c < IC; ++c) {
-        for (size_t i = 0; i < IH; ++i) {
-            for (size_t j = 0; j < IW; ++j) {
-                for (size_t b = 0; b < elem_size; ++b) {
-                    const size_t in_idx  = (c * IS_C) + (i * IS_H) + (j * IS_W) + b;
-                    const size_t out_idx = (c * OS_C) + (i * OS_W) + (j * OS_H) + b;
-                    out_p[out_idx] = in_p[in_idx];
-                }
-            }
-        }
-    }
-    return output;
 }
 
 uint32_t align_to(uint32_t value, uint32_t alignment) {
@@ -677,17 +648,12 @@ void StaticLLMPipeline::setupAndCompileModels(
     // (6) Apply opt layout if applicable
     const bool disable_opt_layout = pop_or_default<std::string>(properties, "DISABLE_OPT_LAYOUT", "NO") == "YES";
     // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
-    if ((model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
-        (model_desc.type == "llama" && model_desc.num_key_value_heads == 32))
-         && !disable_opt_layout) {
-        std::cout << "[LOG_DEBUG] Try to apply opt layout" << std::endl;
-        if (transpose_value_tensors(m_kvcache_model)) {
+    if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
+        (model_desc.type == "llama" && model_desc.num_key_value_heads == 32)) {
+        if (optimize_value_tensors(m_kvcache_model)) {
             // NB: Check if TransposeValueTensors transformation was applied
-            std::cout << "[LOG DEBUG] Success: opt layout has been applied" << std::endl;
             m_kvcache_desc.v_tensors_transposed = true;
-        } else {
-            // FIXME: Otherwise fuse SDPA back?
-            std::cout << "[LOG DEBUG] Failed: opt layout has not been applied" << std::endl;
+            m_prefill_model = cvt_value_tensors_layout(m_prefill_model);
         }
     }
     // (7) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
@@ -956,30 +922,25 @@ EncodedResults StaticLLMPipeline::generate(
     // NB: Copy KV-cache tensors from prefill model to kvcache model
     const auto& kvcache_compiled = m_kvcache_request.get_compiled_model();
     for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
-
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
         const auto  input_name = std::regex_replace(output_name, std::regex("present"), "past_key_values");
 
+        const auto kv_dim = (output_name.find("value") != std::string::npos &&
+            m_kvcache_desc.v_tensors_transposed) ? 3u : m_kvcache_desc.seq_len;
+
         auto prefill_out_tensor = m_prefill_request.get_tensor(output_name);
         auto prefill_out_slice = make_tensor_slice(
-            prefill_out_tensor, m_kvcache_desc.seq_len, m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.max_prompt_size
+            prefill_out_tensor, kv_dim, m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.max_prompt_size
         );
 
         auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
         fill_tensor<ov::float16>(kvcache_in_tensor, 0);
 
-        if (output_name.find("value") != std::string::npos &&
-            m_kvcache_desc.v_tensors_transposed) {
-            auto kvcache_in_slice = make_tensor_slice(
-                kvcache_in_tensor, 3u, 0u, m_kvcache_desc.num_stored_tokens
-            );
-            rotate_clockwise(prefill_out_slice, kvcache_in_slice);
-        } else {
-            auto kvcache_in_slice = make_tensor_slice(
-                kvcache_in_tensor, m_kvcache_desc.seq_len, 0u, m_kvcache_desc.num_stored_tokens
-            );
-            prefill_out_slice.copy_to(kvcache_in_slice);
-        }
+        auto kvcache_in_slice = make_tensor_slice(
+            kvcache_in_tensor, kv_dim, 0u, m_kvcache_desc.num_stored_tokens
+        );
+
+        prefill_out_slice.copy_to(kvcache_in_slice);
     }
 
     auto* input_ids_data = m_kvcache_request.get_tensor("input_ids").data<int64_t>();
