@@ -1,0 +1,23 @@
+name: 'Build App'
+inputs:
+  ov_dir:
+    description: 'Directory where OpenVINO is installed'
+    default: './ov'
+    required: false
+  build_dir:
+    description: 'Directory where the app is built'
+    default: './build'
+    required: false
+  build_target:
+    description: 'Target to build'
+    default: ''
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Build app
+      shell: bash
+      run: |
+        source ${{ inputs.ov_dir }}/setupvars.sh
+        cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ inputs.build_dir }}
+        cmake --build ${{ inputs.build_dir }} --config Release ${{ inputs.build_target && format('--target {0}', inputs.build_target) || '' }} -j

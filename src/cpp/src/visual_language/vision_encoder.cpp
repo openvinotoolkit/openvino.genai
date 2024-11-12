@@ -484,18 +484,10 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
     ov::Tensor concatenated_tensor(ov::element::f32, {num_patches, channels, height, width});
     float* tensor_data = concatenated_tensor.data<float>();
 
-    // Fill the tensor with the preprocessed patch data
+    // Fill the tensor with the preprocessed patches data (each patch layout is [C * H * W])
     for (size_t i = 0; i < num_patches; ++i) {
-        const auto& patch = processed_patches[i];
-        for (size_t c = 0; c < channels; ++c) {
-            for (size_t h = 0; h < height; ++h) {
-                for (size_t w = 0; w < width; ++w) {
-                    size_t tensor_index = i * channels * height * width + c * height * width + h * width + w;
-                    size_t patch_index = (h * width + w) * channels + c;
-                    tensor_data[tensor_index] = patch.buf[patch_index];
-                }
-            }
-        }
+        const auto& img = processed_patches[i];
+        std::copy(img.buf.begin(), img.buf.end(), tensor_data + i * channels * height * width);
     }
 
     return concatenated_tensor;
@@ -621,7 +613,7 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     model_type(model_type) {
         m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
-        m_processor_config = ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
+        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
             model_dir, "preprocessor_config.json"
         );
 }

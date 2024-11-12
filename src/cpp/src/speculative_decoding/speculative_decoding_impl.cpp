@@ -11,6 +11,18 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
+    std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
+    ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
+               encoded_string_rhs = rhs.encode(test_string).input_ids;
+    
+    ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
+              shape_rhs = encoded_string_rhs.get_shape();
+
+    return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
+           lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
+}
+
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::filesystem::path& main_models_path,
     const SchedulerConfig& main_scheduler_config,
@@ -66,12 +78,19 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer(main_models_path, tokenizer_properties),
               draft_model_tokenizer(draft_models_path, tokenizer_properties);
+
+    // todo: remove this condition after support of CVS-154103
+    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     
     m_tokenizer = main_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, compile_properties, true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
+    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
+        main_model, main_model_tokenizer, utils::from_config_json_if_exists(main_models_path),
+        main_device_config, main_scheduler_config, main_device, compile_properties, true);
+    m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
+        draft_model, draft_model_tokenizer, utils::from_config_json_if_exists(draft_models_path),
+        draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
 }
 
 GenerationHandle
@@ -167,7 +186,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
-                                                              const StreamerVariant& streamer) {                                                  
+                                                              const StreamerVariant& streamer) {
     ManualTimer generate_timer("speculative_decoding: generate()");
     generate_timer.start();
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
@@ -183,6 +202,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
             return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
         }
     }, streamer);
+
+    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
+        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {

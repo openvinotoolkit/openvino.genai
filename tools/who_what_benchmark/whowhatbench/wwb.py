@@ -10,8 +10,6 @@ import json
 import logging
 import os
 
-import openvino as ov
-import openvino_genai
 import pandas as pd
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
@@ -447,12 +445,8 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
-    config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = max_new_tokens
-    config.do_sample = False
-    out = model.generate(question, config)
-    return out.texts[0]
+def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):

@@ -29,7 +29,7 @@ SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
-    m_vae_scale_factor = ov::genai::get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
+    m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir,
@@ -65,7 +65,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = batch_size;
+            name_to_shape[input_name][0] = 1;
         } else if (input_name == "hidden_states") {
             name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "encoder_hidden_states") {
