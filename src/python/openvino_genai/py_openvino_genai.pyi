@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EARLY', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'HEURISTIC', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'NEVER', 'NORM_SUM', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SUM', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -204,7 +204,7 @@ class AutoencoderKL:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def encode(self, image: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
         ...
     def get_config(self) -> AutoencoderKL.Config:
         ...
@@ -329,6 +329,14 @@ class CacheEvictionConfig:
     aggregation_mode: AggregationMode
     def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode) -> None:
         ...
+    def get_evictable_size(self) -> int:
+        ...
+    def get_max_cache_size(self) -> int:
+        ...
+    def get_recent_size(self) -> int:
+        ...
+    def get_start_size(self) -> int:
+        ...
 class ContinuousBatchingPipeline:
     """
     This class is used for generation with LLMs with continuous batchig
@@ -393,7 +401,7 @@ class DecodedResults:
     def scores(self) -> list[float]:
         ...
     @property
-    def texts(self) -> list:
+    def texts(self) -> list[str]:
         ...
 class EncodedGenerationResult:
     """
@@ -461,6 +469,8 @@ class GenerationConfig:
         include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
         stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
         echo:           if set to true, the model will echo the prompt in the output.
+        logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                        Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
     
         Beam search specific parameters:
         num_beams:         number of beams for beam search. 1 disables beam search.
@@ -494,6 +504,7 @@ class GenerationConfig:
     ignore_eos: bool
     include_stop_str_in_output: bool
     length_penalty: float
+    logprobs: int
     max_length: int
     max_new_tokens: int
     min_new_tokens: int
@@ -521,7 +532,13 @@ class GenerationConfig:
         ...
     def is_beam_search(self) -> bool:
         ...
+    def is_greedy_decoding(self) -> bool:
+        ...
+    def is_speculative_decoding(self) -> bool:
+        ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
+        ...
+    def update_generation_config(self, config_map: dict[str, openvino._pyopenvino.OVAny]) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -599,18 +616,13 @@ class GenerationResult:
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
     
     """
+    m_generation_ids: list[str]
     m_scores: list[float]
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
         ...
-    def get_generation_ids(self) -> list:
-        ...
-    @property
-    def m_generation_ids(self) -> list:
-        ...
-    @m_generation_ids.setter
-    def m_generation_ids(self, arg1: list[str]) -> None:
+    def get_generation_ids(self) -> list[str]:
         ...
     @property
     def m_request_id(self) -> int:
@@ -694,7 +706,7 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> typing.Any:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -729,6 +741,8 @@ class LLMPipeline:
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
             stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
             echo:           if set to true, the model will echo the prompt in the output.
+            logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                            Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
         
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -773,7 +787,7 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> typing.Any:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -808,6 +822,8 @@ class LLMPipeline:
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
             stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
             echo:           if set to true, the model will echo the prompt in the output.
+            logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                            Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
         
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -988,8 +1004,8 @@ class RawPerfMetrics:
         :param m_times_to_first_token: Times to the first token for each call in microseconds.
         :type m_times_to_first_token: List[MicroSeconds]
     
-        :param m_new_token_times: Time points for each new token generated.
-        :type m_new_token_times: List[TimePoint]
+        :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+        :type m_new_token_times: List[MilliSeconds]
     
         :param m_batch_sizes: Batch sizes for each generate call.
         :type m_batch_sizes: List[int]
@@ -1016,6 +1032,9 @@ class RawPerfMetrics:
         ...
     @property
     def m_durations(self) -> list[float]:
+        ...
+    @property
+    def m_new_token_times(self) -> list[float]:
         ...
     @property
     def m_times_to_first_token(self) -> list[float]:
@@ -1101,7 +1120,6 @@ class SchedulerConfig:
             When turend off only KV-cache required for batch calculation is kept in memory and
             when a sequence has finished genegartion its cache is released.
     """
-    block_size: int
     cache_eviction_config: CacheEvictionConfig
     cache_size: int
     dynamic_split_fuse: bool
@@ -1209,7 +1227,7 @@ class Text2ImagePipeline:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def generate(self, prompt: str, **kwargs) -> typing.Any:
+    def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
         
@@ -1267,12 +1285,12 @@ class Tokenizer:
         Decode a sequence into a string prompt.
         """
     @typing.overload
-    def decode(self, tokens: openvino._pyopenvino.Tensor) -> list:
+    def decode(self, tokens: openvino._pyopenvino.Tensor) -> list[str]:
         """
         Decode tensor into a list of string prompts.
         """
     @typing.overload
-    def decode(self, tokens: list[list[int]]) -> list:
+    def decode(self, tokens: list[list[int]]) -> list[str]:
         """
         Decode a batch of tokens into a list of string prompt.
         """
@@ -1367,7 +1385,7 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> typing.Any:
+    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1390,7 +1408,30 @@ class VLMPipeline:
             :rtype: DecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, **kwargs) -> typing.Any:
+    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param prompt: input prompt
+            :type prompt: str
+        
+            :param images: list of images
+            :type inputs: List[ov.Tensor]
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a Dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : Dict
+        
+            :return: return results in decoded form
+            :rtype: DecodedResults
+        """
+    @typing.overload
+    def generate(self, prompt: str, **kwargs) -> DecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1549,7 +1590,7 @@ class WhisperPipeline:
                     models_path (str): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> typing.Any:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
@@ -1641,8 +1682,3 @@ class draft_model:
         """
         device on which inference will be performed
         """
-EARLY: StopCriteria  # value = <StopCriteria.EARLY: 0>
-HEURISTIC: StopCriteria  # value = <StopCriteria.HEURISTIC: 1>
-NEVER: StopCriteria  # value = <StopCriteria.NEVER: 2>
-NORM_SUM: AggregationMode  # value = <AggregationMode.NORM_SUM: 1>
-SUM: AggregationMode  # value = <AggregationMode.SUM: 0>

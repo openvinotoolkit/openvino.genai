@@ -277,7 +277,7 @@ void init_image_generation_pipelines(py::module_& m) {
             [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& prompt,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
                 return py::cast(pipe.generate(prompt, params));
             },

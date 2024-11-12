@@ -158,7 +158,7 @@ void init_llm_pipeline(py::module_& m) {
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
             py::arg("inputs"), "Input string, or list of string or encoded tokens",
@@ -174,7 +174,7 @@ void init_llm_pipeline(py::module_& m) {
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
             py::arg("inputs"), "Input string, or list of string or encoded tokens",

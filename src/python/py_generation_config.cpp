@@ -111,5 +111,8 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
-        .def("is_beam_search", &GenerationConfig::is_beam_search);
-}
+        .def("is_beam_search", &GenerationConfig::is_beam_search)
+        .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)
+        .def("is_speculative_decoding", &GenerationConfig::is_speculative_decoding)
+        .def("update_generation_config", static_cast<void (GenerationConfig::*)(const ov::AnyMap&)>(&ov::genai::GenerationConfig::update_generation_config), py::arg("config_map"));
+   }
