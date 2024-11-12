@@ -17,10 +17,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& properties) {
     m_tokenizer = tokenizer;
+    m_generation_config = utils::from_config_json_if_exists(models_path);
 
     ov::Core core;
 
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+    auto [core_properties, compile_properties] = utils::split_core_complile_config(properties);
     core.set_property(core_properties);
 
     // The model can be compiled for GPU as well

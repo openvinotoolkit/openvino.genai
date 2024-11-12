@@ -57,7 +57,7 @@ public:
         const ov::AnyMap& properties
     ) :
         m_vlm_config{
-            utils::from_config_json_if_exists<ov::genai::VLMConfig>(
+            utils::from_config_json_if_exists<VLMConfig>(
                 models_dir, "config.json"
             )
         },
