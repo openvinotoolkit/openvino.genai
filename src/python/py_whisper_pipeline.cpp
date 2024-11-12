@@ -141,15 +141,15 @@ auto streamer_base_docstring = R"(
 auto raw_perf_metrics_docstring = R"(
     Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
 
-    :param num_input_tokens: Total number of tokens in the input prompt.
-    :type num_input_tokens: int
+    :param features_extraction_durations: Duration for each features extraction call.
+    :type features_extraction_durations: List[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param features_extraction_diration: Mean and standart deviation of Features Extraction Duration in milliseconds
-    :type features_extraction_diration: MeanStdPair
+    :param get_features_extraction_diration: Returns mean and standart deviation of features extraction duration in milliseconds
+    :type get_features_extraction_diration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:

@@ -44,6 +44,7 @@ ov::Tensor encode(ov::InferRequest& request,
     request.infer();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+
     // reset input tensor
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
 
