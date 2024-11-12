@@ -88,7 +88,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
                                                                ov::genai::GenerationConfig sampling_params) {
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params.eos_token_id == -1)
-        sampling_params.eos_token_id = m_generation_config.eos_token_id;
+        sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
 
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
