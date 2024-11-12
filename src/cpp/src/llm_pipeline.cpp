@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <openvino/openvino.hpp>
-#include <limits>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -568,14 +567,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties
 ){
-    // std::cout << "Using continuous batching backend.\n";
     auto start_time = std::chrono::steady_clock::now();
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
         auto config_without_scheduler_config = properties;
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
         auto& scheduler_config = properties.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, config_without_scheduler_config);
-        // std::cout << "Found custom SchedulerConfig.\n
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
     } else if (true) {
@@ -601,7 +598,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& config
 ){
-    // std::cout << "Using continuous batching backend.\n";
     auto start_time = std::chrono::steady_clock::now();
     if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
         auto config_without_scheduler_config = config;
@@ -649,9 +645,6 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
         m_pimpl->m_generation_config.set_eos_token_id(default_eos_token_id);
-
-    if (config.max_new_tokens == SIZE_MAX)
-        m_pimpl->m_generation_config.max_new_tokens = 100;
     
     m_pimpl->m_generation_config.validate();
 }
