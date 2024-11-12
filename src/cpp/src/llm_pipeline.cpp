@@ -223,6 +223,14 @@ public:
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
 
+        // 鸟山明是谁?
+        std::cout << "Tokenized: ";
+        for (int i = 0; i < input_ids.get_size(); ++i) {
+            // 100462, 57811, 30858, 105518, 30,
+            std::cout << input_ids.data<int64_t>()[i] << ", ";
+        }
+        std::cout << '\n';
+
         size_t kv_cache_len = 0;
         ov::Tensor concatenated_attention_mask;
         if (is_chat_conversation && !m_is_cache_empty) {

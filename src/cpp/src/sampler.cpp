@@ -514,6 +514,49 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     size_t max_index = top_indexes.front();
     float max_value = 0.0;
 
+    Logits copy = logits;
+    copy.initialize_vector();
+    std::vector<Token> sorted = copy.m_vector;
+    std::sort(sorted.begin(), sorted.end(), [](const Token& left, const Token& right) {
+        return left.m_log_prob > right.m_log_prob;
+    });
+    for (int i = 0; i < 5; ++i) {
+        std::cout << "Token: " << sorted[i].m_index << " logit: " << sorted[i].m_log_prob << std::endl;
+    }
+    std::cout << "End of logits\n";
+
+    // Tokenized: 100462, 57811, 30858, 105518, 30,
+    // Token: 42411 logit: 11.8191
+    // Token: 57811 logit: 11.7694
+    // Token: 100462 logit: 11.5837
+    // Token: 102349 logit: 11.3212
+    // Token: 100648 logit: 10.8729
+    // End of logits
+    // Token: 54623 logit: 14.8082
+    // Token: 31235 logit: 14.4075
+    // Token: 104139 logit: 14.3
+    // Token: 104719 logit: 14.0869
+    // Token: 107052 logit: 14.0121
+    // End of logits
+    // Token: 9370 logit: 17.8649
+    // Token: 38182 logit: 16.4264
+    // Token: 34187 logit: 16.1675
+    // Token: 100146 logit: 15.9133
+    // Token: 99245 logit: 15.3057
+    // End of logits
+    // Token: 54623 logit: 14.9915
+    // Token: 99245 logit: 14.118
+    // Token: 26940 logit: 13.9735
+    // Token: 102224 logit: 12.9981
+    // Token: 99465 logit: 12.3985
+    // End of logits
+    // Token: 104139 logit: 15.9553
+    // Token: 100678 logit: 14.5646
+    // Token: 99882 logit: 14.3719
+    // Token: 102021 logit: 13.9733
+    // Token: 104719 logit: 13.9081
+    // End of logits
+
     if (top_logprobs) {
         // apply log softmax to max value
         max_value = top_values.front();
