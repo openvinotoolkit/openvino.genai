@@ -26,6 +26,6 @@ file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
 
 add_executable(${TEST_TARGET_NAME} ${tests_src}
         block_allocator.cpp)
-target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::genai gtest_main)
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::genai gtest_main gmock_main)
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src")
 target_sources(${TEST_TARGET_NAME} PRIVATE ${src_files})
