@@ -24,30 +24,8 @@ auto vlm_generate_docstring = R"(
     :param prompt: input prompt
     :type prompt: str
 
-    :param images: list of images
-    :type images: List[ov.Tensor]
-
-    :param generation_config: generation_config
-    :type generation_config: GenerationConfig or a Dict
-
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
-    :type : Callable[[str], bool], ov.genai.StreamerBase
-
-    :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-    :type : Dict
-
-    :return: return results in decoded form
-    :rtype: DecodedResults
-)";
-
-auto vlm_generate_single_image_docstring = R"(
-    Generates sequences for VLMs.
-
-    :param prompt: input prompt
-    :type prompt: str
-
-    :param image: image
-    :type image: ov.Tensor
+    :param images: image or list of images
+    :type images: List[ov.Tensor] or ov.Tensor
 
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a Dict
@@ -180,18 +158,18 @@ void init_vlm_pipeline(py::module_& m) {
             "generate",
             [](ov::genai::VLMPipeline& pipe,
                 const std::string& prompt,
-                const ov::Tensor& image,
+                const ov::Tensor& images,
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::DecodedResults> {
-                return call_vlm_generate(pipe, prompt, {image}, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, {images}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
-            py::arg("image"), "Input image",
+            py::arg("images"), "Input images",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_single_image_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",

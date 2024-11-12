@@ -198,7 +198,10 @@ void init_image_generation_pipelines(py::module_& m) {
         .value("DDIM", ov::genai::Scheduler::Type::DDIM)
         .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
         .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
-    image_generation_scheduler.def_static("from_config", &ov::genai::Scheduler::from_config, py::arg("scheduler_config_path"), py::arg("scheduler_type"));
+    image_generation_scheduler.def_static("from_config",
+        &ov::genai::Scheduler::from_config,
+        py::arg("scheduler_config_path"),
+        py::arg_v("scheduler_type", ov::genai::Scheduler::Type::AUTO, "Scheduler.Type.AUTO"));
 
     py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())

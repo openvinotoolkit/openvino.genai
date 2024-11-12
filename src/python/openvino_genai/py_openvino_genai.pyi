@@ -1115,7 +1115,7 @@ class Scheduler:
         def value(self) -> int:
             ...
     @staticmethod
-    def from_config(scheduler_config_path: os.PathLike, scheduler_type: Scheduler.Type) -> Scheduler:
+    def from_config(scheduler_config_path: os.PathLike, scheduler_type: Scheduler.Type = ...) -> Scheduler:
         ...
 class SchedulerConfig:
     """
@@ -1411,8 +1411,8 @@ class VLMPipeline:
             :param prompt: input prompt
             :type prompt: str
         
-            :param images: list of images
-            :type images: List[ov.Tensor]
+            :param images: image or list of images
+            :type images: List[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a Dict
@@ -1427,15 +1427,15 @@ class VLMPipeline:
             :rtype: DecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
         """
             Generates sequences for VLMs.
         
             :param prompt: input prompt
             :type prompt: str
         
-            :param image: image
-            :type image: ov.Tensor
+            :param images: image or list of images
+            :type images: List[ov.Tensor] or ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a Dict
