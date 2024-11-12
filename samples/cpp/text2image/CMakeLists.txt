@@ -46,6 +46,25 @@ install(TARGETS lora_stable_diffusion
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create LoRA fuse sample executable
+
+add_executable(lora_fuse_stable_diffusion
+    ${CMAKE_CURRENT_SOURCE_DIR}/lora_fuse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
+
+target_include_directories(lora_fuse_stable_diffusion PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(lora_fuse_stable_diffusion PRIVATE openvino::genai)
+
+set_target_properties(lora_fuse_stable_diffusion PROPERTIES
+    COMPILE_PDB_NAME lora_fuse_stable_diffusion
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS lora_fuse_stable_diffusion
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create heterogeneous_stable_diffusion sample executable
 
 add_executable(heterogeneous_stable_diffusion
