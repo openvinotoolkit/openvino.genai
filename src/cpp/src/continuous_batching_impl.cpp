@@ -17,10 +17,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& properties) {
     m_tokenizer = tokenizer;
+    m_generation_config = utils::from_config_json_if_exists(models_path);
 
     ov::Core core;
 
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+    auto [core_properties, compile_properties] = utils::split_core_complile_config(properties);
     core.set_property(core_properties);
 
     // The model can be compiled for GPU as well
@@ -74,6 +75,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
     m_sampler->set_seed(m_generation_config.rng_seed);
+
+    // If eos_token_id was not provided, take value
+    if (m_generation_config.eos_token_id == -1)
+        m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 };
 
 
@@ -81,8 +86,11 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
                                                                ov::genai::GenerationConfig sampling_params) {
-    sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (sampling_params.eos_token_id == -1)
+        sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
+
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                         sampling_params,
                                                                         m_scheduler->get_block_size(),
