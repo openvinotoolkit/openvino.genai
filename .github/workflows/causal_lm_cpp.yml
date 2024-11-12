@@ -320,8 +320,8 @@ jobs:
             greedy_cp = f.read()
           with open("py.txt", 'r') as f:
             greedy_py = f.read()
-          print(f"Generated with C++ sample: {greedy_cp}")
-          print(f"Generated with Python sample: {greedy_py}")
+          print(greedy_cp)
+          print(greedy_py)
           "
           diff cp.txt py.txt
           echo "Why sun is yellow?" passed
