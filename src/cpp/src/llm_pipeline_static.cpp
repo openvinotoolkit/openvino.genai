@@ -646,7 +646,6 @@ void StaticLLMPipeline::setupAndCompileModels(
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (6) Apply opt layout if applicable
-    const bool disable_opt_layout = pop_or_default<std::string>(properties, "DISABLE_OPT_LAYOUT", "NO") == "YES";
     // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
     if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
         (model_desc.type == "llama" && model_desc.num_key_value_heads == 32)) {
