@@ -145,6 +145,30 @@ void concat_2d_by_channels(const float* data_1, const float* data_2, float* res,
     std::memcpy(res + size_1, data_2, size_2 * sizeof(float));
 }
 
+void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size) {
+    const ov::Shape src_shape = src.get_shape(), dst_shape = dst.get_shape();
+    ov::Coordinate src_start(src_shape.size(), 0), src_end = src_shape;
+    ov::Coordinate dst_start(dst_shape.size(), 0), dst_end = dst_shape;
+
+    src_start[0] = src_batch;
+    src_end[0] = src_batch + batch_size;
+
+    dst_start[0] = dst_batch;
+    dst_end[0] = dst_batch + batch_size;
+
+    ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
+}
+
+ov::Tensor repeat(const ov::Tensor input, const size_t num_images_per_prompt) {
+    ov::Shape repeated_shape = input.get_shape();
+    repeated_shape[0] *= num_images_per_prompt;
+    ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
+    for (size_t n = 0; n < num_images_per_prompt; ++n) {
+        batch_copy(input, tensor_repeated, 0, n);
+    }
+    return tensor_repeated;
+}
+
 
 } // namespace ov
 } // namespace genai

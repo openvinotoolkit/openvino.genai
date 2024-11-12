@@ -21,15 +21,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
     using utils::read_json_param;
 
     read_json_param(data, "in_channels", in_channels);
-
     file.close();
-
-    // block_out_channels should be read from VAE encoder / decoder config to compute proper m_vae_scale_factor
-    std::filesystem::path vae_config_path = config_path.parent_path().parent_path() / "vae_decoder" / "config.json";
-    file.open(vae_config_path);
-    OPENVINO_ASSERT(file.is_open(), "Failed to open ", vae_config_path);
-    data = nlohmann::json::parse(file);
-    read_json_param(data, "block_out_channels", block_out_channels);
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir)
@@ -61,9 +53,6 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
     // timestep=timestep,
     // encoder_hidden_states=prompt_embeds,
     // pooled_projections=pooled_prompt_embeds,
-
-    std::cout << "batch_size " << batch_size << std::endl;
-    std::cout << "tokenizer_model_max_length " << tokenizer_model_max_length << std::endl;
 
     height /= m_vae_scale_factor;
     width /= m_vae_scale_factor;

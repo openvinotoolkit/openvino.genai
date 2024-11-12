@@ -64,7 +64,7 @@ private:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
 
-    Tokenizer m_clip_tokenizer;
+    Tokenizer m_tokenizer;
 };
 
 } // namespace genai

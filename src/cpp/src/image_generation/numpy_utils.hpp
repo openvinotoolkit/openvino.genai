@@ -12,6 +12,7 @@
 #include <cmath>
 
 #include "openvino/core/shape.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -50,6 +51,9 @@ void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, con
 void concat_3d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
 void concat_2d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
 void concat_2d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+
+void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1);
+ov::Tensor repeat(const ov::Tensor input, const size_t num_images_per_prompt);
 
 } // namespace ov
 } // namespace genai

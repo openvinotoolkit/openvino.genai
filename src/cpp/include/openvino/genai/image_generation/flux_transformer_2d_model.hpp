@@ -20,8 +20,7 @@ class OPENVINO_GENAI_EXPORTS FluxTransformer2DModel {
 public:
     struct Config {
         size_t in_channels = 64;
-
-        std::vector<size_t> block_out_channels = { 128, 256, 512, 512 };
+        size_t m_default_sample_size = 128;
 
         explicit Config(const std::filesystem::path& config_path);
     };

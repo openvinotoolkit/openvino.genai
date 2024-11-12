@@ -176,7 +176,7 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float
     m_step_index = -1, m_begin_index = -1;
 }
 
-float  FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
+float FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
     size_t base_seq_len = m_config.base_image_seq_len;
     size_t max_seq_len = m_config.max_image_seq_len;
     float base_shift = m_config.base_shift;

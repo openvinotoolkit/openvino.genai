@@ -20,7 +20,7 @@ T5EncoderModel::Config::Config(const std::filesystem::path& config_path) {
 }
 
 T5EncoderModel::T5EncoderModel(const std::filesystem::path& root_dir) :
-    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
+    m_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
     m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model((root_dir / "openvino_model.xml").string());
@@ -55,7 +55,6 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
-    std::optional<AdapterConfig> adapters;
     compiled_model = core.compile_model(m_model, device, properties);
     m_request = compiled_model.create_infer_request();
     // release the original model
@@ -67,12 +66,12 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
 ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
-    const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
+    const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
         std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
 
-        ov::Tensor input_ids_token = m_clip_tokenizer.encode(prompt).input_ids;
+        ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
         std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
     };
 

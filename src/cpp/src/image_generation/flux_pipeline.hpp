@@ -207,7 +207,9 @@ public:
           m_clip_text_encoder(std::make_shared<CLIPTextModel>(clip_text_model)),
           m_t5_text_encoder(std::make_shared<T5EncoderModel>(t5_text_model)),
           m_vae(std::make_shared<AutoencoderKL>(vae)),
-          m_transformer(std::make_shared<FluxTransformer2DModel>(transformer)) {}
+          m_transformer(std::make_shared<FluxTransformer2DModel>(transformer)) {
+        initialize_generation_config("FluxPipeline");
+    }
 
     void reshape(const int num_images_per_prompt,
                  const int height,
@@ -256,10 +258,12 @@ public:
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
+        const auto& transformer_config = m_transformer->get_config();
+
         if (generation_config.height < 0)
-            generation_config.height = m_default_sample_size * vae_scale_factor;
+            generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
         if (generation_config.width < 0)
-            generation_config.width = m_default_sample_size * vae_scale_factor;
+            generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
 
         check_inputs(generation_config, initial_image);
 
@@ -276,9 +280,8 @@ public:
             pooled_prompt_embeds = pooled_prompt_embeds_out;
             prompt_embeds = prompt_embeds_out;
         } else {
-            pooled_prompt_embeds =
-                tensor_batch_copy(pooled_prompt_embeds_out, generation_config.num_images_per_prompt, 1);
-            prompt_embeds = tensor_batch_copy(prompt_embeds_out, generation_config.num_images_per_prompt, 1);
+            pooled_prompt_embeds = repeat(pooled_prompt_embeds_out, generation_config.num_images_per_prompt);
+            prompt_embeds = repeat(prompt_embeds_out, generation_config.num_images_per_prompt);
         }
 
         // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
@@ -333,9 +336,8 @@ private:
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        m_default_sample_size = 128;
-        m_generation_config.height = m_default_sample_size * vae_scale_factor;
-        m_generation_config.width = m_default_sample_size * vae_scale_factor;
+        m_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
+        m_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
 
         if (class_name == "FluxPipeline") {
             m_generation_config.guidance_scale = 3.5f;
@@ -374,8 +376,6 @@ private:
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<AutoencoderKL> m_vae;
 
-private:
-    size_t m_default_sample_size;
 };
 
 }  // namespace genai

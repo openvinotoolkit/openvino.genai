@@ -35,8 +35,6 @@ public:
     virtual void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const = 0;
 
     virtual float calculate_shift(size_t image_seq_len) = 0;
-
-    struct Config;
 };
 
 } // namespace genai

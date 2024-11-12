@@ -334,16 +334,10 @@ public:
             pooled_prompt_2_embed = pooled_prompt_2_embed_out;
             prompt_2_embed = prompt_2_embed_out;
         } else {
-            pooled_prompt_embed = tensor_batch_copy(pooled_prompt_embed_out,
-                                                    generation_config.num_images_per_prompt,
-                                                    batch_size_multiplier);
-            prompt_embed =
-                tensor_batch_copy(prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
-            pooled_prompt_2_embed = tensor_batch_copy(pooled_prompt_2_embed_out,
-                                                      generation_config.num_images_per_prompt,
-                                                      batch_size_multiplier);
-            prompt_2_embed =
-                tensor_batch_copy(prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            pooled_prompt_embed = repeat(pooled_prompt_embed_out, generation_config.num_images_per_prompt);
+            prompt_embed = repeat(prompt_embed_out, generation_config.num_images_per_prompt);
+            pooled_prompt_2_embed = repeat(pooled_prompt_2_embed_out, generation_config.num_images_per_prompt);
+            prompt_2_embed = repeat(prompt_2_embed_out, generation_config.num_images_per_prompt);
         }
 
         // concatenate hidden_states from two encoders
@@ -420,18 +414,10 @@ public:
                 negative_pooled_prompt_2_embed = negative_pooled_prompt_2_embed_out;
                 negative_prompt_2_embed = negative_prompt_2_embed_out;
             } else {
-                negative_pooled_prompt_embed = tensor_batch_copy(negative_pooled_prompt_embed_out,
-                                                                 generation_config.num_images_per_prompt,
-                                                                 batch_size_multiplier);
-                negative_prompt_embed = tensor_batch_copy(negative_prompt_embed_out,
-                                                          generation_config.num_images_per_prompt,
-                                                          batch_size_multiplier);
-                negative_pooled_prompt_2_embed = tensor_batch_copy(negative_pooled_prompt_2_embed_out,
-                                                                   generation_config.num_images_per_prompt,
-                                                                   batch_size_multiplier);
-                negative_prompt_2_embed = tensor_batch_copy(negative_prompt_2_embed_out,
-                                                            generation_config.num_images_per_prompt,
-                                                            batch_size_multiplier);
+                negative_pooled_prompt_embed = repeat(negative_pooled_prompt_embed_out, generation_config.num_images_per_prompt);
+                negative_prompt_embed = repeat(negative_prompt_embed_out, generation_config.num_images_per_prompt);
+                negative_pooled_prompt_2_embed = repeat(negative_pooled_prompt_2_embed_out, generation_config.num_images_per_prompt);
+                negative_prompt_2_embed = repeat(negative_prompt_2_embed_out, generation_config.num_images_per_prompt);
             }
 
             // concatenate hidden_states from two encoders
