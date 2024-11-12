@@ -586,3 +586,5 @@ def test_perf_metrics(model_descr, test_sample):
     assert perf_metrics.get_generate_duration().mean > 0
     assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_features_extraction_diration().mean > 0

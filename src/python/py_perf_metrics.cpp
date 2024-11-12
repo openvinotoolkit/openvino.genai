@@ -8,12 +8,15 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/perf_metrics.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 
 using ov::genai::MeanStdPair;
 using ov::genai::PerfMetrics;
 using ov::genai::RawPerfMetrics;
+
+namespace pyutils = ov::genai::pybind::utils;
 
 namespace {
 
@@ -99,17 +102,6 @@ auto perf_metrics_docstring = R"(
 )";
 
 template <typename T, typename U>
-std::vector<float> get_ms(const T& instance, U T::*member) {
-    // Converts c++ duration to float so that it can be used in Python.
-    std::vector<float> res;
-    const auto& durations = instance.*member;
-    res.reserve(durations.size());
-    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
-                   [](const auto& duration) { return duration.count(); });
-    return res;
-}
-
-template <typename T, typename U>
 std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
     // Converts c++ duration to double so that it can be used in Python.
     // Use double instead of float bacuse timestamp in ms contains 14 digits
@@ -131,22 +123,22 @@ void init_perf_metrics(py::module_& m) {
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::generate_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::generate_durations);
         })
         .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::tokenization_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::tokenization_durations);
         })
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+            return pyutils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
         })
         .def_property_readonly("m_new_token_times", [](const RawPerfMetrics &rw) {
             return timestamp_to_ms(rw, &RawPerfMetrics::m_new_token_times);
         })
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::m_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_durations);
         })
         .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes);
 

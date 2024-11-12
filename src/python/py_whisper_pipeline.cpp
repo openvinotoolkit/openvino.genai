@@ -7,6 +7,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/stl_bind.h>
 
+#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
@@ -17,6 +18,7 @@ using ov::genai::ChunkStreamerBase;
 using ov::genai::ChunkStreamerVariant;
 using ov::genai::DecodedResults;
 using ov::genai::OptionalWhisperGenerationConfig;
+using ov::genai::PerfMetrics;
 using ov::genai::RawSpeechInput;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
@@ -24,7 +26,9 @@ using ov::genai::Tokenizer;
 using ov::genai::WhisperDecodedResultChunk;
 using ov::genai::WhisperDecodedResults;
 using ov::genai::WhisperGenerationConfig;
+using ov::genai::WhisperPerfMetrics;
 using ov::genai::WhisperPipeline;
+using ov::genai::WhisperRawPerfMetrics;
 using PyBindChunkStreamerVariant =
     std::variant<std::function<bool(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
@@ -132,6 +136,23 @@ auto whisper_generation_config_docstring = R"(
 
 auto streamer_base_docstring = R"(
     Base class for chunk streamers. In order to use inherit from from this class.
+)";
+
+auto raw_perf_metrics_docstring = R"(
+    Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
+
+    :param num_input_tokens: Total number of tokens in the input prompt.
+    :type num_input_tokens: int
+)";
+
+auto perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param features_extraction_diration: Mean and standart deviation of Features Extraction Duration in milliseconds
+    :type features_extraction_diration: MeanStdPair
+
+    :param whisper_raw_metrics: Whisper specific raw metrics
+    :type WhisperRawPerfMetrics:
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -311,7 +332,8 @@ void init_whisper_pipeline(py::module_& m) {
         });
 
     py::class_<WhisperDecodedResults, DecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
-        .def_readonly("chunks", &WhisperDecodedResults::chunks);
+        .def_readonly("chunks", &WhisperDecodedResults::chunks)
+        .def_readonly("perf_metrics", &WhisperDecodedResults::perf_metrics);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline", "Automatic speech recognition pipeline")
         .def(
@@ -351,4 +373,15 @@ void init_whisper_pipeline(py::module_& m) {
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &WhisperPipeline::set_generation_config);
+
+    py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
+            return pyutils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+        });
+
+    py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_features_extraction_diration", &WhisperPerfMetrics::get_features_extraction_diration)
+        .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 }

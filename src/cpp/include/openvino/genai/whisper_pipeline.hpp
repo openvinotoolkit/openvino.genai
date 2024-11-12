@@ -34,6 +34,22 @@ public:
 using ChunkStreamerVariant =
     std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
+struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
+    /** @brief Duration for each features extraction call */
+    std::vector<MicroSeconds> features_extraction_durations;
+};
+
+struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
+    /** @brief Mean and standart deviation of Features Extraction Duration in milliseconds */
+    MeanStdPair features_extraction_diration;
+
+    MeanStdPair get_features_extraction_diration();
+
+    void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
+
+    WhisperRawPerfMetrics whisper_raw_metrics;
+};
+
 struct WhisperDecodedResultChunk {
     // start of chunk in seconds
     float start_ts;
@@ -47,6 +63,7 @@ struct WhisperDecodedResultChunk {
 
 struct WhisperDecodedResults : public DecodedResults {
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
+    WhisperPerfMetrics perf_metrics;
 };
 
 /**

@@ -136,7 +136,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
      *
      * @param start_time optional start_time in case if duration needs to be updated.
      */
-    void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt);
+    virtual void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt);
 
     /**
      * @brief convert duration to microseconds
@@ -149,6 +149,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
 
     RawPerfMetrics raw_metrics;
 };
+
+MeanStdPair calc_mean_and_std(const std::vector<MicroSeconds>& durations);
 
 } // namespace genai
 } // namespace ov
