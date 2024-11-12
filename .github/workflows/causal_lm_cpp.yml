@@ -320,7 +320,9 @@ jobs:
             greedy_cp = f.read()
           with open("py.txt", 'r') as f:
             greedy_py = f.read()
+          print('In c++ generated')
           print(greedy_cp)
+          print('In python generated')
           print(greedy_py)
           "
           diff cp.txt py.txt
@@ -603,15 +605,17 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_greedy.txt
-          diff predictions_prompt_lookup.txt predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
+          print('greedy generated')
           print(predicted_greedy)
+          print('Prompt lookup generated')
           print(predicted_prompt_lookup)
           "
+          diff predictions_prompt_lookup.txt predictions_greedy.txt
           echo "Prompt lookup" passed
 
   cpp-Phi-1_5:
