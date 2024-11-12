@@ -63,7 +63,7 @@ void init_tokenizer(py::module_& m) {
 
         .def(
             "decode",
-            [](Tokenizer& tok, ov::Tensor& tokens) -> py::list {
+            [](Tokenizer& tok, ov::Tensor& tokens) -> py::typing::List<py::str> {
                 return pyutils::handle_utf8(tok.decode(tokens));
             },
             py::arg("tokens"),
@@ -71,7 +71,7 @@ void init_tokenizer(py::module_& m) {
 
         .def(
             "decode",
-            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::list{
+            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::typing::List<py::str> {
                 return pyutils::handle_utf8(tok.decode(tokens));
             },
             py::arg("tokens"),

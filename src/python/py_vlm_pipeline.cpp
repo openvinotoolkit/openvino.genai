@@ -150,7 +150,7 @@ void init_vlm_pipeline(py::module_& m) {
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
-            py::arg("generation_config") = std::nullopt, "generation_config",
+            py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_docstring + std::string(" \n ")).c_str()
         )

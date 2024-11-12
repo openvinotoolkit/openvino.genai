@@ -123,7 +123,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
         .def_property("m_generation_ids",
-            [](GenerationResult &r) -> py::list {
+            [](GenerationResult &r) -> py::typing::List<py::str> {
                 return pyutils::handle_utf8(r.m_generation_ids);
             },
             [](GenerationResult &r, std::vector<std::string> &generation_ids) {
@@ -138,7 +138,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             }
         )
         .def("get_generation_ids",
-        [](GenerationResult &r) -> py::list {
+        [](GenerationResult &r) -> py::typing::List<py::str> {
             return pyutils::handle_utf8(r.m_generation_ids);
         });
     

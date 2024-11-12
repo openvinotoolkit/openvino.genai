@@ -76,8 +76,7 @@ void init_generation_config(py::module_& m) {
     py::enum_<StopCriteria>(m, "StopCriteria", stop_criteria_docstring)
         .value("EARLY", StopCriteria::EARLY)
         .value("HEURISTIC", StopCriteria::HEURISTIC)
-        .value("NEVER", StopCriteria::NEVER)
-        .export_values();
+        .value("NEVER", StopCriteria::NEVER);
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)

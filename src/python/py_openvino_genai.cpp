@@ -8,6 +8,7 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
+#include <pybind11/typing.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
 
@@ -85,7 +86,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     init_perf_metrics(m);
     py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)
         .def(py::init<>())
-        .def_property_readonly("texts", [](const DecodedResults &dr) { return pyutils::handle_utf8((std::vector<std::string>)dr); })
+        .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {

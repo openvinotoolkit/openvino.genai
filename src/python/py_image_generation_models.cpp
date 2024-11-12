@@ -259,7 +259,7 @@ void init_autoencoder_kl(py::module_& m) {
                 kwargs: Device properties.
             )");
     autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode, py::arg("latent"));
-    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode, py::arg("image"));
+    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode, py::arg("image"), py::arg("generator"));
     autoencoder_kl.def("get_config", &ov::genai::AutoencoderKL::get_config);
     autoencoder_kl.def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);
 }
