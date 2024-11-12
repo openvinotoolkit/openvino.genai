@@ -196,7 +196,7 @@ public:
 
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
-            config.eos_token_id = m_generation_config.eos_token_id;
+            config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
         // Stateful pipeline does not provide logprobs for prompt tokens
@@ -648,7 +648,7 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     m_pimpl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
-        m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
+        m_pimpl->m_generation_config.set_eos_token_id(default_eos_token_id);
 
     if (config.max_new_tokens == SIZE_MAX)
         m_pimpl->m_generation_config.max_new_tokens = 100;
