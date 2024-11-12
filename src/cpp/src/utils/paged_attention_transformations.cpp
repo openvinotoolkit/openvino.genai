@@ -27,7 +27,9 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, boo
 
     bool use_block_indices_inputs = per_layer_cache_control;
     bool use_score_outputs = per_layer_cache_control;
-    ov::pass::SDPAToPagedAttention(use_block_indices_inputs, use_score_outputs).run_on_model(model);
+    bool allow_cache_rotation = per_layer_cache_control;
+    ov::pass::SDPAToPagedAttention(use_block_indices_inputs, use_score_outputs, allow_cache_rotation)
+        .run_on_model(model);
 }
 
 void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig& device_config) {

@@ -158,6 +158,10 @@ public:
         return m_key_cache_shape[id];
     }
 
+    size_t get_head_size() const {
+        return m_head_size;
+    }
+
     ov::PartialShape get_value_cache_shape(size_t id) const {
         OPENVINO_ASSERT(m_value_cache_shape.size());
         return m_value_cache_shape[id];

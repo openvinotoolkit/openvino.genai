@@ -327,7 +327,8 @@ class CacheEvictionConfig:
         :type aggregation_mode: openvino_genai.AggregationMode
     """
     aggregation_mode: AggregationMode
-    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode) -> None:
+    apply_rotation: bool
+    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...

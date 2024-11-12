@@ -188,10 +188,11 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .value("NORM_SUM", AggregationMode::NORM_SUM);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
-            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode}; }),
-                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"))
+            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation) {
+                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation}; }),
+                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false)
             .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
+            .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
             .def("get_start_size", &CacheEvictionConfig::get_start_size)
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
