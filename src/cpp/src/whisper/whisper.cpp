@@ -264,13 +264,14 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 }
 
 template <typename T>
-void filter_by_ranges(std::vector<T>& container, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
-    std::vector<T> result{container.begin(), container.begin() + offset};
+void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
+    OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
+    std::vector<T> result{value.begin(), value.begin() + offset};
     for (auto [start, end] : ranges) {
-        result.insert(result.end(), container.begin() + offset + start, container.begin() + offset + end);
+        result.insert(result.end(), value.begin() + offset + start, value.begin() + offset + end);
     }
 
-    container = result;
+    value = result;
 }
 
 void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
