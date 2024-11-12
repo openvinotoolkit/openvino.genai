@@ -197,10 +197,6 @@ std::vector<int64_t> DDIMScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
-std::vector<float> DDIMScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("DDIMScheduler doesn't support float timesteps");
-}
-
 float DDIMScheduler::get_init_noise_sigma() const {
     return 1.0f;
 }
@@ -223,14 +219,6 @@ void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator>
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
     }
-}
-
-void DDIMScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
-    OPENVINO_THROW("DDIMScheduler doesn't support `set_timesteps_with_sigma` method");
-}
-
-float DDIMScheduler::calculate_shift(size_t image_seq_len) {
-    OPENVINO_THROW("DDIMScheduler doesn't support `calculate_shift` method");
 }
 
 } // namespace genai

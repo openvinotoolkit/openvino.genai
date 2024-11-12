@@ -204,10 +204,6 @@ std::vector<int64_t> LCMScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
-std::vector<float> LCMScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("LCMScheduler doesn't support float timesteps");
-}
-
 float LCMScheduler::get_init_noise_sigma() const {
     return 1.0f;
 }
@@ -261,14 +257,6 @@ void LCMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
     }
-}
-
-void LCMScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
-    OPENVINO_THROW("LCMScheduler doesn't support set_timesteps_with_sigma");
-}
-
-float LCMScheduler::calculate_shift(size_t image_seq_len) {
-    OPENVINO_THROW("LCMScheduler doesn't support `calculate_shift` method");
 }
 
 } // namespace genai

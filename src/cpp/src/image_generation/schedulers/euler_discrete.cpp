@@ -269,10 +269,6 @@ std::vector<int64_t> EulerDiscreteScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
-std::vector<float> EulerDiscreteScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("EulerDiscreteScheduler doesn't support float timesteps");
-}
-
 float EulerDiscreteScheduler::get_init_noise_sigma() const {
     float max_sigma = *std::max_element(m_sigmas.begin(), m_sigmas.end());
 
@@ -317,14 +313,6 @@ void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<G
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = init_latent_data[i] + sigma * rand_tensor_data[i];
     }
-}
-
-void EulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
-    OPENVINO_THROW("EulerDiscreteScheduler doesn't support set_timesteps_with_sigma");
-}
-
-float EulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
-    OPENVINO_THROW("EulerDiscreteScheduler doesn't support `calculate_shift` method");
 }
 
 }  // namespace genai

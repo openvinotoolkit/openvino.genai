@@ -124,10 +124,6 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
     return {{"latent", prev_sample}};
 }
 
-std::vector<std::int64_t> FlowMatchEulerDiscreteScheduler::get_timesteps() const {
-    OPENVINO_THROW("FlowMatchEulerDiscreteScheduler doesn't support int timesteps");
-}
-
 std::vector<float> FlowMatchEulerDiscreteScheduler::get_float_timesteps() const {
     return m_timesteps;
 }

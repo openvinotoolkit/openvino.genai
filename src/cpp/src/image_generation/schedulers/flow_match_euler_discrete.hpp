@@ -32,8 +32,6 @@ public:
 
     void set_timesteps_with_sigma(std::vector<float> sigma, float mu) override;
 
-    std::vector<int64_t> get_timesteps() const override;
-
     std::vector<float> get_float_timesteps() const override;
 
     float get_init_noise_sigma() const override;

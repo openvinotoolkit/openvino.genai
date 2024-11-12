@@ -187,10 +187,6 @@ std::vector<int64_t> LMSDiscreteScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
-std::vector<float> LMSDiscreteScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("LMSDiscreteScheduler doesn't support float timesteps");
-}
-
 std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
     const float sigma = m_sigmas[inference_step];
 
@@ -261,14 +257,6 @@ std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pr
 void LMSDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
     // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_ddim.py#L474
     OPENVINO_THROW("Not implemented");
-}
-
-void LMSDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {
-    OPENVINO_THROW("LMSDiscreteScheduler doesn't support set_timesteps_with_sigma");
-}
-
-float LMSDiscreteScheduler::calculate_shift(size_t image_seq_len) {
-    OPENVINO_THROW("LMSDiscreteScheduler doesn't support `calculate_shift` method");
 }
 
 } // namespace genai

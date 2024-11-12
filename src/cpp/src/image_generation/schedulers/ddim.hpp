@@ -39,10 +39,6 @@ public:
 
     std::vector<std::int64_t> get_timesteps() const override;
 
-    std::vector<float> get_float_timesteps() const override;
-
-    void set_timesteps_with_sigma(std::vector<float> sigma, float mu) override;
-
     float get_init_noise_sigma() const override;
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
@@ -50,8 +46,6 @@ public:
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
 
     void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
-
-   float calculate_shift(size_t image_seq_len) override;
 
 private:
     Config m_config;
