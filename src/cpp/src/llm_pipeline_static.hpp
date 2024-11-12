@@ -58,7 +58,7 @@ private:
         uint32_t total_size;
         uint32_t num_stored_tokens;
         uint32_t seq_len;
-        uint32_t v_tensors_transposed;
+        bool v_tensors_transposed;
     };
 
     // FIXME: Ideally, we don't need to keep those
