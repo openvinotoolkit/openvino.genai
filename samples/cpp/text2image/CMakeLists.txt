@@ -46,6 +46,8 @@ install(TARGETS lora_stable_diffusion
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create LoRA fuse sample executable
+
 add_executable(lora_fuse_stable_diffusion
     ${CMAKE_CURRENT_SOURCE_DIR}/lora_fuse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
@@ -62,6 +64,8 @@ install(TARGETS lora_fuse_stable_diffusion
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create heterogeneous_stable_diffusion sample executable
 
 add_executable(heterogeneous_stable_diffusion
     ${CMAKE_CURRENT_SOURCE_DIR}/heterogeneous_stable_diffusion.cpp
