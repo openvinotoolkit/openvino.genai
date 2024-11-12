@@ -8,14 +8,16 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     ov::Core& core,
     const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
+    const GenerationConfig& generation_config,
     const DeviceConfig& device_config,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& plugin_config,
     bool is_validation_mode_enabled) {
     m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    init(model, scheduler_config, plugin_config,  device_config, core);
+    init(model, scheduler_config, plugin_config, device_config, core);
 }
 
 void
