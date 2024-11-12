@@ -25,7 +25,29 @@ auto vlm_generate_docstring = R"(
     :type prompt: str
 
     :param images: list of images
-    :type inputs: List[ov.Tensor]
+    :type images: List[ov.Tensor]
+
+    :param generation_config: generation_config
+    :type generation_config: GenerationConfig or a Dict
+
+    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+    :type : Callable[[str], bool], ov.genai.StreamerBase
+
+    :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+    :type : Dict
+
+    :return: return results in decoded form
+    :rtype: DecodedResults
+)";
+
+auto vlm_generate_single_image_docstring = R"(
+    Generates sequences for VLMs.
+
+    :param prompt: input prompt
+    :type prompt: str
+
+    :param image: image
+    :type image: ov.Tensor
 
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a Dict
@@ -169,7 +191,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("images"), "Input images",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_single_image_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",

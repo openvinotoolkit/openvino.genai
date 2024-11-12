@@ -1393,7 +1393,7 @@ class VLMPipeline:
             :type prompt: str
         
             :param images: list of images
-            :type inputs: List[ov.Tensor]
+            :type images: List[ov.Tensor]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a Dict
@@ -1415,8 +1415,8 @@ class VLMPipeline:
             :param prompt: input prompt
             :type prompt: str
         
-            :param images: list of images
-            :type inputs: List[ov.Tensor]
+            :param image: image
+            :type image: ov.Tensor
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a Dict
