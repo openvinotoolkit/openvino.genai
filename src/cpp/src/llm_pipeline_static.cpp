@@ -237,6 +237,14 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
+int get_data_size(ov::Shape shape, int dim) {
+    int data_size = 1;
+    for (int i = dim + 1; i < shape.size(); ++i) {
+        data_size *= shape[i];
+    }
+    return data_size;
+}
+
 struct NPUDesc {
     std::string arch;
     int64_t max_tiles;
@@ -698,22 +706,21 @@ EncodedResults StaticLLMPipeline::generate(
     // NB: Copy KV-cache tensors from prefill model to kvcache model
     const auto& kvcache_compiled = m_kvcache_request.get_compiled_model();
     for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
+        const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
+        auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name); 
+        fill_tensor<ov::float16>(kvcache_in_tensor, 0);
 
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
         auto prefill_out_tensor = m_prefill_request.get_tensor(output_name);
-        auto prefill_out_slice = make_tensor_slice(
-            prefill_out_tensor, m_kvcache_desc.dim, m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.max_prompt_size
-        );
 
-        const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
-        auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
-        fill_tensor<ov::float16>(kvcache_in_tensor, 0);
-
-        auto kvcache_in_slice = make_tensor_slice(
-            kvcache_in_tensor, m_kvcache_desc.dim, 0u, m_kvcache_desc.num_stored_tokens
-        );
-
-        prefill_out_slice.copy_to(kvcache_in_slice);
+        uint16_t* src_ptr = (uint16_t*)prefill_out_tensor.data() + (m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens) * get_data_size(prefill_out_tensor.get_shape(), m_kvcache_desc.dim);
+        uint16_t* dst_ptr = (uint16_t*)kvcache_in_tensor.data();
+        int src_gap_size = get_data_size(prefill_out_tensor.get_shape(), m_kvcache_desc.dim - 1);
+        int dst_gap_size = get_data_size(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim - 1);
+        int copy_size = get_data_size(prefill_out_tensor.get_shape(), m_kvcache_desc.dim);
+        for(int k = 0; k < (m_kvcache_desc.dim > 0 ? kvcache_in_tensor.get_shape().at(m_kvcache_desc.dim - 1) : 1); k++) {
+            memcpy(dst_ptr + k * dst_gap_size, src_ptr + k * src_gap_size, copy_size * sizeof(ov::float16) * m_kvcache_desc.num_stored_tokens);
+        }
     }
 
     auto* input_ids_data = m_kvcache_request.get_tensor("input_ids").data<int64_t>();
@@ -755,11 +762,18 @@ EncodedResults StaticLLMPipeline::generate(
         for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
             const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
             auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
-            auto kvcache_in_slice = make_tensor_slice(
-                kvcache_in_tensor, m_kvcache_desc.dim, m_kvcache_desc.num_stored_tokens - 1, m_kvcache_desc.num_stored_tokens
-            );
+
             const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
-            m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
+            auto kvcache_out_tensor = m_kvcache_request.get_tensor(output_name);
+
+            uint16_t* src_ptr = (uint16_t*)kvcache_out_tensor.data();
+            uint16_t* dst_ptr = (uint16_t*)kvcache_in_tensor.data() + (m_kvcache_desc.num_stored_tokens - 1) * get_data_size(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim);
+            int src_gap_size = get_data_size(kvcache_out_tensor.get_shape(), m_kvcache_desc.dim - 1);
+            int dst_gap_size = get_data_size(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim - 1);
+            int copy_size = get_data_size(kvcache_out_tensor.get_shape(), m_kvcache_desc.dim);
+            for(int k = 0; k < (m_kvcache_desc.dim > 0 ? kvcache_in_tensor.get_shape().at(m_kvcache_desc.dim - 1) : 1); k++) {
+                memcpy(dst_ptr + k * dst_gap_size, src_ptr + k * src_gap_size, copy_size * sizeof(ov::float16));
+            }
         }
     }
     auto stop_time = std::chrono::steady_clock::now();
