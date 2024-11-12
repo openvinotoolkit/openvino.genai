@@ -73,9 +73,36 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     }
 
     m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+
     // and finally create model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
-    m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
+    if (is_use_cache_eviction) {
+        m_model_runner = std::make_shared<ModelRunner>(infer_request,
+                                                       m_scheduler->get_block_size(),
+                                                       device_config.get_num_layers(),
+                                                       /* collect_attention_scores = */ true,
+                                                       /* is_use_per_layer_cache_control = */ true);
+        m_rotation_coefficient_stores.reserve(device_config.get_num_layers());
+        ov::Shape rotation_coefficient_store_shape{device_config.get_head_size() *
+                                                   (m_scheduler->get_block_size() * scheduler_config.num_kv_blocks)};
+        for (size_t i = 0; i < device_config.get_num_layers(); i++) {
+            ov::Tensor store(ov::element::f32, rotation_coefficient_store_shape);
+            std::memset(store.data(), 0, store.get_byte_size());
+            m_rotation_coefficient_stores.push_back(store);
+        }
+        m_next_step_rotation_coefficients.resize(device_config.get_num_layers());
+        m_next_step_rotated_block_logical_indices_per_sequence.resize(device_config.get_num_layers());
+        m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
+            m_scheduler->get_block_size(),
+            // TODO (vshampor): LUT size equal to max cache size in tokens
+            //  is overkill - find a way to pass the max sequence length instead
+            m_scheduler->get_block_size() * scheduler_config.num_kv_blocks,
+            device_config.get_head_size());
+    } else {
+        m_model_runner =
+            std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers());
+    }
+
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
@@ -181,6 +208,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // evict unimportant blocks from KV cache, if requested
     if (sched_config.use_cache_eviction) {
         maybe_evict_cache_blocks(sched_config);
+        m_model_runner->set_cache_rotation_data(std::move(m_next_step_rotation_coefficients),
+                                                std::move(m_next_step_rotated_block_logical_indices_per_sequence));
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -384,18 +413,64 @@ float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_a
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
     auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
+
+    OPENVINO_ASSERT(!sequence_attention_scores.empty());
+    size_t num_decoder_layers = sequence_attention_scores.begin()->second.size();
+    std::vector<size_t> num_blocks_to_rotate_for_each_layer(num_decoder_layers, 0);
+    size_t head_size = m_cache_rotation_calculator->get_head_size();
+
+    // necessary since we move from these members during previous steps
+    m_next_step_rotation_coefficients.clear();
+    m_next_step_rotated_block_logical_indices_per_sequence.clear();
+    m_next_step_rotated_block_logical_indices_per_sequence.resize(num_decoder_layers);
+
     for (auto& seq_id_and_attention_scores : sequence_attention_scores) {
         auto seq_id = seq_id_and_attention_scores.first;
         const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
         if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
-            auto num_decoder_layers = attention_scores_for_all_decoder_layers.size();
-
             m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_scheduler->get_block_size(), num_decoder_layers);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
 
         cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
+
+        for (size_t layer_idx = 0; layer_idx < logical_blocks_to_evict.size(); layer_idx++) {
+            if (logical_blocks_to_evict[layer_idx].empty()) {
+                continue;
+            }
+            size_t num_blocks_before_eviction = m_scheduler->get_block_tables(seq_id)[layer_idx].size();
+            auto rotation_multipliers =
+                m_cache_rotation_calculator->get_rotation_coefficients(logical_blocks_to_evict[layer_idx],
+                                                                       num_blocks_before_eviction);
+            for (size_t i = 0; i < rotation_multipliers.size(); i++) {
+                const auto& block_rotation_data = rotation_multipliers[i];
+                const auto& rotation_multipliers_cos = block_rotation_data.cosines;
+                const auto& rotation_multipliers_sin = block_rotation_data.sines;
+                OPENVINO_ASSERT(rotation_multipliers_cos.size() == rotation_multipliers_sin.size());
+                OPENVINO_ASSERT(rotation_multipliers_cos.size() == m_scheduler->get_block_size());
+
+                m_next_step_rotated_block_logical_indices_per_sequence[layer_idx][seq_id].push_back(
+                    block_rotation_data.logical_block_idx);
+
+                // Fill the store tensor with rotation coefficient data - cos and sin coefficients are each contiguous,
+                // cos goes first
+                size_t block_offset =
+                    num_blocks_to_rotate_for_each_layer[layer_idx] * m_scheduler->get_block_size() * head_size;
+                auto rotation_multipliers_tensor_data =
+                    m_rotation_coefficient_stores[layer_idx].data<float>() + block_offset;
+                for (size_t tok_idx = 0; tok_idx < rotation_multipliers_cos.size(); tok_idx++) {
+                    size_t position_offset = head_size * tok_idx;
+                    for (size_t embedding_pair_idx = 0; embedding_pair_idx < head_size / 2; embedding_pair_idx++) {
+                        rotation_multipliers_tensor_data[position_offset + embedding_pair_idx] =
+                            rotation_multipliers_cos[tok_idx][embedding_pair_idx];
+                        rotation_multipliers_tensor_data[position_offset + embedding_pair_idx + head_size / 2] =
+                            rotation_multipliers_sin[tok_idx][embedding_pair_idx];
+                    }
+                }
+                num_blocks_to_rotate_for_each_layer[layer_idx] += 1;
+            }
+        }
 
         m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
 
@@ -411,6 +486,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
         }
 
     }
+
+    // Select the previously filled rotation coefficients from the store tensor
+    for (size_t i = 0; i < num_decoder_layers; i++) {
+        m_next_step_rotation_coefficients.emplace_back(
+            m_rotation_coefficient_stores[i],
+            ov::Coordinate{0},
+            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i] * m_scheduler->get_block_size() * head_size});
+    }
+
     for (const auto& seq_group_ptr_and_num_blocks_evicted : seq_group_to_num_blocks_evicted_map) {
         // Assuming that the evicted blocks are always full (since they by design are only selected from intermediate-age blocks)
         auto seq_group_ptr = seq_group_ptr_and_num_blocks_evicted.first;
