@@ -1408,7 +1408,7 @@ class VLMPipeline:
             :rtype: DecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
         """
             Generates sequences for VLMs.
         
