@@ -433,8 +433,9 @@ public:
         tokenizer,
         scheduler_config,
         device,
-        plugin_config
-    } {}
+        plugin_config} {
+        m_generation_config = m_impl.get_config();
+    }
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
@@ -446,8 +447,9 @@ public:
         m_tokenizer,
         scheduler_config,
         device,
-        plugin_config
-    } {}
+        plugin_config} {
+        m_generation_config = m_impl.get_config();
+    }
 
     DecodedResults generate(
         StringInputs inputs,
