@@ -163,7 +163,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_inference_duration", &PerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
-        .def("__add__", &PerfMetrics::operator+)
-        .def("__iadd__", &PerfMetrics::operator+=)
+        .def("__add__", &PerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &PerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
 }

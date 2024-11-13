@@ -321,7 +321,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
         .def_readwrite("task", &WhisperGenerationConfig::task)
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
-        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
+        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"));
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
         .def(py::init<>())
@@ -358,7 +358,7 @@ void init_whisper_pipeline(py::module_& m) {
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
                const PyBindChunkStreamerVariant& streamer,
-               const py::kwargs& kwargs) {
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::DecodedResults> {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },
             py::arg("raw_speech_input"),
@@ -372,7 +372,7 @@ void init_whisper_pipeline(py::module_& m) {
 
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &WhisperPipeline::set_generation_config);
+        .def("set_generation_config", &WhisperPipeline::set_generation_config, py::arg("config"));
 
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
