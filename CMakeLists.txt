@@ -44,7 +44,7 @@ include(cmake/features.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
-    if(OpenVINODeveloperPackage_DIR)
+    if(OpenVINODeveloperPackage_FOUND)
         ov_find_python3(REQUIRED)
         ov_detect_python_module_extension()
     else()
