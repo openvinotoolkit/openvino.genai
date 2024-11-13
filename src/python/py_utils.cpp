@@ -242,6 +242,14 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
         }  
         if (key == "max_new_tokens") {
             res_config.max_new_tokens = py::cast<int>(item.second);
+        } else if (key == "min_new_tokens") {
+            res_config.min_new_tokens = py::cast<int>(value);
+        } else if (key == "stop_strings") {
+            res_config.stop_strings = py::cast<std::set<std::string>>(value);
+        } else if (key == "include_stop_str_in_output") {
+            res_config.include_stop_str_in_output = py::cast<bool>(value);
+        } else if (key == "include_stop_str_in_output") {
+            res_config.stop_token_ids = py::cast<std::set<int64_t>>(value);
         } else if (key == "max_length") {
             res_config.max_length = py::cast<int>(item.second);
         } else if (key == "ignore_eos") {
@@ -270,6 +278,16 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
             res_config.do_sample = py::cast<bool>(item.second);
         } else if (key == "repetition_penalty") {
             res_config.repetition_penalty = py::cast<float>(item.second);
+        } else if (key == "presence_penalty") {
+            res_config.presence_penalty = py::cast<float>(value);
+        } else if (key == "frequency_penalty") {
+            res_config.frequency_penalty = py::cast<float>(value);
+        } else if (key == "rng_seed") {
+            res_config.rng_seed = py::cast<int>(value);
+        } else if (key == "assistant_confidence_threshold") {
+            res_config.assistant_confidence_threshold = py::cast<float>(value);
+        } else if (key == "num_assistant_tokens") {
+            res_config.num_assistant_tokens = py::cast<int>(value);
         } else if (key == "eos_token_id") {
             res_config.set_eos_token_id(py::cast<int>(item.second));
         } else if (key == "adapters") {
@@ -281,6 +299,65 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
     }
 
     return res_config;
+}
+
+bool generation_config_param_to_property(std::string key, py::object value, ov::AnyMap& map) {
+    if (key == "max_new_tokens") {
+        map.insert(ov::genai::max_new_tokens(py::cast<int>(value)));
+    } else if (key == "max_length") {
+        map.insert(ov::genai::max_length(py::cast<int>(value)));
+    } else if (key == "ignore_eos") {
+        map.insert(ov::genai::ignore_eos(py::cast<bool>(value)));
+    } else if (key == "min_new_tokens") {
+        map.insert(ov::genai::min_new_tokens(py::cast<int>(value)));
+    } else if (key == "stop_strings") {
+        map.insert(ov::genai::stop_strings(py::cast<std::vector<std::string>>(value)));
+    } else if (key == "include_stop_str_in_output") {
+        map.insert(ov::genai::include_stop_str_in_output(py::cast<bool>(value)));
+    } else if (key == "include_stop_str_in_output") {
+        map.insert(ov::genai::stop_token_ids(py::cast<std::vector<std::vector<int64_t>>>(value)));
+    } else if (key == "num_beam_groups") {
+        map.insert(ov::genai::num_beam_groups(py::cast<int>(value)));
+    } else if (key == "num_beams") {
+        map.insert(ov::genai::num_beams(py::cast<int>(value)));
+    } else if (key == "diversity_penalty") {
+        map.insert(ov::genai::diversity_penalty(py::cast<float>(value)));
+    } else if (key == "length_penalty") {
+        map.insert(ov::genai::length_penalty(py::cast<float>(value)));
+    } else if (key == "num_return_sequences") {
+        map.insert(ov::genai::num_return_sequences(py::cast<int>(value)));
+    } else if (key == "no_repeat_ngram_size") {
+        map.insert(ov::genai::no_repeat_ngram_size(py::cast<int>(value)));
+    } else if (key == "stop_criteria") {
+        map.insert(ov::genai::stop_criteria(py::cast<StopCriteria>(value)));
+    } else if (key == "temperature") {
+        map.insert(ov::genai::temperature(py::cast<float>(value)));
+    } else if (key == "top_p") {
+        map.insert(ov::genai::top_p(py::cast<float>(value)));
+    } else if (key == "top_k") {
+        map.insert(ov::genai::top_k(py::cast<int>(value)));
+    } else if (key == "do_sample") {
+        map.insert(ov::genai::do_sample(py::cast<bool>(value)));
+    } else if (key == "repetition_penalty") {
+        map.insert(ov::genai::repetition_penalty(py::cast<float>(value)));
+    } else if (key == "presence_penalty") {
+        map.insert(ov::genai::presence_penalty(py::cast<float>(value)));
+    } else if (key == "frequency_penalty") {
+        map.insert(ov::genai::frequency_penalty(py::cast<float>(value)));
+    } else if (key == "rng_seed") {
+        map.insert(ov::genai::rng_seed(py::cast<int>(value)));
+    } else if (key == "eos_token_id") {
+        map.insert(ov::genai::eos_token_id(py::cast<int>(value)));
+    } else if (key == "assistant_confidence_threshold") {
+        map.insert(ov::genai::assistant_confidence_threshold(py::cast<float>(value)));
+    } else if (key == "num_assistant_tokens") {
+        map.insert(ov::genai::num_assistant_tokens(py::cast<int>(value)));
+    } else if (key == "adapters") {
+        map.insert(ov::genai::adapters(py::cast<ov::genai::AdapterConfig>(value)));
+    } else {
+        return false;
+    }
+    return true;
 }
 
 }  // namespace ov::genai::pybind::utils

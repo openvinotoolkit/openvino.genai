@@ -89,7 +89,9 @@ ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_pr
             auto py_streamer = py::cast<pyutils::PyBindStreamerVariant>(value);
             params.insert({ov::genai::streamer(std::move(pyutils::pystreamer_to_streamer(py_streamer)))});
 
-        } 
+        } else if (pyutils::generation_config_param_to_property(key, value, params)) {
+            continue;
+        }
         else {
             if (allow_compile_properties) {
                 // convert arbitrary objects to ov::Any
