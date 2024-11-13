@@ -307,12 +307,12 @@ jobs:
           . ./ov/setupvars.sh
           echo "why sun is yellow?" > ./prompt.txt
           
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" | tee cpp.txt
-          samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)" | tee py.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > cpp.txt
+          samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)" > py.txt
           python -c "
-          with open("cpp.txt", 'r') as f:
+          with open('cpp.txt', 'r') as f:
             greedy_cp = f.read()
-          with open("py.txt", 'r') as f:
+          with open('py.txt', 'r') as f:
             greedy_py = f.read()
           print('In c++ generated')
           print(greedy_cp)
