@@ -8,9 +8,9 @@
 namespace ov {
 namespace genai {
 
-MeanStdPair WhisperPerfMetrics::get_features_extraction_diration() {
+MeanStdPair WhisperPerfMetrics::get_features_extraction_duration() {
     evaluate_statistics();
-    return features_extraction_diration;
+    return features_extraction_duration;
 }
 
 void WhisperPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
@@ -18,7 +18,7 @@ void WhisperPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time
         return;
     }
 
-    features_extraction_diration = ov::genai::calc_mean_and_std(whisper_raw_metrics.features_extraction_durations);
+    features_extraction_duration = ov::genai::calc_mean_and_std(whisper_raw_metrics.features_extraction_durations);
     PerfMetrics::evaluate_statistics(start_time);
 };
 

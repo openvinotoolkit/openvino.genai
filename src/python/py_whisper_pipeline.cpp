@@ -148,8 +148,8 @@ auto raw_perf_metrics_docstring = R"(
 auto perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param get_features_extraction_diration: Returns mean and standart deviation of features extraction duration in milliseconds
-    :type get_features_extraction_diration: MeanStdPair
+    :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+    :type get_features_extraction_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:
@@ -382,6 +382,6 @@ void init_whisper_pipeline(py::module_& m) {
 
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
-        .def("get_features_extraction_diration", &WhisperPerfMetrics::get_features_extraction_diration)
+        .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 }
