@@ -1,1 +1,2 @@
-cmake~=3.30
+cmake~=3.23
+pybind11-stubgen==2.5.1
