@@ -200,6 +200,11 @@ public:
         }
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
+            if (1 == m_unique_prompt_token_ids->count(input_id)) {
+                // repetition_penalty was already accounted by the for
+                // loop above.
+                continue;
+            }
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
             if (logits.m_data[input_id] >= 0) {
                 logits.m_data[input_id] /= m_penalty;
@@ -310,6 +315,10 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
+    // speculative decoding parameters
+    float m_assistant_confidence_threshold = 0.f;
+
+
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids) {
@@ -354,7 +363,14 @@ public:
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
             }
+            if (sampling_params.assistant_confidence_threshold > 0) {
+                m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
+            }
         }
+    }
+
+    float get_assistant_confidence_threshold() {
+        return m_assistant_confidence_threshold;
     }
 
     void apply(Logits& logits) {

@@ -7,17 +7,18 @@
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 
 namespace ov {
 namespace genai {
 
-GenerationConfig::GenerationConfig(const std::string& json_path) {
+GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     using utils::read_json_param;
 
     std::ifstream f(json_path);
-    OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path, "' with generation config");
 
     nlohmann::json data = nlohmann::json::parse(f);
     
@@ -43,6 +44,10 @@ GenerationConfig::GenerationConfig(const std::string& json_path) {
     read_json_param(data, "do_sample", do_sample);
     read_json_param(data, "repetition_penalty", repetition_penalty);
     read_json_param(data, "eos_token_id", eos_token_id);
+    // note that echo is not present in HF GenerationConfig
+    read_json_param(data, "echo", echo);
+    // note that logprobs is not present in HF GenerationConfig
+    read_json_param(data, "logprobs", logprobs);
 
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
@@ -91,6 +96,8 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "do_sample", do_sample);
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
+    read_anymap_param(config_map, "echo", echo);
+    read_anymap_param(config_map, "logprobs", logprobs);
     read_anymap_param(config_map, "adapters", adapters);
 }
 
@@ -115,13 +122,17 @@ bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
+bool GenerationConfig::is_speculative_decoding() const {
+    return (assistant_confidence_threshold > 0 || num_assistant_tokens > 0);
+}
+
 void GenerationConfig::validate() const {
     OPENVINO_ASSERT(!do_sample || num_beams == 1, 
                     "Beam search with sampling is not supported yet. "
                     "Please either set do_sample=false to use beam search "
                     "or set num_beams=1 if you with to use multinomial sampling.");
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
-    OPENVINO_ASSERT(max_new_tokens > 0, "'max_new_tokens' must be greater than 0");
+    OPENVINO_ASSERT(max_new_tokens > 0 || (max_new_tokens == 0 && echo), "'max_new_tokens' must be greater than 0, if `echo` is set, 0 is also accepted");
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
     OPENVINO_ASSERT(
         num_beams % num_beam_groups == 0,
@@ -158,6 +169,13 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "frequence_penalty penalty must be a [-2; +2]");
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
     }
+    if (is_speculative_decoding()) {
+        if (assistant_confidence_threshold != 0.f) {
+            OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
+        } else {
+            OPENVINO_ASSERT(num_assistant_tokens > 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
+        };
+    }
 }
 
 GenerationConfig beam_search() {
@@ -189,5 +207,6 @@ GenerationConfig multinomial() {
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
 }
+
 }  // namespace genai
 }  // namespace ov

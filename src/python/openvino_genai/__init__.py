@@ -11,23 +11,70 @@ from .__version__ import __version__
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
 
-from .py_generate_pipeline import (
-    ContinuousBatchingPipeline,
+
+from .py_openvino_genai import (
     DecodedResults,
     EncodedResults,
-    GenerationConfig,
-    GenerationResult,
-    LLMPipeline, 
-    VLMPipeline, 
-    PerfMetrics,
     RawPerfMetrics,
-    SchedulerConfig,
-    StopCriteria,
+    PerfMetrics,
     StreamerBase,
+)
+
+# VLM pipeline
+
+from .py_openvino_genai import (
+    VLMPipeline,
+)
+
+# LLM pipeline
+from .py_openvino_genai import (
+    LLMPipeline, 
+    draft_model
+)
+
+# LoRA
+from .py_openvino_genai import (
+    Adapter,
+    AdapterConfig
+)
+
+# Generation config
+from .py_openvino_genai import (
+    GenerationConfig,
+    StopCriteria
+)
+
+# Tokenizers
+from .py_openvino_genai import (
     TokenizedInputs,
-    Tokenizer,
+    Tokenizer
+)
+
+# Whisper
+from .py_openvino_genai import (
     WhisperGenerationConfig,
     WhisperPipeline,
+    ChunkStreamerBase
+)
+
+# Image generation
+from .py_openvino_genai import (
+    CLIPTextModel,
+    CLIPTextModelWithProjection,
+    UNet2DConditionModel,
+    AutoencoderKL,
+    Text2ImagePipeline,
+    Scheduler,
+    ImageGenerationConfig,
+    Generator,
+    CppStdGenerator,
+)
+
+# Continuous batching
+from .py_openvino_genai import (
+    ContinuousBatchingPipeline,
+    GenerationResult,
+    SchedulerConfig,
     CacheEvictionConfig,
     AggregationMode,
 )

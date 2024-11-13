@@ -228,8 +228,8 @@ public:
     }
 
     /**
-     * Returns the number of overwriteable blocks (in a prefix caching scenario).
-     * @return Number of overwriteable blocks for this layer.
+     * Returns the number of overwritable blocks (in a prefix caching scenario).
+     * @return Number of overwritable blocks for this layer.
      */
     size_t num_overwriteable_blocks() const {
         return m_overwriteable_blocks.num_blocks();
@@ -513,6 +513,14 @@ public:
     const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id, size_t layer_idx) {
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
         return m_block_table[seq_id][layer_idx];
+    }
+
+    /**
+     * Gets the block size.
+     * @return Block size.
+     */
+    const size_t get_block_size() const {
+        return m_block_size;
     }
 
     /**
@@ -906,6 +914,26 @@ public:
         }
         return blocks_count;
     }
+
+    /**
+     * Clean up not busy physical KV cache blocks in a sequence group.
+     * @param seq_group Pointer to a sequence group.
+     */
+    void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
+        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        if (num_logical_blocks == 0) {
+            return;
+        }
+        for (const auto& sequence : seq_group->get_running_sequences()) {
+            auto seq_id = sequence->get_id();
+            auto& block_table = m_block_table[seq_id];
+            size_t num_physical_blocks = block_table[0].size();
+            if (num_physical_blocks > num_logical_blocks) {
+                free_sequence_partially(seq_id, num_physical_blocks - num_logical_blocks);
+            }
+        }
+    }
+
 
     /**
      * Allocates just enough physical KV cache blocks to a sequence group to be enough for the sequences in it. If the sequences

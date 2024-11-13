@@ -26,7 +26,7 @@ if(POLICY CMP0169)
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2024.5.0.0
+        VERSION 2025.0.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -74,6 +74,7 @@ endif()
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
+add_subdirectory(tools/continuous_batching)
 add_subdirectory(tests/cpp)
 
 install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)

@@ -23,12 +23,13 @@ bool TextCallbackStreamer::put(int64_t token) {
         return on_finalized_subword_callback(res.str());
     }
 
-    if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+    constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
+    if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
         // Don't print incomplete text
         return on_finalized_subword_callback(res.str());
     } else if (text.size() > print_len) {
         // It is possible to have a shorter text after adding new token.
-        // Print to output only if text lengh is increaesed.
+        // Print to output only if text length is increaesed.
         res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
         print_len = text.size();
     }
@@ -47,6 +48,8 @@ void TextCallbackStreamer::end() {
     on_finalized_subword_callback(res.str());
     return;
 }
+
+ov::genai::StreamerBase::~StreamerBase() = default;
 
 }  // namespace genai
 }  // namespace ov

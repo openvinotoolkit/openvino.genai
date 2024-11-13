@@ -57,13 +57,16 @@ def get_models_list():
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
 
-def get_whisper_models_list(tiny_only=False):
+def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
     precommit_models = [
         "openai/whisper-tiny",
-        "openai/whisper-small.en",
-        "openai/whisper-base",
-        "openai/whisper-base.en",
+        "openai/whisper-tiny.en",
+        "distil-whisper/distil-small.en",
     ]
+    if multilingual:
+        precommit_models = ["openai/whisper-tiny"]
+    if en_only:
+        precommit_models = ["openai/whisper-tiny.en", "distil-whisper/distil-small.en"]
     if tiny_only:
         precommit_models = ["openai/whisper-tiny"]
 
@@ -76,7 +79,7 @@ def get_whisper_models_list(tiny_only=False):
 
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
-    # pytest.set_trace()
+
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
@@ -109,7 +112,7 @@ def get_chat_templates():
 
     skipped_models = {
         # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
-        # Need to enable and unskip, since it's preset in continious batching and has >100 000 downloads.
+        # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
         "openchat/openchat-3.5-0106",
         
         # These models fail even on HF so no need to check if applying chat matches.
@@ -194,7 +197,7 @@ def read_model(params, **tokenizer_kwargs):
         path,
         tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False}),
+        ov_genai.LLMPipeline(path, 'CPU', **{'ENABLE_MMAP': False}),
     )
 
 
@@ -217,7 +220,7 @@ def model_tmp_path(tmpdir_factory):
     for pattern in ['*.xml', '*.bin']:
         for src_file in path.glob(pattern):
             if src_file.is_file():
-                shutil.copy(src_file, temp_path / src_file.name)    
+                shutil.copy(src_file, temp_path / src_file.name)
     yield model_id, Path(temp_path)
 
 
@@ -230,7 +233,7 @@ def load_tok(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return ov_genai.Tokenizer(str(temp_path), {})
+    return ov_genai.Tokenizer(temp_path)
 
 
 def load_pipe(configs: List[Tuple], temp_path):
@@ -242,11 +245,11 @@ def load_pipe(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return ov_genai.LLMPipeline(str(temp_path))
+    return ov_genai.LLMPipeline(temp_path, 'CPU')
 
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
     scheduler_config = ov_genai.SchedulerConfig()
     scheduler_config.cache_size = 1
-    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), device='CPU', config={"scheduler_config": scheduler_config})
+    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', **{"scheduler_config": scheduler_config})

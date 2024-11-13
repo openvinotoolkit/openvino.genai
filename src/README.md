@@ -55,14 +55,14 @@ If you want to try OpenVINO GenAI with different dependencies versions (**not** 
 A simple example:
 ```python
 import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(model_path, "CPU")
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
 Calling generate with custom generation config parameters, e.g. config for grouped beam search:
 ```python
 import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(model_path, "CPU")
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
 
 result = pipe.generate("The Sun is yellow because", max_new_tokens=100, num_beam_groups=3, num_beams=15, diversity_penalty=1.5)
 print(result)
@@ -76,7 +76,7 @@ output:
 A simple chat in Python:
 ```python
 import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(model_path)
+pipe = ov_genai.LLMPipeline(models_path)
 
 config = {'max_new_tokens': 100, 'num_beam_groups': 3, 'num_beams': 15, 'diversity_penalty': 1.5}
 pipe.set_generation_config(config)
@@ -101,8 +101,8 @@ A simple example:
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
     std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(256));
 }
 ```
@@ -113,8 +113,8 @@ Using group beam search decoding:
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 256;
@@ -134,8 +134,8 @@ A simple chat in C++ using grouped beam search decoding:
 int main(int argc, char* argv[]) {
     std::string prompt;
 
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
@@ -164,8 +164,8 @@ Streaming example with lambda function:
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
 
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
@@ -173,7 +173,7 @@ int main(int argc, char* argv[]) {
         // false means continue generation.
         return false;
     };
-    std::cout << pipe.generate("The Sun is yellow bacause", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
 }
 ```
 
@@ -190,7 +190,7 @@ public:
     bool put(int64_t token) {
         // Custom decoding/tokens processing logic.
 
-        // Returns a flag whether generation should be stoped, if true generation stops.
+        // Returns a flag whether generation should be stopped, if true generation stops.
         return false;
     };
 
@@ -202,8 +202,8 @@ public:
 int main(int argc, char* argv[]) {
     CustomStreamer custom_streamer;
 
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
     std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(15), ov::genai::streamer(custom_streamer));
 }
 ```
@@ -220,13 +220,13 @@ class CustomStreamer(ov_genai.StreamerBase):
     def put(self, token_id) -> bool:
         # Custom decoding/tokens processing logic.
 
-        # Returns a flag whether generation should be stoped, if true generation stops.
+        # Returns a flag whether generation should be stopped, if true generation stops.
         return False
 
     def end(self):
         # Custom finalization logic.
 
-pipe = ov_genai.LLMPipeline(model_path, "CPU")
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
 custom_streamer = CustomStreamer()
 
 pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
@@ -245,7 +245,7 @@ int main(int argc, char* argv[]) {
     // fill other fields in scheduler_config with custom data if required
     scheduler_config.cache_size = 1;    // minimal possible KV cache size in GB, adjust as required
 
-    ov::genai::LLMPipeline pipe(model_path, "CPU", ov::genai::scheduler_config(scheduler_config));
+    ov::genai::LLMPipeline pipe(models_path, "CPU", ov::genai::scheduler_config(scheduler_config));
 }
 ```
 
@@ -268,7 +268,7 @@ Performance metrics are stored either in the `DecodedResults` or `EncodedResults
 
 ```python
 import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(model_path, "CPU")
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
 result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
 perf_metrics = result.perf_metrics
 
@@ -283,8 +283,8 @@ print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
     auto result = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
     auto perf_metrics = result.perf_metrics;
 
@@ -304,6 +304,7 @@ mean_tpot 3.80
 
 >**Note**: If the input prompt is just a string, the generate function returns only a string without perf_metrics. To obtain perf_metrics, provide the prompt as a list with at least one element or call generate with encoded inputs.
 
+#### Accumulating metrics
 Several `perf_metrics` can be added to each other. In that case `raw_metrics` are concatenated and mean/std values are recalculated. This accumulates statistics from several `generate()` calls
 
 ```cpp
@@ -311,8 +312,8 @@ Several `perf_metrics` can be added to each other. In that case `raw_metrics` ar
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string model_path = argv[1];
-    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
     auto result_1 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
     auto result_2 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
     auto perf_metrics = result_1.perf_metrics + result_2.perf_metrics
@@ -327,7 +328,7 @@ int main(int argc, char* argv[]) {
 
 ```python
 import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(model_path, "CPU")
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
 res_1 = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
 res_2 = pipe.generate(["Why Sky is blue because"], max_new_tokens=20)
 perf_metrics = res_1.perf_metrics + res_2.perf_metrics
@@ -336,6 +337,61 @@ print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
 print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
 print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
 print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
+```
+
+#### Using raw performance metrics
+In addition to mean and standard deviation values, the `perf_metrics` object has a `raw_metrics` field. This field stores raw data, including:
+
+- Timestamps for each batch of generated tokens
+- Batch sizes for each timestamp
+- Tokenization durations
+- Detokenization durations
+- Other relevant metrics
+
+These metrics can be use for more fine grained analysis, such as getting exact calculating median values, percentiles, etc. Below are a few examples of how to use raw metrics.
+
+Getting timestamps for each generated token:
+```python
+import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+raw_metrics = perf_metrics.raw_metrics
+
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
+print(f'Timestamps: {" ms, ".join(f"{i:.2f}" for i in raw_metrics.m_new_token_times)}')
+```
+
+Getting pure inference time without tokenizatin and detokenization duration:
+```python
+import openvino_genai as ov_genai
+import numpy as np
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f} ms')
+
+raw_metrics = perf_metrics.raw_metrics
+generate_duration = np.array(raw_metrics.generate_durations)
+tok_detok_duration = np.array(raw_metrics.tokenization_durations) - np.array(raw_metrics.detokenization_durations)
+pure_inference_duration = np.sum(generate_duration - tok_detok_duration) / 1000 # in milliseconds
+print(f'Pure Inference duration: {pure_inference_duration:.2f} ms')
+```
+
+Example of using raw metrics to calculate median value of generate duration:
+```python
+import openvino_genai as ov_genai
+import numpy as np
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+raw_metrics = perf_metrics.raw_metrics
+
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
+durations = np.array(raw_metrics.m_new_token_times[1:]) - np.array(raw_metrics.m_new_token_times[:-1])
+print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
 For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/benchmark_genai/README.md) and C++ [benchmark_genai](../samples/cpp/benchmark_genai/README.md) samples.

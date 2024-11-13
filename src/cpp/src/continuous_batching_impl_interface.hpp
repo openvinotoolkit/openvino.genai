@@ -17,7 +17,7 @@ protected:
     Tokenizer m_tokenizer;
 
     // TODO (mzegla): GenerationConfig is request specific object
-    // and pipeline only uses default rng_seed. 
+    // and pipeline only uses default rng_seed and some special tokens.
     ov::genai::GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;
@@ -28,11 +28,11 @@ protected:
         float m_infer_total_ms = 0.0f;
 
         ~PerfTime() {
-            std::cout << "Inference requests aggregated statistic: " << std::endl;
-            std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
-            std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
-            std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
-            std::cout << std::endl;
+            // std::cout << "Inference requests aggregated statistic: " << std::endl;
+            // std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
+            // std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
+            // std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
+            // std::cout << std::endl;
         }
     } m_perf;
     bool m_is_chat_conversation = false;
@@ -58,10 +58,10 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) = 0;
-    virtual std::vector<GenerationResult>
+    std::vector<GenerationResult>
     generate(const std::vector<std::string>& prompts,
              std::vector<ov::genai::GenerationConfig> sampling_params,
-             const StreamerVariant& streamer) = 0;
+             const StreamerVariant& streamer);
 
     void start_chat(const std::string& system_message);
     void finish_chat();

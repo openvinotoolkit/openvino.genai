@@ -35,7 +35,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     if 'do_sample' not in config:
         # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
@@ -85,9 +85,10 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
         generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
 
-    encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
-    hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
-    hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:], skip_special_tokens=True)
+    encoded_prompt = tokenizer([prompt], return_tensors='pt', add_special_tokens=True)
+    prompt_ids, attention_mask = encoded_prompt['input_ids'], encoded_prompt['attention_mask']
+    hf_encoded_output = model.generate(prompt_ids, attention_mask=attention_mask, **generation_config_hf)
+    hf_output = tokenizer.decode(hf_encoded_output[0, prompt_ids.shape[1]:], skip_special_tokens=True)
 
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
@@ -113,7 +114,7 @@ def hf_ov_genai_tensors_comparison(
     if 'do_sample' not in config:
         # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
@@ -132,7 +133,7 @@ def hf_ov_genai_tensors_comparison(
 
     hf_output = model.generate(**inputs_hf, **generation_config_hf)
 
-    pipe = ov_genai.LLMPipeline(str(path), device)
+    pipe = ov_genai.LLMPipeline(path, device)
     ov_output = pipe.generate(inputs_ov, **config)
 
     hf_res = hf_output[0, input_ids.shape[1]:].numpy()
@@ -179,12 +180,6 @@ prompts = [
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.xfail(
-    raises=TypeError, 
-    reason="pybind was unable to find ov::Tensor from openvino yet",
-    strict=False,
-    condition=sys.platform in ["linux", "win32"]
-)
 def test_genai_tokenizer_encode(model_descr, prompt):
     model_id, path, tokenizer, model, pipe = read_model(model_descr)
     tok = pipe.get_tokenizer()
@@ -276,7 +271,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
-    # todo: with EARLY stop_criteria looks like HF return unvalid out with sentence<eos><unk><unk>
+    # todo: with EARLY stop_criteria looks like HF return invalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
     if (stop_criteria == StopCriteria.EARLY):
         pytest.skip()
@@ -308,6 +303,39 @@ def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
         max_new_tokens=max_new_tokens, 
     )
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
+
+
+@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_greedy_repetition_penalty(model_descr, prompt):
+    model_id, path, tokenizer, model, pipe = read_model(model_descr)
+
+    generation_config = dict(
+        repetition_penalty=2.0,
+        max_new_tokens=20,
+        do_sample=False
+    )
+    run_hf_ov_genai_comparison((model_id, path, tokenizer, model, pipe), generation_config, prompt)
+
+    generation_config = dict(
+        repetition_penalty=1.0,
+        max_new_tokens=20,
+        do_sample=False
+    )
+    run_hf_ov_genai_comparison((model_id, path, tokenizer, model, pipe), generation_config, prompt)
+
+    ov_output = pipe.generate(prompt, **generation_config)
+    
+    generation_config = dict(
+        repetition_penalty=0.5,
+        max_new_tokens=20,
+        do_sample=False
+    )
+    ov_output_half_penalty = pipe.generate(prompt, **generation_config)
+
+    assert(len(set(ov_output.split(' '))) > len(set(ov_output_half_penalty.split(' '))))
 
 
 def user_defined_callback(subword):
@@ -509,7 +537,7 @@ def test_load_special_tokens_3_(model_tmp_path):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_load_special_tokens_3(model_tmp_path):
-    # both config.json is availabel and tokenizer_config.json available
+    # both config.json is available and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
     tok_config_json = {
     "added_tokens_decoder": {
@@ -807,3 +835,11 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     assert len(raw_metrics.m_times_to_first_token) > 0
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_batch_switch():
+    pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    pipe.generate(["a"], max_new_tokens=2)
+    pipe.generate(["1", "2"], max_new_tokens=2)

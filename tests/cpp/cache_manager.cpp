@@ -14,7 +14,6 @@ TEST(TestCacheManager, general_test) {
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 0;
     scheduler_config.cache_size = 2;
-    scheduler_config.block_size = 32;
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";

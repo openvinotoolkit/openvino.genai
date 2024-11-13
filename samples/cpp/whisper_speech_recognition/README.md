@@ -6,7 +6,7 @@ This example showcases inference of speech recognition Whisper Models. The appli
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../requirements.txt](../../requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
@@ -17,24 +17,21 @@ optimum-cli export openvino --trust-remote-code --model openai/whisper-base whis
 
 Prepare audio file in wav format with sampling rate 16k Hz.
 
+You can download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+
 ## Run
 
-`whisper_speech_recognition whisper-base sample.wav`
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
-Output: text transcription of `sample.wav`
+`whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
 
-Models can be downloaded from [OpenAI HuggingFace](https://huggingface.co/openai).
+Output:
+```
+ How are you doing today?
+timestamps: [0, 2] text:  How are you doing today?
+```
 
-Supported Models:
-[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)
-[openai/whisper-tiny.en](https://huggingface.co/openai/whisper-tiny.en)
-[openai/whisper-base](https://huggingface.co/openai/whisper-base)
-[openai/whisper-base.en](https://huggingface.co/openai/whisper-base.en)
-[openai/whisper-small](https://huggingface.co/openai/whisper-small)
-[openai/whisper-small.en](https://huggingface.co/openai/whisper-small.en)
-[openai/whisper-medium](https://huggingface.co/openai/whisper-medium)
-[openai/whisper-medium.en](https://huggingface.co/openai/whisper-medium.en)
-[openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)
+See [SUPPORTED_MODELS.md](../../../src/docs/SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
 
 ### Troubleshooting
 

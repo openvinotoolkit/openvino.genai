@@ -1,36 +1,35 @@
 [project]
 name = "openvino-genai"
-version = "2024.5.0.0"
-description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
-requires-python = ">=3.8"
+version = "2025.0.0.0"
+description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
+requires-python = ">=3.9"
 readme = {file = "src/README.md", content-type="text/markdown"}
 license = {text = "OSI Approved :: Apache Software License"}
 authors = [
     { name = "OpenVINO Developers", email = "openvino@intel.com" },
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "openvino_tokenizers~=2024.5.0.0.dev"
+    "openvino_tokenizers~=2025.0.0.0.dev"
 ]
 
 [tool.py-build-cmake.module]
 directory = "src/python"
 
 [tool.py-build-cmake.sdist]
-exclude = ["llm_bench", "samples", "tests", "thirdparty"]
+exclude = ["tools", "samples", "tests", "thirdparty"]
 
 [tool.py-build-cmake.cmake]
 minimum_version = "3.23"
 build_type = "Release"
 config = ["Release"]
 find_python3 = true
-build_args = ["--parallel", "--target", "py_generate_pipeline"]
+build_args = ["--parallel", "--target", "py_openvino_genai"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
 options = {"BUILD_TOKENIZERS" = "OFF"}

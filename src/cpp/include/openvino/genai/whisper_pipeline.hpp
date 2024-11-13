@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <openvino/openvino.hpp>
+#include <filesystem>
 #include <optional>
 #include <variant>
+#include <vector>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -16,6 +17,22 @@ namespace ov::genai {
 using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
+
+/**
+ * @brief base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
+ *
+ * @param m_tokenizer tokenizer
+ */
+class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
+public:
+    /// @brief put is called every time new token chunk is generated,
+    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
+    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
+};
+
+// Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
+using ChunkStreamerVariant =
+    std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
 struct WhisperDecodedResultChunk {
     // start of chunk in seconds
@@ -32,36 +49,41 @@ struct WhisperDecodedResults : public DecodedResults {
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
 };
 
+/**
+ * @brief Automatic speech recognition pipeline
+ */
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
+    class WhisperPipelineImplBase;
+    std::unique_ptr<WhisperPipelineImplBase> m_impl;
+
+    class StaticWhisperPipeline;
+    class WhisperPipelineStatefulImpl;
 
 public:
     /**
-     * @brief Constructs an WhisperSpeechRecognitionPipeline from xml/bin files, tokenizers and configuration in the
+     * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
      * same dir.
      *
-     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+     * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
-     * @param plugin_config optional plugin_config
+     * @param properties optional properties
      */
-    WhisperPipeline(const std::string& model_path,
-                    const std::string& device = "CPU",
-                    const ov::AnyMap& plugin_config = {});
+    WhisperPipeline(const std::filesystem::path& models_path,
+                    const std::string& device,
+                    const ov::AnyMap& properties = {});
 
     /**
-     * @brief Constructs a WhisperPipeline when ov::genai::Tokenizer is initialized manually using file
-     * from the different dirs.
+     * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
+     * same dir. Accepts arbitrary list of optional properties.
      *
-     * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
-     * @param tokenizer manually initialized ov::genai::Tokenizer
+     * @param models_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
-     * @param plugin_config optional plugin_config
+     * @param properties optional properties
      */
-    WhisperPipeline(const std::string& model_path,
-                    const ov::genai::Tokenizer& tokenizer,
-                    const std::string& device = "CPU",
-                    const ov::AnyMap& plugin_config = {});
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    WhisperPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
+        : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     ~WhisperPipeline();
 
@@ -71,12 +93,13 @@ public:
      * @param raw_speech_input raw speech input. Required to be normalized to near [-1, 1] range and have 16k Hz
      * sampling rate.
      * @param generation_config optional GenerationConfig
-     * @param streamer optional streamer
+     * @param streamer optional streamer. Streamer supported for short-form audio (< 30 seconds) with
+     * `return_timestamps=False` only
      * @return WhisperDecodedResults decoded resulting text transcription
      */
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config = std::nullopt,
-                                   StreamerVariant streamer = std::monostate());
+                                   ChunkStreamerVariant streamer = std::monostate());
 
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
@@ -98,4 +121,7 @@ public:
     WhisperGenerationConfig get_generation_config() const;
     void set_generation_config(const WhisperGenerationConfig& config);
 };
+
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(ChunkStreamerVariant func);
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config);
 }  // namespace ov::genai
