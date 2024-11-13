@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
-  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  OV_BRANCH: 0080d90974ca84f9a6d359da3388a2a18a93b753
   OV_TARBALL: ''
 
 jobs:
