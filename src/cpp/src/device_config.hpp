@@ -36,30 +36,14 @@ public:
         m_block_size = get_block_size_by_device(device);
 
         if (m_device == "CPU") {
-            auto inference_precision = core.get_property(device, ov::hint::inference_precision);
-            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-
-            // if user sets precision hint, kv cache type should be changed
-            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
-            if (inference_precision_it != plugin_config.end()) {
-                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
-                if (inference_precision == ov::element::f32) {
-                    m_kv_cache_type = ov::element::f32;
-                } else if (inference_precision == ov::element::f16) {
-                    m_kv_cache_type = ov::element::f16;
-                } else if (inference_precision == ov::element::bf16) {
-                    m_kv_cache_type = ov::element::bf16;
-                } else {
-                    // use default f32
-                    m_kv_cache_type = ov::element::f32;
-                }
-            }
-
             // if user sets ov::kv_cache_precision hint
             const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
             if (kv_cache_precision_it != plugin_config.end()) {
                 const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
                 m_kv_cache_type = kv_cache_precision;
+            } else {
+                // x86 and arm have different default kv cache type
+                m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
             }
         } else if (m_device.find("GPU") != std::string::npos) {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
