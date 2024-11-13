@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Union
 
 import pandas as pd
@@ -107,6 +108,7 @@ class TextEvaluator(BaseEvaluator):
         generation_config=None,
         generation_config_base=None,
         seqs_per_request=None,
+        chat_template = None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -116,12 +118,13 @@ class TextEvaluator(BaseEvaluator):
         self.metrics = metrics
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
-        self._crop_question = crop_question
+        self.crop_question = crop_question
         self.num_samples = num_samples
         self.generation_config = generation_config
-        self.generation_config_base = generation_config
+        self.generation_config_base = generation_config_base
         self.seqs_per_request = seqs_per_request
         self.generation_fn = gen_answer_fn
+        self.chat_template = chat_template
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
 
@@ -200,11 +203,22 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question):
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, chat_template=None):
+            device = "cpu"
+            if hasattr(model, "device"):
+                device = model.device
+            if chat_template:
+                messages = deepcopy(chat_template)
+                for message in messages:
+                    for k, v in message.items():
+                        if v == 'input_text':
+                            message[k] = prompt
+                inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(device)
+                inputs = {'input_ids': inputs}
+            else:
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
 
             tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
-
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 
@@ -247,7 +261,8 @@ class TextEvaluator(BaseEvaluator):
                         self.tokenizer,
                         p,
                         self.max_new_tokens,
-                        self._crop_question,
+                        self.crop_question,
+                        self.chat_template
                     )
                 )
         else:

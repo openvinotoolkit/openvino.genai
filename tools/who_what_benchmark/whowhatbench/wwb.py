@@ -3,6 +3,7 @@ from .utils import patch_diffusers
 patch_diffusers()
 
 import argparse
+import ast
 import difflib
 import json
 import logging
@@ -323,6 +324,14 @@ def parse_args():
         default=42,
         help="Text-to-image specific parameter that defines the seed value.",
     )
+    parser.add_argument(
+        '--chat-template',
+        nargs='+',
+        default=None,
+        help='Chat template for instruction/chat models. The value with name input_text is required.'
+        ' For example: '
+        '\'{"role": "system", "content": "You are a erudite chatbot."} {"role": "user", "content": "input_text"}\'',
+    )
 
     return parser.parse_args()
 
@@ -336,6 +345,30 @@ def check_args(args):
     if args.target_model is None and args.gt_data is None:
         raise ValueError(
             "Wether --target-model or --gt-data should be provided")
+
+
+def parse_chat_template(args):
+    if args.chat_template is None:
+        return None
+    res = []
+    required_value = "input_text"
+    matches = 0
+
+    for text in args.chat_template:
+        chat_template = ast.literal_eval(text)
+        if not isinstance(chat_template, dict):
+            raise ValueError(f"Mistake in chat template: {chat_template}."\
+                             " Please provide template in dict type.")
+        for _, v in chat_template.items():
+            if v == required_value:
+                matches += 1
+        res.append(chat_template)
+
+    if matches != 1:
+        raise ValueError(f"Mistake in chat template: {args.chat_template}."\
+                    " Required one input_text value in dict.")
+
+    return res
 
 
 def load_tokenizer(args):
@@ -411,6 +444,7 @@ def get_evaluator(base_model, args):
 
         if task == "text-generation":
             tokenizer = load_tokenizer(args)
+            chat_template = parse_chat_template(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -420,6 +454,7 @@ def get_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 language=args.language,
                 gen_answer_fn=genai_gen_answer if args.genai else None,
+                chat_template=chat_template
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
