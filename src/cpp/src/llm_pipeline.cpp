@@ -195,7 +195,7 @@ public:
 
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
-            config.eos_token_id = m_generation_config.eos_token_id;
+            config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
         // Stateful pipeline does not provide logprobs for prompt tokens
@@ -433,8 +433,9 @@ public:
         tokenizer,
         scheduler_config,
         device,
-        plugin_config
-    } {}
+        plugin_config} {
+        m_generation_config = m_impl.get_config();
+    }
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
@@ -446,8 +447,9 @@ public:
         m_tokenizer,
         scheduler_config,
         device,
-        plugin_config
-    } {}
+        plugin_config} {
+        m_generation_config = m_impl.get_config();
+    }
 
     DecodedResults generate(
         StringInputs inputs,
@@ -622,7 +624,7 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     m_pimpl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
-        m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
+        m_pimpl->m_generation_config.set_eos_token_id(default_eos_token_id);
 
     m_pimpl->m_generation_config.validate();
 }

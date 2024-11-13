@@ -172,13 +172,6 @@ void init_unet2d_condition_model(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
-
-    // init image generation models
-    init_clip_text_model(m);
-    init_clip_text_model_with_projection(m);
-    init_unet2d_condition_model(m);
-    init_autoencoder_kl(m);
-
     py::class_<ov::genai::Generator, ov::genai::PyGenerator, std::shared_ptr<ov::genai::Generator>>(m, "Generator", "This class is used for storing pseudo-random generator.")
         .def(py::init<>());
 
@@ -187,13 +180,18 @@ void init_image_generation_pipelines(py::module_& m) {
             uint32_t seed
         ) {
             return std::make_unique<ov::genai::CppStdGenerator>(seed);
-        }))
+        }), 
+        py::arg("seed"))
         .def("next", &ov::genai::CppStdGenerator::next)
-        .def("randn_tensor", &ov::genai::CppStdGenerator::randn_tensor);
+        .def("randn_tensor", &ov::genai::CppStdGenerator::randn_tensor, py::arg("shape"));
 
-    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.")
-        .def("from_config", &ov::genai::Scheduler::from_config);
+    // init image generation models
+    init_clip_text_model(m);
+    init_clip_text_model_with_projection(m);
+    init_unet2d_condition_model(m);
+    init_autoencoder_kl(m);
 
+    auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
     py::enum_<ov::genai::Scheduler::Type>(image_generation_scheduler, "Type")
         .value("AUTO", ov::genai::Scheduler::Type::AUTO)
         .value("LCM", ov::genai::Scheduler::Type::LCM)
@@ -201,6 +199,10 @@ void init_image_generation_pipelines(py::module_& m) {
         .value("DDIM", ov::genai::Scheduler::Type::DDIM)
         .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
         .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE);
+    image_generation_scheduler.def_static("from_config",
+        &ov::genai::Scheduler::from_config,
+        py::arg("scheduler_config_path"),
+        py::arg_v("scheduler_type", ov::genai::Scheduler::Type::AUTO, "Scheduler.Type.AUTO"));
 
     py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())
@@ -254,12 +256,12 @@ void init_image_generation_pipelines(py::module_& m) {
             kwargs: Text2ImagePipeline properties
         )")
         .def("get_generation_config", &ov::genai::Text2ImagePipeline::get_generation_config)
-        .def("set_generation_config", &ov::genai::Text2ImagePipeline::set_generation_config)
-        .def("set_scheduler", &ov::genai::Text2ImagePipeline::set_scheduler)
-        .def("reshape", &ov::genai::Text2ImagePipeline::reshape)
-        .def("stable_diffusion", &ov::genai::Text2ImagePipeline::stable_diffusion)
-        .def("latent_consistency_model", &ov::genai::Text2ImagePipeline::latent_consistency_model)
-        .def("stable_diffusion_xl", &ov::genai::Text2ImagePipeline::stable_diffusion_xl)
+        .def("set_generation_config", &ov::genai::Text2ImagePipeline::set_generation_config, py::arg("generation_config"))
+        .def("set_scheduler", &ov::genai::Text2ImagePipeline::set_scheduler, py::arg("scheduler"))
+        .def("reshape", &ov::genai::Text2ImagePipeline::reshape, py::arg("num_images_per_prompt"), py::arg("height"), py::arg("width"), py::arg("guidance_scale"))
+        .def_static("stable_diffusion", &ov::genai::Text2ImagePipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
+        .def_static("latent_consistency_model", &ov::genai::Text2ImagePipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
+        .def_static("stable_diffusion_xl", &ov::genai::Text2ImagePipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
         .def(
             "compile",
             [](ov::genai::Text2ImagePipeline& pipe,
@@ -279,7 +281,7 @@ void init_image_generation_pipelines(py::module_& m) {
             [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& prompt,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
                 return py::cast(pipe.generate(prompt, params));
             },
