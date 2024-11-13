@@ -39,6 +39,11 @@ const T5EncoderModel::Config& T5EncoderModel::get_config() const {
     return m_config;
 }
 
+void T5EncoderModel::set_max_sequence_length(size_t max_sequence_length) {
+    if (max_sequence_length != -1)
+        m_config.max_sequence_length = max_sequence_length;
+}
+
 T5EncoderModel& T5EncoderModel::reshape(int batch_size) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
@@ -69,31 +74,21 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt) {
     const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        // std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-
-        // ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
-        // std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
-
         ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
-        if(input_ids.get_shape()[1] == 0) { // dynamic shape case
-            input_ids.set_shape(input_ids_token.get_shape());
-            std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
-        } else if (input_ids.get_size() > input_ids_token.get_size()) { // static shape case
-            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-            std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
-        } else if (input_ids.get_size() <= input_ids_token.get_size()) { // static shape case
-            std::copy_n(input_ids_token.data<std::int64_t>(), input_ids.get_size(), input_ids.data<std::int32_t>());
-        }
+        size_t min_size = std::min(input_ids.get_size(), input_ids_token.get_size());
 
+        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
+        std::copy_n(input_ids_token.data<std::int64_t>(), min_size, input_ids.data<std::int32_t>());
     };
 
-    
     ov::Tensor input_ids = m_request.get_input_tensor();
-    // ov::Tensor input_ids(ov::element::i32, {1, m_config.max_sequence_length});
 
-    std::cout << "input_ids shape " << input_ids.get_shape() <<std::endl;
+    // reshape in case of dynamic model
+    if (input_ids.get_shape()[0] == 0 || input_ids.get_shape()[1] == 0) {
+        input_ids.set_shape({1, m_config.max_sequence_length});
+    }
+
     perform_tokenization(pos_prompt, input_ids);
-    std::cout << "input_ids tokenization shape " << input_ids.get_shape() <<std::endl;
 
     // text embeddings
     m_request.set_tensor("input_ids", input_ids);

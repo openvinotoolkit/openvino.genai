@@ -43,6 +43,8 @@ public:
 
     const Config& get_config() const;
 
+    void set_max_sequence_length(size_t max_sequence_length);
+
     T5EncoderModel& reshape(int batch_size);
 
     T5EncoderModel& compile(const std::string& device, const ov::AnyMap& properties = {});

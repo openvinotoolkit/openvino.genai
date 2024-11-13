@@ -255,6 +255,7 @@ public:
         using namespace numpy_utils;
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
+        m_t5_text_encoder->set_max_sequence_length(generation_config.max_sequence_length);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -273,6 +274,7 @@ public:
 
         m_clip_text_encoder->infer(positive_prompt, "", false);
         ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
+
         ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(positive_prompt);
 
         ov::Tensor pooled_prompt_embeds, prompt_embeds;
