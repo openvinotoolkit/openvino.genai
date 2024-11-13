@@ -89,8 +89,6 @@ def test_image_model_genai(model_id, model_type):
         "CPU",
         "--model-type",
         model_type,
-        "--image-size",
-        "256",
     ]
     result = run_wwb(wwb_args)
     assert result.returncode == 0
@@ -107,8 +105,6 @@ def test_image_model_genai(model_id, model_type):
         "--model-type",
         model_type,
         "--genai",
-        "--image-size",
-        "256",
     ]
     result = run_wwb(wwb_args)
 

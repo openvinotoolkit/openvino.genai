@@ -388,13 +388,20 @@ def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
-    image_tensor = model.generate(
-        prompt,
-        width=model.resolution[0],
-        height=model.resolution[1],
-        num_inference_steps=num_inference_steps,
-        generator=generator,
-    )
+    if model.resolution[0] is not None:
+        image_tensor = model.generate(
+            prompt,
+            width=model.resolution[0],
+            height=model.resolution[1],
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+    else:
+        image_tensor = model.generate(
+            prompt,
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
     image = Image.fromarray(image_tensor.data[0])
     return image
 
