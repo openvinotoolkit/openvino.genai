@@ -31,6 +31,8 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
 
+find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
+
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
              COMPONENTS Runtime
