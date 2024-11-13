@@ -308,7 +308,7 @@ def parse_args():
     parser.add_argument(
         "--image-size",
         type=int,
-        default=512,
+        default=None,
         help="Text-to-image specific parameter that defines the image resolution.",
     )
     parser.add_argument(
