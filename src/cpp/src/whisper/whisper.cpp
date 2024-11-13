@@ -10,7 +10,6 @@
 
 #include "logit_processor.hpp"
 #include "openvino/genai/perf_metrics.hpp"
-#include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "timestamps.hpp"
@@ -222,9 +221,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
     std::vector<int64_t> output_tokens{output_token};
 
-    const size_t timestamp_begin = config.no_timestamps_token_id + 1;
-    bool is_timestamp = output_token >= timestamp_begin;
-    if (!is_timestamp && streamer && streamer->put(output_token)) {
+    if (!return_timestamps && streamer && streamer->put(output_token)) {
         return {true, output_tokens};
     }
 
@@ -238,7 +235,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         auto output_token = decode_with_past(encoder_hidden_state,
                                              models.decoder_with_past,
                                              output_tokens.back(),
-                                             init_ids.size() + output_tokens.size() - 1,
+                                             init_ids.size() + i,
                                              config,
                                              raw_metrics,
                                              return_timestamps,
@@ -253,9 +250,8 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         }
 
         output_tokens.push_back(output_token);
-        bool is_timestamp = output_token >= timestamp_begin;
 
-        if (!is_timestamp && streamer && streamer->put(output_token)) {
+        if (!return_timestamps && streamer && streamer->put(output_token)) {
             return {true, output_tokens};
         }
     }
@@ -273,15 +269,10 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        const RawSpeechInput& raw_speech,
                                        ov::genai::WhisperInitializedModels& models,
                                        WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<StreamerBase> streamer) {
-    OPENVINO_ASSERT(!streamer || !config.return_timestamps, "Streamer is not supported with 'return_timestamps' enabled.");
-
+                                       const std::shared_ptr<ChunkStreamerBase> streamer) {
     auto input_features = feature_extractor.extract(raw_speech);
 
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
-
-    OPENVINO_ASSERT(!streamer || is_shortform, "Streamer is not supported for long-form audio processing.");
-
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
@@ -343,6 +334,11 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             output_tokens.insert(output_tokens.end(),
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
+
+            if (streamer && streamer->put_chunk(extracted_segments.non_timestamp_tokens)) {
+                cancelled = true;
+                break;
+            }
 
             segment_offset = extracted_segments.last_offset;
         } else {

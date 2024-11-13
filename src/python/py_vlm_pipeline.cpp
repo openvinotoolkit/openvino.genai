@@ -24,8 +24,8 @@ auto vlm_generate_docstring = R"(
     :param prompt: input prompt
     :type prompt: str
 
-    :param images: list of images
-    :type inputs: List[ov.Tensor]
+    :param images: image or list of images
+    :type images: List[ov.Tensor] or ov.Tensor
 
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a Dict
@@ -136,10 +136,10 @@ void init_vlm_pipeline(py::module_& m) {
 
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat)
-        .def("set_chat_template", &ov::genai::VLMPipeline::set_chat_template)
+        .def("set_chat_template", &ov::genai::VLMPipeline::set_chat_template, py::arg("new_template"))
         .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
-        .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config)
+        .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config, py::arg("new_config"))
         .def(
             "generate",
             [](ov::genai::VLMPipeline& pipe,
@@ -148,12 +148,29 @@ void init_vlm_pipeline(py::module_& m) {
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::DecodedResults> {
                 return call_vlm_generate(pipe, prompt, images, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
-            py::arg("generation_config") = std::nullopt, "generation_config",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const std::string& prompt,
+                const ov::Tensor& images,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::DecodedResults> {
+                return call_vlm_generate(pipe, prompt, {images}, generation_config, streamer, kwargs);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("images"), "Input images",
+            py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_docstring + std::string(" \n ")).c_str()
         )
@@ -162,7 +179,7 @@ void init_vlm_pipeline(py::module_& m) {
             [](ov::genai::VLMPipeline& pipe,
                const std::string& prompt,
                const py::kwargs& kwargs
-            ) {
+            )  -> py::typing::Union<ov::genai::DecodedResults> {
                 return py::cast(pipe.generate(prompt, vlm_kwargs_to_any_map(kwargs, false)));
             },
             py::arg("prompt"), "Input string",

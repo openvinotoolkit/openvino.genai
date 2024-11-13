@@ -50,10 +50,11 @@ from .py_openvino_genai import (
     Tokenizer
 )
 
-# Whispter
+# Whisper
 from .py_openvino_genai import (
     WhisperGenerationConfig,
     WhisperPipeline,
+    ChunkStreamerBase
 )
 
 # Image generation
