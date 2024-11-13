@@ -19,6 +19,7 @@
 #include "openvino/core/preprocess/pre_post_process.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
+#include "openvino/core/parallel.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
@@ -950,7 +951,8 @@ EncodedResults StaticLLMPipeline::generate(
     const auto kStartOutputKVCacheLayers = 1u;
     // NB: Copy KV-cache tensors from prefill model to kvcache model
     const auto& kvcache_compiled = m_kvcache_request.get_compiled_model();
-    for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
+
+    ov::parallel_for(kvcache_compiled.outputs().size() - 1, [&](size_t i) {
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
         const auto  input_name = std::regex_replace(output_name, std::regex("present"), "past_key_values");
 
@@ -974,7 +976,7 @@ EncodedResults StaticLLMPipeline::generate(
         } else {
             prefill_out_slice.copy_to(kvcache_in_slice);
         }
-    }
+    });
 
     auto* input_ids_data = m_kvcache_request.get_tensor("input_ids").data<int64_t>();
     auto* position_ids_data = m_kvcache_request.get_tensor("position_ids").data<int64_t>();

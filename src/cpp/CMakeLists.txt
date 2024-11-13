@@ -56,6 +56,8 @@ ov_genai_build_jinja2cpp()
 
 # Library
 
+find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
+
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 set(TARGET_NAME openvino_genai)
@@ -71,7 +73,7 @@ target_include_directories(${TARGET_NAME}
 
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::threading PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
