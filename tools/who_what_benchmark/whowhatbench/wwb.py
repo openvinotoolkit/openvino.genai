@@ -357,7 +357,7 @@ def parse_chat_template(args):
     for text in args.chat_template:
         chat_template = ast.literal_eval(text)
         if not isinstance(chat_template, dict):
-            raise ValueError(f"Mistake in chat template: {chat_template}."\
+            raise ValueError(f"Mistake in chat template: {chat_template}."
                              " Please provide template in dict type.")
         for _, v in chat_template.items():
             if v == required_value:
@@ -365,7 +365,7 @@ def parse_chat_template(args):
         res.append(chat_template)
 
     if matches != 1:
-        raise ValueError(f"Mistake in chat template: {args.chat_template}."\
+        raise ValueError(f"Mistake in chat template: {args.chat_template}."
                     " Required one input_text value in dict.")
 
     return res

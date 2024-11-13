@@ -108,7 +108,7 @@ class TextEvaluator(BaseEvaluator):
         generation_config=None,
         generation_config_base=None,
         seqs_per_request=None,
-        chat_template = None
+        chat_template=None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
