@@ -76,7 +76,7 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, int max_sequence
         "infer's max_sequence_length ", max_sequence_length);
 
     if (input_ids_shape[0] == 0 || input_ids_shape[1] == 0) {
-        input_ids.set_shape({1, max_sequence_length});
+        input_ids.set_shape({1, static_cast<size_t>(max_sequence_length)});
     }
 
     perform_tokenization(pos_prompt, input_ids);
