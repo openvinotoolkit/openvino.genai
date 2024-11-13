@@ -566,6 +566,36 @@ void drop_cache_dir(ov::AnyMap& config) {
     }
 }
 
+void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
+    const auto src_shape = src.get_shape();
+
+    OPENVINO_ASSERT(src_shape.size() == 4u);
+    OPENVINO_ASSERT(src_shape == dst.get_shape());
+    OPENVINO_ASSERT(src.get_byte_size() == dst.get_byte_size());
+
+    const auto src_strides = src.get_strides();
+    const auto dst_strides = dst.get_strides();
+    const auto elem_size   = src.get_byte_size() / src.get_size();
+
+    const auto C = src_shape[1];
+    const auto H = src_shape[2];
+    const auto W = src_shape[3];
+
+    const auto IS_H = src_strides[2];
+    const auto OS_H = dst_strides[2];
+
+    const size_t chunk_byte_size = W * elem_size;
+
+    const auto* src_p  = static_cast<uint8_t*>(src.data());
+          auto* dst_p  = static_cast<uint8_t*>(dst.data());
+
+    for (size_t i = 0; i < C*H; ++i) {
+        const size_t src_offset = i * IS_H;
+        const size_t dst_offset = i * OS_H;
+        std::copy_n(src_p + src_offset, chunk_byte_size, dst_p + dst_offset);
+    }
+}
+
 } // anonymous namespace
 
 namespace ov {
@@ -939,7 +969,11 @@ EncodedResults StaticLLMPipeline::generate(
             kvcache_in_tensor, kv_dim, 0u, m_kvcache_desc.num_stored_tokens
         );
 
-        prefill_out_slice.copy_to(kvcache_in_slice);
+        if (kv_dim == 3u) {
+            copy_columns_by_row_chunks(prefill_out_slice, kvcache_in_slice);
+        } else {
+            prefill_out_slice.copy_to(kvcache_in_slice);
+        }
     }
 
     auto* input_ids_data = m_kvcache_request.get_tensor("input_ids").data<int64_t>();
