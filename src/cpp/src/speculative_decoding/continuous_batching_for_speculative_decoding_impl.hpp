@@ -16,6 +16,7 @@ public:
     ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
                                                  const std::shared_ptr<ov::Model>& model,
                                                  const Tokenizer& tokenizer,
+                                                 const GenerationConfig& generation_config,
                                                  const DeviceConfig& device_config,
                                                  const SchedulerConfig& scheduler_config,
                                                  const std::string& device,
