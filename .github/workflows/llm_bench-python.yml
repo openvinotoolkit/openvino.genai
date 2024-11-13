@@ -99,7 +99,7 @@ jobs:
         pip install git+https://github.com/huggingface/optimum.git
         GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
         python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
-        python -m pytest tools/who_what_benchmark/tests
+        python -m pytest -v tools/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
@@ -121,4 +121,4 @@ jobs:
           GIT_CLONE_PROTECTION_ACTIVE=false pip install tools/who_what_benchmark/
           pip install pytest
           python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
-          python -m pytest tools/who_what_benchmark/tests
+          python -m pytest -v tools/who_what_benchmark/tests
