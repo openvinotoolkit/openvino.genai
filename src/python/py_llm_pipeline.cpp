@@ -53,7 +53,13 @@ py::object call_common_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    auto updated_config = pyutils::update_config_from_kwargs(config, kwargs);
+    ov::genai::GenerationConfig default_config;
+    if (config.has_value()) {
+        default_config = *config;
+    } else {
+        default_config = pipe.get_generation_config();
+    }
+    auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
     py::object results;
     EncodedInputs tensor_data;
     StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
@@ -158,7 +164,7 @@ void init_llm_pipeline(py::module_& m) {
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
             py::arg("inputs"), "Input string, or list of string or encoded tokens",
@@ -174,7 +180,7 @@ void init_llm_pipeline(py::module_& m) {
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
             py::arg("inputs"), "Input string, or list of string or encoded tokens",
@@ -187,7 +193,7 @@ void init_llm_pipeline(py::module_& m) {
         .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &LLMPipeline::set_generation_config);
+        .def("set_generation_config", &LLMPipeline::set_generation_config, py::arg("config"));
 
     py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
         .def(py::init([](

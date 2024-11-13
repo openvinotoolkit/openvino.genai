@@ -68,36 +68,36 @@ class CacheOptTestStruct:
     max_cache_usage_optimization_ratio: float
 
 
-SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=128, aggregation_mode=AggregationMode.NORM_SUM)
+SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
 
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform in ("win32", "darwin"), reason="doesn't work on win due to optimum-intel export bug, segfault on mac")
 @pytest.mark.parametrize("test_struct", [
     # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
-    CacheOptTestStruct(prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=100, use_cache_eviction=True,
+    CacheOptTestStruct(prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=1000, use_cache_eviction=True,
                        cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
                        similarity_threshold=0.8,
-                       max_cache_usage_optimization_ratio=1.8,
-                       avg_cache_usage_optimization_ratio=1.35),
+                       max_cache_usage_optimization_ratio=2.0,
+                       avg_cache_usage_optimization_ratio=1.7),
 
     # prompts + generation length are shorter than the eviction arena, no eviction expected
-    CacheOptTestStruct(prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=100, use_cache_eviction=True,
+    CacheOptTestStruct(prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=1000, use_cache_eviction=True,
                        cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
                        similarity_threshold=0.98,
                        max_cache_usage_optimization_ratio=0.95,  # no improvement expected
                        avg_cache_usage_optimization_ratio=0.95),
 
     # short prompts, long generation - eviction expected
-    CacheOptTestStruct(prompt_file="short_prompts.txt", max_new_tokens=384, num_kv_blocks=100, use_cache_eviction=True,
+    CacheOptTestStruct(prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=1000, use_cache_eviction=True,
                        cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
                        similarity_threshold=0.94,
-                       max_cache_usage_optimization_ratio=1.75,
-                       avg_cache_usage_optimization_ratio=1.35),
+                       max_cache_usage_optimization_ratio=1.4,
+                       avg_cache_usage_optimization_ratio=1.1),
 
 ])
 @pytest.mark.parametrize("enable_prefix_caching", [True, False])  # prefix caching shouldn't impact similarity
 def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, test_struct, enable_prefix_caching):
-    seqs_per_request = 5
+    seqs_per_request = 32
     scheduler_config = get_scheduler_config(test_struct.num_kv_blocks)
 
     generation_config = GenerationConfig()  # expecting default greedy sampling

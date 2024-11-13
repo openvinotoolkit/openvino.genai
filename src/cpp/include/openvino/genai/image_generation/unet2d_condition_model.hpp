@@ -65,11 +65,16 @@ public:
     ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep);
 
 private:
+    class UNetInference;
+    std::shared_ptr<UNetInference> m_impl;
+
     Config m_config;
     AdapterController m_adapter_controller;
     std::shared_ptr<ov::Model> m_model;
-    ov::InferRequest m_request;
     size_t m_vae_scale_factor;
+
+    class UNetInferenceDynamic;
+    class UNetInferenceStaticBS1;
 };
 
 } // namespace genai
