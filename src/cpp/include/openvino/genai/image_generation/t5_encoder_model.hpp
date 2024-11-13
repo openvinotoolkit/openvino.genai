@@ -20,12 +20,6 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS T5EncoderModel {
 public:
-    struct OPENVINO_GENAI_EXPORTS Config {
-        size_t max_sequence_length = 512;
-
-        explicit Config(const std::filesystem::path& config_path);
-    };
-
     explicit T5EncoderModel(const std::filesystem::path& root_dir);
 
     T5EncoderModel(const std::filesystem::path& root_dir,
@@ -41,11 +35,7 @@ public:
 
     T5EncoderModel(const T5EncoderModel&);
 
-    const Config& get_config() const;
-
-    void set_max_sequence_length(size_t max_sequence_length);
-
-    T5EncoderModel& reshape(int batch_size);
+    T5EncoderModel& reshape(int batch_size, int max_sequence_length);
 
     T5EncoderModel& compile(const std::string& device, const ov::AnyMap& properties = {});
 
@@ -56,12 +46,11 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor infer(const std::string& pos_prompt);
+    ov::Tensor infer(const std::string& pos_prompt, int max_sequence_length);
 
     ov::Tensor get_output_tensor(const size_t idx);
 
 private:
-    Config m_config;
     AdapterController m_adapter_controller;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;

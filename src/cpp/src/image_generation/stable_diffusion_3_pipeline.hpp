@@ -184,11 +184,11 @@ public:
                              const CLIPTextModelWithProjection& clip_text_model_1,
                              const CLIPTextModelWithProjection& clip_text_model_2,
                              const SD3Transformer2DModel& transformer,
-                             const AutoencoderKL& vae_decoder)
+                             const AutoencoderKL& vae)
         : DiffusionPipeline(pipeline_type),
           m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
           m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
-          m_vae(std::make_shared<AutoencoderKL>(vae_decoder)),
+          m_vae(std::make_shared<AutoencoderKL>(vae)),
           m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {
         initialize_generation_config("StableDiffusion3Pipeline");
     }
@@ -594,6 +594,7 @@ private:
         if (class_name == "StableDiffusion3Pipeline") {
             m_generation_config.guidance_scale = 7.0f;
             m_generation_config.num_inference_steps = 28;
+            m_generation_config.max_sequence_length = 256;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -616,8 +617,8 @@ private:
         check_image_size(generation_config.width, generation_config.height);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
-        const char* const pipeline_name = "Stable Diffusion 3";
 
+        OPENVINO_ASSERT(generation_config.max_sequence_length < 512, "T5's 'max_sequence_length' must be less than 512");
         OPENVINO_ASSERT(
             generation_config.prompt_3 == std::nullopt || generation_config.negative_prompt_3 == std::nullopt,
             "T5Encoder is not currently supported, 'prompt_3' and 'negative_prompt_3' can't be used. Please, add "

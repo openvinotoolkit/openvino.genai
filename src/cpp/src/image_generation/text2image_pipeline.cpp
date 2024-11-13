@@ -115,8 +115,8 @@ Text2ImagePipeline Text2ImagePipeline::flux(
     const CLIPTextModel& clip_text_model,
     const T5EncoderModel t5_encoder_model,
     const FluxTransformer2DModel& transformer,
-    const AutoencoderKL& vae_decoder){
-    auto impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model, t5_encoder_model, transformer, vae_decoder);
+    const AutoencoderKL& vae){
+    auto impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model, t5_encoder_model, transformer, vae);
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
     return Text2ImagePipeline(impl);
