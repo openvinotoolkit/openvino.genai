@@ -26,10 +26,13 @@ jobs:
     steps:
       - name: Check for incorrect line endings
         run: |
-          git grep -n '[^ -~]' -- ':(exclude)model_api/python/README.md'
-      - name: Check formatting with dos2unix
+          git grep -n '[^ -~]' -- ':(exclude)README.md'
+      - name: Check for CRLF line endings
         run: |
-          dos2unix .github/actions/*
+          if git grep -Iq $'\r' .; then
+            echo "Files with CRLF line endings found."
+            exit 1
+          fi
       - name: Verify no unexpected files
         run: |
           git diff --name-only --diff-filter=A
