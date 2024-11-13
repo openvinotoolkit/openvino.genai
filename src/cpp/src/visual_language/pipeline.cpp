@@ -238,6 +238,15 @@ DecodedResults VLMPipeline::generate(
 
 DecodedResults VLMPipeline::generate(
     const std::string& prompt,
+    const ov::Tensor& rgb,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
+}
+
+DecodedResults VLMPipeline::generate(
+    const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
     return m_pimpl->generate(prompt, config_map);
