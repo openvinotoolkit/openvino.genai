@@ -168,7 +168,7 @@ public:
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
+        ov::Shape latent_shape{generation_config.num_images_per_prompt, 4,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
         ov::Tensor latent;
 
@@ -268,11 +268,8 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
-        ov::Shape mask_shape{batch_size_multiplier, size_t(1), 
-            static_cast<size_t>(generation_config.height / vae_scale_factor) *
-            static_cast<size_t>(generation_config.width / vae_scale_factor)},
-            mask_latent_shape = mask_shape;
-        mask_latent_shape[1] = 1;
+        ov::Shape mask_shape = latent_shape_cfg, mask_latent_shape = mask_shape;
+        mask_shape[1] = 1;
 
         ov::Tensor mask_(ov::element::f32, mask_shape);
         ov::Tensor masked_image_latent(ov::element::f32, mask_latent_shape);
@@ -292,27 +289,29 @@ public:
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
 
-            ov::Shape final_shape{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
+            ov::Shape final_shape_merged{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
+            ov::Shape final_shape{final_shape_merged[0], final_shape_merged[1], latent_shape_cfg[2], latent_shape_cfg[3]};
+            ov::Shape latent_shape_cfg_merged{latent_shape_cfg[0], latent_shape_cfg[1], latent_shape_cfg[2] * latent_shape_cfg[3]};
+
             ov::Tensor final_input(ov::element::f32, final_shape);
             {
                 // void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
-                ov::Shape temp_shape = final_shape;
-                temp_shape[1] = unet_config.in_channels - 1;
+                ov::Shape temp_shape = final_shape_merged;
+                temp_shape[1] = latent_shape_cfg[1] + latent_shape_cfg_merged[1];
                 ov::Tensor tmp(ov::element::f32, temp_shape);
 
-                latent_cfg.set_shape(ov::Shape{latent_shape_cfg[0], latent_shape_cfg[1], latent_shape_cfg[2] * latent_shape_cfg[3]});
+                ov::Shape mask_shape = mask_.get_shape();
+                ov::Shape mask_shape_merged{mask_shape[0], mask_shape[1], mask_shape[2] * mask_shape[3]};
 
-                numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), masked_image_latent.data<float>(), tmp.data<float>(), latent_cfg.get_shape(), masked_image_latent.get_shape());
-                numpy_utils::concat_3d_by_cols(tmp.data<float>(), mask_.data<float>(), final_input.data<float>(), temp_shape, mask_.get_shape());
-
-                final_input.set_shape(ov::Shape{final_shape[0], final_shape[1], latent_shape_cfg[2], latent_shape_cfg[3]});
+                numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), masked_image_latent.data<float>(), tmp.data<float>(), latent_shape_cfg_merged, latent_shape_cfg_merged);
+                numpy_utils::concat_3d_by_cols(tmp.data<float>(), mask_.data<float>(), final_input.data<float>(), temp_shape, mask_shape_merged);
             }
             latent_cfg = final_input;
 
             {
                 std::stringstream stream;
                 stream << "/home/devuser/ilavreno/openvino.genai/latent_model_input_" << inference_step << ".txt";
-                read_tensor(stream.str(), latent_cfg, false);
+                read_tensor(stream.str(), latent_cfg, true);
             }
 
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
