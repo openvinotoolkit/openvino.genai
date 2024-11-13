@@ -36,6 +36,27 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
     return data["_class_name"].get<std::string>();
 }
 
+ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding_dim) {
+    float w = guidance_scale * 1000;
+    uint32_t half_dim = embedding_dim / 2;
+    float emb = std::log(10000) / (half_dim - 1);
+
+    ov::Shape embedding_shape = {1, embedding_dim};
+    ov::Tensor w_embedding(ov::element::f32, embedding_shape);
+    float* w_embedding_data = w_embedding.data<float>();
+
+    for (size_t i = 0; i < half_dim; ++i) {
+        float temp = std::exp((i * (-emb))) * w;
+        w_embedding_data[i] = std::sin(temp);
+        w_embedding_data[i + half_dim] = std::cos(temp);
+    }
+
+    if (embedding_dim % 2 == 1)
+        w_embedding_data[embedding_dim - 1] = 0;
+
+    return w_embedding;
+}
+
 } // namespace
 
 
