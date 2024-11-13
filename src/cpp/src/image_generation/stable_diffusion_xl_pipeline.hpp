@@ -169,6 +169,7 @@ public:
     }
 
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+        using namespace numpy_utils;
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -201,6 +202,7 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         const ov::AnyMap& properties) override {
+        using namespace numpy_utils;
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 

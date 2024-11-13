@@ -11,20 +11,6 @@
 #include "json_utils.hpp"
 namespace {
 
-void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1) {
-    const ov::Shape src_shape = src.get_shape(), dst_shape = dst.get_shape();
-    ov::Coordinate src_start(src_shape.size(), 0), src_end = src_shape;
-    ov::Coordinate dst_start(dst_shape.size(), 0), dst_end = dst_shape;
-
-    src_start[0] = src_batch;
-    src_end[0] = src_batch + batch_size;
-
-    dst_start[0] = dst_batch;
-    dst_end[0] = dst_batch + batch_size;
-
-    ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
-}
-
 const std::string get_class_name(const std::filesystem::path& root_dir) {
     const std::filesystem::path model_index_path = root_dir / "model_index.json";
     std::ifstream file(model_index_path);
