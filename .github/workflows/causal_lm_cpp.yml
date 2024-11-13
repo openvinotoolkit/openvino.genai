@@ -758,6 +758,7 @@ jobs:
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
+      - run: diff cpp.txt py.txt
       - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
           source ./ov/setupvars.sh
@@ -795,7 +796,6 @@ jobs:
       - name: Download and convert InternVL2 model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv --no-dependencies
           optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
       - name: Run visual_language_chat C++ sample - InternVL2
         run: >
