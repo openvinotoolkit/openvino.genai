@@ -390,6 +390,11 @@ public:
             m_unet->set_hidden_states("time_ids", add_time_ids_repeated);
         }
 
+        if (unet_config.time_cond_proj_dim >= 0) { // LCM
+            ov::Tensor timestep_cond = get_guidance_scale_embedding(generation_config.guidance_scale - 1.0f, unet_config.time_cond_proj_dim);
+            m_unet->set_hidden_states("timestep_cond", timestep_cond);
+        }
+
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
