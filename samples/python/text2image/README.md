@@ -5,7 +5,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 There are three sample files:
  - [`main.py`](./main.py) demonstrates basic usage of the text to image pipeline
  - [`lora.py`](./lora.py) shows how to apply LoRA adapters to the pipeline
- - [`heterogenous_stable_diffusion.py`](./heterogenous_stable_diffusion.py) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
+ - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -68,10 +68,10 @@ The `heterogeneous_stable_diffusion.py` sample demonstrates how a Text2ImagePipe
 
 The usage of this sample is:
 
-`heterogenous_stable_diffusion.py [-h] model_dir prompt [text_encoder_device] [unet_device] [vae_decoder_device]`
+`heterogeneous_stable_diffusion.py [-h] model_dir prompt [text_encoder_device] [unet_device] [vae_decoder_device]`
 
 For example:
 
-`heterogenous_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
+`heterogeneous_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
 
 The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.

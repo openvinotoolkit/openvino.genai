@@ -76,7 +76,7 @@ jobs:
         run: |
           source openvino_lcm_cpp/bin/activate
           source ./ov/setupvars.sh
-          python ./samples/python/text2image/main.py ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          python ./samples/python/text2image/heterogeneous_stable_diffusion.py ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
@@ -137,10 +137,10 @@ jobs:
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           $env:Path += "${{ env.build_dir }}\openvino_genai"
-          python .\samples\python\text2image\main.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          python .\samples\python\text2image\heterogeneous_stable_diffusion.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
           PYTHONPATH: ${{ env.build_dir }}
-  
+
   Overall_Status:
     name: ci/gha_overall_status_lcm
     needs: [lcm_dreamshaper_v7_cpp-linux, lcm_dreamshaper_v7_cpp-windows]
