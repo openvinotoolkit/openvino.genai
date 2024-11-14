@@ -120,15 +120,6 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        if hasattr(model, "reshape") and self.resolution is not None:
-            if gen_image_fn is None:
-                model.reshape(
-                    batch_size=1,
-                    height=self.resolution[0],
-                    width=self.resolution[1],
-                    num_images_per_prompt=1,
-                )
-
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
             output = model(
                 prompt,
