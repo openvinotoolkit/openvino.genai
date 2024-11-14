@@ -59,6 +59,9 @@ public:
             auto matched_matmul    = std::static_pointer_cast<ov::op::v0::MatMul>(matched_node_matmul);
 
             auto shape = matched_param->get_partial_shape();
+            OPENVINO_ASSERT(shape.size() == 4u);
+            // NB: Transpose Parameter that correspond to V-tensor it will
+            // speed-up its multiplication with attention scores
             std::swap(shape[2], shape[3]);
             auto new_param = std::make_shared<ov::opset13::Parameter>(matched_param->get_element_type(), shape);
             new_param->set_friendly_name(matched_param->get_friendly_name());
