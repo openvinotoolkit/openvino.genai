@@ -29,7 +29,10 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
+          "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
+          "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
+    DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
 
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/__version__.py.in"
                "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" @ONLY)
@@ -64,6 +67,8 @@ if(rpaths)
 endif()
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
+              "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
+              "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
               "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
         DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
@@ -101,8 +106,6 @@ else()
 endif()
 
 if(OpenVINODeveloperPackage_FOUND)
-    set(requirements_file "${OpenVINOGenAI_SOURCE_DIR}/requirements-build.txt")
-
     ov_check_pip_package(REQUIREMENT ${pybind11_stubgen_dep}
                          RESULT_VAR pybind11_stubgen_AVAILABLE
                          WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
@@ -125,9 +128,15 @@ if(pybind11_stubgen_AVAILABLE)
     set(output_files "${stub_files_location}/openvino_genai/py_openvino_genai.pyi"
                      "${stub_files_location}/openvino_genai/__init__.pyi")
 
+    if(COMMAND find_host_program)
+        find_host_program(pybind11_stubgen NAMES pybind11-stubgen REQUIRED)
+    else()
+        find_program(pybind11_stubgen NAMES pybind11-stubgen REQUIRED)
+    endif()
+
     add_custom_command(OUTPUT ${output_files}
         COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}
-                "${Python3_EXECUTABLE}" -m pybind11_stubgen --output-dir "${stub_files_location}" openvino_genai
+                "${pybind11_stubgen}" --output-dir "${stub_files_location}" openvino_genai
         COMMAND
                 "${CMAKE_COMMAND}"
                     -D generated_pyi_files_location=${stub_files_location}
