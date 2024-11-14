@@ -42,8 +42,14 @@ public:
                 const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
                 m_kv_cache_type = kv_cache_precision;
             } else {
-                // x86 and arm have different default kv cache type
-                m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
+                // ACCURACY mode will use f32 kvcache
+                const auto execution_mode_it = plugin_config.find(ov::hint::execution_mode.name());
+                if (execution_mode_it != plugin_config.end() && execution_mode_it->second.as<ov::hint::ExecutionMode>() == ov::hint::ExecutionMode::ACCURACY) {
+                    m_kv_cache_type = ov::element::f32;
+                } else {
+                    // x86 and arm have different default kv cache type
+                    m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
+                }
             }
         } else if (m_device.find("GPU") != std::string::npos) {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
