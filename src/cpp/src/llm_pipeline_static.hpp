@@ -10,6 +10,17 @@
 namespace ov {
 namespace genai {
 
+struct StaticLLMPipelineFactory {
+    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
+                                                       const ov::genai::Tokenizer& tokenizer,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& config);
+
+    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& config);
+};
+
 class StaticLLMPipeline final : public LLMPipelineImplBase {
 public:
     StaticLLMPipeline(
