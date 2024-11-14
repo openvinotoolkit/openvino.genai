@@ -218,8 +218,16 @@ public:
         check_image_size(height, width);
 
         m_clip_text_encoder->reshape(1);
-        m_t5_text_encoder->reshape(1);
-        m_transformer->reshape(num_images_per_prompt, height, width, m_t5_text_encoder->get_config().max_sequence_length);
+
+        // TODO: max_sequence_length cannot be specified easily outside, only via:
+        //   Text2ImagePipeline pipe("/path");
+        //   ImageGenerationConfig default_config = pipe.get_generation_config();
+        //   default_config.max_sequence_length = 30;
+        //   pipe.set_generation_config(default_config);
+        //   pipe.reshape(1, 512, 512, default_config.guidance_scale);
+        m_t5_text_encoder->reshape(1, m_generation_config.max_sequence_length);
+        m_transformer->reshape(num_images_per_prompt, height, width, m_generation_config.max_sequence_length);
+
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
@@ -255,10 +263,8 @@ public:
         using namespace numpy_utils;
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
-        m_t5_text_encoder->set_max_sequence_length(generation_config.max_sequence_length);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-
         const auto& transformer_config = m_transformer->get_config();
 
         if (generation_config.height < 0)
@@ -275,7 +281,7 @@ public:
         m_clip_text_encoder->infer(positive_prompt, "", false);
         ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
 
-        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(positive_prompt);
+        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(positive_prompt, generation_config.max_sequence_length);
 
         ov::Tensor pooled_prompt_embeds, prompt_embeds;
         if (generation_config.num_images_per_prompt == 1) {
@@ -344,6 +350,7 @@ private:
         if (class_name == "FluxPipeline") {
             m_generation_config.guidance_scale = 3.5f;
             m_generation_config.num_inference_steps = 28;
+            m_generation_config.max_sequence_length = 512;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -361,16 +368,12 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        const char* const pipeline_name = "Flux";
+        OPENVINO_ASSERT(generation_config.max_sequence_length < 512, "T5's 'max_sequence_length' must be less than 512");
 
-        OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt,
-                        "Negative prompt is not used by ", pipeline_name);
-        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt,
-                        "Negative prompt 2 is not used by ", pipeline_name);
-        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt,
-                        "Negative prompt 3 is not used by ", pipeline_name);
-
-        OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);
+        OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by FluxPipeline");
+        OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by FluxPipeline");
     }
 
     std::shared_ptr<FluxTransformer2DModel> m_transformer;
