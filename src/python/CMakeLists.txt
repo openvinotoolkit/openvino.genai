@@ -121,8 +121,9 @@ if(pybind11_stubgen_AVAILABLE)
     endif()
 
     set(stub_files_location "${OpenVINOGenAI_BINARY_DIR}/src/python")
-    set(output_files "${stub_files_location}/openvino_genai/py_openvino_genai.pyi"
-                     "${stub_files_location}/openvino_genai/__init__.pyi")
+    set(generated_files ${stub_files_location}/openvino_genai/__init__.pyi
+                        ${stub_files_location}/openvino_genai/py_openvino_genai.pyi)
+    set_source_files_properties(${generated_files} PROPERTIES GENERATED ON)
 
     if(COMMAND find_host_program)
         find_host_program(pybind11_stubgen NAMES pybind11-stubgen NO_CACHE REQUIRED)
@@ -141,17 +142,19 @@ if(pybind11_stubgen_AVAILABLE)
             "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi")
     else()
         set(copy_to_source_command
-            COMMAND "${CMAKE_COMMAND}" -E copy ${output_files} "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/")
+            COMMAND "${CMAKE_COMMAND}" -E copy ${generated_files} "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/")
     endif()
 
-    add_custom_command(OUTPUT ${output_files}
+    set(output_file pybind11_stub_gen_completed.txt)
+    add_custom_command(OUTPUT ${output_file}
         COMMAND "${CMAKE_COMMAND}" -E rm -f "${CMAKE_BINARY_DIR}/openvino_genai/__init__.pyi"
                                             "${CMAKE_BINARY_DIR}/openvino_genai/py_openvino_genai.pyi"
-        COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}
+        COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}:$ENV{PYTHONPATH}
                 ${pybind11_stubgen} --output-dir ${stub_files_location} openvino_genai
         ${validation_command}
         ${copy_to_source_command}
-        COMMAND "${CMAKE_COMMAND}" -E copy ${output_files} "${CMAKE_BINARY_DIR}/openvino_genai/"
+        COMMAND "${CMAKE_COMMAND}" -E copy ${generated_files} "${CMAKE_BINARY_DIR}/openvino_genai/"
+        COMMAND "${CMAKE_COMMAND}" -E touch ${output_file}
         DEPENDS
             ${python_sources}
             ${validation_dependencies}
@@ -160,7 +163,7 @@ if(pybind11_stubgen_AVAILABLE)
         COMMENT "[${pybind11_stubgen_dep}] Generate .pyi files"
         VERBATIM)
 
-    add_custom_target(${TARGET_NAME}_stub ALL DEPENDS ${output_files})
+    add_custom_target(${TARGET_NAME}_stub ALL DEPENDS ${output_file})
     add_dependencies(${TARGET_NAME}_stub ${TARGET_NAME})
 else()
     # Produce warning message at build time as well
