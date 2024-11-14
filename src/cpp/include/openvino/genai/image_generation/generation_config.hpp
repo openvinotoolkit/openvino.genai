@@ -57,6 +57,9 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     int64_t width = -1;
     size_t num_inference_steps = 50;
 
+    // the following value used by t5_encoder_model (Flux, SD3 pipelines)
+    size_t max_sequence_length = -1;
+
     // used by some image to image pipelines to balance between noise and initial image
     // higher 'stregth' value means more noise is added to initial latent image
     // for text to image pipeline it must be set to 1.0f
@@ -95,6 +98,8 @@ static constexpr ov::Property<size_t> num_inference_steps{"num_inference_steps"}
 static constexpr ov::Property<float> strength{"strength"};
 
 static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"};
+
+static constexpr ov::Property<size_t> max_sequence_length{"max_sequence_length"};
 
 OPENVINO_GENAI_EXPORTS
 std::pair<std::string, ov::Any> generation_config(const ImageGenerationConfig& generation_config);

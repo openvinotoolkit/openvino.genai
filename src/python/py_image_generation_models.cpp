@@ -145,6 +145,7 @@ void init_unet2d_condition_model(py::module_& m) {
     unet2d_condition_model.def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters, py::arg("adapters"));
     unet2d_condition_model.def("infer", &ov::genai::UNet2DConditionModel::infer, py::arg("sample"), py::arg("timestep"));
     unet2d_condition_model.def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"));
+    unet2d_condition_model.def("do_classifier_free_guidance", &ov::genai::UNet2DConditionModel::do_classifier_free_guidance, py::arg("guidance_scale"));
     unet2d_condition_model.def(
             "compile", 
             [](ov::genai::UNet2DConditionModel& self,
