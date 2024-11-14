@@ -323,6 +323,17 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"));
 
+    py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
+            return pyutils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+        });
+
+    py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
+        .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
+
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
         .def(py::init<>())
         .def_readonly("start_ts", &WhisperDecodedResultChunk::start_ts)
@@ -373,15 +384,4 @@ void init_whisper_pipeline(py::module_& m) {
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &WhisperPipeline::set_generation_config, py::arg("config"));
-
-    py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
-        .def(py::init<>())
-        .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
-            return pyutils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
-        });
-
-    py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
-        .def(py::init<>())
-        .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
-        .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 }

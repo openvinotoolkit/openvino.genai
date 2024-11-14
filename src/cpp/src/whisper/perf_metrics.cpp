@@ -22,5 +22,26 @@ void WhisperPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time
     PerfMetrics::evaluate_statistics(start_time);
 };
 
+WhisperPerfMetrics WhisperPerfMetrics::operator+(const WhisperPerfMetrics& right) const {
+    PerfMetrics base_result = PerfMetrics::operator+(right);
+    WhisperPerfMetrics result{base_result};
+
+    // copy left whisper raw metrics
+    result.whisper_raw_metrics = whisper_raw_metrics;
+
+    // insert right metrics
+    auto& result_features_extraction_durations = result.whisper_raw_metrics.features_extraction_durations;
+    auto& right_features_extraction_durations = right.whisper_raw_metrics.features_extraction_durations;
+    result_features_extraction_durations.insert(result_features_extraction_durations.end(),
+                                                right_features_extraction_durations.begin(),
+                                                right_features_extraction_durations.end());
+    return result;
+}
+
+WhisperPerfMetrics& WhisperPerfMetrics::operator+=(const WhisperPerfMetrics& right) {
+    *this = *this + right;
+    return *this;
+}
+
 }  // namespace genai
 }  // namespace ov

@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1513,6 +1513,9 @@ class WhisperDecodedResults(DecodedResults):
     @property
     def chunks(self) -> list[WhisperDecodedResultChunk] | None:
         ...
+    @property
+    def perf_metrics(self) -> WhisperPerfMetrics:
+        ...
 class WhisperGenerationConfig:
     """
     
@@ -1598,6 +1601,24 @@ class WhisperGenerationConfig:
     def __init__(self, **kwargs) -> None:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
+        ...
+class WhisperPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+        :type get_features_extraction_duration: MeanStdPair
+    
+        :param whisper_raw_metrics: Whisper specific raw metrics
+        :type WhisperRawPerfMetrics:
+    """
+    def __init__(self) -> None:
+        ...
+    def get_features_extraction_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def whisper_raw_metrics(self) -> WhisperRawPerfMetrics:
         ...
 class WhisperPipeline:
     """
@@ -1692,6 +1713,19 @@ class WhisperPipeline:
     def get_tokenizer(self) -> Tokenizer:
         ...
     def set_generation_config(self, config: WhisperGenerationConfig) -> None:
+        ...
+class WhisperRawPerfMetrics:
+    """
+    
+        Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
+    
+        :param features_extraction_durations: Duration for each features extraction call.
+        :type features_extraction_durations: List[MicroSeconds]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def features_extraction_durations(self) -> list[float]:
         ...
 class draft_model:
     """
