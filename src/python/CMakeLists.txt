@@ -32,7 +32,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
           "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
           "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
-    DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
+     DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
 
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/__version__.py.in"
                "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" @ONLY)
@@ -120,30 +120,41 @@ if(pybind11_stubgen_AVAILABLE)
         set(ci_run ON)
     endif()
 
-    if(ci_run)
-        set(stub_files_location "${OpenVINOGenAI_BINARY_DIR}/src/python")
-    else()
-        set(stub_files_location "${OpenVINOGenAI_SOURCE_DIR}/src/python")
-    endif()
+    set(stub_files_location "${OpenVINOGenAI_BINARY_DIR}/src/python")
     set(output_files "${stub_files_location}/openvino_genai/py_openvino_genai.pyi"
                      "${stub_files_location}/openvino_genai/__init__.pyi")
 
     if(COMMAND find_host_program)
-        find_host_program(pybind11_stubgen NAMES pybind11-stubgen REQUIRED)
+        find_host_program(pybind11_stubgen NAMES pybind11-stubgen NO_CACHE REQUIRED)
     else()
-        find_program(pybind11_stubgen NAMES pybind11-stubgen REQUIRED)
+        find_program(pybind11_stubgen NAMES pybind11-stubgen NO_CACHE REQUIRED)
+    endif()
+
+    if(ci_run)
+        set(validation_command
+            COMMAND "${CMAKE_COMMAND}"
+                -D generated_pyi_files_location=${stub_files_location}
+                -D source_pyi_files_location=${CMAKE_CURRENT_SOURCE_DIR}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_pyi.cmake")
+        set(validation_dependencies
+            "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
+            "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi")
+    else()
+        set(copy_to_source_command
+            COMMAND "${CMAKE_COMMAND}" -E copy ${output_files} "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/")
     endif()
 
     add_custom_command(OUTPUT ${output_files}
+        COMMAND "${CMAKE_COMMAND}" -E rm -f "${CMAKE_BINARY_DIR}/openvino_genai/__init__.pyi"
+                                            "${CMAKE_BINARY_DIR}/openvino_genai/py_openvino_genai.pyi"
         COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}
-                "${pybind11_stubgen}" --output-dir "${stub_files_location}" openvino_genai
-        COMMAND
-                "${CMAKE_COMMAND}"
-                    -D generated_pyi_files_location=${stub_files_location}
-                    -D source_pyi_files_location=${OpenVINOGenAI_SOURCE_DIR}/src/python
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_pyi.cmake"
+                ${pybind11_stubgen} --output-dir ${stub_files_location} openvino_genai
+        ${validation_command}
+        ${copy_to_source_command}
+        COMMAND "${CMAKE_COMMAND}" -E copy ${output_files} "${CMAKE_BINARY_DIR}/openvino_genai/"
         DEPENDS
             ${python_sources}
+            ${validation_dependencies}
             "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/compare_pyi.cmake"
         COMMENT "[${pybind11_stubgen_dep}] Generate .pyi files"

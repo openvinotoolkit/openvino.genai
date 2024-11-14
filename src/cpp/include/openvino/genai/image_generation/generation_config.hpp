@@ -58,7 +58,7 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_inference_steps = 50;
 
     // the following value used by t5_encoder_model (Flux, SD3 pipelines)
-    size_t max_sequence_length = -1;
+    int max_sequence_length = -1;
 
     // used by some image to image pipelines to balance between noise and initial image
     // higher 'stregth' value means more noise is added to initial latent image
