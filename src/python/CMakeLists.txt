@@ -110,8 +110,9 @@ if(OpenVINODeveloperPackage_FOUND)
                          RESULT_VAR pybind11_stubgen_AVAILABLE
                          WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
                          MESSAGE_MODE WARNING)
-elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
+elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
     # in case of wheel build, pybind11-stubgen is always available via pyproject.toml's build-system
+    # except Win32 where we have issues with pybind11_stubgen executable which cannot import its own module
     set(pybind11_stubgen_AVAILABLE ON)
 endif()
 
@@ -164,7 +165,6 @@ if(pybind11_stubgen_AVAILABLE)
         VERBATIM)
 
     add_custom_target(${TARGET_NAME}_stub ALL DEPENDS ${output_file})
-    add_dependencies(${TARGET_NAME}_stub ${TARGET_NAME})
 else()
     # Produce warning message at build time as well
     add_custom_command(OUTPUT pybind11_stub_gen_not_found.txt
@@ -172,3 +172,5 @@ else()
             -E cmake_echo_color --red "Warning: Please, install ${pybind11_stubgen_dep}")
     add_custom_target(${TARGET_NAME}_stub ALL DEPENDS pybind11_stub_gen_not_found.txt)
 endif()
+
+add_dependencies(${TARGET_NAME}_stub ${TARGET_NAME})
