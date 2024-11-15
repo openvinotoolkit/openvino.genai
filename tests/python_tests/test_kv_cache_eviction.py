@@ -16,6 +16,7 @@ from openvino import serialize
 from transformers import AutoTokenizer
 
 from common import TESTS_ROOT, run_cb_pipeline_with_ref, get_default_properties
+from utils_longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -69,6 +70,7 @@ class CacheOptTestStruct:
 
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=64, max_cache_size=256, aggregation_mode=AggregationMode.NORM_SUM)
 
 
 @pytest.mark.precommit
@@ -190,3 +192,86 @@ scheduler_params_list = [
 def test_dynamic_memory_allocation(tmp_path, params):
     run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
 
+
+@pytest.fixture(scope='module')
+def phi3_converted_model(tmp_path_factory):
+    model_id = "microsoft/Phi-3-mini-4k-instruct"
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
+    model.save_pretrained(models_path)
+    ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
+    serialize(ov_tokenizer, models_path / "openvino_tokenizer.xml")
+    serialize(ov_detokenizer, models_path / "openvino_detokenizer.xml")
+    phi3_converted_model = ConvertedModel(model, tokenizer, models_path)
+    yield phi3_converted_model
+    del phi3_converted_model
+    del model
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("subset", ["samsum", "qmsum", "trec", "qasper", "hotpotqa", "repobench-p"])
+def test_unoptimized_generation_longbench(phi3_converted_model, subset):
+    seqs_per_request = 2
+    num_kv_blocks = 1000
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+    models_path = phi3_converted_model.models_path
+    model_name = "/".join(models_path.parts[-2:])
+    max_new_tokens = dataset2maxlen[subset]
+    tokenizer = phi3_converted_model.tokenizer
+
+    generation_config = GenerationConfig()  # expecting default greedy sampling
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = max_new_tokens
+    generation_config.eos_token_id = tokenizer.eos_token_id
+
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test')
+
+    # model_id = "microsoft/Phi-3-mini-4k-instruct"
+    # model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False)
+
+    model_cb_noopt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
+    with tqdm(total=len(data)) as progress_bar:
+        batch = []
+        answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt, context_len = preprocess_prompt(tokenizer, data_sample, subset, model_name)
+            progress_bar.update(1)
+            batch.append(prompt)
+            answers.append({"context_len": context_len, "answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+
+            # input = tokenizer(prompt, truncation=False, return_tensors="pt")
+            # output = model.generate(
+            #     **input,
+            #     max_new_tokens=128,
+            #     num_beams=1,
+            #     do_sample=False,
+            #     temperature=1.0,
+            #     min_length=context_len+1,
+            #     pad_token_id=tokenizer.eos_token_id,
+            #     eos_token_id=[tokenizer.eos_token_id, tokenizer.encode("\n", add_special_tokens=False)[-1]],
+            # )[0]
+            # pred = tokenizer.decode(output[context_len:], skip_special_tokens=True)
+            # pred = post_process_pred(output.m_generation_ids, subset, model_name)
+            # answers[-1]["pred"] = pred
+
+            if (
+                len(batch) == seqs_per_request
+                or p_idx == len(data) - 1
+            ):
+                ans_batch = model_cb_noopt.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                for i, output in enumerate(ans_batch, start=p_idx-len(batch)+1):
+                    context_len = answers[i]["context_len"]
+                    pred = post_process_pred(output.m_generation_ids, subset, model_name)
+                    answers[i]["pred"] = pred
+
+                batch.clear()
+
+    score = evaluate(answers, subset)
+    print(f"Score: {score}")
+
+    pipeline_noopt_metrics = model_cb_noopt.get_metrics()
+    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    del model_cb_noopt
