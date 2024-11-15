@@ -55,7 +55,7 @@ public:
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
-            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
@@ -115,7 +115,7 @@ public:
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
-            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
@@ -459,10 +459,20 @@ private:
         m_generation_config.height = unet_config.sample_size * vae_scale_factor;
         m_generation_config.width = unet_config.sample_size * vae_scale_factor;
 
-        if (class_name == "StableDiffusionXLPipeline") {
-            m_generation_config.guidance_scale = 5.0f;
-            m_generation_config.num_inference_steps = 50;
-            m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.3f : 1.0f;
+        if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLImg2ImgPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
+                m_generation_config.guidance_scale = 5.0f;
+                m_generation_config.num_inference_steps = 50;
+                m_generation_config.strength = 1.0f;
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_generation_config.guidance_scale = 5.0f;
+                m_generation_config.num_inference_steps = 50;
+                m_generation_config.strength = 0.3f;
+            } else if (m_pipeline_type == PipelineType::INPAINTING) {
+                m_generation_config.guidance_scale = 7.5f;
+                m_generation_config.num_inference_steps = 50;
+                m_generation_config.strength == 0.9999f;
+            }
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -487,7 +497,7 @@ private:
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used when guidance scale <= 1.0");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
+        if ((m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) && initial_image) {
             ov::Shape initial_image_shape = initial_image.get_shape();
             size_t height = initial_image_shape[1], width = initial_image_shape[2];
 

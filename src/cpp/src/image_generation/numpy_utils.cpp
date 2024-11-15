@@ -112,14 +112,13 @@ void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, con
     OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
     OPENVINO_ASSERT(shape_1[0] == shape_2[0] && shape_1[2] == shape_2[2], "Tensors for concatenation must have the same dimensions");
 
-    for (size_t i = 0; i < shape_1[0]; ++i) {
-        size_t shift_1 = i * shape_1[1] * shape_1[2];
-        size_t shift_2 = i * shape_2[1] * shape_2[2];
+    for (size_t i = 0, chunk_1 = shape_1[1] * shape_1[2], chunk_2 = shape_2[1] * shape_2[2]; i < shape_1[0]; ++i) {
+        std::memcpy(res          , data_1, chunk_1 * sizeof(float));
+        std::memcpy(res + chunk_1, data_2, chunk_2 * sizeof(float));
 
-        size_t step = shift_1 + shift_2;
-
-        std::memcpy(res + step, data_1 + shift_1, shape_1[1] * shape_1[2] * sizeof(float));
-        std::memcpy(res + step + shape_1[1] * shape_1[2], data_2 + shift_2, shape_2[1] * shape_2[2] * sizeof(float));
+        res += chunk_1 + chunk_2;
+        data_1 += chunk_1;
+        data_2 += chunk_2;
     }
 }
 

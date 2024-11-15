@@ -52,7 +52,7 @@ namespace genai {
 enum class PipelineType {
     TEXT_2_IMAGE = 0,
     IMAGE_2_IMAGE = 1,
-    INPAINTING = 1,
+    INPAINTING = 2,
 };
 
 class DiffusionPipeline {

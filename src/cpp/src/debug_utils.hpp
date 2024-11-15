@@ -44,7 +44,7 @@ void _read_tensor_step(tensor_T* data, size_t i, std::ifstream& file, size_t& pr
     if (assign)
         data[i] = value;
 
-    if (std::abs(value - data[i]) > 1e-7 && printed_elements < print_size) {
+    if (std::abs(value - data[i]) > 1e-1 && printed_elements < print_size) {
         std::cout << i << ") ref = " << value << " act = " << static_cast<file_T>(data[i]) << std::endl;
         ++printed_elements;
     }

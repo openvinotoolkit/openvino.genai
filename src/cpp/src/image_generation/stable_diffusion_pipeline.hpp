@@ -52,7 +52,7 @@ public:
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
-            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
@@ -94,7 +94,7 @@ public:
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
-            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
@@ -142,14 +142,13 @@ public:
 
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         using namespace numpy_utils;
-        const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        ov::Shape latent_shape{generation_config.num_images_per_prompt, 4,
+        ov::Shape latent_shape{generation_config.num_images_per_prompt, m_vae->get_config().latent_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
         ov::Tensor latent;
 
-        if (initial_image && false) {
+        if (initial_image) {
             latent = m_vae->encode(initial_image, generation_config.generator);
             if (generation_config.num_images_per_prompt > 1) {
                 ov::Tensor batched_latent(ov::element::f32, latent_shape);
@@ -265,6 +264,12 @@ public:
                 batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             }
 
+            {
+                std::stringstream stream;
+                stream << "/home/devuser/ilavreno/openvino.genai/latent_cfg_" << inference_step << ".txt";
+                read_tensor(stream.str(), latent_cfg, false);
+            }
+
             m_scheduler->scale_model_input(latent_cfg, inference_step);
 
             ov::Shape final_shape_merged{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
@@ -273,30 +278,36 @@ public:
 
             ov::Tensor final_input(ov::element::f32, final_shape);
             {
-                // void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
                 ov::Shape temp_shape = final_shape_merged;
-                temp_shape[1] = latent_shape_cfg[1] + latent_shape_cfg_merged[1];
+                temp_shape[1] = latent_shape_cfg[1] + mask_.get_shape()[1];
                 ov::Tensor tmp(ov::element::f32, temp_shape);
 
                 ov::Shape mask_shape = mask_.get_shape();
                 ov::Shape mask_shape_merged{mask_shape[0], mask_shape[1], mask_shape[2] * mask_shape[3]};
 
-                numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), masked_image_latent.data<float>(), tmp.data<float>(), latent_shape_cfg_merged, latent_shape_cfg_merged);
-                numpy_utils::concat_3d_by_cols(tmp.data<float>(), mask_.data<float>(), final_input.data<float>(), temp_shape, mask_shape_merged);
+                numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), mask_.data<float>(), tmp.data<float>(), latent_shape_cfg_merged, mask_shape_merged);
+                numpy_utils::concat_3d_by_cols(tmp.data<float>(), masked_image_latent.data<float>(), final_input.data<float>(), temp_shape, latent_shape_cfg_merged);
             }
-            latent_cfg = final_input;
+            ov::Tensor latent_model_input = final_input;
 
             {
                 std::stringstream stream;
                 stream << "/home/devuser/ilavreno/openvino.genai/latent_model_input_" << inference_step << ".txt";
-                read_tensor(stream.str(), latent_cfg, true);
+                read_tensor(stream.str(), latent_model_input, false);
             }
 
+            std::cout << "timesteps[inference_step] = " << timesteps[inference_step] << std::endl;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
-            ov::Tensor noise_pred_tensor = m_unet->infer(latent_cfg, timestep);
+            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
+ 
+            {
+                std::stringstream stream;
+                stream << "/home/devuser/ilavreno/openvino.genai/noise_pred_" << inference_step << ".txt";
+                read_tensor(stream.str(), noise_pred_tensor, false);
+            }
 
             if (batch_size_multiplier > 1) {
                 noisy_residual_tensor.set_shape(noise_pred_shape);
@@ -314,8 +325,20 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
+            {
+                std::stringstream stream;
+                stream << "/home/devuser/ilavreno/openvino.genai/before_step_" << inference_step << ".txt";
+                read_tensor(stream.str(), noisy_residual_tensor, false);
+            }
+
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
+
+            {
+                std::stringstream stream;
+                stream << "/home/devuser/ilavreno/openvino.genai/latents_after_step_" << inference_step << ".txt";
+                read_tensor(stream.str(), latent, false);
+            }
 
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
             const auto it = scheduler_step_result.find("denoised");
@@ -335,11 +358,11 @@ private:
         m_generation_config.height = unet_config.sample_size * vae_scale_factor;
         m_generation_config.width = unet_config.sample_size * vae_scale_factor;
 
-        if (class_name == "StableDiffusionPipeline" || class_name == "StableDiffusionInpaintPipeline") {
+        if (class_name == "StableDiffusionPipeline" || class_name == "StableDiffusionInpaintPipeline" || class_name == "StableDiffusionInpaintPipeline") {
             m_generation_config.guidance_scale = 7.5f;
             m_generation_config.num_inference_steps = 50;
-            m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 1.0f : 1.0f;
-        } else if (class_name == "LatentConsistencyModelPipeline") {
+            m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.8f : 1.0f;
+        } else if (class_name == "LatentConsistencyModelPipeline" || class_name == "LatentConsistencyModelImg2ImgPipeline") {
             m_generation_config.guidance_scale = 8.5f;
             m_generation_config.num_inference_steps = 4;
             m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.8f : 1.0f;
@@ -373,7 +396,7 @@ private:
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by ", pipeline_name);
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
+        if ((m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) && initial_image) {
             ov::Shape initial_image_shape = initial_image.get_shape();
             size_t height = initial_image_shape[1], width = initial_image_shape[2];
 
