@@ -369,7 +369,7 @@ void init_whisper_pipeline(py::module_& m) {
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
                const PyBindChunkStreamerVariant& streamer,
-               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::DecodedResults> {
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::WhisperDecodedResults> {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },
             py::arg("raw_speech_input"),
