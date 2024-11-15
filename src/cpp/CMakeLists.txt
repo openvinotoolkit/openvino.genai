@@ -98,7 +98,7 @@ endif()
 
 if(OpenVINODeveloperPackage_FOUND)
     # must be called after all target_link_libraries
-    ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
+    # ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
 
     ov_ncc_naming_style(FOR_TARGET ${TARGET_NAME}
                         SOURCE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")

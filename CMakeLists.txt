@@ -25,6 +25,10 @@ if(POLICY CMP0169)
     cmake_policy(SET CMP0169 OLD)
 endif()
 
+if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
+    set(LINUX ON)
+endif()
+
 project(OpenVINOGenAI
         VERSION 2025.0.0.0
         DESCRIPTION "OpenVINO GenAI"

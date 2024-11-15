@@ -123,6 +123,23 @@ elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
     # in case of wheel build, pybind11-stubgen is always available via pyproject.toml's build-system
     # except Win32 where we have issues with pybind11_stubgen executable which cannot import its own module
     set(pybind11_stubgen_AVAILABLE ON)
+
+    # but we also need to check whether OpenVINO is installed
+    if(CMAKE_CROSSCOMPILING)
+        # we cannot check OpenVINO during cross-compile
+        set(pybind11_stubgen_AVAILABLE OFF)
+    else()
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "import openvino"
+            RESULT_VARIABLE EXIT_CODE
+            OUTPUT_VARIABLE OUTPUT_TEXT
+            ERROR_VARIABLE ERROR_TEXT)
+
+        # OpenVINO is not available because of import error
+        if(NOT EXIT_CODE EQUAL 0)
+            set(pybind11_stubgen_AVAILABLE OFF)
+        endif()
+    endif()
 endif()
 
 if(pybind11_stubgen_AVAILABLE)
