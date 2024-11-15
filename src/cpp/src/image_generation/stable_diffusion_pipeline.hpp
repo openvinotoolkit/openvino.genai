@@ -143,12 +143,13 @@ public:
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         using namespace numpy_utils;
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        const bool is_strength_max = generation_config.strength == 1.0f && m_pipeline_type == PipelineType::INPAINTING;
 
         ov::Shape latent_shape{generation_config.num_images_per_prompt, m_vae->get_config().latent_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
         ov::Tensor latent;
 
-        if (initial_image) {
+        if (initial_image && !is_strength_max) {
             latent = m_vae->encode(initial_image, generation_config.generator);
             if (generation_config.num_images_per_prompt > 1) {
                 ov::Tensor batched_latent(ov::element::f32, latent_shape);
@@ -238,7 +239,7 @@ public:
 
         // preparate initial latents
         ov::Tensor latent = prepare_latents(initial_image, generation_config);
-        read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, true);
+        read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, false);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
