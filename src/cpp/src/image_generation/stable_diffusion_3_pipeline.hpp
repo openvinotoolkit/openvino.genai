@@ -32,18 +32,6 @@ void padding_right(const float* src, float* res, const ov::Shape src_size, const
     }
 }
 
-ov::Tensor tensor_batch_copy(const ov::Tensor input, const size_t num_images_per_prompt, size_t batch_size_multiplier) {
-    ov::Shape repeated_shape = input.get_shape();
-    repeated_shape[0] *= num_images_per_prompt;
-    ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
-
-    for (size_t n = 0; n < num_images_per_prompt; ++n) {
-        batch_copy(input, tensor_repeated, 0, n);
-    }
-
-    return tensor_repeated;
-}
-
 ov::Tensor split_2d_by_batch(const ov::Tensor input, size_t batch_num) {
     ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1]});
 
@@ -196,11 +184,11 @@ public:
                              const CLIPTextModelWithProjection& clip_text_model_1,
                              const CLIPTextModelWithProjection& clip_text_model_2,
                              const SD3Transformer2DModel& transformer,
-                             const AutoencoderKL& vae_decoder)
+                             const AutoencoderKL& vae)
         : DiffusionPipeline(pipeline_type),
           m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
           m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
-          m_vae(std::make_shared<AutoencoderKL>(vae_decoder)),
+          m_vae(std::make_shared<AutoencoderKL>(vae)),
           m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {
         initialize_generation_config("StableDiffusion3Pipeline");
     }
@@ -346,16 +334,10 @@ public:
             pooled_prompt_2_embed = pooled_prompt_2_embed_out;
             prompt_2_embed = prompt_2_embed_out;
         } else {
-            pooled_prompt_embed = tensor_batch_copy(pooled_prompt_embed_out,
-                                                    generation_config.num_images_per_prompt,
-                                                    batch_size_multiplier);
-            prompt_embed =
-                tensor_batch_copy(prompt_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
-            pooled_prompt_2_embed = tensor_batch_copy(pooled_prompt_2_embed_out,
-                                                      generation_config.num_images_per_prompt,
-                                                      batch_size_multiplier);
-            prompt_2_embed =
-                tensor_batch_copy(prompt_2_embed_out, generation_config.num_images_per_prompt, batch_size_multiplier);
+            pooled_prompt_embed = repeat(pooled_prompt_embed_out, generation_config.num_images_per_prompt);
+            prompt_embed = repeat(prompt_embed_out, generation_config.num_images_per_prompt);
+            pooled_prompt_2_embed = repeat(pooled_prompt_2_embed_out, generation_config.num_images_per_prompt);
+            prompt_2_embed = repeat(prompt_2_embed_out, generation_config.num_images_per_prompt);
         }
 
         // concatenate hidden_states from two encoders
@@ -432,18 +414,10 @@ public:
                 negative_pooled_prompt_2_embed = negative_pooled_prompt_2_embed_out;
                 negative_prompt_2_embed = negative_prompt_2_embed_out;
             } else {
-                negative_pooled_prompt_embed = tensor_batch_copy(negative_pooled_prompt_embed_out,
-                                                                 generation_config.num_images_per_prompt,
-                                                                 batch_size_multiplier);
-                negative_prompt_embed = tensor_batch_copy(negative_prompt_embed_out,
-                                                          generation_config.num_images_per_prompt,
-                                                          batch_size_multiplier);
-                negative_pooled_prompt_2_embed = tensor_batch_copy(negative_pooled_prompt_2_embed_out,
-                                                                   generation_config.num_images_per_prompt,
-                                                                   batch_size_multiplier);
-                negative_prompt_2_embed = tensor_batch_copy(negative_prompt_2_embed_out,
-                                                            generation_config.num_images_per_prompt,
-                                                            batch_size_multiplier);
+                negative_pooled_prompt_embed = repeat(negative_pooled_prompt_embed_out, generation_config.num_images_per_prompt);
+                negative_prompt_embed = repeat(negative_prompt_embed_out, generation_config.num_images_per_prompt);
+                negative_pooled_prompt_2_embed = repeat(negative_pooled_prompt_2_embed_out, generation_config.num_images_per_prompt);
+                negative_prompt_2_embed = repeat(negative_prompt_2_embed_out, generation_config.num_images_per_prompt);
             }
 
             // concatenate hidden_states from two encoders
@@ -620,6 +594,7 @@ private:
         if (class_name == "StableDiffusion3Pipeline") {
             m_generation_config.guidance_scale = 7.0f;
             m_generation_config.num_inference_steps = 28;
+            m_generation_config.max_sequence_length = 256;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -642,8 +617,8 @@ private:
         check_image_size(generation_config.width, generation_config.height);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
-        const char* const pipeline_name = "Stable Diffusion 3";
 
+        OPENVINO_ASSERT(generation_config.max_sequence_length < 512, "T5's 'max_sequence_length' must be less than 512");
         OPENVINO_ASSERT(
             generation_config.prompt_3 == std::nullopt || generation_config.negative_prompt_3 == std::nullopt,
             "T5Encoder is not currently supported, 'prompt_3' and 'negative_prompt_3' can't be used. Please, add "

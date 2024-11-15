@@ -356,7 +356,7 @@ def parse_args():
     parser.add_argument(
         "--image-size",
         type=int,
-        default=512,
+        default=None,
         help="Text-to-image specific parameter that defines the image resolution.",
     )
     parser.add_argument(
@@ -450,13 +450,20 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
-    image_tensor = model.generate(
-        prompt,
-        width=model.resolution[0],
-        height=model.resolution[1],
-        num_inference_steps=num_inference_steps,
-        generator=generator,
-    )
+    if model.resolution[0] is not None:
+        image_tensor = model.generate(
+            prompt,
+            width=model.resolution[0],
+            height=model.resolution[1],
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+    else:
+        image_tensor = model.generate(
+            prompt,
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
     image = Image.fromarray(image_tensor.data[0])
     return image
 

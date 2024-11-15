@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
+#include "image_generation/numpy_utils.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
@@ -17,31 +18,6 @@
 
 namespace ov {
 namespace genai {
-
-namespace {
-
-ov::Tensor get_guidance_scale_embedding(float guidance_scale, uint32_t embedding_dim) {
-    float w = guidance_scale * 1000;
-    uint32_t half_dim = embedding_dim / 2;
-    float emb = std::log(10000) / (half_dim - 1);
-
-    ov::Shape embedding_shape = {1, embedding_dim};
-    ov::Tensor w_embedding(ov::element::f32, embedding_shape);
-    float* w_embedding_data = w_embedding.data<float>();
-
-    for (size_t i = 0; i < half_dim; ++i) {
-        float temp = std::exp((i * (-emb))) * w;
-        w_embedding_data[i] = std::sin(temp);
-        w_embedding_data[i + half_dim] = std::cos(temp);
-    }
-
-    if (embedding_dim % 2 == 1)
-        w_embedding_data[embedding_dim - 1] = 0;
-
-    return w_embedding;
-}
-
-}  // namespace
 
 class StableDiffusionPipeline : public DiffusionPipeline {
 public:
@@ -148,7 +124,7 @@ public:
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
 
-        const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         m_clip_text_encoder->reshape(batch_size_multiplier);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
         m_vae->reshape(num_images_per_prompt, height, width);
@@ -163,6 +139,7 @@ public:
     }
 
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+        using namespace numpy_utils;
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -195,6 +172,7 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         const ov::AnyMap& properties) override {
+        using namespace numpy_utils;
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
@@ -207,7 +185,7 @@ public:
         // see https://huggingface.co/docs/diffusers/using-diffusers/write_own_pipeline#deconstruct-the-stable-diffusion-pipeline
 
         const auto& unet_config = m_unet->get_config();
-        const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         if (generation_config.height < 0)
@@ -249,8 +227,8 @@ public:
         }
 
         if (unet_config.time_cond_proj_dim >= 0) { // LCM
-            ov::Tensor guidance_scale_embedding = get_guidance_scale_embedding(generation_config.guidance_scale, unet_config.time_cond_proj_dim);
-            m_unet->set_hidden_states("timestep_cond", guidance_scale_embedding);
+            ov::Tensor timestep_cond = get_guidance_scale_embedding(generation_config.guidance_scale - 1.0f, unet_config.time_cond_proj_dim);
+            m_unet->set_hidden_states("timestep_cond", timestep_cond);
         }
 
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
@@ -308,10 +286,6 @@ public:
     }
 
 private:
-    bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
-    }
-
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_unet != nullptr);
         assert(m_vae != nullptr);
@@ -345,7 +319,7 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
+        const bool is_classifier_free_guidance = m_unet->do_classifier_free_guidance(generation_config.guidance_scale);
         const bool is_lcm = m_unet->get_config().time_cond_proj_dim > 0;
         const char * const pipeline_name = is_lcm ? "Latent Consistency Model" : "Stable Diffusion";
 

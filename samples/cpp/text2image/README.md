@@ -5,7 +5,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 There are three sample files:
  - [`main.cpp`](./main.cpp) demonstrates basic usage of the text to image pipeline
  - [`lora.cpp`](./lora.cpp) shows how to apply LoRA adapters to the pipeline
- - [`txt2image_from_subcomponent.cpp`](./txt2image_from_subcomponent.cpp) shows how to assemble a txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
+ - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -71,14 +71,14 @@ C++ random generation with MT19937 results differ from `numpy.random.randn()` an
 
 ## Run with multiple devices
 
-The `txt2image_from_subcomponent` sample demonstrates how a Text2ImagePipeline object can be created from individual subcomponents - scheduler, text encoder, unet, & vae decoder. This approach gives fine-grained control over the devices used to execute each stage of the stable diffusion pipeline.
+The `heterogeneous_stable_diffusion` sample demonstrates how a Text2ImagePipeline object can be created from individual subcomponents - scheduler, text encoder, unet, & vae decoder. This approach gives fine-grained control over the devices used to execute each stage of the stable diffusion pipeline.
 
 The usage of this sample is:
 
-`txt2image_from_subcomponent <MODEL_DIR> '<PROMPT>' [ <TXT_ENCODE_DEVICE> <UNET_DEVICE> <VAE_DEVICE> ]`
+`heterogeneous_stable_diffusion <MODEL_DIR> '<PROMPT>' [ <TXT_ENCODE_DEVICE> <UNET_DEVICE> <VAE_DEVICE> ]`
 
 For example:
 
-`txt2image_from_subcomponent ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
+`heterogeneous_stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
 
 The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
