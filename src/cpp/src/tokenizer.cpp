@@ -388,7 +388,7 @@ public:
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
 
-    std::string patch_chat_template(std::string template_str) {
+    std::string patch_chat_template(std::string template_str) const {
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
             {"'}", "' }"},
@@ -422,10 +422,8 @@ public:
         if (!file.is_open())
             return "";
 
-        std::string res = "";
+        std::string res;
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-        if (res.empty())
-            return res;
         
         return patch_chat_template(res);
     }
@@ -433,7 +431,7 @@ public:
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template) const {
-        auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : patch_chat_template(chat_template);
         OPENVINO_ASSERT(!chat_tpl.empty(),
                         "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                         " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."

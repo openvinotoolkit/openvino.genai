@@ -58,9 +58,10 @@ auto text2image_generate_docstring = R"(
     height: int - height of resulting images,
     width: int - width of resulting images,
     num_inference_steps: int - number of inference steps,
-    generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
-    adapters: LoRA adapters
-    strength: strength for image to image generation. 1.0f means initial image is fully noised
+    generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+    adapters: LoRA adapters,
+    strength: strength for image to image generation. 1.0f means initial image is fully noised,
+    max_sequence_length: int - length of t5_encoder_model input
 
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
@@ -101,6 +102,8 @@ void update_image_generation_config_from_kwargs(
             config.adapters = py::cast<ov::genai::AdapterConfig>(value);
         } else if (key == "strength") {
             config.strength = py::cast<float>(value);
+        } else if (key == "max_sequence_length") {
+            config.max_sequence_length = py::cast<size_t>(value);
         } else {
             throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
                                         "Use help(openvino_genai.ImageGenerationConfig) to get list of acceptable parameters."));
@@ -142,6 +145,8 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
             params.insert({ov::genai::adapters(std::move(py::cast<ov::genai::AdapterConfig>(value)))});
         } else if (key == "strength") {
             params.insert({ov::genai::strength(std::move(py::cast<float>(value)))});
+        } else if (key == "max_sequence_length") {
+            params.insert({ov::genai::max_sequence_length(std::move(py::cast<size_t>(value)))});
         }
         else {
             if (allow_compile_properties) {
@@ -219,6 +224,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("num_images_per_prompt", &ov::genai::ImageGenerationConfig::num_images_per_prompt)
         .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
         .def_readwrite("strength", &ov::genai::ImageGenerationConfig::strength)
+        .def_readwrite("max_sequence_length", &ov::genai::ImageGenerationConfig::max_sequence_length)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
             ov::genai::ImageGenerationConfig config,

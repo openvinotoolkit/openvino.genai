@@ -2,9 +2,10 @@
 
 Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.Text2ImagePipeline` and uses a text prompt as input source.
 
-There are two sample files:
+There are three sample files:
  - [`main.py`](./main.py) demonstrates basic usage of the text to image pipeline
  - [`lora.py`](./lora.py) shows how to apply LoRA adapters to the pipeline
+ - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -60,3 +61,17 @@ Check the difference:
 With adapter | Without adapter
 :---:|:---:
 ![](./lora.bmp) | ![](./baseline.bmp)
+
+## Run with multiple devices
+
+The `heterogeneous_stable_diffusion.py` sample demonstrates how a Text2ImagePipeline object can be created from individual subcomponents - scheduler, text encoder, unet, & vae decoder. This approach gives fine-grained control over the devices used to execute each stage of the stable diffusion pipeline.
+
+The usage of this sample is:
+
+`heterogeneous_stable_diffusion.py [-h] model_dir prompt [text_encoder_device] [unet_device] [vae_decoder_device]`
+
+For example:
+
+`heterogeneous_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
+
+The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
