@@ -264,7 +264,7 @@ def test_unoptimized_generation_longbench(phi3_converted_model, subset):
                 )
                 for i, output in enumerate(ans_batch, start=p_idx-len(batch)+1):
                     context_len = answers[i]["context_len"]
-                    pred = post_process_pred(output.m_generation_ids, subset, model_name)
+                    pred = post_process_pred(output.m_generation_ids[0], subset, model_name)
                     answers[i]["pred"] = pred
 
                 batch.clear()

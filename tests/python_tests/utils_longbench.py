@@ -249,7 +249,7 @@ def preprocess_prompt(tokenizer, data_sample, subset, model_name):
     return prompt, context_len
 
 
-def post_process_pred(subset, model_name):
+def post_process_pred(pred, subset, model_name):
     if subset in ["samsum", "qsum", "hotpotqa", "qasper"] and "Llama-3-8B" in model_name:
         pred = pred[:pred.find("assistant")]
     elif subset == "samsum":
