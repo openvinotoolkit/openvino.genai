@@ -106,10 +106,19 @@ else()
 endif()
 
 if(OpenVINODeveloperPackage_FOUND)
-    ov_check_pip_package(REQUIREMENT ${pybind11_stubgen_dep}
-                         RESULT_VAR pybind11_stubgen_AVAILABLE
-                         WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
-                         MESSAGE_MODE WARNING)
+    # check whether OpenVINO Python API is available
+    load_cache("${OpenVINODeveloperPackage_DIR}" READ_WITH_PREFIX OPENVINO_ ENABLE_PYTHON)
+    if(OPENVINO_ENABLE_PYTHON)
+        set(openvino_pythonpath "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/python")
+
+        ov_check_pip_package(REQUIREMENT ${pybind11_stubgen_dep}
+                             RESULT_VAR pybind11_stubgen_AVAILABLE
+                             WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
+                             MESSAGE_MODE WARNING)
+    else()
+        # force pybind11-stubgen to OFF and it depends on OpenVINO Python API availability
+        set(pybind11_stubgen_AVAILABLE OFF)
+    endif()
 elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
     # in case of wheel build, pybind11-stubgen is always available via pyproject.toml's build-system
     # except Win32 where we have issues with pybind11_stubgen executable which cannot import its own module
@@ -150,7 +159,7 @@ if(pybind11_stubgen_AVAILABLE)
     add_custom_command(OUTPUT ${output_file}
         COMMAND "${CMAKE_COMMAND}" -E rm -f "${CMAKE_BINARY_DIR}/openvino_genai/__init__.pyi"
                                             "${CMAKE_BINARY_DIR}/openvino_genai/py_openvino_genai.pyi"
-        COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}:$ENV{PYTHONPATH}
+        COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}:${openvino_pythonpath}:$ENV{PYTHONPATH}
                 ${pybind11_stubgen} --output-dir ${stub_files_location} openvino_genai
         ${validation_command}
         ${copy_to_source_command}
