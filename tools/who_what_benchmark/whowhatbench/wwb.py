@@ -180,7 +180,7 @@ def load_visual_text_model(
     else:
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_options
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
         except ValueError:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
@@ -190,7 +190,7 @@ def load_visual_text_model(
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_options,
+                ov_config=ov_config,
             )
     return model
 

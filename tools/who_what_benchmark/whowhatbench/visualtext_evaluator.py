@@ -9,6 +9,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 
+from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
 
 from .registry import register_evaluator, BaseEvaluator
 from .text_evaluator import TextEvaluator
@@ -28,8 +29,7 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(DATASET_NAME, split="test").\
-        shuffle(seed=42).take(NUM_SAMPLES)
+    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).take(NUM_SAMPLES)
     return default_dataset.map(lambda x: preprocess_fn(x),
                                 remove_columns=default_dataset.column_names)
 
@@ -164,9 +164,13 @@ class VisualTextEvaluator(TextEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(model, prompt, image, processor, max_new_tokens, crop_question):
-            input_maker = INPUT_MAKER_REGISTRY[model.config.model_type]
+            #input_maker = INPUT_MAKER_REGISTRY[model.config.model_type]
+            #inputs = input_maker(processor, image, prompt)
+            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
             #print("Inputs: ", prompt, image)
-            inputs = input_maker(processor, image, prompt)
+
+            inputs = preprocess_inputs(prompt, image, processor, self.tokenizer)
+            
             # image_tensor = model.process_images([image], model.config).to(dtype=model.dtype)
             # tokens = model.generate(**inputs, images=image_tensor, do_sample=False, max_new_tokens=max_new_tokens)
             tokens = model.generate(**inputs,  do_sample=False, max_new_tokens=max_new_tokens)
