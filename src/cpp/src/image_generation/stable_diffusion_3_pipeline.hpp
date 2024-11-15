@@ -536,6 +536,12 @@ public:
 
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
+        std::function<bool(size_t, ov::Tensor&)> callback;
+
+        auto callback_iter = properties.find("callback");
+        if (callback_iter != properties.end()) {
+            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
+        }
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             // concat the same latent twice along a batch dimension in case of CFG
@@ -571,6 +577,17 @@ public:
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
+
+            if (callback_iter != properties.end()) {
+                if (callback(inference_step, latent)) {
+                    ov::Shape output_shape = {1, 
+                                              generation_config.height / vae_scale_factor,
+                                              generation_config.width/ vae_scale_factor,
+                                              3
+                                              };
+                    return ov::Tensor(ov::element::u8, output_shape);
+                }
+            }
         }
 
         return m_vae->decode(latent);
