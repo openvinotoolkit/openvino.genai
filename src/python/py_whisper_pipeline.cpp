@@ -142,60 +142,7 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     WhisperGenerationConfig res_config;
     if (config.has_value())
         res_config = *config;
-
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (item.second.is_none()) {
-            // Even if argument key name does not fit GenerationConfig name
-            // it's not an error if it's not defined.
-            // Some HF configs can have parameters for methods currently unsupported in ov_genai
-            // but if their values are not set / None, then this should not block
-            // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
-            return res_config;
-        }
-
-        if (key == "max_new_tokens") {
-            res_config.max_new_tokens = py::cast<int>(item.second);
-        } else if (key == "max_length") {
-            res_config.max_length = py::cast<int>(item.second);
-        } else if (key == "decoder_start_token_id") {
-            res_config.decoder_start_token_id = py::cast<int>(item.second);
-        } else if (key == "pad_token_id") {
-            res_config.pad_token_id = py::cast<int>(item.second);
-        } else if (key == "translate_token_id") {
-            res_config.translate_token_id = py::cast<int>(item.second);
-        } else if (key == "transcribe_token_id") {
-            res_config.transcribe_token_id = py::cast<int>(item.second);
-        } else if (key == "no_timestamps_token_id") {
-            res_config.no_timestamps_token_id = py::cast<int>(item.second);
-        } else if (key == "max_initial_timestamp_index") {
-            res_config.max_initial_timestamp_index = py::cast<size_t>(item.second);
-        } else if (key == "begin_suppress_tokens") {
-            res_config.begin_suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
-        } else if (key == "suppress_tokens") {
-            res_config.suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
-        } else if (key == "is_multilingual") {
-            res_config.is_multilingual = py::cast<bool>(item.second);
-        } else if (key == "language") {
-            res_config.language = py::cast<std::string>(item.second);
-        } else if (key == "lang_to_id") {
-            res_config.lang_to_id = py::cast<std::map<std::string, int64_t>>(item.second);
-        } else if (key == "task") {
-            res_config.task = py::cast<std::string>(item.second);
-        } else if (key == "return_timestamps") {
-            res_config.return_timestamps = py::cast<bool>(item.second);
-        } else if (key == "eos_token_id") {
-            res_config.set_eos_token_id(py::cast<int>(item.second));
-        } else {
-            throw(std::invalid_argument(
-                "'" + key +
-                "' is incorrect WhisperGenerationConfig parameter name. "
-                "Use help(openvino_genai.WhisperGenerationConfig) to get list of acceptable parameters."));
-        }
-    }
-
+    res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
     return res_config;
 }
 

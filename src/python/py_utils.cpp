@@ -11,6 +11,8 @@
 
 #include "tokenizers_path.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -43,7 +45,7 @@ bool py_object_is_any_map(const py::object& py_obj) {
     });
 }
 
-ov::Any py_object_to_any(const py::object& py_obj);
+ov::Any py_object_to_any(const py::object& py_obj, std::string property_name);
 
 ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
     OPENVINO_ASSERT(py_object_is_any_map(py_obj), "Unsupported attribute type.");
@@ -54,16 +56,33 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
         if (py_object_is_any_map(value)) {
             return_value[key] = py_object_to_any_map(value);
         } else {
-            return_value[key] = py_object_to_any(value);
+            return_value[key] = py_object_to_any(value, key);
         }
     }
     return return_value;
 }
 
-ov::Any py_object_to_any(const py::object& py_obj) {
+ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     // Python types
+    // TODO: Remove this after ov::Any is fixed to allow pass types, that can be casted to target type.
+    std::set<std::string> size_t_properties = {
+        "max_new_tokens",
+        "max_length",
+        "min_new_tokens",
+        "logprobs",
+        "num_beam_groups",
+        "num_beams",
+        "num_return_sequences",
+        "no_repeat_ngram_size",
+        "top_k",
+        "rng_seed",
+        "num_assistant_tokens",
+        "max_initial_timestamp_index",
+        "num_images_per_prompt",
+        "num_inference_steps"
+    };
+
     py::object float_32_type = py::module_::import("numpy").attr("float32");
-    
     if (py::isinstance<py::str>(py_obj)) {
         return py_obj.cast<std::string>();
     } else if (py::isinstance<py::bool_>(py_obj)) {
@@ -71,16 +90,19 @@ ov::Any py_object_to_any(const py::object& py_obj) {
     } else if (py::isinstance<py::bytes>(py_obj)) {
         return py_obj.cast<std::string>();
     } else if (py::isinstance<py::float_>(py_obj)) {
-        return py_obj.cast<double>();
+        return py_obj.cast<float>();
     } else if (py::isinstance(py_obj, float_32_type)) {
         return py_obj.cast<float>();
     } else if (py::isinstance<py::int_>(py_obj)) {
+        if (size_t_properties.find(property_name) != size_t_properties.end()) {
+            return py_obj.cast<size_t>();
+        }
         return py_obj.cast<int64_t>();
     } else if (py::isinstance<py::none>(py_obj)) {
         return {};
     } else if (py::isinstance<py::list>(py_obj)) {
         auto _list = py_obj.cast<py::list>();
-        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE };
+        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
         PY_TYPE detected_type = PY_TYPE::UNKNOWN;
         for (const auto& it : _list) {
             auto check_type = [&](PY_TYPE type) {
@@ -100,6 +122,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
                 check_type(PY_TYPE::BOOL);
             } else if (py::isinstance<ov::PartialShape>(it)) {
                 check_type(PY_TYPE::PARTIAL_SHAPE);
+            } else if (py::isinstance<ov::Tensor>(it)) {
+                check_type(PY_TYPE::TENSOR);
             }
         }
 
@@ -117,10 +141,89 @@ ov::Any py_object_to_any(const py::object& py_obj) {
             return _list.cast<std::vector<bool>>();
         case PY_TYPE::PARTIAL_SHAPE:
             return _list.cast<std::vector<ov::PartialShape>>();
+        case PY_TYPE::TENSOR:
+            return _list.cast<std::vector<ov::Tensor>>();
         default:
             OPENVINO_ASSERT(false, "Unsupported attribute type.");
         }
-    
+
+    } else if (py::isinstance<py::dict>(py_obj)) {
+        auto _dict = py_obj.cast<py::dict>();
+        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT};
+        PY_TYPE detected_key_type = PY_TYPE::UNKNOWN;
+        PY_TYPE detected_value_type = PY_TYPE::UNKNOWN;
+        for (const auto& it : _dict) {
+            auto check_type = [&](PY_TYPE type, PY_TYPE detected_type) {
+                if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
+                    detected_type = type;
+                    return;
+                }
+                OPENVINO_THROW("Incorrect attribute. Mixed types in the dict are not allowed.");
+            };
+            // check key type
+            if (py::isinstance<py::str>(it.first)) {
+                check_type(PY_TYPE::STR, detected_key_type);
+            }
+
+            // check value type
+            if (py::isinstance<py::int_>(it.second)) {
+                check_type(PY_TYPE::INT, detected_value_type);
+            }
+        }
+
+        if (_dict.empty())
+            return ov::Any();
+
+        switch (detected_key_type) {
+        case PY_TYPE::STR:
+            switch (detected_value_type) {
+            case PY_TYPE::INT:
+                return _dict.cast<std::map<std::string, int64_t>>();
+            default:
+                OPENVINO_ASSERT(false, "Unsupported attribute type.");
+            }
+        default:
+            OPENVINO_ASSERT(false, "Unsupported attribute type.");
+        }
+    } else if (py::isinstance<py::set>(py_obj)) {
+        auto _set = py_obj.cast<py::set>();
+        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL};
+        PY_TYPE detected_type = PY_TYPE::UNKNOWN;
+        for (const auto& it : _set) {
+            auto check_type = [&](PY_TYPE type) {
+                if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
+                    detected_type = type;
+                    return;
+                }
+                OPENVINO_THROW("Incorrect attribute. Mixed types in the set are not allowed.");
+            };
+            if (py::isinstance<py::str>(it)) {
+                check_type(PY_TYPE::STR);
+            } else if (py::isinstance<py::int_>(it)) {
+                check_type(PY_TYPE::INT);
+            } else if (py::isinstance<py::float_>(it)) {
+                check_type(PY_TYPE::FLOAT);
+            } else if (py::isinstance<py::bool_>(it)) {
+                check_type(PY_TYPE::BOOL);
+            }
+        }
+
+        if (_set.empty())
+            return ov::Any();
+
+        switch (detected_type) {
+        case PY_TYPE::STR:
+            return _set.cast<std::set<std::string>>();
+        case PY_TYPE::FLOAT:
+            return _set.cast<std::set<double>>();
+        case PY_TYPE::INT:
+            return _set.cast<std::set<int64_t>>();
+        case PY_TYPE::BOOL:
+            return _set.cast<std::set<bool>>();
+        default:
+            OPENVINO_ASSERT(false, "Unsupported attribute type.");
+        }
+
     // OV types
     } else if (py_object_is_any_map(py_obj)) {
         return py_object_to_any_map(py_obj);
@@ -156,8 +259,18 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
     } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
         return py::cast<ov::genai::SchedulerConfig>(py_obj);
-    } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) { 
+    } else if (py::isinstance<ov::genai::AdapterConfig>(py_obj)) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
+        return py::cast<ov::genai::GenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
+        return py::cast<ov::genai::StopCriteria>(py_obj);
+    } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
+        // TODO check function signature?
+    } else if (py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) {
+        auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
+        return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
     } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }
@@ -167,7 +280,7 @@ ov::Any py_object_to_any(const py::object& py_obj) {
 std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties) {
     std::map<std::string, ov::Any> properties_to_cpp;
     for (const auto& property : properties) {
-        properties_to_cpp[property.first] = py_object_to_any(property.second);
+        properties_to_cpp[property.first] = py_object_to_any(property.second, property.first);
     }
     return properties_to_cpp;
 }
@@ -183,7 +296,7 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             auto map = utils::py_object_to_any_map(value);
             params.insert(map.begin(), map.end());
         } else {
-            params[key] = utils::py_object_to_any(value);
+            params[key] = utils::py_object_to_any(value, key);
         }
 
     }
@@ -227,86 +340,8 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
     ov::genai::GenerationConfig res_config;
     if(config.has_value())
         res_config = *config;
-    ov::AnyMap map;
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (item.second.is_none()) {
-            // Even if argument key name does not fit GenerationConfig name 
-            // it's not an error if it's not defined. 
-            // Some HF configs can have parameters for methods currently unsupported in ov_genai
-            // but if their values are not set / None, then this should not block 
-            // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
-            return res_config;
-        }  
-        if (!generation_config_param_to_property(key, value, map)) {
-            throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
-                                        "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
-        }
-    }
-    res_config.update_generation_config(map);
+    res_config.update_generation_config(kwargs_to_any_map(kwargs));
     return res_config;
-}
-
-    
-bool generation_config_param_to_property(std::string key, py::object value, ov::AnyMap& map) {
-    if (key == "max_new_tokens") {
-        map.insert(ov::genai::max_new_tokens(py::cast<int>(value)));
-    } else if (key == "max_length") {
-        map.insert(ov::genai::max_length(py::cast<int>(value)));
-    } else if (key == "ignore_eos") {
-        map.insert(ov::genai::ignore_eos(py::cast<bool>(value)));
-    } else if (key == "min_new_tokens") {
-        map.insert(ov::genai::min_new_tokens(py::cast<int>(value)));
-    } else if (key == "stop_strings") {
-        map.insert(ov::genai::stop_strings(py::cast<std::vector<std::string>>(value)));
-    } else if (key == "include_stop_str_in_output") {
-        map.insert(ov::genai::include_stop_str_in_output(py::cast<bool>(value)));
-    } else if (key == "include_stop_str_in_output") {
-        map.insert(ov::genai::stop_token_ids(py::cast<std::vector<std::vector<int64_t>>>(value)));
-    } else if (key == "num_beam_groups") {
-        map.insert(ov::genai::num_beam_groups(py::cast<int>(value)));
-    } else if (key == "num_beams") {
-        map.insert(ov::genai::num_beams(py::cast<int>(value)));
-    } else if (key == "diversity_penalty") {
-        map.insert(ov::genai::diversity_penalty(py::cast<float>(value)));
-    } else if (key == "length_penalty") {
-        map.insert(ov::genai::length_penalty(py::cast<float>(value)));
-    } else if (key == "num_return_sequences") {
-        map.insert(ov::genai::num_return_sequences(py::cast<int>(value)));
-    } else if (key == "no_repeat_ngram_size") {
-        map.insert(ov::genai::no_repeat_ngram_size(py::cast<int>(value)));
-    } else if (key == "stop_criteria") {
-        map.insert(ov::genai::stop_criteria(py::cast<StopCriteria>(value)));
-    } else if (key == "temperature") {
-        map.insert(ov::genai::temperature(py::cast<float>(value)));
-    } else if (key == "top_p") {
-        map.insert(ov::genai::top_p(py::cast<float>(value)));
-    } else if (key == "top_k") {
-        map.insert(ov::genai::top_k(py::cast<int>(value)));
-    } else if (key == "do_sample") {
-        map.insert(ov::genai::do_sample(py::cast<bool>(value)));
-    } else if (key == "repetition_penalty") {
-        map.insert(ov::genai::repetition_penalty(py::cast<float>(value)));
-    } else if (key == "presence_penalty") {
-        map.insert(ov::genai::presence_penalty(py::cast<float>(value)));
-    } else if (key == "frequency_penalty") {
-        map.insert(ov::genai::frequency_penalty(py::cast<float>(value)));
-    } else if (key == "rng_seed") {
-        map.insert(ov::genai::rng_seed(py::cast<int>(value)));
-    } else if (key == "eos_token_id") {
-        map.insert(ov::genai::eos_token_id(py::cast<int>(value)));
-    } else if (key == "assistant_confidence_threshold") {
-        map.insert(ov::genai::assistant_confidence_threshold(py::cast<float>(value)));
-    } else if (key == "num_assistant_tokens") {
-        map.insert(ov::genai::num_assistant_tokens(py::cast<int>(value)));
-    } else if (key == "adapters") {
-        map.insert(ov::genai::adapters(py::cast<ov::genai::AdapterConfig>(value)));
-    } else {
-        return false;
-    }
-    return true;
 }
 
 
