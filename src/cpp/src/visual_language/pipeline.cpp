@@ -57,7 +57,7 @@ public:
         const ov::AnyMap& properties
     ) :
         m_vlm_config{
-            utils::from_config_json_if_exists<ov::genai::VLMConfig>(
+            utils::from_config_json_if_exists<VLMConfig>(
                 models_dir, "config.json"
             )
         },
@@ -73,6 +73,11 @@ public:
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
     }
 
     DecodedResults generate(
@@ -81,10 +86,10 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) {
-        // If eos_token_id was not provided, take value
-        if (generation_config.eos_token_id == -1) {
-            generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        }
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (generation_config.eos_token_id == -1)
+            generation_config.set_eos_token_id(m_generation_config.eos_token_id);
+        generation_config.validate();
 
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
 
@@ -100,7 +105,6 @@ public:
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
-        sequence_group->update_processed_tokens_num(history_size);
         sequence_group->set_sequence_group_ptr(sequence_group);
         requests.push_back(sequence_group);
 
@@ -229,6 +233,15 @@ DecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(prompt, rgbs, generation_config, streamer);
+}
+
+DecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const ov::Tensor& rgb,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
 }
 
 DecodedResults VLMPipeline::generate(
