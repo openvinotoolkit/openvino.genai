@@ -706,6 +706,7 @@ class ImageGenerationConfig:
     generator: Generator
     guidance_scale: float
     height: int
+    max_sequence_length: int
     negative_prompt: str | None
     negative_prompt_2: str | None
     negative_prompt_3: str | None
@@ -1267,9 +1268,10 @@ class Text2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
-            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
-            adapters: LoRA adapters
-            strength: strength for image to image generation. 1.0f means initial image is fully noised
+            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            adapters: LoRA adapters,
+            strength: strength for image to image generation. 1.0f means initial image is fully noised,
+            max_sequence_length: int - length of t5_encoder_model input
         
             :return: ov.Tensor with resulting images
             :rtype: ov.Tensor
@@ -1379,6 +1381,8 @@ class UNet2DConditionModel:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
+    def do_classifier_free_guidance(self, guidance_scale: float) -> bool:
+        ...
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
     def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
