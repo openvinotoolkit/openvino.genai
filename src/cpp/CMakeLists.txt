@@ -104,8 +104,8 @@ if(OpenVINODeveloperPackage_FOUND)
                         SOURCE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
     # TODO: override versions as currently they come from OpenVINO
-    ov_add_vs_version_file(NAME ${TARGET_NAME}
-                           FILEDESCRIPTION "OpenVINO GenAI library")
+    # ov_add_vs_version_file(NAME ${TARGET_NAME}
+    #                        FILEDESCRIPTION "OpenVINO GenAI library")
 
     # TODO: commit changes separately
     # ov_add_clang_format_target(${TARGET_NAME}_clang FOR_TARGETS ${TARGET_NAME})
