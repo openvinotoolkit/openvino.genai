@@ -153,7 +153,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         PY_TYPE detected_key_type = PY_TYPE::UNKNOWN;
         PY_TYPE detected_value_type = PY_TYPE::UNKNOWN;
         for (const auto& it : _dict) {
-            auto check_type = [&](PY_TYPE type, PY_TYPE detected_type) {
+            auto check_type = [&](PY_TYPE type, PY_TYPE& detected_type) {
                 if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
                     detected_type = type;
                     return;
@@ -291,10 +291,15 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
     for (const auto& item : kwargs) {
         std::string key = py::cast<std::string>(item.first);
         py::object value = py::cast<py::object>(item.second);
-        if (utils::py_object_is_any_map(value)) {
+        // we need to unpack only dictionaries, which are passed with "config" name,
+        // because there are dictionary properties that should not be unpacked
+        if (utils::py_object_is_any_map(value) && key == "config") {
             auto map = utils::py_object_to_any_map(value);
             params.insert(map.begin(), map.end());
         } else {
+            if (py::isinstance<py::none>(value)) {
+                continue;
+            }
             params[key] = utils::py_object_to_any(value, key);
         }
 
