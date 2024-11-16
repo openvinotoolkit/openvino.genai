@@ -106,39 +106,30 @@ else()
 endif()
 
 if(OpenVINODeveloperPackage_FOUND)
-    # check whether OpenVINO Python API is available
-    load_cache("${OpenVINODeveloperPackage_DIR}" READ_WITH_PREFIX OPENVINO_ ENABLE_PYTHON)
-    if(OPENVINO_ENABLE_PYTHON)
-        set(openvino_pythonpath "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/python")
-
-        ov_check_pip_package(REQUIREMENT ${pybind11_stubgen_dep}
-                             RESULT_VAR pybind11_stubgen_AVAILABLE
-                             WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
-                             MESSAGE_MODE WARNING)
-    else()
-        # force pybind11-stubgen to OFF and it depends on OpenVINO Python API availability
-        set(pybind11_stubgen_AVAILABLE OFF)
-    endif()
+    ov_check_pip_package(REQUIREMENT ${pybind11_stubgen_dep}
+                         RESULT_VAR pybind11_stubgen_AVAILABLE
+                         WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
+                         MESSAGE_MODE WARNING)
 elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
     # in case of wheel build, pybind11-stubgen is always available via pyproject.toml's build-system
     # except Win32 where we have issues with pybind11_stubgen executable which cannot import its own module
     set(pybind11_stubgen_AVAILABLE ON)
+endif()
 
-    # but we also need to check whether OpenVINO is installed
-    if(CMAKE_CROSSCOMPILING)
-        # we cannot check OpenVINO during cross-compile
+# but we also need to check whether OpenVINO is installed
+if(CMAKE_CROSSCOMPILING)
+    # we cannot check OpenVINO during cross-compile
+    set(pybind11_stubgen_AVAILABLE OFF)
+else()
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import openvino"
+        RESULT_VARIABLE EXIT_CODE
+        OUTPUT_VARIABLE OUTPUT_TEXT
+        ERROR_VARIABLE ERROR_TEXT)
+
+    # OpenVINO is not available because of import error
+    if(NOT EXIT_CODE EQUAL 0)
         set(pybind11_stubgen_AVAILABLE OFF)
-    else()
-        execute_process(
-            COMMAND ${Python3_EXECUTABLE} -c "import openvino"
-            RESULT_VARIABLE EXIT_CODE
-            OUTPUT_VARIABLE OUTPUT_TEXT
-            ERROR_VARIABLE ERROR_TEXT)
-
-        # OpenVINO is not available because of import error
-        if(NOT EXIT_CODE EQUAL 0)
-            set(pybind11_stubgen_AVAILABLE OFF)
-        endif()
     endif()
 endif()
 
