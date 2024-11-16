@@ -63,6 +63,7 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "num_inference_steps", num_inference_steps);
     read_anymap_param(properties, "strength", strength);
     read_anymap_param(properties, "adapters", adapters);
+    read_anymap_param(properties, "max_sequence_length", max_sequence_length);
 
     validate();
 }

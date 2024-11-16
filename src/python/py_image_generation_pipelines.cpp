@@ -57,13 +57,15 @@ auto text2image_generate_docstring = R"(
     height: int - height of resulting images,
     width: int - width of resulting images,
     num_inference_steps: int - number of inference steps,
-    generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
-    adapters: LoRA adapters
-    strength: strength for image to image generation. 1.0f means initial image is fully noised
+    generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+    adapters: LoRA adapters,
+    strength: strength for image to image generation. 1.0f means initial image is fully noised,
+    max_sequence_length: int - length of t5_encoder_model input
 
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
 )";
+
 
 } // namespace
 
@@ -120,6 +122,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("num_images_per_prompt", &ov::genai::ImageGenerationConfig::num_images_per_prompt)
         .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
         .def_readwrite("strength", &ov::genai::ImageGenerationConfig::strength)
+        .def_readwrite("max_sequence_length", &ov::genai::ImageGenerationConfig::max_sequence_length)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
             ov::genai::ImageGenerationConfig config,
