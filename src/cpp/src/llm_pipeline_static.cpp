@@ -727,9 +727,11 @@ EncodedResults SMStaticLLMPipeline::generate(
     ov::Tensor attention_mask;
 
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
+        std::cout << "TENSOR INPUT" << std::endl;
         input_ids = *data;
         attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
+        std::cout << "TOKENIZERD INPUT" << std::endl;
         input_ids = data->input_ids;
         attention_mask = data->attention_mask;
     }
@@ -782,6 +784,7 @@ EncodedResults SMStaticLLMPipeline::generate(
     print_tensor<int64_t>(attention_mask);
     print_tensor<int64_t>(position_ids);
 
+    std::cout << "[LOG_DEBUG] set tensor input_ids " << std::endl;
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
@@ -798,13 +801,20 @@ EncodedResults SMStaticLLMPipeline::generate(
     if (streamer_ptr && streamer_ptr->put(last_token)) {
         return results;
     }
-    throw 1;
+
+    int64_t input_ids_data = -1;
+    int64_t position_ids_data = prompt_len -1;
+    std::vector<int64_t> attention_mask_data(1, prompt_len);
 
     const size_t max_tokens = config.get_max_new_tokens(prompt_len);
     for (int i = 0; i < max_tokens - 1; ++i) {
-        //input_ids_data[0] = last_token;
-        //position_ids_data[0] = m_kvcache_desc.num_stored_tokens;
-        //attention_mask_data[m_kvcache_desc.num_stored_tokens - 1] = 1u;
+        input_ids_data = last_token;
+        ++position_ids_data;
+        attention_mask_data.push_back(1);
+
+        m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&input_ids_data));
+        m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&position_ids_data));
+        m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, (void*)&attention_mask_data[0]));
 
         m_request.infer();
 
