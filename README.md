@@ -108,7 +108,11 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 ### Converting and compressing the model from Hugging Face library
 
 ```sh
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+#(Basic) download and convert to OpenVINO MiniCPM-V-2_6 model
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format fp16 MiniCPM-V-2_6
+
+#(Recommended) Same as above but with compression: language model is compressed to int4, other model components are compressed to int8
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 MiniCPM-V-2_6
 ```
 
 ### Run generation using VLMPipeline API in Python
