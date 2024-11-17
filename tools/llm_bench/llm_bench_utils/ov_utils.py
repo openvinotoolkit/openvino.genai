@@ -214,8 +214,9 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
+    draft_model_path = kwargs.get("draft_model", '')
     cb = kwargs.get("use_cb", False)
-    if cb:
+    if cb or draft_model_path:
         log.info("Continuous Batching mode activated")
         default_cb_config = {"cache_size": 1}
         scheduler_config = openvino_genai.SchedulerConfig()
@@ -226,6 +227,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
             for param, value in scheduler_params.items():
                 setattr(scheduler_config, param, value)
         ov_config["scheduler_config"] = scheduler_config
+
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
+        log.info("Speculative Decoding is activated")
+
+        ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, kwargs['draft_device'].upper())
 
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
     if adapter_config:
@@ -263,7 +271,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb else None
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb or draft_model_path else None
 
     return llm_pipe, tokenizer, end - start, streamer, True
 
