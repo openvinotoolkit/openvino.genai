@@ -211,6 +211,7 @@ def qwen2_converted_model(tmp_path_factory):
     del model
 
 
+<<<<<<< HEAD
 @dataclass
 class LongBenchTestData:
     subset: str
@@ -230,6 +231,13 @@ def test_optimized_generation_longbench(qwen2_converted_model, device, test_stru
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
     models_path = qwen2_converted_model.models_path
+=======
+@pytest.mark.precommit
+@pytest.mark.parametrize("subset", ["samsum", "qmsum", "trec", "qasper", "hotpotqa", "repobench-p"])
+def test_unoptimized_generation_longbench(phi3_converted_model, subset):
+    seqs_per_request = 32
+    num_kv_blocks = 1000
+>>>>>>> 1cbbbf42... update model
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
