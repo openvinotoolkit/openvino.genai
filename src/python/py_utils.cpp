@@ -12,7 +12,8 @@
 #include "tokenizers_path.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/whisper_generation_config.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -81,6 +82,12 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "num_images_per_prompt",
         "num_inference_steps"
     };
+    
+    // Properties, that can be empty sets
+    std::set<std::string> allow_empty_dict_properties {
+        "PREFILL_CONFIG",
+        "GENERATE_CONFIG"
+    };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
     if (py::isinstance<py::str>(py_obj)) {
@@ -110,7 +117,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     detected_type = type;
                     return;
                 }
-                OPENVINO_THROW("Incorrect attribute. Mixed types in the list are not allowed.");
+                OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the list are not allowed.");
             };
             if (py::isinstance<py::str>(it)) {
                 check_type(PY_TYPE::STR);
@@ -128,7 +135,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         }
 
         if (_list.empty())
-            return ov::Any();
+            OPENVINO_THROW("The property " + property_name +" can't be empty.");
 
         switch (detected_type) {
         case PY_TYPE::STR:
@@ -144,7 +151,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         case PY_TYPE::TENSOR:
             return _list.cast<std::vector<ov::Tensor>>();
         default:
-            OPENVINO_ASSERT(false, "Unsupported attribute type.");
+            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
 
     } else if (py::isinstance<py::dict>(py_obj)) {
@@ -158,7 +165,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     detected_type = type;
                     return;
                 }
-                OPENVINO_THROW("Incorrect attribute. Mixed types in the dict are not allowed.");
+                OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the dict are not allowed.");
             };
             // check key type
             if (py::isinstance<py::str>(it.first)) {
@@ -170,9 +177,12 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 check_type(PY_TYPE::INT, detected_value_type);
             }
         }
-
-        if (_dict.empty())
-            return ov::Any();
+        if (_dict.empty()) {
+            if (allow_empty_dict_properties.find(property_name) != allow_empty_dict_properties.end()) {
+                return ov::AnyMap({});
+            }
+            OPENVINO_THROW("The property " + property_name + " can't be empty.");
+        }
 
         switch (detected_key_type) {
         case PY_TYPE::STR:
@@ -180,10 +190,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             case PY_TYPE::INT:
                 return _dict.cast<std::map<std::string, int64_t>>();
             default:
-                OPENVINO_ASSERT(false, "Unsupported attribute type.");
+                OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
             }
         default:
-            OPENVINO_ASSERT(false, "Unsupported attribute type.");
+            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
     } else if (py::isinstance<py::set>(py_obj)) {
         auto _set = py_obj.cast<py::set>();
@@ -195,7 +205,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     detected_type = type;
                     return;
                 }
-                OPENVINO_THROW("Incorrect attribute. Mixed types in the set are not allowed.");
+                OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the set are not allowed.");
             };
             if (py::isinstance<py::str>(it)) {
                 check_type(PY_TYPE::STR);
@@ -209,7 +219,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         }
 
         if (_set.empty())
-            return ov::Any();
+            OPENVINO_THROW("The property " + property_name + " can't be empty.");
 
         switch (detected_type) {
         case PY_TYPE::STR:
@@ -221,7 +231,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         case PY_TYPE::BOOL:
             return _set.cast<std::set<bool>>();
         default:
-            OPENVINO_ASSERT(false, "Unsupported attribute type.");
+            OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
 
     // OV types
@@ -263,6 +273,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::AdapterConfig>(py_obj);
     } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
+        return py::cast<ov::genai::ImageGenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::WhisperGenerationConfig>(py_obj)) {
+        return py::cast<ov::genai::WhisperGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
@@ -273,7 +287,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }
-    OPENVINO_ASSERT(false, "Unsupported attribute type.");
+    OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
 }
 
 std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties) {
