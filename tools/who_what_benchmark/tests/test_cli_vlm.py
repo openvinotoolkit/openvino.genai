@@ -33,7 +33,9 @@ def test_vlm_basic(model_id, model_type):
                              MODEL_PATH, "--task",
                              "image-text-to-text",
                              "--trust-remote-code"],
-                             capture_output=True, text=True)
+                            capture_output=True,
+                            text=True,
+                            )
     assert result.returncode == 0
 
     wwb_args = [
