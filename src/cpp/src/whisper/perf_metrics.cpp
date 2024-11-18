@@ -1,12 +1,12 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/perf_metrics.hpp"
-
 #include "openvino/genai/whisper_pipeline.hpp"
 
 namespace ov {
 namespace genai {
+
+MeanStdPair calc_mean_and_std(const std::vector<MicroSeconds>& durations);
 
 MeanStdPair WhisperPerfMetrics::get_features_extraction_duration() {
     evaluate_statistics();

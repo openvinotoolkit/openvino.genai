@@ -150,7 +150,5 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     RawPerfMetrics raw_metrics;
 };
 
-MeanStdPair calc_mean_and_std(const std::vector<MicroSeconds>& durations);
-
 } // namespace genai
 } // namespace ov
