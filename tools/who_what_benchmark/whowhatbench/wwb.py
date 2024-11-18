@@ -18,7 +18,7 @@ from optimum.intel import OVPipelineForText2Image
 from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from PIL import Image
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel, AutoModelForVision2Seq
 import openvino as ov
 
 from whowhatbench import EVALUATOR_REGISTRY
@@ -68,7 +68,6 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
         logger.error(
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
-    logger.info("Using OpenVINO GenAI API")
     return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
 
 
@@ -117,7 +116,7 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
         logger.error(
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
-    logger.info("Using OpenVINO GenAI API")
+
     return GenAIModelWrapper(
         openvino_genai.Text2ImagePipeline(model_dir, device=device, **ov_config),
         model_dir,
@@ -165,7 +164,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
     except ImportError:
         logger.error("Failed to import openvino_genai package. Please install it.")
         exit(-1)
-    logger.info("Using OpenVINO GenAI API")
+
     return GenAIModelWrapper(
         openvino_genai.VLMPipeline(model_dir, device, **ov_config),
         model_dir,
@@ -179,15 +178,20 @@ def load_visual_text_model(
     if use_hf:
         logger.info("Using HF Transformers API")
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        model = AutoModel.from_pretrained(
-            model_id, trust_remote_code=True, device_map=device.lower()
-        )
+        try:
+            model = AutoModelForVision2Seq.from_pretrained(
+                model_id, trust_remote_code=True, device_map=device.lower()
+            )
+        except ValueError:
+            model = AutoModel.from_pretrained(
+                model_id, trust_remote_code=True, device_map=device.lower()
+            )
         model.eval()
     elif use_genai:
-        logger.info("Using Optimum API")
+        logger.info("Using OpenVINO GenAI API")
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)
     else:
-        logger.info("Using OpenVINO GenAI API")
+        logger.info("Using Optimum API")
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
@@ -484,7 +488,10 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
     model.set_generation_config(config)
-    model.start_chat(tokenizer.chat_template)
+    if tokenizer.chat_template is not None:
+        model.start_chat(tokenizer.chat_template)
+    else:
+        model.start_chat()
     out = model.generate(prompt, images=[image_data])
     model.finish_chat()
     return out.texts[0]
