@@ -25,11 +25,19 @@ if(POLICY CMP0169)
     cmake_policy(SET CMP0169 OLD)
 endif()
 
+if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
+    set(LINUX ON)
+endif()
+
 project(OpenVINOGenAI
         VERSION 2025.0.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
+
+if(NOT DEFINED Python3_FIND_VIRTUALENV)
+    set(Python3_FIND_VIRTUALENV FIRST)
+endif()
 
 # Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
 if(NOT CMAKE_CROSSCOMPILING)
@@ -55,7 +63,7 @@ include(cmake/features.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
-    if(OpenVINODeveloperPackage_DIR)
+    if(OpenVINODeveloperPackage_FOUND)
         ov_find_python3(REQUIRED)
         ov_detect_python_module_extension()
     else()
@@ -73,9 +81,15 @@ endif()
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-add_subdirectory(samples)
-add_subdirectory(tools/continuous_batching)
-add_subdirectory(tests/cpp)
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples")
+    add_subdirectory(samples)
+endif()
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tools/continuous_batching")
+    add_subdirectory(tools/continuous_batching)
+endif()
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tests/cpp")
+    add_subdirectory(tests/cpp)
+endif()
 
 install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
