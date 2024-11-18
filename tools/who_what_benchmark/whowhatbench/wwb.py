@@ -18,7 +18,8 @@ from optimum.intel import OVPipelineForText2Image
 from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from PIL import Image
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModelForVision2Seq
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModelForVision2Seq, AutoModel
+import openvino as ov
 
 from whowhatbench import EVALUATOR_REGISTRY
 
@@ -79,6 +80,7 @@ def load_text_model(
         model = AutoModelForCausalLM.from_pretrained(
             model_id, trust_remote_code=True, device_map=device.lower()
         )
+        model.eval()
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config)
     else:
@@ -129,6 +131,7 @@ def load_text2image_model(
     elif use_hf:
         model = DiffusionPipeline.from_pretrained(
             model_id, trust_remote_code=True)
+        model.eval()
     else:
         TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
 
@@ -171,9 +174,10 @@ def load_visual_text_model(
     if use_hf:
         logger.info("Using HF Transformers API")
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        model = AutoModelForVision2Seq.from_pretrained(
+        model = AutoModel.from_pretrained(#AutoModelForVision2Seq.from_pretrained(
             model_id, trust_remote_code=True, device_map=device.lower()
         )
+        model.eval()
     elif use_genai:
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)
 
@@ -468,10 +472,15 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, processor, max_new_tokens, crop_question):
+def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
     image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
-    model.start_chat("{'role': 'user', 'content': [{'type': 'text'}, {'type': 'image'}]}")
-    out = model.generate(prompt, images=[image_data], do_sample=False, max_new_tokens=max_new_tokens)
+    #model.start_chat("{'role': 'user', 'content': [{'type': 'text'}, {'type': 'image'}]}")
+    config = model.get_generation_config()
+    config.max_new_tokens = max_new_tokens
+    config.do_sample = False
+    model.set_generation_config(config)
+    model.start_chat(tokenizer.chat_template)
+    out = model.generate(prompt, images=[image_data])
     model.finish_chat()
     return out.texts[0]
 
@@ -511,11 +520,13 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "visual-text":
+            tokenizer = load_tokenizer(args)
             processor = load_processor(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=prompts,
+                tokenizer=tokenizer,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,

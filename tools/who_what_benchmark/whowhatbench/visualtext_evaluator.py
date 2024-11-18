@@ -163,17 +163,17 @@ class VisualTextEvaluator(TextEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, prompt, image, processor, max_new_tokens, crop_question):
+        def default_gen_answer(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
             #input_maker = INPUT_MAKER_REGISTRY[model.config.model_type]
             #inputs = input_maker(processor, image, prompt)
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
             #print("Inputs: ", prompt, image)
 
-            inputs = preprocess_inputs(prompt, image, processor, self.tokenizer)
+            inputs = preprocess_inputs(prompt, image, processor, tokenizer)
             
             # image_tensor = model.process_images([image], model.config).to(dtype=model.dtype)
             # tokens = model.generate(**inputs, images=image_tensor, do_sample=False, max_new_tokens=max_new_tokens)
-            tokens = model.generate(**inputs,  do_sample=False, max_new_tokens=max_new_tokens)
+            tokens = model.generate(**inputs,  do_sample=False, max_new_tokens=max_new_tokens, tokenizer=tokenizer)
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 
@@ -215,6 +215,7 @@ class VisualTextEvaluator(TextEvaluator):
                     p,
                     i,
                     self.processor,
+                    self.tokenizer,
                     self.max_new_tokens,
                     self._crop_question,
                 )
