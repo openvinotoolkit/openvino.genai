@@ -112,8 +112,8 @@ public:
         };
 
         auto m = std::make_shared<ov::pass::pattern::Matcher>(pattern_node, "ScaledDotProductAttentionDecomposition");
-        register_matcher(m, callback);
- 	}
+        register_matcher(m, std::move(callback));
+    }
     std::shared_ptr<ov::Node> decompose(std::shared_ptr<ov::op::v13::ScaledDotProductAttention> node) {
         using namespace ov::op;
         using namespace ov;
