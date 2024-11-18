@@ -195,7 +195,7 @@ def test_dynamic_memory_allocation(tmp_path, params):
 
 @pytest.fixture(scope='module')
 def phi3_converted_model(tmp_path_factory):
-    model_id = "microsoft/Phi-3-mini-4k-instruct"
+    model_id = "meta-llama/Llama-3.2-3B-Instruct"
     model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
@@ -212,7 +212,7 @@ def phi3_converted_model(tmp_path_factory):
 @pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "qmsum", "trec", "qasper", "hotpotqa", "repobench-p"])
 def test_unoptimized_generation_longbench(phi3_converted_model, subset):
-    seqs_per_request = 2
+    seqs_per_request = 32
     num_kv_blocks = 1000
     scheduler_config = get_scheduler_config(num_kv_blocks)
     models_path = phi3_converted_model.models_path
