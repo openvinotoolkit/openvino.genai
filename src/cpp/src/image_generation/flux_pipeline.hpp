@@ -341,11 +341,6 @@ public:
 
             if (do_callback) {
                 if (callback(inference_step, latents)) {
-                    std::cout << "pipeline " << std::endl;
-                    for (int i = 0; i < 10; ++i) {
-                        std::cout << latents.data<float>()[i] << " ";
-                    }
-                    std::cout << std::endl;
                     ov::Shape output_shape = {1,
                                               generation_config.height / vae_scale_factor,
                                               generation_config.width/ vae_scale_factor,
