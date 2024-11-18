@@ -8,29 +8,34 @@ namespace ov {
 namespace genai {
 
 /** 
- * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
- *  enabled or disabled depending on stateful value.
+ * @brief This pass adds UTF8Validate with replace mode operation to the detokenization output.
  * 
- *  +--------------+
- *  |  DefaultMode |
- *  +--------------+
- *         |
- *         |
- *         v
- *  +--------------+  +--------+  +------------------+
- *  |  ReadValue   |  |  ends  |  | const value = 0  |
- *  +--------------+  +--------+  +------------------+
- *             \          |        /
- *              \         |       /
- *               v        v      v
- *                +--------------+
- *                |    Select    |
- *                +--------------+
- *                       |
- *                       v
- *          +-------------------------+
- *          |     CombineSegments     |
- *          +-------------------------+
+ * Before:
+ *               \          |        /
+ *                \         |       /
+ *                 v        v      v
+ *              +------------------------+
+ *              |    StringTensorPack    |
+ *              +------------------------+
+ *                       |  |  |
+ *                       v  v  v
+ *
+ * After:
+ * 
+ *               \          |        /
+ *                \         |       /
+ *                 v        v      v
+ *                +------------------+
+ *                |   UTF8Validate   |
+ *                +------------------+
+ *                       |  |  |
+ *                       v  v  v
+ *              +------------------------+
+ *              |    StringTensorPack    |
+ *              +------------------------+
+ *                       |  |  |
+ *                       v  v  v
+ * 
 **/
 class AddUTF8Validate : public ov::pass::ModelPass {
 public:

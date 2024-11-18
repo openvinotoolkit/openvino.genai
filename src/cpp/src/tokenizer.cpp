@@ -11,10 +11,12 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
+#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
 #include "make_combine_segments_stateful.hpp"
+#include "add_utf8_validate.hpp"
 #include "tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
 #include "json_utils.hpp"
@@ -133,9 +135,18 @@ public:
         manager.register_pass<MakeCombineSegmentsSatateful>();
         manager.run_passes(ov_tokenizer);
         
+
         m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
         if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
-            m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", device, properties);
+            auto ov_detokenizer = core.read_model(tokenizer_path / "openvino_detokenizer.xml");
+
+            ov::pass::Manager manager;
+            // manager.register_pass<ov::pass::VisualizeTree>("before.svg");
+            // manager.register_pass<AddUTF8Validate>();
+            // manager.register_pass<ov::pass::VisualizeTree>("after.svg");
+            manager.run_passes(ov_detokenizer);
+
+            m_detokenizer = core.compile_model(ov_detokenizer, device, properties);
         }
 
         

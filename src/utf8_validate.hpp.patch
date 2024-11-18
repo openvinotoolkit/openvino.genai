@@ -1,0 +1,13 @@
+diff --git a/src/utf8_validate.hpp b/src/utf8_validate.hpp
+index 54c56d9..f92e9c9 100644
+--- a/src/utf8_validate.hpp
++++ b/src/utf8_validate.hpp
+@@ -7,7 +7,7 @@
+ #include <vector>
+ #include <unordered_map>
+ #include <openvino/op/op.hpp>
+-#include "utils.hpp"
++// #include "utils.hpp"
+ 
+ /**
+  * @class UTF8Validate

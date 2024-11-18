@@ -1,0 +1,32 @@
+diff --git a/src/utf8_validate.cpp b/src/utf8_validate.cpp
+index 1c87ef8..b94bba4 100644
+--- a/src/utf8_validate.cpp
++++ b/src/utf8_validate.cpp
+@@ -4,15 +4,25 @@
+ 
+ #include "utf8_validate.hpp"
+ #include "openvino/opsets/opset13.hpp"
++#include "openvino/frontend/exception.hpp"
+ using namespace ov;
+ using namespace ov::opset13;
++// #include "utils.hpp"
+ 
+ #undef tokenizer
+ 
+ 
+ void UTF8Validate::validate_and_infer_types() {
+-    check_string_input(this, 0);
+-    set_string_output(this, 0, get_input_partial_shape(0));
++    FRONT_END_GENERAL_CHECK(get_input_element_type(0) == element::i32, "Expected an i32 tensor as the first part of the decomposed string representation, got ", get_input_element_type(0));
++    FRONT_END_GENERAL_CHECK(get_input_element_type(1) == element::i32, "Expected an i32 tensor as the second part of the decomposed string representation, got ", get_input_element_type(1));
++    FRONT_END_GENERAL_CHECK(get_input_element_type(2) == element::u8,  "Expected a u8 tensor as the third part of the decomposed string representation, got ", get_input_element_type(2));
++
++    set_output_type(0, element::i32, get_input_partial_shape(0));     // byte offset in output[+2] -- begin of each string
++    set_output_type(1, element::i32, get_input_partial_shape(0));     // byte offset in output[+2] -- end of each string
++    set_output_type(2, element::u8,  PartialShape{Dimension()});     // symbols from all strings concatenated
++
++    // check_string_input(this, 0);
++    // set_string_output(this, 0, get_input_partial_shape(0));
+ }
+ 
+ bool UTF8Validate::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const {

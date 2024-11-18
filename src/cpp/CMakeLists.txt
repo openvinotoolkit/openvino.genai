@@ -58,8 +58,30 @@ ov_genai_build_jinja2cpp()
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
+# TODO: remove this dirty hacks
+set(SOURCE_FILE_CPP "${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/openvino_tokenizers/src/utf8_validate.cpp")
+set(PATCH_FILE_CPP "${CMAKE_CURRENT_SOURCE_DIR}/../utf8_validate.cpp.patch")
+set(SOURCE_FILE_HPP "${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/openvino_tokenizers/src/utf8_validate.hpp")
+set(PATCH_FILE_HPP "${CMAKE_CURRENT_SOURCE_DIR}/../utf8_validate.hpp.patch")
+
+# Apply the patch using a custom command for the cpp file
+execute_process(
+    COMMAND patch -N ${SOURCE_FILE_CPP} ${PATCH_FILE_CPP}
+    RESULT_VARIABLE PATCH_RESULT
+    OUTPUT_VARIABLE PATCH_OUTPUT
+    ERROR_VARIABLE PATCH_ERROR
+)
+
+# Apply the patch using a custom command for the hpp file
+execute_process(
+    COMMAND patch -N ${SOURCE_FILE_HPP} ${PATCH_FILE_HPP}
+    RESULT_VARIABLE PATCH_RESULT
+    OUTPUT_VARIABLE PATCH_OUTPUT
+    ERROR_VARIABLE PATCH_ERROR
+)
+
 set(TARGET_NAME openvino_genai)
-add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
+add_library(${TARGET_NAME} SHARED ${SOURCE_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/openvino_tokenizers/src/utf8_validate.cpp)
 if(TARGET openvino_tokenizers)
     add_dependencies(${TARGET_NAME} openvino_tokenizers)
 endif()
@@ -67,7 +89,9 @@ add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/openvino_tokenizers/src"
+)
 
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
