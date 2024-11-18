@@ -68,9 +68,37 @@ struct WhisperDecodedResultChunk {
     std::string text;
 };
 
-struct WhisperDecodedResults : public DecodedResults {
+struct WhisperDecodedResults {
+    std::vector<std::string> texts;
+    std::vector<float> scores;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
     WhisperPerfMetrics perf_metrics;
+
+    operator std::string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
+    }
+
+    operator std::vector<std::string>() const {
+        return texts;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const WhisperDecodedResults& dr) {
+        OPENVINO_ASSERT(dr.scores.size() == dr.texts.size(),
+                        "The number of scores and texts doesn't match in WhisperDecodedResults.");
+        if (dr.texts.empty()) {
+            return os;
+        }
+        if (dr.texts.size() == 1) {
+            os << dr.texts[0];
+            return os;
+        }
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << std::to_string(dr.scores[i]) << ": " << dr.texts[i] << '\n';
+        }
+        return os << std::to_string(dr.scores.back()) << ": " << dr.texts.back();
+    }
 };
 
 /**

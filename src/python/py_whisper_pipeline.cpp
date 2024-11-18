@@ -52,19 +52,18 @@ auto whisper_generate_docstring = R"(
     :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
     :type : Dict
 
-    :return: return results in encoded, or decoded form depending on inputs type
-    :rtype: DecodedResults
+    :return: return results in decoded form
+    :rtype: WhisperDecodedResults
 )";
 
 auto whisper_decoded_results_docstring = R"(
-    Structure to store resulting batched text outputs and scores for each batch.
-    The first num_return_sequences elements correspond to the first batch element.
+    Structure to store resulting text outputs and scores.
 
     Parameters:
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-    shunks:     chunk of resulting sequences with timestamps
+    shunks:     optional chunks of resulting sequences with timestamps
 )";
 
 auto whisper_decoded_result_chunk = R"(
@@ -342,9 +341,27 @@ void init_whisper_pipeline(py::module_& m) {
             return pyutils::handle_utf8(chunk.text);
         });
 
-    py::class_<WhisperDecodedResults, DecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
+    py::class_<WhisperDecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
+        .def_property_readonly("texts",
+                               [](const WhisperDecodedResults& dr) -> py::typing::List<py::str> {
+                                   return pyutils::handle_utf8((std::vector<std::string>)dr);
+                               })
+        .def_readonly("scores", &WhisperDecodedResults::scores)
         .def_readonly("chunks", &WhisperDecodedResults::chunks)
-        .def_readonly("perf_metrics", &WhisperDecodedResults::perf_metrics);
+        .def_readonly("perf_metrics", &WhisperDecodedResults::perf_metrics)
+        .def("__str__", [](const WhisperDecodedResults& dr) -> py::str {
+            auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
+            py::str res;
+            if (valid_utf8_strings.size() == 1)
+                return valid_utf8_strings[0];
+
+            for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
+                res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
+            }
+            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") +
+                   valid_utf8_strings[valid_utf8_strings.size() - 1];
+            return res;
+        });
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline", "Automatic speech recognition pipeline")
         .def(

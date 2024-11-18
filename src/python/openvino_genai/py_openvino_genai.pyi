@@ -1498,23 +1498,30 @@ class WhisperDecodedResultChunk:
     @property
     def text(self) -> str:
         ...
-class WhisperDecodedResults(DecodedResults):
+class WhisperDecodedResults:
     """
     
-        Structure to store resulting batched text outputs and scores for each batch.
-        The first num_return_sequences elements correspond to the first batch element.
+        Structure to store resulting text outputs and scores.
     
         Parameters:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
         metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-        shunks:     chunk of resulting sequences with timestamps
+        shunks:     optional chunks of resulting sequences with timestamps
     """
+    def __str__(self) -> str:
+        ...
     @property
     def chunks(self) -> list[WhisperDecodedResultChunk] | None:
         ...
     @property
     def perf_metrics(self) -> WhisperPerfMetrics:
+        ...
+    @property
+    def scores(self) -> list[float]:
+        ...
+    @property
+    def texts(self) -> list[str]:
         ...
 class WhisperGenerationConfig:
     """
@@ -1647,8 +1654,8 @@ class WhisperPipeline:
             :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
             :type : Dict
         
-            :return: return results in encoded, or decoded form depending on inputs type
-            :rtype: DecodedResults
+            :return: return results in decoded form
+            :rtype: WhisperDecodedResults
          
          
             WhisperGenerationConfig
