@@ -5,7 +5,6 @@ patch_diffusers()
 import argparse
 import difflib
 import numpy as np
-import os
 import json
 import logging
 import os
