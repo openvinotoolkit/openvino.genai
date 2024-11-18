@@ -146,10 +146,12 @@ dataset2metric = {
 
 # Max length for NVIDIA GeForce RTX 3090 (24 GB)
 model2maxlen = {
-    "meta-llama/Llama-2-7b-chat-hf": 3500,
+    "meta-llama/Llama-2-7b-chat-hf": 4096,
     "meta-llama/Meta-Llama-3-8B-Instruct": 5000,
-    "meta-llama/Llama-3.1-8B-Instruct": 5000,
+    "meta-llama/Llama-3.1-8B-Instruct": 10000,
     "microsoft/Phi-3-mini-4k-instruct": 4096,
+    'meta-llama/Llama-3.2-1B-Instruct': 10000,
+    'meta-llama/Llama-3.2-3B-Instruct': 10000,
 }
 
 dataset2maxlen = {
@@ -250,7 +252,7 @@ def preprocess_prompt(tokenizer, data_sample, subset, model_name):
 
 
 def post_process_pred(pred, subset, model_name):
-    if subset in ["samsum", "qsum", "hotpotqa", "qasper"] and "Llama-3-8B" in model_name:
+    if subset in ["samsum", "qsum", "hotpotqa", "qasper"] and "Llama-3" in model_name:
         pred = pred[:pred.find("assistant")]
     elif subset == "samsum":
         pred = pred[:pred.find("\nDialogue")]
