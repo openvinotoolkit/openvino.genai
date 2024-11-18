@@ -149,7 +149,7 @@ model2maxlen = {
     "meta-llama/Llama-2-7b-chat-hf": 3500,
     "meta-llama/Meta-Llama-3-8B-Instruct": 5000,
     "meta-llama/Llama-3.1-8B-Instruct": 5000,
-    "microsoft/Phi-3-mini-4k-instruct": 5000,
+    "microsoft/Phi-3-mini-4k-instruct": 4096,
 }
 
 dataset2maxlen = {

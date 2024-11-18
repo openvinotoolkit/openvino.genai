@@ -196,7 +196,7 @@ def test_dynamic_memory_allocation(tmp_path, params):
 @pytest.fixture(scope='module')
 def phi3_converted_model(tmp_path_factory):
     model_id = "microsoft/Phi-3-mini-4k-instruct"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
