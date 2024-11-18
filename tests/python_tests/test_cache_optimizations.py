@@ -150,7 +150,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 @pytest.fixture(scope='module')
 def phi3_converted_model(tmp_path_factory):
     model_id = "microsoft/Phi-3-mini-4k-instruct"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
