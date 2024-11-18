@@ -140,12 +140,14 @@ def get_argprser():
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
-    parser.add_argument("--draft_model", required=False, default=None, 
-                        help="Path to draft model folder including IR files for Speculative decoding generation.")
-    parser.add_argument("--draft_device", required=False, default='cpu', help="Inference device for Speculative decoding generation.")
-    parser.add_argument("--num_assistant_tokens", required=False, default=5, help="Config option num_assistant_tokens for Speculative decoding")
-    parser.add_argument("--assistant_confidence_threshold", required=False, default=0, 
-                        help="Config option assistant_confidence_threshold for Speculative decodin")
+    parser.add_argument("--draft_model", required=False, default=None,
+                        help="Path to draft model folder including IR files for Speculative decoding generation")
+    parser.add_argument("--draft_device", required=False, default=None, help="Inference device for Speculative decoding of draft model")
+    parser.add_argument("--draft_cb_config", required=False, default=None,
+                        help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
+    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding")
+    parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
+                        help="Config option assistant_confidence_threshold for Speculative decoding")
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',

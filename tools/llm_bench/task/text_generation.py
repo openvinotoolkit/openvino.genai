@@ -199,11 +199,14 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     if args.get('draft_model', ''):
-        gen_config.num_assistant_tokens = args['num_assistant_tokens']
-        gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
-        log.info("Speculative decoding config: ")
-        log.info(f"    num_assistant_tokens {gen_config.num_assistant_tokens}")
-        log.info(f"    assistant_confidence_threshold {gen_config.assistant_confidence_threshold}")
+        config_info = "Speculative decoding config: "
+        if args.get('num_assistant_tokens', None):
+            gen_config.num_assistant_tokens = args['num_assistant_tokens']
+            config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
+        if args.get('assistant_confidence_threshold', None):
+            gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
+            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+        log.info(config_info)
     start = time.perf_counter()
     generation_result = model.generate(input_text_list, gen_config)
     end = time.perf_counter()
@@ -328,11 +331,14 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     if args.get('draft_model', ''):
-        gen_config.num_assistant_tokens = args['num_assistant_tokens']
-        gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
-        log.info("Speculative decoding config: ")
-        log.info(f"    num_assistant_tokens {gen_config.num_assistant_tokens}")
-        log.info(f"    assistant_confidence_threshold {gen_config.assistant_confidence_threshold}")
+        config_info = "Speculative decoding config: "
+        if args.get("num_assistant_tokens", None):
+            gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+            config_info += f'num_assistant_tokens {args["num_assistant_tokens"]}'
+        if args.get("assistant_confidence_threshold", None):
+            gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
+            config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
+        log.info(config_info)
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()

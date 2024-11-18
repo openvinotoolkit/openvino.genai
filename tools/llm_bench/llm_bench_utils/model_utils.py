@@ -143,8 +143,10 @@ def analyze_args(args):
     model_args["cb_config"] = cb_config
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
-    if (args.num_assistant_tokens > 0 and args.assistant_confidence_threshold > 0):
-        raise RuntimeError("Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive")
+    draft_cb_config = None
+    if args.draft_cb_config:
+        draft_cb_config = get_config(args.draft_cb_config)
+    model_args["draft_cb_config"] = draft_cb_config
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
     return model_path, model_framework, model_args, model_name
