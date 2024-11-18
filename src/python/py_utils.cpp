@@ -248,7 +248,7 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
             res_config.stop_strings = py::cast<std::set<std::string>>(value);
         } else if (key == "include_stop_str_in_output") {
             res_config.include_stop_str_in_output = py::cast<bool>(value);
-        } else if (key == "include_stop_str_in_output") {
+        } else if (key == "stop_token_ids") {
             res_config.stop_token_ids = py::cast<std::set<int64_t>>(value);
         } else if (key == "max_length") {
             res_config.max_length = py::cast<int>(item.second);
@@ -311,11 +311,11 @@ bool generation_config_param_to_property(std::string key, py::object value, ov::
     } else if (key == "min_new_tokens") {
         map.insert(ov::genai::min_new_tokens(py::cast<int>(value)));
     } else if (key == "stop_strings") {
-        map.insert(ov::genai::stop_strings(py::cast<std::vector<std::string>>(value)));
+        map.insert(ov::genai::stop_strings(py::cast<std::set<std::string>>(value)));
     } else if (key == "include_stop_str_in_output") {
         map.insert(ov::genai::include_stop_str_in_output(py::cast<bool>(value)));
-    } else if (key == "include_stop_str_in_output") {
-        map.insert(ov::genai::stop_token_ids(py::cast<std::vector<std::vector<int64_t>>>(value)));
+    } else if (key == "stop_token_ids") {
+        map.insert(ov::genai::stop_token_ids(py::cast<std::set<int64_t>>(value)));
     } else if (key == "num_beam_groups") {
         map.insert(ov::genai::num_beam_groups(py::cast<int>(value)));
     } else if (key == "num_beams") {
