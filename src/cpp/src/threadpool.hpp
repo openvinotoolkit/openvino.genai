@@ -6,38 +6,33 @@
 #include <queue>
 #include <thread>
 #include <utility>
-using namespace std;
 
-// Class that represents a simple thread pool
 class ThreadPool {
 
 private:
-    vector<thread> threads_;
-    queue<function<void()>> tasks_;
-    mutex queue_mutex_;
-    condition_variable cv_;
-    bool stop_ = false;
+    std::vector<std::thread> threads;
+    std::queue<std::function<void()>> tasks;
+    std::mutex queue_mutex;
+    std::condition_variable cv;
+    bool stop = false;
 
 public:
-    // Constructor to create a thread pool with given
-    // number of threads
-    ThreadPool(size_t num_threads = thread::hardware_concurrency())
+    ThreadPool(size_t num_threads = std::thread::hardware_concurrency())
     {
-        // Creating worker threads
         for (size_t i = 0; i < num_threads; ++i) {
-            threads_.emplace_back([this] {
+            threads.emplace_back([this] {
                 while (true) {
-                    function<void()> task;
+                    std::function<void()> task;
                     {
-                        unique_lock<mutex> lock(queue_mutex_);
-                        cv_.wait(lock, [this] {
-                            return !tasks_.empty() || stop_;
+                        std::unique_lock<std::mutex> lock(queue_mutex);
+                        cv.wait(lock, [this] {
+                            return !tasks.empty() || stop;
                         });
-                        if (stop_ && tasks_.empty()) {
+                        if (stop && tasks.empty()) {
                             return;
                         }
-                        task = move(tasks_.front());
-                        tasks_.pop();
+                        task = move(tasks.front());
+                        tasks.pop();
                     }
                     task();
                 }
@@ -45,33 +40,31 @@ public:
         }
     }
 
-    // Destructor to stop the thread pool
     ~ThreadPool()
     {
         {
-            unique_lock<mutex> lock(queue_mutex_);
-            stop_ = true;
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            stop = true;
         }
-        cv_.notify_all();
-        for (auto& thread : threads_) {
+        cv.notify_all();
+        for (auto& thread : threads) {
             thread.join();
         }
     }
 
-    // Enqueue task for execution by the thread pool
     template <typename F, typename... Args>
-    auto enqueue(F&& f, Args&&... args) -> future<result_of_t<F(Args...)>>
+    auto submit(F&& f, Args&&... args) -> std::future<std::invoke_result_t<F, Args...>>
     {
-        using return_type = invoke_result_t<F, Args...>;
-        auto task = make_shared<packaged_task<return_type()>>(
-            bind(forward<F>(f), forward<Args>(args)...)
+        using return_type = std::invoke_result_t<F, Args...>;
+        auto task = std::make_shared<std::packaged_task<return_type()>>(
+            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
         );
-        future<return_type> res = task->get_future();
+        std::future<return_type> result = task->get_future();
         {
-            unique_lock<mutex> lock(queue_mutex_);
-            tasks_.emplace([task]() { (*task)(); });
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            tasks.emplace([task]() { (*task)(); });
         }
-        cv_.notify_one();
-        return res;
+        cv.notify_one();
+        return result;
     }
 };

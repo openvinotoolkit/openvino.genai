@@ -41,6 +41,12 @@ struct SamplerOutput {
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
 };
 
+struct SequenceGroupSamplingInfo {
+    SamplerOutput sampler_output;
+    size_t max_removed_tokens_per_request = 0; 
+    size_t min_generated_len = std::numeric_limits<size_t>::max();
+};
+
 class Sampler {
     class GroupBeamSearcher;
 
@@ -68,8 +74,8 @@ public:
     Sampler() = default;
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
-    std::tuple<SamplerOutput, size_t, size_t> sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
-                                                                         LogitProcessor& logit_processor, bool is_validation_mode_enabled = false);
+    SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
+                                                         LogitProcessor& logit_processor, bool is_validation_mode_enabled = false);
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
 
