@@ -594,6 +594,10 @@ public:
         return m_vae->decode(latent);
     }
 
+    ov::Tensor decode(const ov::Tensor latent) override {
+        return m_vae->decode(latent);
+    }
+
 private:
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0;

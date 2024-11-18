@@ -28,13 +28,18 @@ def main():
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
 
+    def callback(step_num, latents):
+        print("Image generation step: ", step_num)
+        return False
+
     image_tensor = pipe.generate(
         args.prompt,
         width=512,
         height=512,
         num_inference_steps=20,
         num_images_per_prompt=1,
-        generator=Generator(42)  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
+        generator=Generator(42),  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
+        callback=callback
     )
 
     image = Image.fromarray(image_tensor.data[0])

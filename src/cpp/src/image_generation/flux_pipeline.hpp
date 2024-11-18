@@ -354,6 +354,10 @@ public:
         return m_vae->decode(latents);
     }
 
+    ov::Tensor decode(const ov::Tensor latent) override {
+        return m_vae->decode(latent);
+    }
+
 private:
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_transformer != nullptr);

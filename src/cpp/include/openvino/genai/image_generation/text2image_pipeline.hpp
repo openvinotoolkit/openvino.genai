@@ -111,6 +111,8 @@ public:
         return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    ov::Tensor decode(const ov::Tensor latent);
+
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
