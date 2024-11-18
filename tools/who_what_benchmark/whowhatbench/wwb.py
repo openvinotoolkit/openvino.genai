@@ -133,7 +133,6 @@ def load_text2image_model(
         logger.info("Using HF Transformers API")
         model = DiffusionPipeline.from_pretrained(
             model_id, trust_remote_code=True)
-        model.eval()
     else:
         logger.info("Using Optimum API")
         TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
