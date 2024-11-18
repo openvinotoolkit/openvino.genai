@@ -245,6 +245,7 @@ public:
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
         // preparate initial latents
+        // TODO: pass processed initial_image here
         ov::Tensor latent = prepare_latents(initial_image, generation_config);
         read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, false);
 
@@ -253,59 +254,130 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
-        ov::Shape mask_shape = latent_shape_cfg, mask_latent_shape = mask_shape;
-        mask_shape[1] = 1;
-
-        ov::Tensor mask_condition(ov::element::f32, mask_shape), mask;
-        ov::Tensor masked_image_latent(ov::element::f32, mask_latent_shape);
+        ov::Tensor mask_condition, mask;
+        ov::Tensor masked_image_latent(ov::element::f32, {});
 
         {
-            auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(mask_image.get_shape().size()));
-            auto result = std::make_shared<ov::op::v0::Result>(parameter);
-            auto mask_processor = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter}, "mask_processor");
+            {
+                auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(mask_image.get_shape().size()));
+                auto result = std::make_shared<ov::op::v0::Result>(parameter);
+                auto image_processor = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter}, "mask_processor");
 
-            ov::preprocess::PrePostProcessor ppp(mask_processor);
+                ov::preprocess::PrePostProcessor ppp(image_processor);
 
-            ppp.input().tensor()
-                .set_layout("NHWC")
-                .set_element_type(ov::element::u8)
-                .set_color_format(ov::preprocess::ColorFormat::BGR);
-            ppp.input().model()
-                .set_layout("NCHW");
+                ppp.input().tensor()
+                    .set_layout("NHWC")
+                    .set_element_type(ov::element::u8);
+                ppp.input().model()
+                    .set_layout("NCHW");
 
-            ppp.input().preprocess()
-                .convert_color(ov::preprocess::ColorFormat::GRAY)
-                .convert_element_type(ov::element::f32)
-                .scale(255.0f)
-                .custom([](const ov::Output<ov::Node>& port) {
-                    auto constant_0_5 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.5f);
-                    auto constant_1_0 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 1.0f);
-                    auto constant_0_0 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.0f);
-                    auto mask_bool = std::make_shared<ov::opset15::GreaterEqual>(port, constant_0_5);
-                    auto mask_float = std::make_shared<ov::opset15::Select>(mask_bool, constant_1_0, constant_0_0);
-                    return mask_float;
-                })
-                .convert_layout();
+                ppp.input().preprocess()
+                    .convert_layout()
+                    .convert_element_type(ov::element::f32)
+                    // this is less accurate that in VaeImageProcessor::normalize
+                    .scale(255.0 / 2.0)
+                    .mean(1.0f);
 
-            mask_processor = ppp.build();
+                image_processor = ppp.build();
 
-            std::cout << "mask_image shape " << mask_image.get_shape() << std::endl;
+                ov::InferRequest image_processor_request = ov::Core().compile_model(image_processor, "CPU").create_infer_request();
+                image_processor_request.set_input_tensor(initial_image);
+                image_processor_request.infer();
+                initial_image = image_processor_request.get_output_tensor();
+            }
+            
+            read_tensor("/home/devuser/ilavreno/openvino.genai/init_image.txt", initial_image, false);
 
-            ov::InferRequest mask_processor_request = ov::Core().compile_model(mask_processor, "CPU").create_infer_request();
-            mask_processor_request.set_input_tensor(mask_image);
-            mask_processor_request.infer();
-            mask_condition = mask_processor_request.get_output_tensor();
+            {
+                auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(mask_image.get_shape().size()));
+                auto result = std::make_shared<ov::op::v0::Result>(parameter);
+                auto mask_processor = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter}, "mask_processor");
+
+                ov::preprocess::PrePostProcessor ppp(mask_processor);
+
+                ppp.input().tensor()
+                    .set_layout("NHWC")
+                    .set_element_type(ov::element::u8)
+                    .set_color_format(ov::preprocess::ColorFormat::BGR);
+                ppp.input().model()
+                    .set_layout("NCHW");
+
+                ppp.input().preprocess()
+                    .convert_color(ov::preprocess::ColorFormat::GRAY)
+                    .convert_element_type(ov::element::f32)
+                    .scale(255.0f)
+                    .custom([](const ov::Output<ov::Node>& port) {
+                        auto constant_0_5 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.5f);
+                        auto constant_1_0 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 1.0f);
+                        auto constant_0_0 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.0f);
+                        auto mask_bool = std::make_shared<ov::opset15::GreaterEqual>(port, constant_0_5);
+                        auto mask_float = std::make_shared<ov::opset15::Select>(mask_bool, constant_1_0, constant_0_0);
+                        return mask_float;
+                    })
+                    .convert_layout();
+
+                mask_processor = ppp.build();
+
+                ov::InferRequest mask_processor_request = ov::Core().compile_model(mask_processor, "CPU").create_infer_request();
+                mask_processor_request.set_input_tensor(mask_image);
+                mask_processor_request.infer();
+                mask_condition = mask_processor_request.get_output_tensor();
+            }
 
             read_tensor("/home/devuser/ilavreno/openvino.genai/mask_condition.txt", mask_condition, false);
 
-            // ppp.output().postprocess().custom([](const ov::Output<ov::Node>& port) {
-            //         return ov::make_shared<ov::opset15::Interpolate>(port, );
-            //     });
+            masked_image_latent.set_shape(initial_image.get_shape());
+            float * masked_image_latent_data = masked_image_latent.data<float>();
+            const float * mask_condition_data = mask_condition.data<const float>();
+            const float * initial_image_data = initial_image.data<const float>();
 
-            exit(1);
+            for (size_t i = 0, plane_size = mask_condition.get_shape()[2] * mask_condition.get_shape()[3]; i < mask_condition.get_size(); ++i) {
+                masked_image_latent_data[i + 0 * plane_size] = mask_condition_data[i] < 0.5f ? initial_image_data[i + 0 * plane_size] : 0.0f;
+                masked_image_latent_data[i + 1 * plane_size] = mask_condition_data[i] < 0.5f ? initial_image_data[i + 1 * plane_size] : 0.0f;
+                masked_image_latent_data[i + 2 * plane_size] = mask_condition_data[i] < 0.5f ? initial_image_data[i + 2 * plane_size] : 0.0f;
+            }
 
+            read_tensor("/home/devuser/ilavreno/openvino.genai/masked_image.txt", masked_image_latent, false);
+
+            {
+                auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(mask_image.get_shape().size()));
+                auto result = std::make_shared<ov::op::v0::Result>(parameter);
+                auto mask_latent = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter}, "mask_latent");
+
+                ov::preprocess::PrePostProcessor ppp(mask_latent);
+
+                size_t dst_height = mask_image.get_shape()[1] / m_vae->get_vae_scale_factor();
+                size_t dst_width = mask_image.get_shape()[2] / m_vae->get_vae_scale_factor();
+
+                ppp.input().tensor().set_layout("NCHW");
+                ppp.input().preprocess().resize(ov::preprocess::ResizeAlgorithm::RESIZE_NEAREST, dst_height, dst_width);
+
+                mask_latent = ppp.build();
+
+                ov::InferRequest mask_latent_request = ov::Core().compile_model(mask_latent, "CPU").create_infer_request();
+                mask_latent_request.set_input_tensor(mask_condition);
+                mask_latent_request.infer();
+                mask = mask_latent_request.get_output_tensor();
+            }
+
+            mask = numpy_utils::repeat(mask, 2);
             read_tensor("/home/devuser/ilavreno/openvino.genai/mask.txt", mask, false);
-            read_tensor("/home/devuser/ilavreno/openvino.genai/masked_image_latents.txt", masked_image_latent, true);
+
+            {
+                masked_image_latent = m_vae->encode(masked_image_latent, generation_config.generator);
+                if (generation_config.num_images_per_prompt > 1) {
+                    ov::Tensor batched_masked_image_latent(ov::element::f32, masked_image_latent.get_shape());
+                    for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
+                        batch_copy(masked_image_latent, batched_masked_image_latent, 0, n);
+                    }
+                    masked_image_latent = batched_masked_image_latent;
+                }
+            }
+
+            masked_image_latent = numpy_utils::repeat(masked_image_latent, 2);
+            read_tensor("/home/devuser/ilavreno/openvino.genai/masked_image_latents.txt", masked_image_latent, false);
+
+            // exit(1);
         }
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});

@@ -103,7 +103,7 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
     // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
-    merge_vae_image_pre_processing();
+    // merge_vae_image_pre_processing();
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
