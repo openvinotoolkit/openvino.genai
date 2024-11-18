@@ -221,5 +221,20 @@ void DDIMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator>
     }
 }
 
+void DDIMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor rand_tensor, int64_t latent_timestep) const {
+    float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
+    float sqrt_one_minus_alpha_prod = std::sqrt(1.0 - m_alphas_cumprod[latent_timestep]);
+
+    float * init_latent_data = init_latent.data<float>();
+    const float * rand_tensor_data = rand_tensor.data<float>();
+
+    std::cout << "sqrt_alpha_prod = " << sqrt_alpha_prod << ", sqrt_one_minus_alpha_prod = " << sqrt_one_minus_alpha_prod << std::endl;
+
+    for (size_t i = 0; i < init_latent.get_size(); ++i) {
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
+    }
+}
+
+
 } // namespace genai
 } // namespace ov

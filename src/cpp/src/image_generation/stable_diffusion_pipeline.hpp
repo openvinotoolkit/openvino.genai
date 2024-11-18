@@ -169,10 +169,10 @@ public:
         } else {
             latent = generation_config.generator->randn_tensor(latent_shape);
 
-            // latents are multiplied by 'init_noise_sigma'
-            float * latent_data = latent.data<float>();
-            for (size_t i = 0; i < latent.get_size(); ++i)
-                latent_data[i] *= m_scheduler->get_init_noise_sigma();
+            // // latents are multiplied by 'init_noise_sigma'
+            // float * latent_data = latent.data<float>();
+            // for (size_t i = 0; i < latent.get_size(); ++i)
+            //     latent_data[i] *= m_scheduler->get_init_noise_sigma();
         }
 
         return latent;
@@ -197,6 +197,7 @@ public:
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        bool is_inpainting_model = unet_config.in_channels == 9;
 
         if (generation_config.height < 0)
             generation_config.height = unet_config.sample_size * vae_scale_factor;
@@ -247,6 +248,15 @@ public:
         // preparate initial latents
         // TODO: pass processed initial_image here
         ov::Tensor latent = prepare_latents(initial_image, generation_config);
+        
+        ov::Tensor rand_tensor(latent.get_element_type(), latent.get_shape());
+        latent.copy_to(rand_tensor);
+
+        // latents are multiplied by 'init_noise_sigma'
+        float * latent_data = latent.data<float>();
+        for (size_t i = 0; i < latent.get_size(); ++i)
+            latent_data[i] *= m_scheduler->get_init_noise_sigma();
+
         read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, false);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
@@ -255,7 +265,7 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
         ov::Tensor mask_condition, mask;
-        ov::Tensor masked_image_latent(ov::element::f32, {});
+        ov::Tensor masked_image_latent(ov::element::f32, {}), image_latent;
 
         {
             {
@@ -363,7 +373,7 @@ public:
             mask = numpy_utils::repeat(mask, 2);
             read_tensor("/home/devuser/ilavreno/openvino.genai/mask.txt", mask, false);
 
-            {
+            if (is_inpainting_model) {
                 masked_image_latent = m_vae->encode(masked_image_latent, generation_config.generator);
                 if (generation_config.num_images_per_prompt > 1) {
                     ov::Tensor batched_masked_image_latent(ov::element::f32, masked_image_latent.get_shape());
@@ -372,15 +382,17 @@ public:
                     }
                     masked_image_latent = batched_masked_image_latent;
                 }
+
+                masked_image_latent = numpy_utils::repeat(masked_image_latent, 2);
+                read_tensor("/home/devuser/ilavreno/openvino.genai/masked_image_latents.txt", masked_image_latent, false);
+            } else {
+                image_latent = m_vae->encode(initial_image, generation_config.generator);
             }
-
-            masked_image_latent = numpy_utils::repeat(masked_image_latent, 2);
-            read_tensor("/home/devuser/ilavreno/openvino.genai/masked_image_latents.txt", masked_image_latent, false);
-
-            // exit(1);
         }
 
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
+        ov::Tensor latent_model_input;
+
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
             batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
@@ -396,23 +408,29 @@ public:
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
 
-            ov::Shape final_shape_merged{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
-            ov::Shape final_shape{final_shape_merged[0], final_shape_merged[1], latent_shape_cfg[2], latent_shape_cfg[3]};
-            ov::Shape latent_shape_cfg_merged{latent_shape_cfg[0], latent_shape_cfg[1], latent_shape_cfg[2] * latent_shape_cfg[3]};
+            if (is_inpainting_model) {
+                ov::Shape final_shape_merged{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
+                ov::Shape final_shape{final_shape_merged[0], final_shape_merged[1], latent_shape_cfg[2], latent_shape_cfg[3]};
+                ov::Shape latent_shape_cfg_merged{latent_shape_cfg[0], latent_shape_cfg[1], latent_shape_cfg[2] * latent_shape_cfg[3]};
 
-            ov::Tensor final_input(ov::element::f32, final_shape);
-            {
-                ov::Shape temp_shape = final_shape_merged;
-                temp_shape[1] = latent_shape_cfg[1] + mask.get_shape()[1];
-                ov::Tensor tmp(ov::element::f32, temp_shape);
+                ov::Tensor merged_input(ov::element::f32, final_shape);
+                {
+                    ov::Shape temp_shape = final_shape_merged;
+                    temp_shape[1] = latent_shape_cfg[1] + mask.get_shape()[1];
+                    ov::Tensor tmp(ov::element::f32, temp_shape);
 
-                ov::Shape mask_shape = mask.get_shape();
-                ov::Shape mask_shape_merged{mask_shape[0], mask_shape[1], mask_shape[2] * mask_shape[3]};
+                    ov::Shape mask_shape = mask.get_shape();
+                    ov::Shape mask_shape_merged{mask_shape[0], mask_shape[1], mask_shape[2] * mask_shape[3]};
 
-                numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), mask.data<float>(), tmp.data<float>(), latent_shape_cfg_merged, mask_shape_merged);
-                numpy_utils::concat_3d_by_cols(tmp.data<float>(), masked_image_latent.data<float>(), final_input.data<float>(), temp_shape, latent_shape_cfg_merged);
+                    numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), mask.data<float>(), tmp.data<float>(), latent_shape_cfg_merged, mask_shape_merged);
+                    numpy_utils::concat_3d_by_cols(tmp.data<float>(), masked_image_latent.data<float>(), merged_input.data<float>(), temp_shape, latent_shape_cfg_merged);
+                }
+
+                latent_model_input = merged_input;
+            } else {
+                std::cout << "latent_model_input = latent_cfg" << std::endl;
+                latent_model_input = latent_cfg;
             }
-            ov::Tensor latent_model_input = final_input;
 
             {
                 std::stringstream stream;
@@ -420,7 +438,7 @@ public:
                 read_tensor(stream.str(), latent_model_input, false);
             }
 
-            std::cout << "timesteps[inference_step] = " << timesteps[inference_step] << std::endl;
+            std::cout << timesteps[inference_step] << std::endl;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
 
@@ -431,6 +449,12 @@ public:
                 std::stringstream stream;
                 stream << "/home/devuser/ilavreno/openvino.genai/noise_pred_" << inference_step << ".txt";
                 read_tensor(stream.str(), noise_pred_tensor, false);
+
+                std::cout << "noise_pred_tensor" << std::endl;
+                for (int i = 0; i < 10; ++i) {
+                    std::cout << noise_pred_tensor.data<float>()[i] << " ";
+                }
+                std::cout << std::endl;
             }
 
             if (batch_size_multiplier > 1) {
@@ -464,12 +488,82 @@ public:
                 read_tensor(stream.str(), latent, false);
             }
 
+            if (!is_inpainting_model && m_pipeline_type == PipelineType::INPAINTING) {
+                ov::Tensor init_latents_proper(image_latent.get_element_type(), {});
+
+                if (inference_step < timesteps.size() - 1) {
+                    image_latent.copy_to(init_latents_proper);
+
+                    int64_t noise_timestep = timesteps[inference_step + 1];
+                    m_scheduler->add_noise(init_latents_proper, rand_tensor, noise_timestep);
+
+                    {
+                        std::stringstream stream;
+                        stream << "/home/devuser/ilavreno/openvino.genai/init_latents_proper_" << inference_step << ".txt";
+                        read_tensor(stream.str(), init_latents_proper, false);
+                    }
+                } else {
+                    init_latents_proper = image_latent;
+                }
+
+                const float * mask_data = mask.data<const float>();
+                const float * init_latents_proper_data = init_latents_proper.data<const float>();
+                float * latent_data = latent.data<float>();
+
+                std::cout << "latent shape " << latent.get_shape() << std::endl;
+                std::cout << "mask shape " << mask.get_shape() << std::endl;
+                std::cout << "init_latents_proper shape " << init_latents_proper.get_shape() << std::endl;
+
+                // blend initial and processed latents
+                for (size_t i = 0, channel_size = mask.get_shape()[2] * mask.get_shape()[3]; i < mask.get_size(); ++i) {
+                    float mask_value = mask_data[i];
+                    for (size_t j = 0; j < m_vae->get_config().in_channels; ++j) {
+                        latent_data[j * channel_size + i] = (1.0f - mask_value) * init_latents_proper_data[j * channel_size + i] + mask_value * latent_data[j * channel_size + i];
+                    }
+                }
+
+                {
+                    std::stringstream stream;
+                    stream << "/home/devuser/ilavreno/openvino.genai/blend_latents_" << inference_step << ".txt";
+                    read_tensor(stream.str(), latent, false);
+
+                    std::cout << "blend latents" << std::endl;
+                    for (int i = 0; i < 10; ++i) {
+                        std::cout << latent.data<float>()[i] << " ";
+                    }
+                    std::cout << std::endl;
+                }
+            }
+
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
+
+            // if (inference_step == 1)
+            //     exit(1);
         }
 
-        return m_vae->decode(denoised);
+        {
+            std::stringstream stream;
+            stream << "/home/devuser/ilavreno/openvino.genai/final_latents.txt";
+            read_tensor(stream.str(), denoised, false);
+        }
+
+        std::cout << "final_latents" << std::endl;
+        for (int i = 0; i < 10; ++i) {
+            std::cout << denoised.data<float>()[i] << " ";
+        }
+        std::cout << std::endl;
+
+        ov::Tensor image__xxx = m_vae->decode(denoised);
+
+        {
+            std::stringstream stream;
+            stream << "/home/devuser/ilavreno/openvino.genai/decoded.txt";
+            read_tensor(stream.str(), image__xxx, false);
+        }
+
+        return image__xxx;
     }
 
 private:
