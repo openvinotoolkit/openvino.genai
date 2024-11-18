@@ -56,7 +56,6 @@ ov_genai_build_jinja2cpp()
 
 # Library
 
-find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
