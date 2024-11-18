@@ -1,19 +1,17 @@
-import datasets
-from transformers import set_seed
-from transformers import AutoProcessor
 from typing import Any, Union
 
+import datasets
 import pandas as pd
-from tqdm import tqdm
 import requests
+from optimum.intel.openvino.modeling_visual_language import \
+    MODEL_TYPE_TO_CLS_MAPPING
 from PIL import Image
-from io import BytesIO
+from tqdm import tqdm
+from transformers import set_seed
 
-from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
-
-from .registry import register_evaluator, BaseEvaluator
+from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
-from .whowhat_metrics import TextDivergency, TextSimilarity
+
 
 def get_pil_from_url(url):
     response = requests.get(url, stream=True).raw
@@ -22,16 +20,22 @@ def get_pil_from_url(url):
 
 
 def preprocess_fn(example):
-    return {"prompts": example["instruction"], "images": get_pil_from_url(example["image_url"])}
+    return {
+        "prompts": example["instruction"],
+        "images": get_pil_from_url(example["image_url"]),
+    }
 
 
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).take(NUM_SAMPLES)
-    return default_dataset.map(lambda x: preprocess_fn(x),
-                                remove_columns=default_dataset.column_names)
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True
+    ).take(NUM_SAMPLES)
+    return default_dataset.map(
+        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
+    )
 
 
 INPUT_MAKER_REGISTRY = {}
@@ -46,6 +50,7 @@ def register_input_maker(*names):
 
             INPUT_MAKER_REGISTRY[name] = cls
         return cls
+
     return decorate
 
 
@@ -72,7 +77,7 @@ def autodetect_language(model):
         "baichuan": "cn",
         "minicpmv": "cn",
         "internlm": "cn",
-        "llava-qwen2": "cn"
+        "llava-qwen2": "cn",
     }
 
     if not hasattr(model, "config"):
@@ -80,9 +85,7 @@ def autodetect_language(model):
     return model2language.get(model.config.model_type, "en")
 
 
-@register_evaluator(
-    "visual-text"
-)
+@register_evaluator("visual-text")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
         self,
@@ -116,7 +119,6 @@ class VisualTextEvaluator(TextEvaluator):
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
         )
-
 
     def dump_gt(self, csv_name: str):
         self.gt_data.to_csv(csv_name)
@@ -163,22 +165,23 @@ class VisualTextEvaluator(TextEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-            #input_maker = INPUT_MAKER_REGISTRY[model.config.model_type]
-            #inputs = input_maker(processor, image, prompt)
-            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
-            #print("Inputs: ", prompt, image)
-
+        def default_gen_answer(
+            model, prompt, image, processor, tokenizer, max_new_tokens, crop_question
+        ):
+            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
+                model.config.model_type
+            ].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer)
-            
-            # image_tensor = model.process_images([image], model.config).to(dtype=model.dtype)
-            # tokens = model.generate(**inputs, images=image_tensor, do_sample=False, max_new_tokens=max_new_tokens)
-            tokens = model.generate(**inputs,  do_sample=False, max_new_tokens=max_new_tokens, tokenizer=tokenizer)
+            tokens = model.generate(
+                **inputs,
+                do_sample=False,
+                max_new_tokens=max_new_tokens,
+                tokenizer=tokenizer,
+            )
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 
-            answer = self.processor.batch_decode(tokens, skip_special_tokens=True)[0]
-            #print("Result: ", answer)
+            answer = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return answer
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
