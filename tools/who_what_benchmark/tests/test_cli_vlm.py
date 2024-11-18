@@ -14,7 +14,6 @@ def run_wwb(args):
     logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
-    print(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     return result
 
 

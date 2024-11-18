@@ -69,22 +69,6 @@ def prepare_llava_inputs(processor, image, prompt):
     return processor(images=[image], text=prompt, return_tensors="pt")
 
 
-def autodetect_language(model):
-    model2language = {
-        "chatglm": "cn",
-        "qwen2": "cn",
-        "qwen": "cn",
-        "baichuan": "cn",
-        "minicpmv": "cn",
-        "internlm": "cn",
-        "llava-qwen2": "cn",
-    }
-
-    if not hasattr(model, "config"):
-        return "en"
-    return model2language.get(model.config.model_type, "en")
-
-
 @register_evaluator("visual-text")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
@@ -98,7 +82,6 @@ class VisualTextEvaluator(TextEvaluator):
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
-        language=None,
         gen_answer_fn=None,
         generation_config=None,
         seqs_per_request=None,
@@ -114,7 +97,6 @@ class VisualTextEvaluator(TextEvaluator):
             max_new_tokens=max_new_tokens,
             crop_question=crop_question,
             num_samples=num_samples,
-            language=language,
             gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
@@ -196,12 +178,6 @@ class VisualTextEvaluator(TextEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            if self.language is None:
-                print(
-                    "No language detecting in the base model or ground truth data. Taking language from target model."
-                )
-                self.language = autodetect_language(model)
-
             data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         prompt_data = data["prompts"]
@@ -226,6 +202,5 @@ class VisualTextEvaluator(TextEvaluator):
 
         res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
-        df["language"] = self.language
 
         return df
