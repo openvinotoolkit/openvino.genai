@@ -536,10 +536,12 @@ public:
 
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
-        std::function<bool(size_t, ov::Tensor&)> callback;
 
+        // Use callback if defined
+        std::function<bool(size_t, ov::Tensor&)> callback;
         auto callback_iter = properties.find("callback");
-        if (callback_iter != properties.end()) {
+        bool do_callback = callback_iter != properties.end();
+        if (do_callback) {
             callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
         }
 
@@ -578,13 +580,12 @@ public:
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            if (callback_iter != properties.end()) {
+            if (do_callback) {
                 if (callback(inference_step, latent)) {
-                    ov::Shape output_shape = {1, 
+                    ov::Shape output_shape = {1,
                                               generation_config.height / vae_scale_factor,
                                               generation_config.width/ vae_scale_factor,
-                                              3
-                                              };
+                                              3};
                     return ov::Tensor(ov::element::u8, output_shape);
                 }
             }

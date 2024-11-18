@@ -40,6 +40,26 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
    ![](./image.bmp)
 
 
+## Run with callback
+
+You can also add a callback to the `main.py` file to interrupt the image generation process earlier if you are satisfied with the intermediate result of the image generation or to add logs.
+
+Please find the template of the callback usage below.
+
+```python
+def my_callback(step, intermediate_res):
+   print("Image generation step ", step)
+   if your_condition: # return True if you want to interrupt image generation
+      return True
+   return False
+
+pipe = openvino_genai.Text2ImagePipeline(model_dir, device)
+image = pipe.generate(
+   ...
+   callback = my_callback
+)
+```
+
 ## Run with optional LoRA adapters
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora.cpp` source code to learn how to enable adapters and specify them in each `generate` call.

@@ -242,6 +242,14 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
+        // use callback if defined
+        std::function<bool(size_t, ov::Tensor&)> callback;
+        auto callback_iter = properties.find("callback");
+        bool do_callback = callback_iter != properties.end();
+        if (do_callback) {
+            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
+        }
+
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
             batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
@@ -280,6 +288,16 @@ public:
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
+
+            if (do_callback) {
+                if (callback(inference_step, denoised)) {
+                    ov::Shape output_shape = {1,
+                                              generation_config.height / vae_scale_factor,
+                                              generation_config.width/ vae_scale_factor,
+                                              3};
+                    return ov::Tensor(ov::element::u8, output_shape);
+                }
+            }
         }
 
         return m_vae->decode(denoised);

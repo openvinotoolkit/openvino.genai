@@ -99,7 +99,7 @@ static constexpr ov::Property<float> strength{"strength"};
 
 static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"};
 
-static constexpr ov::Property<size_t> max_sequence_length{"max_sequence_length"};
+static constexpr ov::Property<int> max_sequence_length{"max_sequence_length"};
 
 static constexpr ov::Property<std::function<bool(size_t, ov::Tensor&)>> callback{"callback"};
 

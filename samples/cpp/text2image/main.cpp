@@ -13,6 +13,10 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     auto txt2img_callback = [](size_t iter_num, ov::Tensor& latents) -> bool {
         std::cout << "txt2img_callback " << iter_num << latents.get_shape() << std::endl;
+        std::cout << "main data " << std::endl;
+        for (int i = 0; i < 10; ++i)
+            std::cout << latents.data<float>()[i] << " ";
+        std::cout << std::endl;
         if (iter_num == 3)
             return true;
         return false;
