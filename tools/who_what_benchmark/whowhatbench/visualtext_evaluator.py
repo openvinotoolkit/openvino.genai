@@ -38,37 +38,6 @@ def prepare_default_data(num_samples=None):
     )
 
 
-INPUT_MAKER_REGISTRY = {}
-
-
-def register_input_maker(*names):
-    def decorate(cls):
-        for name in names:
-            assert (
-                name not in INPUT_MAKER_REGISTRY
-            ), f"Input maker '{name}' conflicts with existing evaluators! Please register with a non-conflicting alias instead."
-
-            INPUT_MAKER_REGISTRY[name] = cls
-        return cls
-
-    return decorate
-
-
-@register_input_maker("llava", "llava_next")
-def prepare_llava_inputs(processor, image, prompt):
-    conversation = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "What are these?"},
-                {"type": "image"},
-            ],
-        },
-    ]
-    prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-    return processor(images=[image], text=prompt, return_tensors="pt")
-
-
 @register_evaluator("visual-text")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
