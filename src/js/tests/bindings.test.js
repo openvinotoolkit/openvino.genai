@@ -2,8 +2,10 @@ import addon from '../lib/bindings.cjs';
 
 import assert from 'node:assert';
 import { describe, it, before, after } from 'node:test';
+import { models } from './models.js';
 
-const MODEL_PATH = process.env.MODEL_PATH;
+const MODEL_PATH = process.env.MODEL_PATH
+  || `./tests/models/${models[0].split('/')[1]}`;
 
 describe('bindings', () => {
   let pipeline = null;
@@ -54,18 +56,18 @@ describe('bindings', () => {
     done();
   });
 
-  // it('should generate "Hello world"', (_, done) => {
-  //   let output = '';
+  it('should generate "Hello world"', (_, done) => {
+    let output = '';
 
-  //   pipeline.generate('Type "Hello world!" in English', (isDone, chunk) => {
-  //     if (!isDone) {
-  //       output += chunk;
+    pipeline.generate('Type "Hello world!" in English', (isDone, chunk) => {
+      if (!isDone) {
+        output += chunk;
 
-  //       return;
-  //     }
+        return;
+      }
 
-  //     assert.strictEqual(output, '"Hello world!"');
-  //     done();
-  //   }, { temperature: '0', max_new_tokens: '4' });
-  // });
+      assert.strictEqual(output, 'Hello world!');
+      done();
+    }, { temperature: '0', max_new_tokens: '4' });
+  });
 });

@@ -1,9 +1,6 @@
-import { testModels, downloadTestModel } from './utils.js';
+import { dowloadModel } from './utils.js';
+import { models } from './models.js';
 
-if (require.main === module) {
-  main();
-}
-
-async function main() {
-  await downloadTestModel(testModels.testModelFP32);
+for (const model of models) {
+  await dowloadModel(model);
 }

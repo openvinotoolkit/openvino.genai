@@ -1,73 +1,47 @@
-// -*- coding: utf-8 -*-
-// Copyright (C) 2018-2024 Intel Corporation
-// SPDX-License-Identifier: Apache-2.0
+import { bootstrap } from 'global-agent';
+import { promises as fs } from 'node:fs';
+import { listFiles, downloadFile } from '@huggingface/hub';
 
-const path = require('path');
-const fs = require('node:fs/promises');
-const {
-  downloadFile,
-  checkIfPathExists,
-} = require('../../scripts/download_runtime');
+const BASE_DIR = './tests/models/';
 
-const modelDir = 'tests/unit/test_models/';
-const testModels = {
-  testModelFP32: {
-    xml: 'test_model_fp32.xml',
-    bin: 'test_model_fp32.bin',
-    xmlURL:
-      'https://raw.githubusercontent.com/openvinotoolkit/testdata/master/models/test_model/test_model_fp32.xml',
-    binURL:
-      'https://media.githubusercontent.com/media/openvinotoolkit/testdata/master/models/test_model/test_model_fp32.bin',
-  },
-};
+bootstrap();
 
-module.exports = {
-  getModelPath,
-  downloadTestModel,
-  isModelAvailable,
-  testModels,
-};
+export async function dowloadModel(repo) {
+  console.log(`Downloading model '${repo}'`);
 
-function getModelPath(isFP16 = false) {
-  const modelName = `test_model_fp${isFP16 ? 16 : 32}`;
+  const fetch = await import('node-fetch');
+  const modelName = repo.split('/')[1];
+  const destDir = `${BASE_DIR}${modelName}`;
 
-  return {
-    xml: path.join(modelDir, `${modelName}.xml`),
-    bin: path.join(modelDir, `${modelName}.bin`),
-  };
-}
+  await fs.mkdir(destDir, { recursive: true });
 
-async function downloadTestModel(model) {
-  const modelsDir = './tests/unit/test_models';
-  try {
-    const ifModelsDirectoryExists = await checkIfPathExists(modelsDir);
-    if (!ifModelsDirectoryExists) {
-      await fs.mkdir(modelDir);
-    }
-
-    const modelPath = path.join(modelsDir, model.xml);
-    const modelExists = await checkIfPathExists(modelPath);
-    if (modelExists) return;
-
-    const { env } = process;
-    const proxyUrl = env.http_proxy || env.HTTP_PROXY || env.npm_config_proxy;
-
-    await downloadFile(model.xmlURL, modelsDir, model.xml, proxyUrl);
-    await downloadFile(model.binURL, modelsDir, model.bin, proxyUrl);
-  } catch(error) {
-    console.error(`Failed to download the model: ${error}.`);
-    throw error;
+  const fileList = await listFiles({
+    repo,
+    fetch: fetch.default,
+  });
+  const fileNames = [];
+  for await (const file of fileList) {
+    fileNames.push(file.path);
   }
+
+  for (const path of fileNames) {
+    console.log(`Downloading file '${path}'`);
+    const response = await downloadFile({
+      repo,
+      path,
+      fetch: fetch.default,
+    });
+    const filename = `${destDir}/${path}`;
+
+    await saveFile(filename, response);
+    console.log(`File '${path}' downloaded`);
+  }
+
+  console.log(`Model '${repo}' downloaded`);
 }
 
-async function isModelAvailable(model) {
-  const baseArtifactsDir = './tests/unit/test_models';
-  const modelPath = path.join(baseArtifactsDir, model.xml);
-  const modelExists = await checkIfPathExists(modelPath);
-  if (modelExists) return;
+async function saveFile(file, response) {
+  const arrayBuffer = await response.arrayBuffer();
 
-  console.log(
-    '\n\nTestModel cannot be found.\nPlease run `npm run test_setup`.\n\n',
-  );
-  process.exit(1);
+  await fs.writeFile(file, Buffer.from(arrayBuffer));
 }

@@ -19,6 +19,12 @@
     "GenAI"
   ],
   "scripts": {
-    "test": "node --test ./tests/*.test.js"
+    "test_setup": "node ./tests/setup.js",
+    "test": "npm run test_setup && node --test ./tests/*.test.js"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.2",
+    "global-agent": "^3.0.0",
+    "@huggingface/hub": "^0.21.0"
   }
 }

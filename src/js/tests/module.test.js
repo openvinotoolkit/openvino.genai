@@ -2,32 +2,34 @@ import { Pipeline } from '../lib/module.js';
 
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
+import { models } from './models.js';
 
-const MODEL_PATH = process.env.MODEL_PATH;
+const MODEL_PATH = process.env.MODEL_PATH
+  || `./tests/models/${models[0].split('/')[1]}`;
 
-// describe('module', async () => {
-//   let pipeline = null;
+describe('module', async () => {
+  let pipeline = null;
 
-//   await before(async () => {
-//     pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+  await before(async () => {
+    pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
 
-//     await pipeline.startChat();
-//   });
+    await pipeline.startChat();
+  });
 
-//   await after(async () => {
-//     await pipeline.finishChat();
-//   });
+  await after(async () => {
+    await pipeline.finishChat();
+  });
 
-//   await it('should generate "Hello world"', async () => {
-//     const result = await pipeline.generate(
-//       'Type "Hello world!" in English',
-//       () => {},
-//       { temperature: '0', max_new_tokens: '4' }
-//     );
+  await it('should generate "Hello world"', async () => {
+    const result = await pipeline.generate(
+      'Type "Hello world!" in English',
+      () => {},
+      { temperature: '0', max_new_tokens: '4' }
+    );
 
-//     assert.strictEqual(result, '"Hello world!"');
-//   });
-// });
+    assert.strictEqual(result, 'Hello world!');
+  });
+});
 
 describe('corner cases', async () => {
   it('should throw an error if pipeline is already initialized', async () => {
