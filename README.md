@@ -163,6 +163,9 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 ```sh
 #Download and convert to OpenVINO dreamlike-anime-1.0 model
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
+
+#Download, convert to OpenVINO and apply int8 hybrid quantization to dreamlike-anime-1.0 model
+optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format int8 --dataset conceptual_captions dreamlike_anime_1_0_ov/INT8
 ```
 
 ### Run generation using Text2Image API in Python
