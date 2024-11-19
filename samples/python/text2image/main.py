@@ -16,10 +16,12 @@ class Generator(openvino_genai.Generator):
         self.generator = torch.Generator(device='cpu').manual_seed(seed)
 
     def next(self):
+        print('call next')
         return torch.randn(1, generator=self.generator, dtype=torch.float32).item()
 
     def randn_tensor(self, shape: openvino.Shape):
         torch_tensor = torch.randn(list(shape), generator=self.generator, dtype=torch.float32)
+        print('generate tensor')
         return openvino.Tensor(torch_tensor.numpy())
 
 
@@ -42,7 +44,7 @@ def main():
 
     initial_image = read_image(args.image)
     _, H, W, _ = list(initial_image.shape)
-    mask_image = read_image(args.image)
+    mask_image = read_image(args.mask)
 
     image_tensor = pipe.generate(
         args.prompt,
