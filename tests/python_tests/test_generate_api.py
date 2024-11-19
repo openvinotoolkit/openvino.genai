@@ -38,7 +38,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
-        config['repetition_penalty'] = None
+        config['repetition_penalty'] = 1.0 # 1.0 means no penalty
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
@@ -78,7 +78,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
-        config['repetition_penalty'] = None
+        config['repetition_penalty'] = 1.0 # 1.0 means no penalty
 
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
@@ -117,7 +117,7 @@ def hf_ov_genai_tensors_comparison(
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
-        config['repetition_penalty'] = None
+        config['repetition_penalty'] = 1.0 # 1.0 means no penalty
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
@@ -764,7 +764,7 @@ def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: st
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
-        config['repetition_penalty'] = None
+        config['repetition_penalty'] = 1.0 # 1.0 means no penalty
     return pipe.generate([prompt], **config).perf_metrics
 
 
