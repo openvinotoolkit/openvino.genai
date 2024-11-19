@@ -85,8 +85,12 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     m_tokenizer = main_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, compile_properties, true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
+    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
+        main_model, main_model_tokenizer, utils::from_config_json_if_exists(main_models_path),
+        main_device_config, main_scheduler_config, main_device, compile_properties, true);
+    m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
+        draft_model, draft_model_tokenizer, utils::from_config_json_if_exists(draft_models_path),
+        draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
 }
 
 GenerationHandle
@@ -211,6 +215,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {
+    ManualTimer generate_timer("speculative_decoding: generate()");
+    generate_timer.start();
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
     const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
@@ -224,6 +230,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
             return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
         }
     }, streamer);
+
+    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
+        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {

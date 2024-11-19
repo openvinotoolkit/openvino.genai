@@ -86,7 +86,6 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     if (position_ids.has_value())
         m_llm.set_tensor("position_ids", *position_ids);
 
-    m_llm.get_tensor("beam_idx").set_shape({ batch_size });
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
     auto beam_data = beam_idx.data<int32_t>();
     if (selected_beam_idx.has_value())
@@ -107,8 +106,11 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     auto logits = m_llm.get_tensor("logits");
 
     int64_t sequence_len = logits.get_shape().at(1);
-    for (auto& sequence_group : sequence_groups)
+    for (auto& sequence_group : sequence_groups) {
+        sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - sequence_len);
         sequence_group->schedule_tokens(sequence_len);
+
+    }
 
     std::map<size_t, size_t> beam_offets;
     for (size_t i = 0; i < sequence_groups.size(); i++)

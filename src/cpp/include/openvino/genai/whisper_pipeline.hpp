@@ -18,6 +18,45 @@ using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
+/**
+ * @brief base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
+ *
+ * @param m_tokenizer tokenizer
+ */
+class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
+public:
+    /// @brief put is called every time new token chunk is generated,
+    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
+    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
+};
+
+// Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
+using ChunkStreamerVariant =
+    std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
+
+struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
+    /** @brief Duration for each features extraction call */
+    std::vector<MicroSeconds> features_extraction_durations;
+};
+
+struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
+    /** @brief Mean and standart deviation of Features Extraction Duration in milliseconds */
+    MeanStdPair features_extraction_duration;
+
+    MeanStdPair get_features_extraction_duration();
+
+    WhisperPerfMetrics() = default;
+
+    WhisperPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics){};
+
+    void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
+
+    WhisperPerfMetrics operator+(const WhisperPerfMetrics& metrics) const;
+    WhisperPerfMetrics& operator+=(const WhisperPerfMetrics& right);
+
+    WhisperRawPerfMetrics whisper_raw_metrics;
+};
+
 struct WhisperDecodedResultChunk {
     // start of chunk in seconds
     float start_ts;
@@ -29,8 +68,37 @@ struct WhisperDecodedResultChunk {
     std::string text;
 };
 
-struct WhisperDecodedResults : public DecodedResults {
+struct WhisperDecodedResults {
+    std::vector<std::string> texts;
+    std::vector<float> scores;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
+    WhisperPerfMetrics perf_metrics;
+
+    operator std::string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
+    }
+
+    operator std::vector<std::string>() const {
+        return texts;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const WhisperDecodedResults& dr) {
+        OPENVINO_ASSERT(dr.scores.size() == dr.texts.size(),
+                        "The number of scores and texts doesn't match in WhisperDecodedResults.");
+        if (dr.texts.empty()) {
+            return os;
+        }
+        if (dr.texts.size() == 1) {
+            os << dr.texts[0];
+            return os;
+        }
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << std::to_string(dr.scores[i]) << ": " << dr.texts[i] << '\n';
+        }
+        return os << std::to_string(dr.scores.back()) << ": " << dr.texts.back();
+    }
 };
 
 /**
@@ -83,7 +151,7 @@ public:
      */
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config = std::nullopt,
-                                   StreamerVariant streamer = std::monostate());
+                                   ChunkStreamerVariant streamer = std::monostate());
 
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
@@ -105,4 +173,7 @@ public:
     WhisperGenerationConfig get_generation_config() const;
     void set_generation_config(const WhisperGenerationConfig& config);
 };
+
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(ChunkStreamerVariant func);
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config);
 }  // namespace ov::genai

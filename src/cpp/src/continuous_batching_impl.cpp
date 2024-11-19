@@ -17,10 +17,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& properties) {
     m_tokenizer = tokenizer;
+    m_generation_config = utils::from_config_json_if_exists(models_path);
 
     ov::Core core;
 
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+    auto [core_properties, compile_properties] = utils::split_core_complile_config(properties);
     core.set_property(core_properties);
 
     // The model can be compiled for GPU as well
@@ -74,6 +75,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
     m_sampler->set_seed(m_generation_config.rng_seed);
+
+    // If eos_token_id was not provided, take value
+    if (m_generation_config.eos_token_id == -1)
+        m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
 };
 
 
@@ -81,8 +86,11 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
                                                                ov::genai::GenerationConfig sampling_params) {
-    sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (sampling_params.eos_token_id == -1)
+        sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
+
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                         sampling_params,
                                                                         m_scheduler->get_block_size(),
@@ -262,6 +270,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
     }, streamer);
 
+    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
+        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
+
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
@@ -283,7 +294,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         m_requests.clear();
     };
 
-    bool continue_generation = true, step_throws_exception = false;
+    bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
             step();
@@ -314,13 +325,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         EncodedGenerationResult result;
         result.m_request_id = 1;
         std::vector<GenerationOutput> generation_outputs = generation->read_all();
-        std::sort(generation_outputs.begin(), generation_outputs.end(), [=] (GenerationOutput& r1, GenerationOutput& r2) {
-            return r1.score > r2.score;
-        });
-
-        auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
-        for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-            const auto& generation_output = generation_outputs[generation_output_idx];
+        for (const auto& generation_output : generation_outputs) {
             result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
             result.m_scores.push_back(generation_output.score);
         }
