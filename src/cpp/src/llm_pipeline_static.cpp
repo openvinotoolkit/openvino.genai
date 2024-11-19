@@ -313,6 +313,9 @@ template <typename T>
 T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_value) {
     auto anyopt = pop_option(config, key);
     if (anyopt.has_value()) {
+        if (anyopt.value().empty()) {
+            return T{};
+        }
         return anyopt.value().as<T>();
     }
     return default_value;

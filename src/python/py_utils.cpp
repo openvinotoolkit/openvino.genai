@@ -65,7 +65,7 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
 
 ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     // Python types
-    // TODO: Remove this after ov::Any is fixed to allow pass types, that can be casted to target type.
+    // TODO: Remove this after ov::Any is fixed to allow pass types, that can be casted to target type. Ticket: 157622
     std::set<std::string> size_t_properties = {
         "max_new_tokens",
         "max_length",
@@ -81,12 +81,6 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "max_initial_timestamp_index",
         "num_images_per_prompt",
         "num_inference_steps"
-    };
-    
-    // Properties, that can be empty sets
-    std::set<std::string> allow_empty_dict_properties {
-        "PREFILL_CONFIG",
-        "GENERATE_CONFIG"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
@@ -135,7 +129,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         }
 
         if (_list.empty())
-            OPENVINO_THROW("The property " + property_name +" can't be empty.");
+            return ov::Any();
 
         switch (detected_type) {
         case PY_TYPE::STR:
@@ -178,10 +172,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             }
         }
         if (_dict.empty()) {
-            if (allow_empty_dict_properties.find(property_name) != allow_empty_dict_properties.end()) {
-                return ov::AnyMap({});
-            }
-            OPENVINO_THROW("The property " + property_name + " can't be empty.");
+            return ov::Any();
         }
 
         switch (detected_key_type) {
@@ -219,7 +210,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         }
 
         if (_set.empty())
-            OPENVINO_THROW("The property " + property_name + " can't be empty.");
+            return ov::Any();
 
         switch (detected_type) {
         case PY_TYPE::STR:
@@ -312,7 +303,7 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else {
             if (py::isinstance<py::none>(value)) {
-                continue;
+                OPENVINO_THROW("Property \"" + key + "\" can't be None.");
             }
             params[key] = utils::py_object_to_any(value, key);
         }

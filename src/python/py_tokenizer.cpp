@@ -30,10 +30,10 @@ void init_tokenizer(py::module_& m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
            if it's located in a different path than the main model.)")
 
-        .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties) {
+        .def(py::init([](const std::filesystem::path& tokenizer_path, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, pyutils::properties_to_any_map(properties));
-        }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, pyutils::kwargs_to_any_map(kwargs));
+        }), py::arg("tokenizer_path"))
 
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
                 ov::AnyMap tokenization_params;

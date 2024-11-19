@@ -31,7 +31,12 @@ template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
     if (it != config_map.end()) {
-        param = it->second.as<typename OmitOptional<T>::value>();
+        if (it->second.empty()) {
+            param = T{};
+        }
+        else {
+            param = it->second.as<typename OmitOptional<T>::value>();
+        }
     }
 }
 
