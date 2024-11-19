@@ -292,16 +292,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_a
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::multistep() {
-    bool to_generate = false;
-    // skip first token generation by draft model to make results aligned with continuous batching results
-    for (const auto& request : m_requests) {
-        if (request->get_num_processed_tokens() == 0 && request->get_num_tokens_to_validate() == 0) {
-            request->pause_generation(true);
-        } else {
-            to_generate = true;
-        }
-    }
-
+    bool to_generate = true;
     size_t generated_tokens_cnt = 0;
     // cycle to generate several tokens per one iteration for speculative decoding case
     while (to_generate) {
