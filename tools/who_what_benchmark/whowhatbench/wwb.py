@@ -579,8 +579,9 @@ def print_text_results(evaluator):
 
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
+    pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
-        top_k=1, metric=metric_of_interest)
+        top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         logger.info(
             "--------------------------------------------------------------------------------------"
