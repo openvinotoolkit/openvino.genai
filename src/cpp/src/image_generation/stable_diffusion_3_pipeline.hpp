@@ -539,7 +539,7 @@ public:
 
         // Use callback if defined
         std::function<bool(size_t, ov::Tensor&)> callback;
-        auto callback_iter = properties.find("callback");
+        auto callback_iter = properties.find(ov::genai::callback.name());
         bool do_callback = callback_iter != properties.end();
         if (do_callback) {
             callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
@@ -582,11 +582,7 @@ public:
 
             if (do_callback) {
                 if (callback(inference_step, latent)) {
-                    ov::Shape output_shape = {1,
-                                              generation_config.height / vae_scale_factor,
-                                              generation_config.width/ vae_scale_factor,
-                                              3};
-                    return ov::Tensor(ov::element::u8, output_shape);
+                    return ov::Tensor(ov::element::u8, {});
                 }
             }
         }
