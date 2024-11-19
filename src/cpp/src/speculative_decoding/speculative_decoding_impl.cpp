@@ -99,7 +99,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  ov::genai::GenerationConfig sampling_params) {
     m_sd_metrics.set_generated_len(request_id, sampling_params.max_new_tokens);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, sampling_params)});
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
@@ -109,7 +111,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
                                                                  ov::genai::GenerationConfig sampling_params) {
     m_sd_metrics.set_generated_len(request_id, sampling_params.max_new_tokens);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, sampling_params)});
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
@@ -184,6 +188,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
+        std::cout << "num_matches:" << updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt << std::endl;
     }
     step_timer.end();
     m_sd_metrics.total_duration += step_timer.get_duration();
