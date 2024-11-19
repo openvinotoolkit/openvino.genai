@@ -34,6 +34,29 @@ public:
 using ChunkStreamerVariant =
     std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
+struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
+    /** @brief Duration for each features extraction call */
+    std::vector<MicroSeconds> features_extraction_durations;
+};
+
+struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
+    /** @brief Mean and standart deviation of Features Extraction Duration in milliseconds */
+    MeanStdPair features_extraction_duration;
+
+    MeanStdPair get_features_extraction_duration();
+
+    WhisperPerfMetrics() = default;
+
+    WhisperPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics){};
+
+    void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
+
+    WhisperPerfMetrics operator+(const WhisperPerfMetrics& metrics) const;
+    WhisperPerfMetrics& operator+=(const WhisperPerfMetrics& right);
+
+    WhisperRawPerfMetrics whisper_raw_metrics;
+};
+
 struct WhisperDecodedResultChunk {
     // start of chunk in seconds
     float start_ts;
@@ -45,8 +68,37 @@ struct WhisperDecodedResultChunk {
     std::string text;
 };
 
-struct WhisperDecodedResults : public DecodedResults {
+struct WhisperDecodedResults {
+    std::vector<std::string> texts;
+    std::vector<float> scores;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
+    WhisperPerfMetrics perf_metrics;
+
+    operator std::string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
+    }
+
+    operator std::vector<std::string>() const {
+        return texts;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const WhisperDecodedResults& dr) {
+        OPENVINO_ASSERT(dr.scores.size() == dr.texts.size(),
+                        "The number of scores and texts doesn't match in WhisperDecodedResults.");
+        if (dr.texts.empty()) {
+            return os;
+        }
+        if (dr.texts.size() == 1) {
+            os << dr.texts[0];
+            return os;
+        }
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << std::to_string(dr.scores[i]) << ": " << dr.texts[i] << '\n';
+        }
+        return os << std::to_string(dr.scores.back()) << ": " << dr.texts.back();
+    }
 };
 
 /**

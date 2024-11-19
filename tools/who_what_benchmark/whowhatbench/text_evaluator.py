@@ -88,7 +88,7 @@ def autodetect_language(model):
 
 
 @register_evaluator(
-    "text-generation", "text-generation-with-past", "text2text-generation"
+    "text"
 )
 class TextEvaluator(BaseEvaluator):
     def __init__(
