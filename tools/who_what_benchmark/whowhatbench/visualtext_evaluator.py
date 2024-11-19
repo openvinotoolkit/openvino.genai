@@ -2,7 +2,6 @@ from typing import Any, Union
 
 import datasets
 import pandas as pd
-import requests
 from diffusers.utils.loading_utils import load_image
 from optimum.intel.openvino.modeling_visual_language import \
     MODEL_TYPE_TO_CLS_MAPPING
