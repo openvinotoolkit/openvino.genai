@@ -84,14 +84,12 @@ class Text2ImageEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
-
     def score(self, model, gen_image_fn=None):
         model.resolution = self.resolution
         predictions = self._generate_data(
             model, gen_image_fn, os.path.join(self.gt_dir, "target")
         )
+        self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}

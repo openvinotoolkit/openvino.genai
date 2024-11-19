@@ -64,11 +64,9 @@ class VisualTextEvaluator(TextEvaluator):
             seqs_per_request=seqs_per_request,
         )
 
-    def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
-
     def score(self, model, gen_answer_fn=None):
         predictions = self._generate_data(model, gen_answer_fn)
+        self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}

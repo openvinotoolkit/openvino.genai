@@ -19,9 +19,13 @@ def register_evaluator(*names):
     return decorate
 
 
-class BaseEvaluator(ABC):
+class Evaluator(ABC):
     @abstractmethod
     def dump_gt(self, csv_name: str):
+        pass
+
+    @abstractmethod
+    def dump_predictions(self, csv_name: str):
         pass
 
     @abstractmethod
@@ -35,3 +39,11 @@ class BaseEvaluator(ABC):
     @abstractmethod
     def get_generation_fn(self):
         raise NotImplementedError("generation_fn should be returned")
+
+
+class BaseEvaluator(Evaluator):
+    def dump_gt(self, csv_name: str):
+        self.gt_data.to_csv(csv_name)
+
+    def dump_predictions(self, csv_name: str):
+        self.predictions.to_csv(csv_name)
