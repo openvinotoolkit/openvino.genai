@@ -168,6 +168,7 @@ public:
             m_scheduler->add_noise(latent, generation_config.generator);
         } else {
             latent = generation_config.generator->randn_tensor(latent_shape);
+            read_tensor("/home/devuser/ilavreno/openvino.genai/noise.txt", latent, false);
 
             // // latents are multiplied by 'init_noise_sigma'
             // float * latent_data = latent.data<float>();
@@ -209,6 +210,7 @@ public:
         m_unet->set_adapters(generation_config.adapters);
 
         if (generation_config.generator == nullptr) {
+            std::cout << "generation_config.generator == nullptr !!!" << std::endl;
             uint32_t seed = time(NULL);
             generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
@@ -244,25 +246,6 @@ public:
 
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
-
-        // preparate initial latents
-        // TODO: pass processed initial_image here
-        ov::Tensor latent = prepare_latents(initial_image, generation_config);
-        
-        ov::Tensor rand_tensor(latent.get_element_type(), latent.get_shape());
-        latent.copy_to(rand_tensor);
-
-        // latents are multiplied by 'init_noise_sigma'
-        float * latent_data = latent.data<float>();
-        for (size_t i = 0; i < latent.get_size(); ++i)
-            latent_data[i] *= m_scheduler->get_init_noise_sigma();
-
-        read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, false);
-
-        // prepare latents passed to models taking into account guidance scale (batch size multipler)
-        ov::Shape latent_shape_cfg = latent.get_shape();
-        latent_shape_cfg[0] *= batch_size_multiplier;
-        ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
         ov::Tensor mask_condition, mask;
         ov::Tensor masked_image_latent(ov::element::f32, {}), image_latent;
@@ -390,8 +373,29 @@ public:
             }
         }
 
+        // preparate initial latents
+        // TODO: pass processed initial_image here
+        ov::Tensor latent = prepare_latents(initial_image, generation_config);
+
+        ov::Tensor rand_tensor(latent.get_element_type(), latent.get_shape());
+        latent.copy_to(rand_tensor);
+
+        // latents are multiplied by 'init_noise_sigma'
+        float * latent_data = latent.data<float>();
+        for (size_t i = 0; i < latent.get_size(); ++i)
+            latent_data[i] *= m_scheduler->get_init_noise_sigma();
+
+        read_tensor("/home/devuser/ilavreno/openvino.genai/latents.txt", latent, false);
+
+        // prepare latents passed to models taking into account guidance scale (batch size multipler)
+        ov::Shape latent_shape_cfg = latent.get_shape();
+        latent_shape_cfg[0] *= batch_size_multiplier;
+        ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
+
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         ov::Tensor latent_model_input;
+
+        // exit(1);
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
             batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
@@ -438,7 +442,7 @@ public:
                 read_tensor(stream.str(), latent_model_input, false);
             }
 
-            std::cout << timesteps[inference_step] << std::endl;
+            std::cout << "current timestep " << timesteps[inference_step] << std::endl;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
 
