@@ -4,10 +4,6 @@ from abc import ABC, abstractmethod
 
 # Registry for evaluators
 EVALUATOR_REGISTRY = {}
-MODELTYPE2TASK = {
-    "text": "text-generation",
-    "text-to-image": "text-to-image",
-}
 
 
 def register_evaluator(*names):
