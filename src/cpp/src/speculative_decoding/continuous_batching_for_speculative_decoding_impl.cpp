@@ -260,13 +260,15 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             return result;
         }
         size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
-        if (num_processed_tokens > 0) {
-            request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt);
+        if (num_processed_tokens > 0 && result.removed_tokens_cnt > 0) {
+            request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
             generated_len -= result.removed_tokens_cnt;
         }
-        request->set_num_validated_tokens(result.inserted_tokens_cnt);
+        if (result.removed_tokens_cnt == 0) {
+            request->set_num_validated_tokens(result.inserted_tokens_cnt);
+            generated_len += result.inserted_tokens_cnt;
+        }
         request->pause_generation(false);
-        generated_len += result.inserted_tokens_cnt;
 
         // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
         if (!m_is_validation_mode_enabled && (generated_len >= max_new_tokens - 1 || result.inserted_tokens_cnt == 0)) {
