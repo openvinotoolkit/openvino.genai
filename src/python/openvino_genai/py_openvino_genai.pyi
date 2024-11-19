@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1600,20 +1600,30 @@ class WhisperDecodedResultChunk:
     @property
     def text(self) -> str:
         ...
-class WhisperDecodedResults(DecodedResults):
+class WhisperDecodedResults:
     """
     
-        Structure to store resulting batched text outputs and scores for each batch.
-        The first num_return_sequences elements correspond to the first batch element.
+        Structure to store resulting text outputs and scores.
     
         Parameters:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
         metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-        shunks:     chunk of resulting sequences with timestamps
+        shunks:     optional chunks of resulting sequences with timestamps
     """
+    def __str__(self) -> str:
+        ...
     @property
     def chunks(self) -> list[WhisperDecodedResultChunk] | None:
+        ...
+    @property
+    def perf_metrics(self) -> WhisperPerfMetrics:
+        ...
+    @property
+    def scores(self) -> list[float]:
+        ...
+    @property
+    def texts(self) -> list[str]:
         ...
 class WhisperGenerationConfig:
     """
@@ -1701,6 +1711,24 @@ class WhisperGenerationConfig:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
+class WhisperPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+        :type get_features_extraction_duration: MeanStdPair
+    
+        :param whisper_raw_metrics: Whisper specific raw metrics
+        :type WhisperRawPerfMetrics:
+    """
+    def __init__(self) -> None:
+        ...
+    def get_features_extraction_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def whisper_raw_metrics(self) -> WhisperRawPerfMetrics:
+        ...
 class WhisperPipeline:
     """
     Automatic speech recognition pipeline
@@ -1711,7 +1739,7 @@ class WhisperPipeline:
                     models_path (str): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | ChunkStreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
@@ -1728,8 +1756,8 @@ class WhisperPipeline:
             :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
             :type : Dict
         
-            :return: return results in encoded, or decoded form depending on inputs type
-            :rtype: DecodedResults
+            :return: return results in decoded form
+            :rtype: WhisperDecodedResults
          
          
             WhisperGenerationConfig
@@ -1794,6 +1822,19 @@ class WhisperPipeline:
     def get_tokenizer(self) -> Tokenizer:
         ...
     def set_generation_config(self, config: WhisperGenerationConfig) -> None:
+        ...
+class WhisperRawPerfMetrics:
+    """
+    
+        Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
+    
+        :param features_extraction_durations: Duration for each features extraction call.
+        :type features_extraction_durations: List[MicroSeconds]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def features_extraction_durations(self) -> list[float]:
         ...
 class draft_model:
     """
