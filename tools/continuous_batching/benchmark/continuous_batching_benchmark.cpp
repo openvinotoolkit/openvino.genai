@@ -18,6 +18,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 namespace {
 
@@ -256,13 +257,14 @@ public:
         this->start_time = start_time;
     }
 
-    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id, bool is_speculative_decoding_enabled) {
+    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id, bool is_speculative_decoding_enabled, size_t candidates) {
         auto sampling_params = dataset->m_sampling_params[request_id];
         if (is_speculative_decoding_enabled) {
             // to enable static speculative decoding
-            sampling_params.num_assistant_tokens = 2;
+            sampling_params.num_assistant_tokens = candidates;
             // to enable dynamic speculative decoding
             // sampling_params.assistant_confidence_threshold = 0.4f;
+            // sampling_params.logprobs = 1;
         }
         ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], sampling_params);
         std::lock_guard<std::mutex> lock(mutex);
@@ -313,7 +315,7 @@ public:
     }
 };
 
-void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector, bool is_speculative_decoding_enabled) {
+void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector, bool is_speculative_decoding_enabled, size_t candidates) {
     double numeric_request_rate;
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -340,7 +342,7 @@ void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* data
     generation_info_collector->set_start_time(std::chrono::steady_clock::now());
     for (size_t request_id = 0; request_id < dataset->size(); ++request_id) {
         std::cout << "Traffic thread adding request to the queue..." << std::endl;
-        generation_info_collector->add_generation(pipe, dataset, request_id, is_speculative_decoding_enabled);
+        generation_info_collector->add_generation(pipe, dataset, request_id, is_speculative_decoding_enabled, candidates);
         if (numeric_request_rate > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(int(distribution(gen) * 1000)));
     }
@@ -450,6 +452,7 @@ int main(int argc, char* argv[]) try {
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
     ("use_cache_eviction", "Whether to use cache eviction", cxxopts::value<bool>()->default_value("false"))
+    ("num_candidates", "Candidates number for speculative decoding", cxxopts::value<size_t>()->default_value("0"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -479,6 +482,7 @@ int main(int argc, char* argv[]) try {
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
     const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
+    size_t num_candidates = result["num_candidates"].as<size_t>();
 
     bool is_speculative_decoding_enabled = !draft_model_path.empty();
 
@@ -487,13 +491,21 @@ int main(int argc, char* argv[]) try {
 
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
-    scheduler_config.max_num_batched_tokens = max_batch_size,
-    scheduler_config.cache_size = cache_size,
-    scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
-    scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
+    scheduler_config.cache_size = cache_size;
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     if (use_cache_eviction) {
         scheduler_config.use_cache_eviction = true;
         scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM);
+    }
+
+    
+    ov::AnyMap device_config_map = {};
+    if (is_speculative_decoding_enabled) {
+        OPENVINO_ASSERT(num_candidates > 0);
+        scheduler_config.max_num_seqs = max_batch_size;
+        device_config_map.insert({ ov::genai::draft_model(draft_model_path, device) });
+    } else {
+        scheduler_config.max_num_batched_tokens = max_batch_size;
     }
 
     std::cout << "Benchmarking parameters: " << std::endl;
@@ -509,10 +521,6 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tTarget device: " << device << std::endl;
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
 
-    ov::AnyMap device_config_map = {};
-    if (is_speculative_decoding_enabled) {
-        device_config_map.insert({ ov::genai::draft_model(draft_model_path) });
-    }
     if (!parse_plugin_config_string(device_config, device_config_map)) {
         std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
         return EXIT_FAILURE;
@@ -528,14 +536,14 @@ int main(int argc, char* argv[]) try {
 
     std::atomic<bool> finishGenerationThread{false};
     if (request_rate == "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
+        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled, num_candidates);
         trafficSimulatorThread.join();
     }
     
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
     if (request_rate != "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
+        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled, num_candidates);
         trafficSimulatorThread.join();
     }
     statisticsReporterThread.join();

@@ -29,7 +29,7 @@ public:
         // block tables for scheduled sequences per each attention layer in the model
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
         // total number of scheduled tokens
-        size_t m_total_num_scheduled_tokens = 0;
+        size_t m_total_num_scheduled_tokens = 0, m_total_scheduled_sequences = 0;
         // dedicated prompt phase
         bool is_prompt = false;
         // current cache usage
@@ -215,6 +215,9 @@ private:
         // 2. The mechanism below performs greedy scheduling of high priority prompts
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+            if (scheduler_output.m_scheduled_sequence_groups_ids.size() >= m_config.max_num_seqs) {
+                break;
+            }
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
@@ -242,6 +245,10 @@ private:
                 // and total "scheduled capacity"
                 num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * block_size);
 
+                if ((scheduler_output.m_total_scheduled_sequences + num_running_seqs) > m_config.max_num_seqs) {
+                    continue;
+                }
+
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
                     if (num_scheduled_blocks > 0)
@@ -254,6 +261,7 @@ private:
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
+                        scheduler_output.m_total_scheduled_sequences += num_running_seqs;
                     }
                 }
 
@@ -266,6 +274,9 @@ private:
 
     void _schedule_generate_phase_dynamic_split_fuse(const std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+            if (scheduler_output.m_total_scheduled_sequences >= m_config.max_num_seqs) {
+                break;
+            }
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             // Note, that can_generate_tokens will mix preempted sequence groups
             // and real generate ones
@@ -287,6 +298,11 @@ private:
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
 
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+
+                if ((scheduler_output.m_total_scheduled_sequences + num_running_seqs) > m_config.max_num_seqs) {
+                    continue;
+                }
+
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 _apply_preemption(sequence_group_id, sequence_groups);
@@ -305,6 +321,7 @@ private:
                     auto request_id = sequence_group->get_request_id();
                     scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                     scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens_per_seq * num_running_seqs;
+                    scheduler_output.m_total_scheduled_sequences += num_running_seqs;
 
                     // block tables for each running sequence within a group
                     std::vector<Sequence::Ptr> running_seqs = sequence_group->get_running_sequences();
@@ -367,6 +384,10 @@ private:
                 if (num_available_tokens_in_megabatch < sequence_len)
                     break;
 
+                if ((scheduler_output.m_total_scheduled_sequences + num_running_sequence_groups) > m_config.max_num_seqs) {
+                    break;
+                }
+
                 // apply KV cache limitations
                 size_t block_size = get_block_size();
                 const size_t num_required_blocks = (sequence_len + block_size - 1) / block_size;
@@ -389,6 +410,7 @@ private:
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
+                        scheduler_output.m_total_scheduled_sequences += num_running_seqs;
                     }
 
                     // update "is_prompt" flag

@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) try {
     }
 
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 30;
+    config.max_new_tokens = 100;
     // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
     // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5;
