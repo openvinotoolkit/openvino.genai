@@ -632,6 +632,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
+            evaluator.dump_predictions(os.path.join(args.output, "target.json"))
 
     if args.verbose and args.target_model is not None:
         if args.model_type == "text" or args.model_type == "visual-text":
