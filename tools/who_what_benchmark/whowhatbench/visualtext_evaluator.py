@@ -3,9 +3,9 @@ from typing import Any, Union
 import datasets
 import pandas as pd
 import requests
+from diffusers.utils.loading_utils import load_image
 from optimum.intel.openvino.modeling_visual_language import \
     MODEL_TYPE_TO_CLS_MAPPING
-from PIL import Image
 from tqdm import tqdm
 from transformers import set_seed
 
@@ -13,16 +13,10 @@ from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 
 
-def get_pil_from_url(url):
-    response = requests.get(url, stream=True).raw
-    image = Image.open(response)
-    return image.convert("RGB")
-
-
 def preprocess_fn(example):
     return {
         "prompts": example["instruction"],
-        "images": get_pil_from_url(example["image_url"]),
+        "images": load_image(example["image_url"]),
     }
 
 

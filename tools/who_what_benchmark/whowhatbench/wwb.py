@@ -46,9 +46,6 @@ class GenAIModelWrapper:
 
         if model_type == "text" or model_type == "visual-text":
             self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        if model_type == "text":
-            self.config = AutoConfig.from_pretrained(
-                model_dir, trust_remote_code=True)
         elif model_type == "text-to-image":
             self.config = DiffusionPipeline.load_config(
                 model_dir, trust_remote_code=True)
@@ -159,8 +156,8 @@ def load_text2image_model(
 def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
-    except ImportError:
-        logger.error("Failed to import openvino_genai package. Please install it.")
+    except ImportError as e:
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
         exit(-1)
 
     return GenAIModelWrapper(
