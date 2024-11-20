@@ -221,7 +221,7 @@ public:
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& transformer_config = m_transformer->get_config();
-        const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
 
         // Input tensors for transformer model
         ov::Tensor prompt_embeds_inp, pooled_prompt_embeds_inp;
