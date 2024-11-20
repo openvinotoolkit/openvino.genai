@@ -6,6 +6,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/functional.h>
 
 #include <openvino/runtime/auto/properties.hpp>
 
@@ -273,9 +274,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
-    } else if (py::cast<py::function>(py_obj) && property_name == "callback") {
-        return ov::genai::callback(py::cast<std::function<bool(size_t, ov::Tensor&)>>(py_obj)).second;
-    } else if (py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) {
+    } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
+        return py::cast<std::function<bool(size_t, ov::Tensor&)>>(py_obj);
+    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
     } else if (py::isinstance<py::object>(py_obj)) {
