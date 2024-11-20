@@ -319,6 +319,14 @@ public:
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
         size_t num_inference_steps = timesteps.size();
 
+        // Use callback if defined
+        std::function<bool(size_t, ov::Tensor&)> callback;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        bool do_callback = callback_iter != properties.end();
+        if (do_callback) {
+            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
+        }
+
         // 6. Denoising loop
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
@@ -330,10 +338,20 @@ public:
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, generation_config.generator);
             latents = scheduler_step_result["latent"];
+
+            if (do_callback) {
+                if (callback(inference_step, latents)) {
+                    return ov::Tensor(ov::element::u8, {});
+                }
+            }
         }
 
         latents = unpack_latents(latents, generation_config.height, generation_config.width, vae_scale_factor);
         return m_vae->decode(latents);
+    }
+
+    ov::Tensor decode(const ov::Tensor latent) override {
+        return m_vae->decode(latent);
     }
 
 private:
@@ -368,7 +386,7 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        OPENVINO_ASSERT(generation_config.max_sequence_length < 512, "T5's 'max_sequence_length' must be less than 512");
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less than 512");
 
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxPipeline");

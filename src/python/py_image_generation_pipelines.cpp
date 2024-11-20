@@ -146,6 +146,8 @@ ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_com
             params.insert({ov::genai::strength(std::move(py::cast<float>(value)))});
         } else if (key == "max_sequence_length") {
             params.insert({ov::genai::max_sequence_length(std::move(py::cast<size_t>(value)))});
+        } else if (key == "callback") {
+            params.insert({ov::genai::callback(std::move(py::cast<std::function<bool(size_t, ov::Tensor&)>>(value)))});
         }
         else {
             if (allow_compile_properties) {
@@ -291,6 +293,6 @@ void init_image_generation_pipelines(py::module_& m) {
                 return py::cast(pipe.generate(prompt, params));
             },
             py::arg("prompt"), "Input string",
-            (text2image_generate_docstring + std::string(" \n ")).c_str()
-        );
+            (text2image_generate_docstring + std::string(" \n ")).c_str())
+        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));;
 }

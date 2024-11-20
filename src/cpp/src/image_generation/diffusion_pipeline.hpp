@@ -82,6 +82,8 @@ public:
 
     virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) = 0;
 
+    virtual ov::Tensor decode(const ov::Tensor latent) = 0;
+
     virtual ~DiffusionPipeline() = default;
 
 protected:
