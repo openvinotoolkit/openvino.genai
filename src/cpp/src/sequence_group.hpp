@@ -167,7 +167,7 @@ public:
         m_generated_log_probs[idx] = log_prob;
     }
 
-    float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
+    float get_cumulative_score_with_length_penalty(const ov::genai::GenerationConfig& sampling_params) const {
         float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
@@ -339,7 +339,7 @@ public:
 
         // do we need to sort sequences here or sampler can handle it for us?
         std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) {
-            return s1->get_beam_search_score(m_sampling_params) > s2->get_beam_search_score(m_sampling_params);
+            return s1->get_cumulative_score_with_length_penalty(m_sampling_params) > s2->get_cumulative_score_with_length_penalty(m_sampling_params);
         });
 
         return finished_seqs;
@@ -586,7 +586,7 @@ public:
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
             }
-            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
+            output.score = m_sampling_params.is_beam_search() ? sequence->get_cumulative_score_with_length_penalty(m_sampling_params) : sequence->get_cumulative_log_probs();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
         }

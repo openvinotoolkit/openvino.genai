@@ -93,8 +93,6 @@ public:
 
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
 
-        Sampler sampler = Sampler(m_tokenizer);
-
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
@@ -131,10 +129,10 @@ public:
         ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds.get_shape()[1] }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
 
-        ov::genai::EncodedResults encoded_result;
-        int32_t m_selected_beam = 0;
-        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
-                                                                                      position_ids, m_embedding, std::nullopt);
+        Sampler sampler = Sampler(m_tokenizer);
+
+        ov::genai::EncodedResults encoded_result = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
+                                                                                     position_ids, m_embedding);
 
         DecodedResults decoded;
         for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
