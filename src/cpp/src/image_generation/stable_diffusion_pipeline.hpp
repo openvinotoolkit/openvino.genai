@@ -7,17 +7,13 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
+#include "image_generation/image_processor.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 
-#include "openvino/op/parameter.hpp"
-#include "openvino/op/result.hpp"
-#include "openvino/op/convert.hpp"
-#include "openvino/core/preprocess/pre_post_process.hpp"
-#include "openvino/opsets/opset15.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "json_utils.hpp"
@@ -145,6 +141,16 @@ public:
         m_clip_text_encoder->compile(device, properties);
         m_unet->compile(device, properties);
         m_vae->compile(device, properties);
+
+        // create image & mask processors
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            const bool do_normalize = true, do_binarize = false;
+            m_image_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
+        }
+        if (m_pipeline_type == PipelineType::INPAINTING) {
+            const bool do_normalize = false, do_binarize = true;
+            m_mask_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
+        }
     }
 
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
@@ -251,72 +257,10 @@ public:
         ov::Tensor masked_image_latent(ov::element::f32, {}), image_latent;
 
         {
-            {
-                auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(mask_image.get_shape().size()));
-                auto result = std::make_shared<ov::op::v0::Result>(parameter);
-                auto image_processor = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter}, "mask_processor");
-
-                ov::preprocess::PrePostProcessor ppp(image_processor);
-
-                ppp.input().tensor()
-                    .set_layout("NHWC")
-                    .set_element_type(ov::element::u8);
-                ppp.input().model()
-                    .set_layout("NCHW");
-
-                ppp.input().preprocess()
-                    .convert_layout()
-                    .convert_element_type(ov::element::f32)
-                    // this is less accurate that in VaeImageProcessor::normalize
-                    .scale(255.0 / 2.0)
-                    .mean(1.0f);
-
-                image_processor = ppp.build();
-
-                ov::InferRequest image_processor_request = ov::Core().compile_model(image_processor, "CPU").create_infer_request();
-                image_processor_request.set_input_tensor(initial_image);
-                image_processor_request.infer();
-                initial_image = image_processor_request.get_output_tensor();
-            }
-            
+            initial_image = m_image_processor->preprocess(initial_image);
             read_tensor("/home/devuser/ilavreno/openvino.genai/init_image.txt", initial_image, false);
 
-            {
-                auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(mask_image.get_shape().size()));
-                auto result = std::make_shared<ov::op::v0::Result>(parameter);
-                auto mask_processor = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter}, "mask_processor");
-
-                ov::preprocess::PrePostProcessor ppp(mask_processor);
-
-                ppp.input().tensor()
-                    .set_layout("NHWC")
-                    .set_element_type(ov::element::u8)
-                    .set_color_format(ov::preprocess::ColorFormat::BGR);
-                ppp.input().model()
-                    .set_layout("NCHW");
-
-                ppp.input().preprocess()
-                    .convert_color(ov::preprocess::ColorFormat::GRAY)
-                    .convert_element_type(ov::element::f32)
-                    .scale(255.0f)
-                    .custom([](const ov::Output<ov::Node>& port) {
-                        auto constant_0_5 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.5f);
-                        auto constant_1_0 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 1.0f);
-                        auto constant_0_0 = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.0f);
-                        auto mask_bool = std::make_shared<ov::opset15::GreaterEqual>(port, constant_0_5);
-                        auto mask_float = std::make_shared<ov::opset15::Select>(mask_bool, constant_1_0, constant_0_0);
-                        return mask_float;
-                    })
-                    .convert_layout();
-
-                mask_processor = ppp.build();
-
-                ov::InferRequest mask_processor_request = ov::Core().compile_model(mask_processor, "CPU").create_infer_request();
-                mask_processor_request.set_input_tensor(mask_image);
-                mask_processor_request.infer();
-                mask_condition = mask_processor_request.get_output_tensor();
-            }
-
+            mask_condition = m_mask_processor->preprocess(mask_image);
             read_tensor("/home/devuser/ilavreno/openvino.genai/mask_condition.txt", mask_condition, false);
 
             masked_image_latent.set_shape(initial_image.get_shape());
@@ -640,6 +584,7 @@ private:
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<UNet2DConditionModel> m_unet;
     std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<ImageProcessor> m_image_processor, m_mask_processor;
 };
 
 }  // namespace genai
