@@ -30,10 +30,19 @@ void init_tokenizer(py::module_& m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
            if it's located in a different path than the main model.)")
 
-        .def(py::init([](const std::filesystem::path& tokenizer_path, const py::kwargs& kwargs) {
+        .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, pyutils::kwargs_to_any_map(kwargs));
-        }), py::arg("tokenizer_path"))
+            auto kwargs_properties = pyutils::kwargs_to_any_map(kwargs);
+            if (properties.size()) {
+                PyErr_WarnEx(PyExc_DeprecationWarning, 
+                         "'properties' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                         1);
+                auto map_properties = pyutils::properties_to_any_map(properties);
+                kwargs_properties.insert(map_properties.begin(), map_properties.end());
+            }
+
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, kwargs_properties);
+        }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
 
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
                 ov::AnyMap tokenization_params;

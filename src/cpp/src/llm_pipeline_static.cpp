@@ -314,7 +314,11 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
     auto anyopt = pop_option(config, key);
     if (anyopt.has_value()) {
         if (anyopt.value().empty()) {
-            return T{};
+            if (ov::genai::utils::is_container<T>)
+                return T{};
+            else {
+                OPENVINO_THROW("Got empty ov::Any for key: " + key);
+            }
         }
         return anyopt.value().as<T>();
     }
