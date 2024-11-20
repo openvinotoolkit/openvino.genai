@@ -29,7 +29,7 @@ class Evaluator(ABC):
         pass
 
     @abstractmethod
-    def score(self, model, **kwargs):
+    def score(self, model_or_data, **kwargs):
         pass
 
     @abstractmethod

@@ -121,7 +121,7 @@ def test_text_output_directory():
         assert "Metrics for model" in result.stderr
         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
-        assert os.path.exists(os.path.join(temp_dir, "target.json"))
+        assert os.path.exists(os.path.join(temp_dir, "target.csv"))
 
 
 def test_text_verbose():

@@ -24,7 +24,7 @@ def run_wwb(args):
     ],
 )
 def test_vlm_basic(model_id, model_type):
-    GT_FILE = tempfile.NamedTemporaryFile(suffix=".json").name
+    GT_FILE = tempfile.NamedTemporaryFile(suffix=".csv").name
     MODEL_PATH = tempfile.TemporaryDirectory().name
 
     result = subprocess.run(["optimum-cli", "export",

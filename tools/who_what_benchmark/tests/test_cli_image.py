@@ -27,7 +27,7 @@ def run_wwb(args):
     ],
 )
 def test_image_model_types(model_id, model_type, backend):
-    GT_FILE = "test_sd.json"
+    GT_FILE = "test_sd.csv"
     wwb_args = [
         "--base-model",
         model_id,
@@ -70,7 +70,7 @@ def test_image_model_types(model_id, model_type, backend):
     ],
 )
 def test_image_model_genai(model_id, model_type):
-    GT_FILE = "test_sd.json"
+    GT_FILE = "test_sd.csv"
     MODEL_PATH = tempfile.TemporaryDirectory().name
 
     result = subprocess.run(["optimum-cli", "export",
@@ -133,7 +133,7 @@ def test_image_model_genai(model_id, model_type):
     ]
     result = run_wwb(wwb_args)
     assert os.path.exists(os.path.join(output_dir, "target"))
-    assert os.path.exists(os.path.join(output_dir, "target.json"))
+    assert os.path.exists(os.path.join(output_dir, "target.csv"))
 
     try:
         os.remove(GT_FILE)
@@ -152,7 +152,7 @@ def test_image_model_genai(model_id, model_type):
     ],
 )
 def test_image_custom_dataset(model_id, model_type, backend):
-    GT_FILE = "test_sd.json"
+    GT_FILE = "test_sd.csv"
     wwb_args = [
         "--base-model",
         model_id,
