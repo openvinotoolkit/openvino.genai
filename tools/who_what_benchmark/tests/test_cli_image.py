@@ -14,7 +14,6 @@ def run_wwb(args):
     logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
-    print(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     return result
 
 
@@ -132,8 +131,25 @@ def test_image_model_genai(model_id, model_type):
         output_dir,
     ]
     result = run_wwb(wwb_args)
+    assert result.returncode == 0
     assert os.path.exists(os.path.join(output_dir, "target"))
     assert os.path.exists(os.path.join(output_dir, "target.csv"))
+
+    # test w/o models
+    wwb_args = [
+        "--target-data",
+        os.path.join(output_dir, "target.csv"),
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+    ]
+    result = run_wwb(wwb_args)
+    assert result.returncode == 0
 
     try:
         os.remove(GT_FILE)

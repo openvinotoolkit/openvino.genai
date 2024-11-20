@@ -73,8 +73,7 @@ def test_text_target_model():
 
 @pytest.fixture
 def test_text_gt_data():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
+    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv").name
 
     result = run_wwb(
         [
@@ -107,6 +106,8 @@ def test_text_output_directory():
             [
                 "--base-model",
                 base_model_path,
+                "--gt-data",
+                os.path.join(temp_dir, "gt.csv"),
                 "--target-model",
                 target_model_path,
                 "--num-samples",
@@ -122,6 +123,22 @@ def test_text_output_directory():
         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
         assert os.path.exists(os.path.join(temp_dir, "target.csv"))
+
+        # test measurtement w/o models
+        result = run_wwb(
+            [
+                "--gt-data",
+                os.path.join(temp_dir, "gt.csv"),
+                "--target-data",
+                os.path.join(temp_dir, "target.csv"),
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+            ]
+        )
+        assert result.returncode == 0
+        assert "Metrics for model" in result.stderr
 
 
 def test_text_verbose():

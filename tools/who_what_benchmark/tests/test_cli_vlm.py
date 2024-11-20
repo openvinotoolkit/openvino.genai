@@ -37,6 +37,7 @@ def test_vlm_basic(model_id, model_type):
                             )
     assert result.returncode == 0
 
+    # Collect reference with HF model
     wwb_args = [
         "--base-model",
         model_id,
@@ -53,6 +54,7 @@ def test_vlm_basic(model_id, model_type):
     result = run_wwb(wwb_args)
     assert result.returncode == 0
 
+    # test Optimum
     wwb_args = [
         "--target-model",
         MODEL_PATH,
@@ -68,9 +70,29 @@ def test_vlm_basic(model_id, model_type):
     result = run_wwb(wwb_args)
     assert result.returncode == 0
 
+    # test GenAI
     wwb_args = [
         "--target-model",
         MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--output",
+        "target",
+    ]
+    result = run_wwb(wwb_args)
+    assert result.returncode == 0
+
+    # test w/o models
+    wwb_args = [
+        "--target-data",
+        "target/target.csv",
         "--num-samples",
         "1",
         "--gt-data",
