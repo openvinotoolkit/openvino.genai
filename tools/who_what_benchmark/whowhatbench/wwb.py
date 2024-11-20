@@ -621,7 +621,9 @@ def main():
             args.genai,
         )
         all_metrics_per_question, all_metrics = evaluator.score(
-            target_model, evaluator.get_generation_fn() if args.genai else None
+            target_model,
+            evaluator.get_generation_fn() if args.genai else None,
+            output_dir=args.output
         )
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
