@@ -303,7 +303,7 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else {
             if (py::isinstance<py::none>(value)) {
-                OPENVINO_THROW("Property \"" + key + "\" can't be None.");
+                OPENVINO_ASSERT(!py::isinstance<py::none>(value), "Property \"", key, "\" can't be None.");
             }
             params[key] = utils::py_object_to_any(value, key);
         }
