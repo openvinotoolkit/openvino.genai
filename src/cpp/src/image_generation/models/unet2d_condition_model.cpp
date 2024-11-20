@@ -91,7 +91,6 @@ void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov:
 void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
     if(adapters) {
-        OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
         m_impl->set_adapters(m_adapter_controller, *adapters);
     }
 }

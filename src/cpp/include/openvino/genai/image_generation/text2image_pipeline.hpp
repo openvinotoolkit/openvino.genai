@@ -19,6 +19,8 @@
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/t5_encoder_model.hpp"
+#include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 
 namespace ov {
 namespace genai {
@@ -72,6 +74,14 @@ public:
         const CLIPTextModelWithProjection& clip_text_model_2,
         const SD3Transformer2DModel& transformer,
         const AutoencoderKL& vae);
+
+    // creates Flux pipeline from building blocks
+    static Text2ImagePipeline flux(
+        const std::shared_ptr<Scheduler>& scheduler_type,
+        const CLIPTextModel& clip_text_model,
+        const T5EncoderModel t5_encoder_model,
+        const FluxTransformer2DModel& transformer,
+        const AutoencoderKL& vae_decoder);
 
     ImageGenerationConfig get_generation_config() const;
     void set_generation_config(const ImageGenerationConfig& generation_config);
