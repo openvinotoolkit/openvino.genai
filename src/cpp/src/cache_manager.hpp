@@ -25,7 +25,6 @@ public:
         m_value_cache.reserve(m_device_config.get_num_layers());
 
         const std::string device_name = device_config.get_device();
-        std::cout << "VSHAMPOR: cache precision is " << device_config.get_cache_precision() << std::endl;
         if (device_name.find("GPU") == std::string::npos) {// Allocate KV caches
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
                 ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape());
