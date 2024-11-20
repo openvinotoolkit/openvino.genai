@@ -80,7 +80,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "num_assistant_tokens",
         "max_initial_timestamp_index",
         "num_images_per_prompt",
-        "num_inference_steps"
+        "num_inference_steps",
+        "max_sequence_length"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
@@ -272,6 +273,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
+    } else if (py::cast<py::function>(py_obj) && property_name == "callback") {
+        return ov::genai::callback(py::cast<std::function<bool(size_t, ov::Tensor&)>>(py_obj)).second;
     } else if (py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;

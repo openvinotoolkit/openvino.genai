@@ -1,8 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "image_generation/stable_diffusion_pipeline.hpp"
-#include "image_generation/stable_diffusion_xl_pipeline.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
 
 #include <ctime>
 #include <cstdlib>

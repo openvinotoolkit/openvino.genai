@@ -39,6 +39,25 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
    ![](./image.bmp)
 
+## Run with callback
+
+You can also add a callback to the `main.py` file to interrupt the image generation process earlier if you are satisfied with the intermediate result of the image generation or to add logs.
+
+Please find the template of the callback usage below.
+
+```python
+def callback(step, intermediate_res):
+   print("Image generation step: ", step)
+   if your_condition: # return True if you want to interrupt image generation
+      return True
+   return False
+
+pipe = openvino_genai.Text2ImagePipeline(model_dir, device)
+image = pipe.generate(
+   ...
+   callback = callback
+)
+```
 
 ## Run with optional LoRA adapters
 

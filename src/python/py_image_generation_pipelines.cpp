@@ -67,6 +67,7 @@ auto text2image_generate_docstring = R"(
 )";
 
 
+
 } // namespace
 
 void init_clip_text_model(py::module_& m);
@@ -190,6 +191,6 @@ void init_image_generation_pipelines(py::module_& m) {
                 return py::cast(pipe.generate(prompt, params));
             },
             py::arg("prompt"), "Input string",
-            (text2image_generate_docstring + std::string(" \n ")).c_str()
-        );
+            (text2image_generate_docstring + std::string(" \n ")).c_str())
+        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));;
 }
