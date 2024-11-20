@@ -360,7 +360,11 @@ public:
     }
 
     ov::Tensor decode(const ov::Tensor latent) override {
-        return m_vae->decode(latent);
+        ov::Tensor unpacked_latent = unpack_latents(latent,
+                                                m_generation_config.height,
+                                                m_generation_config.width,
+                                                m_vae->get_vae_scale_factor());
+        return m_vae->decode(unpacked_latent);
     }
 
 private:
