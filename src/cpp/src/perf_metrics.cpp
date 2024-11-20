@@ -7,7 +7,8 @@
 #include <numeric>
 #include <cmath>
 
-namespace {
+namespace ov {
+namespace genai {
 
 ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
     if (durations.size() == 0) {
@@ -28,11 +29,6 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
     float std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
     return {mean, std};
 }
-
-} // namespace
-
-namespace ov {
-namespace genai {
 
 float PerfMetrics::get_load_time() {
     return load_time;

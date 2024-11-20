@@ -13,6 +13,7 @@ from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import json
 import time
 import typing
+import numpy as np
 
 
 @functools.lru_cache(1)
@@ -586,3 +587,13 @@ def test_perf_metrics(model_descr, test_sample):
     assert perf_metrics.get_generate_duration().mean > 0
     assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_features_extraction_duration().mean > 0
+
+    # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
+    whisper_raw_metrics = perf_metrics.whisper_raw_metrics
+
+    raw_dur = np.array(whisper_raw_metrics.features_extraction_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
+    assert np.allclose(mean_dur, np.mean(raw_dur))
+    assert np.allclose(std_dur, np.std(raw_dur))

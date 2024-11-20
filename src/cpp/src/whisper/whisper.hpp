@@ -23,7 +23,7 @@ struct Segment {
 struct WhisperGenerateResult {
     std::vector<int64_t> output_tokens;
     std::optional<std::vector<Segment>> segments = std::nullopt;
-    PerfMetrics perf_metrics;
+    WhisperPerfMetrics perf_metrics;
 };
 
 WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
