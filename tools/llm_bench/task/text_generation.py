@@ -194,12 +194,24 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         if args['infer_count'] is not None:
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
+    gen_config = model.get_generation_config()
+    gen_config.max_new_tokens = max_gen_tokens
+    gen_config.num_beams = args["num_beams"]
+    gen_config.do_sample = False
+    if args.get('draft_model', ''):
+        config_info = "Speculative decoding config: "
+        if args.get('num_assistant_tokens', None):
+            gen_config.num_assistant_tokens = args['num_assistant_tokens']
+            config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
+        if args.get('assistant_confidence_threshold', None):
+            gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
+            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+        log.info(config_info)
     start = time.perf_counter()
-    generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], do_sample=False)
+    generation_result = model.generate(input_text_list, gen_config)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
-
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
@@ -314,8 +326,21 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         mem_consumption.start_collect_memory_consumption()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
+    gen_config = model.get_generation_config()
+    gen_config.max_new_tokens = max_gen_tokens
+    gen_config.num_beams = args["num_beams"]
+    gen_config.do_sample = False
+    if args.get('draft_model', ''):
+        config_info = "Speculative decoding config: "
+        if args.get("num_assistant_tokens", None):
+            gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+            config_info += f'num_assistant_tokens {args["num_assistant_tokens"]}'
+        if args.get("assistant_confidence_threshold", None):
+            gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
+            config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
+        log.info(config_info)
     start = time.perf_counter()
-    generated_tokens = model.generate(input_data, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer, do_sample=False).tokens
+    generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()

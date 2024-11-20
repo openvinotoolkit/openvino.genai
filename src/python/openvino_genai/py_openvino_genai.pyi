@@ -1247,6 +1247,8 @@ class Text2ImagePipeline:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.

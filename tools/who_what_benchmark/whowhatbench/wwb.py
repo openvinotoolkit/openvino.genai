@@ -579,8 +579,9 @@ def print_text_results(evaluator):
 
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
+    pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
-        top_k=1, metric=metric_of_interest)
+        top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         logger.info(
             "--------------------------------------------------------------------------------------"
@@ -620,7 +621,9 @@ def main():
             args.genai,
         )
         all_metrics_per_question, all_metrics = evaluator.score(
-            target_model, evaluator.get_generation_fn() if args.genai else None
+            target_model,
+            evaluator.get_generation_fn() if args.genai else None,
+            output_dir=args.output
         )
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
@@ -632,6 +635,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
+            evaluator.dump_predictions(os.path.join(args.output, "target.json"))
 
     if args.verbose and args.target_model is not None:
         if args.model_type == "text" or args.model_type == "visual-text":

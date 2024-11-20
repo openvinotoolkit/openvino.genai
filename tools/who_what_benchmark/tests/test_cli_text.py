@@ -121,6 +121,7 @@ def test_text_output_directory():
         assert "Metrics for model" in result.stderr
         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
+        assert os.path.exists(os.path.join(temp_dir, "target.json"))
 
 
 def test_text_verbose():
@@ -142,8 +143,7 @@ def test_text_verbose():
 
 
 def test_text_language_autodetect():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
+    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv").name
 
     result = run_wwb(
         [
