@@ -51,11 +51,11 @@ endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
-             COMPONENTS Runtime
+             COMPONENTS Runtime Threading
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
     find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
-                 COMPONENTS Runtime
+                 COMPONENTS Runtime Threading
                  PATHS "${OpenVINO_DIR_PY}")
 endif()
 
