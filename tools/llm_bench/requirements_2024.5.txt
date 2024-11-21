@@ -7,7 +7,7 @@ torch==2.5.1
 transformers==4.46.2
 diffusers==0.31.0
 openvino==2024.5.0
-#optimum is in dependency list of optimum-intel
+optimum~=1.23.3
 git+https://github.com/huggingface/optimum-intel.git@d35737671ec226a66c495159588b7603066e1b07#egg=optimum-intel
 nncf ~= 2.14.0
 packaging==24.1
