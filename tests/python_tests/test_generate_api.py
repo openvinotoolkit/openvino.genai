@@ -848,3 +848,29 @@ def test_batch_switch():
     pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
     pipe.generate(["a"], max_new_tokens=2)
     pipe.generate(["1", "2"], max_new_tokens=2)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_stop_token_ids():
+    pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    res = pipe.generate(
+        ov.Tensor([(1,)]),
+        max_new_tokens=3,
+        stop_token_ids={-1, 9935},
+        include_stop_str_in_output=False
+    )
+    assert 2 == len(res.tokens[0])
+    assert 9935 in res.tokens[0]
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_stop_strings():
+    pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    res = pipe.generate(
+        "",
+        max_new_tokens=5,
+        stop_strings={"ignored", "боль"}
+    )
+    assert "боль" not in res

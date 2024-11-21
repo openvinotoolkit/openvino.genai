@@ -41,9 +41,9 @@ char generation_config_docstring[] = R"(
     ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
     eos_token_id:  token_id of <eos> (end of sentence)
     min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-    stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
     include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-    stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
     echo:           if set to true, the model will echo the prompt in the output.
     logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                     Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -87,6 +87,9 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
         .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
+        .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
+        .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
+        .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("num_beam_groups", &GenerationConfig::num_beam_groups)
         .def_readwrite("num_beams", &GenerationConfig::num_beams)
         .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)
