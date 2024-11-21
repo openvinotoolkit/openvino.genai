@@ -633,6 +633,11 @@ StaticLLMPipeline::StaticLLMPipeline(
     }
     // Initialize tensors
     prepare_for_new_conversation();
+
+    // If eos_token_id was not provided, take value
+    if (m_generation_config.eos_token_id == -1) {
+        m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    }
 };
 
 StaticLLMPipeline::StaticLLMPipeline(

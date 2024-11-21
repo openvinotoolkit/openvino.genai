@@ -24,6 +24,7 @@ temp/
 .repo/
 CMakeLists.txt.user
 CMakeUserPresets.json
+.env
 
 *.project
 *.cproject
