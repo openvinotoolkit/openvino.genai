@@ -38,9 +38,9 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param eos_token_id token_id of <eos> (end of sentence)
  * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
  *
- * @param stop_strings vector of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+ * @param stop_strings A set of strings that will cause pipeline to stop generating further tokens.
  * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
- * @param stop_token_ids vector of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+ * @param stop_token_ids A set of tokens that will cause pipeline to stop generating further tokens.
  * @param echo if set to true, output will include user prompt (default: false).
  * @param logprobs number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
  *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -154,7 +154,7 @@ static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};
 static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
 static constexpr ov::Property<size_t> min_new_tokens{"min_new_tokens"};
-static constexpr ov::Property<std::vector<std::string>> stop_strings{"stop_strings"};
+static constexpr ov::Property<std::set<std::string>> stop_strings{"stop_strings"};
 static constexpr ov::Property<bool> include_stop_str_in_output{"include_stop_str_in_output"};
 static constexpr ov::Property<std::set<int64_t>> stop_token_ids{"stop_token_ids"};
 
