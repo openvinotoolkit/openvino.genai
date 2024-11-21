@@ -158,7 +158,7 @@ void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationCo
     m_impl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
-        m_impl->m_generation_config.eos_token_id = default_eos_token_id;
+        m_impl->m_generation_config.set_eos_token_id(default_eos_token_id);
 
     m_impl->m_generation_config.validate();
 }

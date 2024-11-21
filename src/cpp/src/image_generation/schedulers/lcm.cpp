@@ -99,7 +99,7 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     assert(skipping_step >= 1 && "The combination of `original_steps x strength` is smaller than `num_inference_steps`");
 
     // LCM Inference Steps Schedule
-    std::reverse(lcm_origin_timesteps.begin(),lcm_origin_timesteps.end());
+    std::reverse(lcm_origin_timesteps.begin(), lcm_origin_timesteps.end());
 
     using numpy_utils::linspace;
     // v1. based on https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
