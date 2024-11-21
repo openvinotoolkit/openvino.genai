@@ -105,7 +105,6 @@ public:
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
-        sequence_group->update_processed_tokens_num(history_size);
         sequence_group->set_sequence_group_ptr(sequence_group);
         requests.push_back(sequence_group);
 
@@ -234,6 +233,15 @@ DecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(prompt, rgbs, generation_config, streamer);
+}
+
+DecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const ov::Tensor& rgb,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
 }
 
 DecodedResults VLMPipeline::generate(

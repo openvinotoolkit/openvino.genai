@@ -152,7 +152,7 @@ public:
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
 
-        const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         m_clip_text_encoder->reshape(batch_size_multiplier);
         m_clip_text_encoder_with_projection->reshape(batch_size_multiplier);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
@@ -168,68 +168,9 @@ public:
         m_vae->compile(device, properties);
     }
 
-    ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& unet_config = m_unet->get_config();
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-
-        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
-                               generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
-        ov::Tensor latent;
-
-        if (initial_image) {
-            latent = m_vae->encode(initial_image, generation_config.generator);
-            if (generation_config.num_images_per_prompt > 1) {
-                ov::Tensor batched_latent(ov::element::f32, latent_shape);
-                for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                    batch_copy(latent, batched_latent, 0, n);
-                }
-                latent = batched_latent;
-            }
-            m_scheduler->add_noise(latent, generation_config.generator);
-        } else {
-            latent = generation_config.generator->randn_tensor(latent_shape);
-
-            // latents are multiplied by 'init_noise_sigma'
-            float * latent_data = latent.data<float>();
-            for (size_t i = 0; i < latent.get_size(); ++i)
-                latent_data[i] *= m_scheduler->get_init_noise_sigma();
-        }
-
-        return latent;
-    }
-
-    ov::Tensor generate(const std::string& positive_prompt,
-                        ov::Tensor initial_image,
-                        const ov::AnyMap& properties) override {
-        ImageGenerationConfig generation_config = m_generation_config;
-        generation_config.update_generation_config(properties);
-
-        if (!initial_image) {
-            // in case of typical text to image generation, we need to ignore 'strength'
-            generation_config.strength = 1.0f;
-        }
-
-        // Stable Diffusion pipeline
-        // see https://huggingface.co/docs/diffusers/using-diffusers/write_own_pipeline#deconstruct-the-stable-diffusion-pipeline
-
-        const auto& unet_config = m_unet->get_config();
-        const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-
-        if (generation_config.height < 0)
-            generation_config.height = unet_config.sample_size * vae_scale_factor;
-        if (generation_config.width < 0)
-            generation_config.width = unet_config.sample_size * vae_scale_factor;
-        check_inputs(generation_config, initial_image);
-
-        m_clip_text_encoder->set_adapters(generation_config.adapters);
-        m_clip_text_encoder_with_projection->set_adapters(generation_config.adapters);
-        m_unet->set_adapters(generation_config.adapters);
-
-        if (generation_config.generator == nullptr) {
-            uint32_t seed = time(NULL);
-            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
-        }
+        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
 
         std::vector<float> time_ids = {static_cast<float>(generation_config.width),
                                        static_cast<float>(generation_config.height),
@@ -351,9 +292,9 @@ public:
 
             ov::Tensor encoder_hidden_states_repeated(encoder_hidden_states.get_element_type(), enc_shape);
             for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                batch_copy(encoder_hidden_states, encoder_hidden_states_repeated, 0, n);
+                numpy_utils::batch_copy(encoder_hidden_states, encoder_hidden_states_repeated, 0, n);
                 if (batch_size_multiplier > 1) {
-                    batch_copy(encoder_hidden_states, encoder_hidden_states_repeated,
+                    numpy_utils::batch_copy(encoder_hidden_states, encoder_hidden_states_repeated,
                         1, generation_config.num_images_per_prompt + n);
                 }
             }
@@ -365,9 +306,9 @@ public:
 
             ov::Tensor add_text_embeds_repeated(add_text_embeds.get_element_type(), t_emb_shape);
             for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                batch_copy(add_text_embeds, add_text_embeds_repeated, 0, n);
+                numpy_utils::batch_copy(add_text_embeds, add_text_embeds_repeated, 0, n);
                 if (batch_size_multiplier > 1) {
-                    batch_copy(add_text_embeds, add_text_embeds_repeated,
+                    numpy_utils::batch_copy(add_text_embeds, add_text_embeds_repeated,
                         1, generation_config.num_images_per_prompt + n);
                 }
             }
@@ -378,9 +319,9 @@ public:
             t_ids_shape[0] *= generation_config.num_images_per_prompt;
             ov::Tensor add_time_ids_repeated(add_time_ids.get_element_type(), t_ids_shape);
             for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                batch_copy(add_time_ids, add_time_ids_repeated, 0, n);
+                numpy_utils::batch_copy(add_time_ids, add_time_ids_repeated, 0, n);
                 if (batch_size_multiplier > 1) {
-                    batch_copy(add_time_ids, add_time_ids_repeated,
+                    numpy_utils::batch_copy(add_time_ids, add_time_ids_repeated,
                         1, generation_config.num_images_per_prompt + n);
                 }
             }
@@ -388,22 +329,103 @@ public:
             m_unet->set_hidden_states("time_ids", add_time_ids_repeated);
         }
 
+        if (unet_config.time_cond_proj_dim >= 0) { // LCM
+            ov::Tensor timestep_cond = get_guidance_scale_embedding(generation_config.guidance_scale - 1.0f, unet_config.time_cond_proj_dim);
+            m_unet->set_hidden_states("timestep_cond", timestep_cond);
+        }
+    }
+
+    ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+        const auto& unet_config = m_unet->get_config();
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+
+        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
+                               generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
+        ov::Tensor latent;
+
+        if (initial_image) {
+            latent = m_vae->encode(initial_image, generation_config.generator);
+            if (generation_config.num_images_per_prompt > 1) {
+                ov::Tensor batched_latent(ov::element::f32, latent_shape);
+                for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
+                    numpy_utils::batch_copy(latent, batched_latent, 0, n);
+                }
+                latent = batched_latent;
+            }
+            m_scheduler->add_noise(latent, generation_config.generator);
+        } else {
+            latent = generation_config.generator->randn_tensor(latent_shape);
+
+            // latents are multiplied by 'init_noise_sigma'
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] *= m_scheduler->get_init_noise_sigma();
+        }
+
+        return latent;
+    }
+
+    ov::Tensor generate(const std::string& positive_prompt,
+                        ov::Tensor initial_image,
+                        const ov::AnyMap& properties) override {
+        ImageGenerationConfig generation_config = m_generation_config;
+        generation_config.update_generation_config(properties);
+
+        if (!initial_image) {
+            // in case of typical text to image generation, we need to ignore 'strength'
+            generation_config.strength = 1.0f;
+        }
+
+        // Stable Diffusion pipeline
+        // see https://huggingface.co/docs/diffusers/using-diffusers/write_own_pipeline#deconstruct-the-stable-diffusion-pipeline
+
+        const auto& unet_config = m_unet->get_config();
+        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+
+        if (generation_config.height < 0)
+            generation_config.height = unet_config.sample_size * vae_scale_factor;
+        if (generation_config.width < 0)
+            generation_config.width = unet_config.sample_size * vae_scale_factor;
+        check_inputs(generation_config, initial_image);
+
+        m_clip_text_encoder->set_adapters(generation_config.adapters);
+        m_clip_text_encoder_with_projection->set_adapters(generation_config.adapters);
+        m_unet->set_adapters(generation_config.adapters);
+
+        if (generation_config.generator == nullptr) {
+            uint32_t seed = time(NULL);
+            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
+        }
+
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
+
+        // compute text encoders and set hidden states
+        compute_hidden_states(positive_prompt, generation_config);
 
         // preparate initial latents
         ov::Tensor latent = prepare_latents(initial_image, generation_config);
 
+        // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
+        // use callback if defined
+        std::function<bool(size_t, ov::Tensor&)> callback;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        bool do_callback = callback_iter != properties.end();
+        if (do_callback) {
+            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
+        }
+
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
-            batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
+            numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
+                numpy_utils::batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -436,16 +458,22 @@ public:
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
+
+            if (do_callback) {
+                if (callback(inference_step, denoised)) {
+                    return ov::Tensor(ov::element::u8, {});
+                }
+            }
         }
 
-        return m_vae->decode(denoised);
+        return decode(denoised);
+    }
+
+    ov::Tensor decode(const ov::Tensor latent) override {
+        return m_vae->decode(latent);
     }
 
 private:
-    bool do_classifier_free_guidance(float guidance_scale) const {
-        return guidance_scale > 1.0f && m_unet->get_config().time_cond_proj_dim < 0;
-    }
-
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_unet != nullptr);
         assert(m_vae != nullptr);
@@ -475,7 +503,7 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
+        const bool is_classifier_free_guidance = m_unet->do_classifier_free_guidance(generation_config.guidance_scale);
         const char * const pipeline_name = "Stable Diffusion XL";
 
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by ", pipeline_name);

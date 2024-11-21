@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+#include <type_traits>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
@@ -11,6 +12,16 @@
 namespace ov {
 namespace genai {
 namespace utils {
+
+// Variable template that checks if a type has begin() and end() member functions
+template<typename, typename = void>
+constexpr bool is_container = false;
+ 
+template<typename T>
+constexpr bool is_container<T,
+    std::void_t<decltype(std::declval<T>().begin()),
+                decltype(std::declval<T>().end())>> = true;
+
 
 Tensor init_attention_mask(const Tensor& position_ids);
 
@@ -31,7 +42,16 @@ template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
     if (it != config_map.end()) {
-        param = it->second.as<typename OmitOptional<T>::value>();
+        if (it->second.empty()) {
+            if (ov::genai::utils::is_container<T>)
+                param = T{};
+            else {
+                OPENVINO_THROW("Got empty ov::Any for parameter name: " + name);
+            }
+        }
+        else {
+            param = it->second.as<typename OmitOptional<T>::value>();
+        }
     }
 }
 

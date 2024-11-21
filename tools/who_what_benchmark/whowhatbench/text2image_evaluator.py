@@ -84,14 +84,16 @@ class Text2ImageEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
-
-    def score(self, model, gen_image_fn=None):
+    def score(self, model, gen_image_fn=None, output_dir=None, **kwargs):
         model.resolution = self.resolution
+        if output_dir is None:
+            image_folder = os.path.join(self.gt_dir, "target")
+        else:
+            image_folder = os.path.join(output_dir, "target")
         predictions = self._generate_data(
-            model, gen_image_fn, os.path.join(self.gt_dir, "target")
+            model, gen_image_fn, image_folder
         )
+        self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}
@@ -120,15 +122,6 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        if hasattr(model, "reshape") and self.resolution is not None:
-            if gen_image_fn is None:
-                model.reshape(
-                    batch_size=1,
-                    height=self.resolution[0],
-                    width=self.resolution[1],
-                    num_images_per_prompt=1,
-                )
-
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
             output = model(
                 prompt,
