@@ -65,15 +65,13 @@ if(TARGET openvino_tokenizers)
 endif()
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
-find_package(TBB REQUIRED)
-
 target_include_directories(${TARGET_NAME}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime TBB::tbb PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::threading PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
