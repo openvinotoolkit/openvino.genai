@@ -63,27 +63,33 @@ void init_tokenizer(py::module_& m) {
 
         .def(
             "decode",
-            [](Tokenizer& tok, std::vector<int64_t>& tokens) -> py::str {
-                return pyutils::handle_utf8(tok.decode(tokens));
+            [](Tokenizer& tok, std::vector<int64_t>& tokens, bool skip_special_tokens) -> py::str {
+                ov::AnyMap detokenization_params;
+                detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"),
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a sequence into a string prompt.)"
         )
 
         .def(
             "decode",
-            [](Tokenizer& tok, ov::Tensor& tokens) -> py::typing::List<py::str> {
-                return pyutils::handle_utf8(tok.decode(tokens));
+            [](Tokenizer& tok, ov::Tensor& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
+                ov::AnyMap detokenization_params;
+                detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"),
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode tensor into a list of string prompts.)")
 
         .def(
             "decode",
-            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::typing::List<py::str> {
-                return pyutils::handle_utf8(tok.decode(tokens));
+            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
+                ov::AnyMap detokenization_params;
+                detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"),
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,
