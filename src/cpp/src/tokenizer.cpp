@@ -10,12 +10,11 @@
 #include <jinja2cpp/generic_list.h>
 #include <jinja2cpp/generic_list_iterator.h>
 
-#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
-#include "make_combine_segments_stateful.hpp"
+#include "make_tokenizer_stateful.hpp"
 #include "tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
 #include "json_utils.hpp"
@@ -157,9 +156,7 @@ public:
         manager_tok.run_passes(ov_tokenizer);
         
         ov::pass::Manager manager_detok;
-        manager_detok.register_pass<ov::pass::VisualizeTree>("before.svg");
         manager_detok.register_pass<MakeVocabDecoderSatateful>();
-        manager_detok.register_pass<ov::pass::VisualizeTree>("after.svg");
         manager_detok.run_passes(ov_detokenizer);
         
         m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
