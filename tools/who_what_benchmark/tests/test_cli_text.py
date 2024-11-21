@@ -143,8 +143,7 @@ def test_text_verbose():
 
 
 def test_text_language_autodetect():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
+    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv").name
 
     result = run_wwb(
         [

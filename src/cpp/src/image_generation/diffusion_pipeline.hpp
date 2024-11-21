@@ -81,7 +81,11 @@ public:
 
     virtual ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const = 0;
 
-    virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties) = 0;
+    virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;
+
+    virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties) = 0;
+
+    virtual ov::Tensor decode(const ov::Tensor latent) = 0;
 
     virtual ~DiffusionPipeline() = default;
 

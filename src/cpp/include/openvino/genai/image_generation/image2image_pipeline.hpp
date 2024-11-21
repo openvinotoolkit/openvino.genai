@@ -97,7 +97,7 @@ public:
     // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
     ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
 
-    ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties = {});
+    ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(

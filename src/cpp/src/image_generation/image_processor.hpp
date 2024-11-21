@@ -17,40 +17,46 @@ namespace genai {
 
 class IImageProcessor {
 public:
+    explicit IImageProcessor(const std::string& device) :
+        m_device(device) {
+    }
+
     virtual ~IImageProcessor() = default;
 
-    ov::Tensor preprocess(ov::Tensor image) override {
-        m_request.set_input_tensor(mask_image);
+    virtual ov::Tensor execute(ov::Tensor image) {
+        m_request.set_input_tensor(image);
         m_request.infer();
         return m_request.get_output_tensor();
     }
 
 protected:
-    std::shared_ptr<ov::Model create_empty_model() {
+    std::shared_ptr<ov::Model> create_empty_model() {
         auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
         auto result = std::make_shared<ov::op::v0::Result>(parameter);
         auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
     }
 
-    void compile(ov::shared_ptr<ov::Model> model, const std::string& device) {
+    void compile(std::shared_ptr<ov::Model> model) {
         // TODO: support GPU as well
-        m_request = utils::singleton_core().compile_model(model, "CPU").create_infer_request();
+        m_request = utils::singleton_core().compile_model(model, m_device).create_infer_request();
     }
 
     ov::InferRequest m_request;
+    std::string m_device;
 };
 
 class ImageProcessor : public IImageProcessor {
 public:
-    explicit ImageProcessor(bool do_normalize = true, bool do_binarize = false) {
+    explicit ImageProcessor(bool do_normalize = true, bool do_binarize = false) :
+        IImageProcessor("CPU") {
         auto image_processor_model = create_empty_model();
         merge_image_preprocessing(image_processor_model, do_normalize, do_binarize);
 
         // TODO: support GPU as well
-        compile(image_processor_model, "CPU");
+        compile(image_processor_model);
     }
 
-    static void merge_image_preprocessing(ov::shared_ptr<ov::Model> model, bool do_normalize = true, bool do_binarize = false) {
+    static void merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize = true, bool do_binarize = false) {
         OPENVINO_ASSERT(do_normalize ^ do_binarize, "Both binarize and normalize are not supported");
 
         // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L90-L110
@@ -93,35 +99,23 @@ public:
 
         ppp.build();
     }
-
-private:
-    std::shared_ptr<ov::Model create_empty_model() {
-        auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
-        auto result = std::make_shared<ov::op::v0::Result>(parameter);
-        auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
-    }
-
-    ov::InferRequest m_request;
 };
 
 class ImageResizer : public IImageProcessor {
 public:
-    ImageResizer(const size_t dst_height, const size_t dst_width) {
+    ImageResizer(const size_t dst_height, const size_t dst_width) :
+        IImageProcessor("CPU") {
         auto resize_model = create_empty_model();
         ov::preprocess::PrePostProcessor ppp(resize_model);
-
-        size_t dst_height = mask_image.get_shape()[1] / m_vae->get_vae_scale_factor();
-        size_t dst_width = mask_image.get_shape()[2] / m_vae->get_vae_scale_factor();
 
         ppp.input().tensor().set_layout("NCHW");
         ppp.input().preprocess().resize(ov::preprocess::ResizeAlgorithm::RESIZE_NEAREST, dst_height, dst_width);
 
         resize_model = ppp.build();
 
-        // TODO: support GPU as well
-        compile(resize_model, "CPU");
+        compile(resize_model);
     }
-}
+};
 
 } // namespace genai
 } // namespace ov

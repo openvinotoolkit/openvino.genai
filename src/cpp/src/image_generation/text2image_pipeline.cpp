@@ -146,5 +146,9 @@ ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, cons
     return m_impl->generate(positive_prompt, {}, {}, properties);
 }
 
+ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {
+    return m_impl->decode(latent);
+}
+
 }  // namespace genai
 }  // namespace ov
