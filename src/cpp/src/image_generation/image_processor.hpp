@@ -33,7 +33,7 @@ protected:
     std::shared_ptr<ov::Model> create_empty_model() {
         auto parameter = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
         auto result = std::make_shared<ov::op::v0::Result>(parameter);
-        auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
+        return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
     }
 
     void compile(std::shared_ptr<ov::Model> model) {

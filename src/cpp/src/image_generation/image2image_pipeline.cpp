@@ -21,7 +21,7 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
 
     if (class_name == "StableDiffusionPipeline" || 
         class_name == "LatentConsistencyModelPipeline" ||
-        class_name == "StableDiffusionInpaintPipeline")   {
+        class_name == "StableDiffusionInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);

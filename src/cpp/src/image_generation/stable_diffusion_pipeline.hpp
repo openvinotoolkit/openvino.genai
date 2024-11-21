@@ -110,6 +110,22 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
 
         update_adapters_from_properties(properties, m_generation_config.adapters);
+
+                // create image & mask processors
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+            const bool do_normalize = true, do_binarize = false;
+            m_image_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
+        }
+
+        if (m_pipeline_type == PipelineType::INPAINTING) {
+            const bool do_normalize = false, do_binarize = true;
+            m_mask_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
+
+            // TODO: allow to specify target shape dynamically
+            size_t dst_height = 512 / m_vae->get_vae_scale_factor();
+            size_t dst_width = 512 / m_vae->get_vae_scale_factor();
+            m_mask_resizer = std::make_shared<ImageResizer>(dst_height, dst_width);
+        }
     }
 
     StableDiffusionPipeline(
@@ -143,10 +159,11 @@ public:
         m_vae->compile(device, properties);
 
         // create image & mask processors
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
             const bool do_normalize = true, do_binarize = false;
             m_image_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
         }
+
         if (m_pipeline_type == PipelineType::INPAINTING) {
             const bool do_normalize = false, do_binarize = true;
             m_mask_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
