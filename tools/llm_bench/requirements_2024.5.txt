@@ -1,12 +1,13 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy==2.0.2
---extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 auto_gptq==0.7.1
 pillow==11.0.0
 torch==2.5.1
 transformers==4.46.2
 diffusers==0.31.0
 openvino==2024.5.0
+openvino-tokenizers==2024.5.0
+openvino_genai==2024.5.0
 optimum~=1.23.3
 git+https://github.com/huggingface/optimum-intel.git@d35737671ec226a66c495159588b7603066e1b07#egg=optimum-intel
 nncf ~= 2.14.0
