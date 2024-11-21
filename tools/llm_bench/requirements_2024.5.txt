@@ -3,7 +3,7 @@ numpy==2.0.2
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 auto_gptq==0.7.1
 pillow==11.0.0
-torch==2.5.1+cpu
+torch==2.5.1
 transformers==4.46.2
 diffusers==0.31.0
 openvino==2024.5.0
