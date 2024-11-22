@@ -395,7 +395,6 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         def get_vae_decoder_step_count(self):
             return 1
 
-
     callback = PerfCollector()
 
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))

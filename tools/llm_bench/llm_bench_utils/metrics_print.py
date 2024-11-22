@@ -105,7 +105,7 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, 
     if has_text_encoder_time:
         log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
     log_str += (
-        f"unet step count: {stable_diffusion.get_unet_step_count()}, " 
+        f"unet step count: {stable_diffusion.get_unet_step_count()}, "
         f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}")
     log.info(log_str)
 
