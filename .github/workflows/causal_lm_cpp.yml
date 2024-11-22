@@ -307,8 +307,8 @@ jobs:
           . ./ov/setupvars.sh
           echo "why sun is yellow?" > ./prompt.txt
           
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > cpp.txt
-          samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)" > py.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee cpp.txt
+          samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)"| tee py.txt
           python -c "
           with open('cpp.txt', 'r') as f:
             greedy_cp = f.read()
@@ -597,8 +597,8 @@ jobs:
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
 
-          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)" > predictions_greedy.txt
+          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_prompt_lookup.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
