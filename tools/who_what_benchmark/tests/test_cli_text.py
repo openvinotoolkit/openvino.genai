@@ -73,7 +73,7 @@ def test_text_target_model():
 
 @pytest.fixture
 def test_text_gt_data():
-    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv").name
+    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
 
     result = run_wwb(
         [
@@ -160,7 +160,7 @@ def test_text_verbose():
 
 
 def test_text_language_autodetect():
-    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv").name
+    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
 
     result = run_wwb(
         [
@@ -182,8 +182,7 @@ def test_text_language_autodetect():
 
 
 def test_text_hf_model():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
+    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
 
     result = run_wwb(
         [

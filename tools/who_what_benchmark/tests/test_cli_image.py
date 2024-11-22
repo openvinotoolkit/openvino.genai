@@ -70,7 +70,7 @@ def test_image_model_types(model_id, model_type, backend):
 )
 def test_image_model_genai(model_id, model_type):
     GT_FILE = "test_sd.csv"
-    MODEL_PATH = tempfile.TemporaryDirectory().name
+    MODEL_PATH = tempfile.TemporaryDirectory(delete=False).name
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,

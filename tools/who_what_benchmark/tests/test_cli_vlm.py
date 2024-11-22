@@ -24,8 +24,8 @@ def run_wwb(args):
     ],
 )
 def test_vlm_basic(model_id, model_type):
-    GT_FILE = tempfile.NamedTemporaryFile(suffix=".csv").name
-    MODEL_PATH = tempfile.TemporaryDirectory().name
+    GT_FILE = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+    MODEL_PATH = tempfile.TemporaryDirectory(delete=False).name
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
