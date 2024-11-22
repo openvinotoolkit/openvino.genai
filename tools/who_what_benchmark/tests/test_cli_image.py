@@ -74,8 +74,9 @@ def test_image_model_genai(model_id, model_type):
         MODEL_PATH = os.path.join(temp_dir, model_id.replace("/", "--"))
 
         result = subprocess.run(["optimum-cli", "export",
-                                "openvino", "-m", model_id,
-                                MODEL_PATH], capture_output=True, text=True)
+                                 "openvino", "-m", model_id,
+                                 MODEL_PATH],
+                                capture_output=True, text=True)
         assert result.returncode == 0
 
         wwb_args = [
