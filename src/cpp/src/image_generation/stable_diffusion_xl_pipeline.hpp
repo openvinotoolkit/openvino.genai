@@ -335,34 +335,45 @@ public:
         }
     }
 
-    ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
-        const auto& unet_config = m_unet->get_config();
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+        std::vector<int64_t> timesteps = m_scheduler->get_timesteps();
+        OPENVINO_ASSERT(!timesteps.empty(), "Timesteps are not compute yet");
+        int64_t latent_timestep = timesteps.front();
+
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        const bool is_inpainting = m_pipeline_type == PipelineType::INPAINTING,
+            is_strength_max = is_inpainting && generation_config.strength == 1.0f,
+            is_inpainting_model = is_inpainting && m_unet->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1),
+            return_image_latent = is_inpainting && !is_inpainting_model;
 
-        ov::Shape latent_shape{generation_config.num_images_per_prompt, unet_config.in_channels,
+        ov::Shape latent_shape{generation_config.num_images_per_prompt, m_vae->get_config().latent_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
-        ov::Tensor latent;
+        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
 
-        if (initial_image) {
-            latent = m_vae->encode(initial_image, generation_config.generator);
-            if (generation_config.num_images_per_prompt > 1) {
-                ov::Tensor batched_latent(ov::element::f32, latent_shape);
-                for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                    numpy_utils::batch_copy(latent, batched_latent, 0, n);
-                }
-                latent = batched_latent;
-            }
-            m_scheduler->add_noise(latent, generation_config.generator);
-        } else {
-            latent = generation_config.generator->randn_tensor(latent_shape);
+        if (initial_image && (!is_strength_max || return_image_latent)) {
+            // TODO:
+            // proccesed_image = m_image_processor->execute(initial_image);
+            image_latent = m_vae->encode(proccesed_image, generation_config.generator);
 
-            // latents are multiplied by 'init_noise_sigma'
-            float * latent_data = latent.data<float>();
-            for (size_t i = 0; i < latent.get_size(); ++i)
-                latent_data[i] *= m_scheduler->get_init_noise_sigma();
+            image_latent.copy_to(latent);
+            latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
         }
 
-        return latent;
+        noise = generation_config.generator->randn_tensor(latent_shape);
+
+        if (image_latent) {
+            m_scheduler->add_noise(latent, noise, latent_timestep);
+        } else {
+            latent.set_shape(noise.get_shape());
+
+            // latents are multiplied by 'init_noise_sigma'
+            const float * noise_data = noise.data<const float>();
+            float * latent_data = latent.data<float>();
+            for (size_t i = 0; i < latent.get_size(); ++i)
+                latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
+        }
+
+        return std::make_tuple(latent, proccesed_image, image_latent, noise);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -406,7 +417,8 @@ public:
         compute_hidden_states(positive_prompt, generation_config);
 
         // preparate initial latents
-        ov::Tensor latent = prepare_latents(initial_image, generation_config);
+        ov::Tensor latent, processed_image, image_latent, noise;
+        std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -551,10 +563,10 @@ private:
     friend class Image2ImagePipeline;
 
     bool m_force_zeros_for_empty_prompt = true;
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_with_projection;
-    std::shared_ptr<UNet2DConditionModel> m_unet;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_with_projection = nullptr;
+    std::shared_ptr<UNet2DConditionModel> m_unet = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
 };
 
 }  // namespace genai

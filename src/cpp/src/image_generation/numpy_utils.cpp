@@ -158,12 +158,16 @@ void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_bat
     ov::Tensor(src, src_start, src_end).copy_to(ov::Tensor(dst, dst_start, dst_end));
 }
 
-ov::Tensor repeat(const ov::Tensor input, const size_t num_images_per_prompt) {
-    ov::Shape repeated_shape = input.get_shape();
-    repeated_shape[0] *= num_images_per_prompt;
+ov::Tensor repeat(const ov::Tensor input, const size_t n_times) {
+    if (n_times == 1)
+        return input;
+
+    ov::Shape input_shape = input.get_shape(), repeated_shape = input_shape;
+    repeated_shape[0] *= n_times;
+
     ov::Tensor tensor_repeated(input.get_element_type(), repeated_shape);
-    for (size_t n = 0; n < num_images_per_prompt; ++n) {
-        batch_copy(input, tensor_repeated, 0, n);
+    for (size_t n = 0; n < n_times; ++n) {
+        batch_copy(input, tensor_repeated, 0, n, input_shape[0]);
     }
     return tensor_repeated;
 }

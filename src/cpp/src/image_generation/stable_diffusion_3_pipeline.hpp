@@ -474,27 +474,28 @@ public:
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds_inp);
     }
 
-    ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
                                m_transformer->get_config().in_channels,
                                generation_config.height / vae_scale_factor,
                                generation_config.width / vae_scale_factor};
 
-        ov::Tensor latent(ov::element::f32, {});
+        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
 
         if (initial_image) {
             OPENVINO_THROW("StableDiffusion3 image to image is not implemented");
         } else {
-            latent = generation_config.generator->randn_tensor(latent_shape);
+            noise = generation_config.generator->randn_tensor(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
+            const float * noise_data = noise.data<const float>();
             float * latent_data = latent.data<float>();
             for (size_t i = 0; i < latent.get_size(); ++i)
-                latent_data[i] *= m_scheduler->get_init_noise_sigma();
+                latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
         }
 
-        return latent;
+        return std::make_tuple(latent, proccesed_image, image_latent, noise);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -535,7 +536,8 @@ public:
         compute_hidden_states(positive_prompt, generation_config);
 
         // 5. Prepare latent variables
-        ov::Tensor latent = prepare_latents(initial_image, generation_config);
+        ov::Tensor latent, processed_image, image_latent, noise;
+        std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -676,12 +678,12 @@ private:
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;
 
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_1;
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_1 = nullptr;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2 = nullptr;
     // TODO:
-    // std::shared_ptr<T5EncoderModel> m_t5_encoder;
-    std::shared_ptr<SD3Transformer2DModel> m_transformer;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    // std::shared_ptr<T5EncoderModel> m_t5_encoder = nullptr;
+    std::shared_ptr<SD3Transformer2DModel> m_transformer = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
 };
 
 }  // namespace genai

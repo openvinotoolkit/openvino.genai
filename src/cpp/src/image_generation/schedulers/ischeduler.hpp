@@ -26,11 +26,7 @@ public:
     virtual std::map<std::string, ov::Tensor> step(
         ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) = 0;
 
-    virtual void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const = 0;
-
-    virtual void add_noise(ov::Tensor init_latent, ov::Tensor rand_tensor, int64_t latent_timestep) const {
-        OPENVINO_THROW("Scheduler doesn't support `add_noise` method with extra parameters");
-    }
+    virtual void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const = 0;
 
     virtual float calculate_shift(size_t image_seq_len) {
         OPENVINO_THROW("Scheduler doesn't support `calculate_shift` method");

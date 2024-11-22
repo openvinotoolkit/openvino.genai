@@ -255,19 +255,12 @@ public:
         std::string prompt_2_str =
             generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
-        m_clip_text_encoder->infer(positive_prompt, "", false);
-        ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
+        m_clip_text_encoder->infer(positive_prompt, {}, false);
+        ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
+        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
 
-        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
-
-        ov::Tensor pooled_prompt_embeds, prompt_embeds;
-        if (generation_config.num_images_per_prompt == 1) {
-            pooled_prompt_embeds = pooled_prompt_embeds_out;
-            prompt_embeds = prompt_embeds_out;
-        } else {
-            pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds_out, generation_config.num_images_per_prompt);
-            prompt_embeds = numpy_utils::repeat(prompt_embeds_out, generation_config.num_images_per_prompt);
-        }
+        pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
+        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
 
         // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
         ov::Shape text_ids_shape = {prompt_embeds.get_shape()[1], 3};
@@ -287,8 +280,7 @@ public:
         m_transformer->set_hidden_states("img_ids", latent_image_ids);
     }
 
-    ov::Tensor prepare_latents(ov::Tensor initial_image,
-                               const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
@@ -299,16 +291,16 @@ public:
                                num_channels_latents,
                                height,
                                width};
-        ov::Tensor latent(ov::element::f32, {});
+        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
 
         if (initial_image) {
             OPENVINO_THROW("StableDiffusion3 image to image is not implemented");
         } else {
-            ov::Tensor rand_tensor = generation_config.generator->randn_tensor(latent_shape);
-            latent = pack_latents(rand_tensor, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+            noise = generation_config.generator->randn_tensor(latent_shape);
+            latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
         }
 
-        return latent;
+        return std::make_tuple(latent, proccesed_image, image_latent, noise);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -340,7 +332,8 @@ public:
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
-        ov::Tensor latents = prepare_latents(initial_image, m_custom_generation_config);
+        ov::Tensor latents, processed_image, image_latent, noise;
+        std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
 
         size_t image_seq_len = latents.get_shape()[1];
         float mu = m_scheduler->calculate_shift(image_seq_len);
@@ -453,10 +446,10 @@ private:
         }
     }
 
-    std::shared_ptr<FluxTransformer2DModel> m_transformer;
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     ImageGenerationConfig m_custom_generation_config;
 };
 
