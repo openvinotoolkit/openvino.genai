@@ -219,6 +219,7 @@ def test_add_special_tokens(add_special_tokens, prompt):
     assert np.all(res_genai == res_hf)
 
 @pytest.mark.precommit
+@pytest.mark.xfail(reason="Need to turn them back on when openvino_tokenizers will be updated.")
 @pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("skip_special_tokens", [True, False])
@@ -235,6 +236,6 @@ def test_add_special_tokens(add_special_tokens, skip_special_tokens, prompt):
     assert np.all(res_genai == res_hf)
     
     # Decode with skip_special_tokens
-    decoded_genai = genai_tokenizer.decode(res_genai, skip_special_tokens=skip_special_tokens)
+    decoded_genai = genai_tokenizer.decode(res_genai, skip_special_tokens=skip_special_tokens)[0]
     decoded_hf = hf_tokenizer.decode(res_hf[0], skip_special_tokens=skip_special_tokens)
     assert decoded_genai == decoded_hf

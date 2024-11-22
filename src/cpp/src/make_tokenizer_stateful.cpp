@@ -48,25 +48,20 @@ bool ov::genai::MakeCombineSegmentsSatateful::run_on_model(const std::shared_ptr
 }
 
 bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov::Model>& model) {
-
     std::shared_ptr<ov::Node> vocab_decoder_node;
     for (auto node: model->get_ordered_ops()) {
-        if (strcmp(node->get_type_info().name, "VocabDecoder") == 0) {
+        if (strcmp(node->get_type_info().name, "VocabDecoder") == 0)
             vocab_decoder_node = node;
-        }
     }
-    auto val = vocab_decoder_node->input_value(4);
-    auto val_type = vocab_decoder_node->input_value(4).get_element_type();
 
-    if (!vocab_decoder_node || !vocab_decoder_node->input_value(4).get_element_type().is_integral_number()) {
+    if (!vocab_decoder_node || vocab_decoder_node->get_input_size() < 5)
         return false;
-    }
+    if (!vocab_decoder_node->input_value(4).get_element_type().is_integral_number())
+        return false;
     
     std::shared_ptr<v0::Constant> skip_tokens_const = std::dynamic_pointer_cast<v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(4));
-    if (!skip_tokens_const) {
+    if (!skip_tokens_const)
         return false;
-    }
-
 
     auto start_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{0});
     auto int_max_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{std::numeric_limits<int>::max()});
