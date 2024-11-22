@@ -149,7 +149,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             avg_input_size = int(avg_input_size / index_num)
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
-            latency_unit = 'token' if is_text_gen is True else 'step'
+            tput_unit = latency_unit = 'token' if is_text_gen is True else 'step'
             if batch_size > 1:
                 if is_text_gen is True:
                     latency_unit = '{}tokens'.format(batch_size)
@@ -157,7 +157,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                     latency_unit = '{}steps'.format(batch_size)
             avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
-            avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {latency_unit}s/s'
+            avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {tput_unit}s/s'
             prefix = f'[ INFO ] [Average] P[{p_idx}]L[{loop_idx}]' if loop_idx != -1 else f'[ INFO ] [Average] P[{p_idx}]'
             if is_text_gen is True:
                 output_info = ''
