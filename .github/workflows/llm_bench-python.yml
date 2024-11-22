@@ -70,7 +70,7 @@ jobs:
       run: |
         optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
         python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1 --optimum
-    - name: Test tiny-stable-diffusion on Linux
+    - name: Test tiny-stable-diffusion on Linux Optimum Intel
       run: |
         optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd/pytorch/dldt/FP16/
         python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum
