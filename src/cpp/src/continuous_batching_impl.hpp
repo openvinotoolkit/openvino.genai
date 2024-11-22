@@ -57,18 +57,22 @@ public:
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
-                           const ov::AnyMap& properties);
+                           const ov::AnyMap& properties,
+                           bool is_validation_mode_enabled = false);
 
     ContinuousBatchingImpl(const std::filesystem::path& models_path,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
                            const ov::AnyMap& properties,
-                           const ov::AnyMap& tokenizer_properties)
+                           const ov::AnyMap& tokenizer_properties,
+                           bool is_validation_mode_enabled = false)
     : ContinuousBatchingImpl{ models_path,
                               Tokenizer(models_path, tokenizer_properties),
                               scheduler_config,
                               device,
-                              properties } {}
+                              properties } {
+        m_is_validation_mode_enabled = is_validation_mode_enabled;
+    }
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

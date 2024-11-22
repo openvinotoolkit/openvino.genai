@@ -27,19 +27,63 @@ bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
 }
 
 void ContinuousBatchingPipeline::PromptLookupImpl::step() {
-    // generate candidates by draft model
-    ManualTimer draft_timer("speculative_decoding: candidate_generation()");
-    draft_timer.start();
-    // place to call generate_candidates
-    draft_timer.end();
-    m_sd_metrics.draft_duration += draft_timer.get_duration();
+    ManualTimer candidates_timer("prompt_lookup_decoding: fill_candidates()");
+    candidates_timer.start();
+    m_pipeline->fill_candidates();
+    candidates_timer.end();
+    m_sd_metrics.draft_duration += candidates_timer.get_duration();
+    auto generated_len_before = m_pipeline->get_generated_request_len();
 
-    ManualTimer main_timer("speculative_decoding: main_model: step()");
+    ManualTimer main_timer("prompt_lookup_decoding: step()");
     main_timer.start();
     m_pipeline->step();
     main_timer.end();
     m_sd_metrics.main_duration += main_timer.get_duration();
     m_pipeline_metrics = m_pipeline->get_metrics();
+    auto generated_len_after = m_pipeline->get_generated_request_len();
+
+    for (const auto request : generated_len_before) {
+        auto request_id = request.first;
+        auto prev_validation_len = request.second.second;
+        if (prev_validation_len == 0) {
+            continue;
+        }
+        size_t num_matches = prev_validation_len;
+        float acceptance_rate = 1.f;
+        if (generated_len_after.count(request.first)) {
+            auto present_req_len = generated_len_after.at(request.first).first;
+            auto prev_full_req_len = request.second.first;
+
+            num_matches = (present_req_len - prev_full_req_len - 1);
+            acceptance_rate = static_cast<float>(num_matches) / static_cast<float>(prev_validation_len);
+        }        
+        m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
+        m_sd_metrics.update_draft_accepted_tokens(request_id, num_matches);
+    }
+
+    if (generated_len_after.empty()) {
+        m_sd_metrics.total_duration = m_sd_metrics.draft_duration + m_sd_metrics.main_duration;
+        std::cout << "\n=============================== " << std::endl;
+        std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
+        std::cout << "Draft model duration, ms: " << m_sd_metrics.draft_duration << std::endl;
+        std::cout << "Main model duration, ms: " << m_sd_metrics.main_duration << std::endl;
+        std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
+        std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
+        std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(-1) << std::endl;
+        std::cout << "=============================== " << std::endl;
+        for (const auto& i : m_sd_metrics.get_requests_id()) {
+            std::cout << "REQUEST_ID: " << i << std::endl;
+            std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(i) << std::endl;
+            std::cout << "Token per sec: " << float(m_sd_metrics.get_generated_len(i)) / m_sd_metrics.total_duration << std::endl;
+            std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(i) << std::endl;
+            std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(i) << std::endl;
+            std::cout << "Generated tokens: " << m_sd_metrics.get_generated_len(i) << std::endl;
+            std::cout << "Accepted token rate, %: " << m_sd_metrics.get_draft_accepted_tokens_percentage(i) << std::endl;
+            std::cout << "=============================== " << std::endl;
+        }
+        m_sd_metrics.print_acceptance_rates();
+        m_sd_metrics.clean_up();
+    }
 }
 
 std::vector<EncodedGenerationResult>

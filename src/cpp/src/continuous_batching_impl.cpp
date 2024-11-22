@@ -15,8 +15,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& properties,
+    bool is_validation_mode_enabled) {
     m_tokenizer = tokenizer;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
     m_generation_config = utils::from_config_json_if_exists(models_path);
 
     ov::Core core;

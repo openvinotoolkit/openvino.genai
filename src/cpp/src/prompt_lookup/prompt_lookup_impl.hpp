@@ -16,6 +16,7 @@ protected:
     SpeculativeDecodingMetrics m_sd_metrics;
     
 public:
+// models_path, scheduler_config, device, properties_without_draft_model, tokenizer_properties
     PromptLookupImpl(
         const std::filesystem::path& models_path,
         const Tokenizer& tokenizer,
@@ -23,6 +24,17 @@ public:
         const std::string& device,
         const ov::AnyMap& properties) {
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties);
+        m_tokenizer = tokenizer;
+    };
+
+    PromptLookupImpl(
+        const std::filesystem::path& models_path,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::AnyMap& tokenizer_properties = {}) {
+        m_tokenizer = Tokenizer(models_path, tokenizer_properties);
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, m_tokenizer, scheduler_config, device, properties);
     };
 
     GenerationHandle add_request(uint64_t request_id,
