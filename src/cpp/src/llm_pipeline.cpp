@@ -428,7 +428,8 @@ public:
         tokenizer,
         scheduler_config,
         device,
-        plugin_config} {
+        plugin_config
+    } {
         m_generation_config = m_impl.get_config();
     }
 
@@ -442,7 +443,8 @@ public:
         m_tokenizer,
         scheduler_config,
         device,
-        plugin_config} {
+        plugin_config
+    } {
         m_generation_config = m_impl.get_config();
     }
 
