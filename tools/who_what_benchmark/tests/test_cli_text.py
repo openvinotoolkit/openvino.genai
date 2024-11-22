@@ -73,28 +73,28 @@ def test_text_target_model():
 
 @pytest.fixture
 def test_text_gt_data():
-    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_name = os.path.join(temp_dir, "gt.csv")
 
-    result = run_wwb(
-        [
-            "--base-model",
-            base_model_path,
-            "--gt-data",
-            temp_file_name,
-            "--dataset",
-            "EleutherAI/lambada_openai,en",
-            "--dataset-field",
-            "text",
-            "--split",
-            "test",
-            "--num-samples",
-            "2",
-            "--device",
-            "CPU",
-        ]
-    )
-    data = pd.read_csv(temp_file_name)
-    os.remove(temp_file_name)
+        result = run_wwb(
+            [
+                "--base-model",
+                base_model_path,
+                "--gt-data",
+                temp_file_name,
+                "--dataset",
+                "EleutherAI/lambada_openai,en",
+                "--dataset-field",
+                "text",
+                "--split",
+                "test",
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+            ]
+        )
+        data = pd.read_csv(temp_file_name)
 
     assert result.returncode == 0
     assert len(data["questions"].values) == 2
@@ -160,45 +160,43 @@ def test_text_verbose():
 
 
 def test_text_language_autodetect():
-    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
-
-    result = run_wwb(
-        [
-            "--base-model",
-            "Qwen/Qwen2-0.5B",
-            "--gt-data",
-            temp_file_name,
-            "--num-samples",
-            "2",
-            "--device",
-            "CPU",
-        ]
-    )
-    data = pd.read_csv(temp_file_name)
-    os.remove(temp_file_name)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_name = os.path.join(temp_dir, "gt.csv")
+        result = run_wwb(
+            [
+                "--base-model",
+                "Qwen/Qwen2-0.5B",
+                "--gt-data",
+                temp_file_name,
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+            ]
+        )
+        data = pd.read_csv(temp_file_name)
 
     assert result.returncode == 0
     assert "马克" in data["prompts"].values[0]
 
 
 def test_text_hf_model():
-    temp_file_name = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
-
-    result = run_wwb(
-        [
-            "--base-model",
-            model_id,
-            "--gt-data",
-            temp_file_name,
-            "--num-samples",
-            "2",
-            "--device",
-            "CPU",
-            "--hf",
-        ]
-    )
-    data = pd.read_csv(temp_file_name)
-    os.remove(temp_file_name)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_name = os.path.join(temp_dir, "gt.csv")
+        result = run_wwb(
+            [
+                "--base-model",
+                model_id,
+                "--gt-data",
+                temp_file_name,
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+                "--hf",
+            ]
+        )
+        data = pd.read_csv(temp_file_name)
 
     assert result.returncode == 0
     assert len(data["prompts"].values) == 2
