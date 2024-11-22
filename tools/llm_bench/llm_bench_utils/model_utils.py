@@ -99,7 +99,6 @@ def analyze_args(args):
 
     if optimum and args.genai:
         raise RuntimeError("`--genai` and `--optimum` can not be selected in the same time")
-    
     model_args["optimum"] = optimum
     model_args["genai"] = not optimum
 
@@ -176,7 +175,6 @@ def get_use_case(model_name_or_path):
         config = json.loads(config_file.read_text())
     except Exception:
         config = None
-    
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
