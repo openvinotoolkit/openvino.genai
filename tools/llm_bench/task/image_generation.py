@@ -41,7 +41,7 @@ def collects_input_args(image_param, model_type, model_name):
     return input_args
 
 
-def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption):
+def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
     input_args = collects_input_args(image_param, args['model_type'], args['model_name'])
@@ -104,7 +104,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     stable_diffusion_hook.clear_statistics()
 
 
-def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption):
+def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
     input_args = collects_input_args(image_param, args['model_type'], args['model_name'])
@@ -125,9 +125,11 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
+    callback.reset()
     start = time.perf_counter()
-    res = pipe.generate(input_text, **input_args).data
+    res = pipe.generate(input_text, **input_args, callback=callback).data
     end = time.perf_counter()
+    callback.duration = end - start
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
@@ -155,7 +157,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        stable_diffusion=None,
+        stable_diffusion=callback,
         prompt_idx=image_id
     )
     metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn, prompt_idx=image_id)
@@ -163,7 +165,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    pipe, pretrain_time, use_genai = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
+    pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
     iter_data_list = []
     input_image_list = get_image_prompt(args)
     if framework == "ov" and not use_genai:
@@ -198,7 +200,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
             for image_id, image_param in enumerate(image_list):
                 p_idx = prompt_idx_list[image_id]
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption)
+                image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption, callback)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")

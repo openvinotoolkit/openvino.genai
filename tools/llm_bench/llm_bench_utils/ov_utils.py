@@ -11,7 +11,7 @@ import time
 import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
-from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
+from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES, IMAGE_GEN_CLS
 import openvino.runtime.opset13 as opset
 from transformers import pipeline
 
@@ -295,15 +295,13 @@ def convert_ov_tokenizer(tokenizer_path):
 
 
 def create_image_gen_model(model_path, device, **kwargs):
-    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
-    model_type = kwargs.get('model_type', default_model_type)
-    model_class = OV_MODEL_CLASSES_MAPPING[model_type]
+    model_class = IMAGE_GEN_CLS
     model_path = Path(model_path)
     ov_config = kwargs['config']
     if not Path(model_path).exists():
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             return create_genai_image_gen_model(model_path, device, ov_config, **kwargs)
 
         start = time.perf_counter()
@@ -311,7 +309,7 @@ def create_image_gen_model(model_path, device, **kwargs):
         end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
-    return ov_model, from_pretrained_time, False
+    return ov_model, from_pretrained_time, False, None
 
 
 def get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config):
@@ -349,6 +347,52 @@ def get_genai_unet_model(model_index_data, model_path, device, ov_config):
 
 def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
+
+    class PerfCollector:
+        def __init__(self) -> types.NoneType:
+            self.iteration_time = []
+            self.start_time = time.perf_counter()
+            self.duration = -1
+
+        def __call__(self, step, latents):
+            self.iteration_time.append(time.perf_counter() - self.start_time)
+            self.start_time = time.perf_counter()
+            return False
+
+        def reset(self):
+            self.iteration_time = []
+            self.start_time = time.perf_counter()
+            self.duration = -1
+
+        def get_1st_unet_latency(self):
+            return self.iteration_time[0] * 1000 if len(self.iteration_time) > 0 else 0
+
+        def get_2nd_unet_latency(self):
+            return sum(self.iteration_time[1:]) / (len(self.iteration_time) - 1) * 1000 if len(self.iteration_time) > 1 else 0
+
+        def get_unet_latency(self):
+            return (sum(self.iteration_time) / len(self.iteration_time)) * 1000 if len(self.iteration_time) > 0 else 0
+
+        def get_vae_decoder_latency(self):
+            if self.duration != -1:
+                vae_time = self.duration - sum(self.iteration_time)
+                return vae_time * 1000
+            return 0
+
+        def get_text_encoder_latency(self):
+            return -1
+
+        def get_text_encoder_step_count(self):
+            return -1
+
+        def get_unet_step_count(self):
+            return len(self.iteration_time)
+
+        def get_vae_decoder_step_count(self):
+            return 1
+
+
+    callback = PerfCollector()
 
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
     if adapter_config:
@@ -393,7 +437,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
 
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    return t2i_pipe, end - start, True
+    return t2i_pipe, end - start, True, callback
 
 
 def create_ldm_super_resolution_model(model_path, device, **kwargs):

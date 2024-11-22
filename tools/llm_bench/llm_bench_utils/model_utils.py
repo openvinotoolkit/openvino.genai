@@ -169,6 +169,12 @@ def get_use_case(model_name_or_path):
         config = json.loads(config_file.read_text())
     except Exception:
         config = None
+    
+    if (Path(model_name_or_path) / "model_index.json").exists():
+        diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
+        pipe_type = diffusers_config.get("_class_name")
+        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
+            return "image_gen", pipe_type.replace("Pipeline", "")
 
     if config is not None:
         for case, model_ids in USE_CASES.items():
