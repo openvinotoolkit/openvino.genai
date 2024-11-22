@@ -171,11 +171,13 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"], OV_MODEL_CLASSES_MAPPING["chatglm"]]:
                 log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
+                log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
+        log.info("Selected Optimum Intel for benchmarking")
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
@@ -302,8 +304,10 @@ def create_image_gen_model(model_path, device, **kwargs):
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+            log.info("Selected OpenVINO GenAI for benchmarking")
             return create_genai_image_gen_model(model_path, device, ov_config, **kwargs)
 
+        log.info("Selected Optimum Intel for benchmarking")
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
@@ -458,7 +462,7 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
 
 def create_genai_speech_2_txt_model(model_path, device, **kwargs):
     import openvino_genai as ov_genai
-    if kwargs.get("genai", False) is False:
+    if kwargs.get("genai", True) is False:
         raise RuntimeError('==Failure the command line does not set --genai ==')
     if is_genai_available(log_msg=True) is False:
         raise RuntimeError('==Failure genai is not enable ==')
@@ -486,11 +490,13 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type]]:
                 log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
             else:
+                log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, **kwargs)
+        log.info("Selected Optimum Intel for benchmarking")
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,

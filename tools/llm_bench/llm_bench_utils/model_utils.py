@@ -95,6 +95,14 @@ def analyze_args(args):
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
 
+    optimum = args.optimum
+
+    if optimum and args.genai:
+        raise RuntimeError("`--genai` and `--optimum` can not be selected in the same time")
+    
+    model_args["optimum"] = optimum
+    model_args["genai"] = not optimum
+
     has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:
         log.warning("torch.compile configuration options provided, but backend is not selected, openvino backend will be used")
@@ -102,7 +110,6 @@ def analyze_args(args):
     model_args['convert_tokenizer'] = args.convert_tokenizer
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
-    model_args['genai'] = args.genai
     model_args['lora'] = args.lora
     model_args['lora_alphas'] = args.lora_alphas
     model_args["use_cb"] = args.use_cb
@@ -135,7 +142,7 @@ def analyze_args(args):
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
 
-    if (args.use_cb or args.draft_model) and not args.genai:
+    if (args.use_cb or args.draft_model) and optimum:
         raise RuntimeError("Continuous batching mode supported only via OpenVINO GenAI")
     cb_config = None
     if args.cb_config:
