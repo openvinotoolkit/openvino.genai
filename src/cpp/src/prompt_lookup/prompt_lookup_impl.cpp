@@ -61,7 +61,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         m_sd_metrics.update_draft_accepted_tokens(request_id, num_matches);
     }
 
-    if (generated_len_after.empty()) {
+    if (generated_len_after.empty() && 0) {
         m_sd_metrics.total_duration = m_sd_metrics.draft_duration + m_sd_metrics.main_duration;
         std::cout << "\n=============================== " << std::endl;
         std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
