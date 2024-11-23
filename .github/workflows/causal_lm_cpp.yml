@@ -597,8 +597,11 @@ jobs:
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
 
+          echo '-------------------------------Prompt lookup Generated-----------------------------------------'
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_prompt_lookup.txt
+          echo '-------------------------------Greedy Generated------------------------------------------------'
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_greedy.txt
+          echo '-----------------------------------------------------------------------------------------------'
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -609,6 +612,7 @@ jobs:
           print('Prompt lookup generated')
           print(predicted_prompt_lookup)
           "
+          echo '-------------------------------Diff--------------------------------------'
           diff predictions_prompt_lookup.txt predictions_greedy.txt
           echo "Prompt lookup" passed
 
