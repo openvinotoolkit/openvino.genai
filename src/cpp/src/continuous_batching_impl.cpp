@@ -133,7 +133,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     _pull_awaiting_requests();
     m_pipeline_metrics.requests = m_requests.size();
     Scheduler::Output scheduler_output;
-    
+
     {
         static ManualTimer timer("scheduling");
         timer.start();
@@ -173,13 +173,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         if (m_is_profiling_enabled) {
             std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
             for (const ov::ProfilingInfo& info : profiling_info) {
-            double current_time = info.real_time.count();
-            if (info.node_type == "PagedAttentionExtension") {
-                m_perf.m_paged_attention_time_ms += current_time;
-            } else if (info.node_type == "FullyConnected") {
-                m_perf.m_matmul_time_ms += current_time;
-            }
-            m_perf.m_infer_total_ms += current_time;
+                double current_time = info.real_time.count();
+                if (info.node_type == "PagedAttentionExtension") {
+                    m_perf.m_paged_attention_time_ms += current_time;
+                } else if (info.node_type == "FullyConnected") {
+                    m_perf.m_matmul_time_ms += current_time;
+                }
+                m_perf.m_infer_total_ms += current_time;
             }
         }
     }
