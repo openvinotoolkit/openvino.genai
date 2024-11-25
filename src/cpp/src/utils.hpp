@@ -13,6 +13,12 @@ namespace ov {
 namespace genai {
 namespace utils {
 
+enum class GenerationChatInputsType {
+    UNDEF = 0, // Default value, type of inputs is not defined
+    STRING = 1, // Type of inputs is StringInputs
+    ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
+};
+
 // Variable template that checks if a type has begin() and end() member functions
 template<typename, typename = void>
 constexpr bool is_container = false;
@@ -85,6 +91,8 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
+
+bool is_tokenized_history_same(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
 }  // namespace utils
 }  // namespace genai
