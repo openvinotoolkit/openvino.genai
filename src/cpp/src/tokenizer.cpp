@@ -74,6 +74,7 @@ public:
     // To change the adding special tokens mode we use a statefull subgraph, 
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;  
+    bool m_older_than_24_5 = false;
     
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
@@ -90,6 +91,12 @@ public:
         // need to set state variable.
         // If requested mode matches the stored state set, then don't touch states.
         if (add_special_tokens == m_add_special_tokens) {
+            return;
+        }
+        if (m_older_than_24_5) {
+            // Changing add_special_tokens at runtime was introduced in
+            // 24.5. Older tokenizers still allow manipulating their
+            // state but the effect is incorrect.
             return;
         }
         
@@ -128,6 +135,7 @@ public:
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
         auto ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
+        m_older_than_24_5 = ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") != 1;
         
         ov::pass::Manager manager;
         manager.register_pass<MakeCombineSegmentsSatateful>();
@@ -388,7 +396,7 @@ public:
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
 
-    std::string patch_chat_template(std::string template_str) {
+    std::string patch_chat_template(std::string template_str) const {
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
             {"'}", "' }"},
@@ -422,10 +430,8 @@ public:
         if (!file.is_open())
             return "";
 
-        std::string res = "";
+        std::string res;
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-        if (res.empty())
-            return res;
         
         return patch_chat_template(res);
     }
@@ -433,7 +439,7 @@ public:
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template) const {
-        auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
+        std::string chat_tpl = chat_template.empty() ? m_chat_template : patch_chat_template(chat_template);
         OPENVINO_ASSERT(!chat_tpl.empty(),
                         "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                         " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."

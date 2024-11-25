@@ -156,7 +156,7 @@ static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
 static constexpr ov::Property<size_t> min_new_tokens{"min_new_tokens"};
 static constexpr ov::Property<std::vector<std::string>> stop_strings{"stop_strings"};
 static constexpr ov::Property<bool> include_stop_str_in_output{"include_stop_str_in_output"};
-static constexpr ov::Property<std::vector<std::vector<int64_t>>> stop_token_ids{"stop_token_ids"};
+static constexpr ov::Property<std::set<int64_t>> stop_token_ids{"stop_token_ids"};
 
 static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
 static constexpr ov::Property<size_t> num_beams{"num_beams"};
