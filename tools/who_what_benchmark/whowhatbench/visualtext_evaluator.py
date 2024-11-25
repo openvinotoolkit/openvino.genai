@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import os
 import datasets
 import pandas as pd
 from diffusers.utils.loading_utils import load_image
@@ -64,8 +65,11 @@ class VisualTextEvaluator(TextEvaluator):
             seqs_per_request=seqs_per_request,
         )
 
-    def score(self, model, gen_answer_fn=None, **kwargs):
-        predictions = self._generate_data(model, gen_answer_fn)
+    def score(self, model_or_data, gen_answer_fn=None, **kwargs):
+        if isinstance(model_or_data, str) and os.path.exists(model_or_data):
+            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+        else:
+            predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
 
         all_metrics_per_prompt = {}
