@@ -19,8 +19,12 @@ add_subdirectory(cpp/text2image)
 add_subdirectory(cpp/visual_language_chat)
 add_subdirectory(cpp/whisper_speech_recognition)
 
-install(FILES requirements.txt DESTINATION samples
-        COMPONENT cpp_samples_genai)
+install(FILES
+        deployment-requirements.txt
+        export-requirements.txt
+        requirements.txt
+    DESTINATION samples
+    COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
             cpp/beam_search_causal_lm

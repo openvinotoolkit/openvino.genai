@@ -46,14 +46,16 @@ You can also add a callback to the `main.cpp` file to interrupt the image genera
 Please find the template of the callback usage below.
 
 ```cpp
-auto callback = [](size_t step, ov::Tensor& intermediate_res) -> bool {
+ov::genai::Text2ImagePipeline pipe(models_path, device);
+
+auto callback = [&](size_t step, ov::Tensor& intermediate_res) -> bool {
    std::cout << "Image generation step: " << step << std::endl;
+   ov::Tensor img = pipe.decode(intermediate_res); // get intermediate image tensor
    if (your_condition) // return true if you want to interrupt image generation
       return true;
    return false;
 };
 
-ov::genai::Text2ImagePipeline pipe(models_path, device);
 ov::Tensor image = pipe.generate(prompt,
    ...
    ov::genai::callback(callback)

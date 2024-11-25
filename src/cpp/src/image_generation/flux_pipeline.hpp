@@ -297,33 +297,33 @@ public:
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         const ov::AnyMap& properties) override {
-        ImageGenerationConfig generation_config = m_generation_config;
-        generation_config.update_generation_config(properties);
+        m_custom_generation_config = m_generation_config;
+        m_custom_generation_config.update_generation_config(properties);
 
         if (!initial_image) {
             // in case of typical text to image generation, we need to ignore 'strength'
-            generation_config.strength = 1.0f;
+            m_custom_generation_config.strength = 1.0f;
         }
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
 
-        if (generation_config.height < 0)
-            generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
-        if (generation_config.width < 0)
-            generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
+        if (m_custom_generation_config.height < 0)
+            m_custom_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
+        if (m_custom_generation_config.width < 0)
+            m_custom_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
 
-        check_inputs(generation_config, initial_image);
+        check_inputs(m_custom_generation_config, initial_image);
 
-        compute_hidden_states(positive_prompt, generation_config);
+        compute_hidden_states(positive_prompt, m_custom_generation_config);
 
-        ov::Tensor latents = prepare_latents(initial_image, generation_config);
+        ov::Tensor latents = prepare_latents(initial_image, m_custom_generation_config);
 
         size_t image_seq_len = latents.get_shape()[1];
         float mu = m_scheduler->calculate_shift(image_seq_len);
 
-        float linspace_end = 1.0f / generation_config.num_inference_steps;
-        std::vector<float> sigmas = numpy_utils::linspace<float>(1.0f, linspace_end, generation_config.num_inference_steps, true);
+        float linspace_end = 1.0f / m_custom_generation_config.num_inference_steps;
+        std::vector<float> sigmas = numpy_utils::linspace<float>(1.0f, linspace_end, m_custom_generation_config.num_inference_steps, true);
 
         m_scheduler->set_timesteps_with_sigma(sigmas, mu);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
@@ -345,7 +345,7 @@ public:
 
             ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
 
-            auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, generation_config.generator);
+            auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
             if (do_callback) {
@@ -355,12 +355,16 @@ public:
             }
         }
 
-        latents = unpack_latents(latents, generation_config.height, generation_config.width, vae_scale_factor);
+        latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
         return m_vae->decode(latents);
     }
 
     ov::Tensor decode(const ov::Tensor latent) override {
-        return m_vae->decode(latent);
+        ov::Tensor unpacked_latent = unpack_latents(latent,
+                                                m_custom_generation_config.height,
+                                                m_custom_generation_config.width,
+                                                m_vae->get_vae_scale_factor());
+        return m_vae->decode(unpacked_latent);
     }
 
 private:
@@ -407,7 +411,7 @@ private:
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<AutoencoderKL> m_vae;
-
+    ImageGenerationConfig m_custom_generation_config;
 };
 
 }  // namespace genai

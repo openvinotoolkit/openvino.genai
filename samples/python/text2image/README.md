@@ -46,13 +46,15 @@ You can also add a callback to the `main.py` file to interrupt the image generat
 Please find the template of the callback usage below.
 
 ```python
+pipe = openvino_genai.Text2ImagePipeline(model_dir, device)
+
 def callback(step, intermediate_res):
    print("Image generation step: ", step)
+   image_tensor = pipe.decode(intermediate_res) # get intermediate image tensor
    if your_condition: # return True if you want to interrupt image generation
       return True
    return False
 
-pipe = openvino_genai.Text2ImagePipeline(model_dir, device)
 image = pipe.generate(
    ...
    callback = callback
