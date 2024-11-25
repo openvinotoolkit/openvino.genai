@@ -60,7 +60,8 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
         return false;
     
     std::shared_ptr<v0::Constant> skip_tokens_const = std::dynamic_pointer_cast<v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(4));
-    if (!skip_tokens_const)
+    std::shared_ptr<v8::Slice> skip_tokens_slice = std::dynamic_pointer_cast<v8::Slice>(vocab_decoder_node->get_input_node_shared_ptr(4));
+    if (!skip_tokens_const && !skip_tokens_slice)
         return false;
 
     auto start_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{0});
@@ -74,10 +75,14 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
     // if flag is set, then slice up to the int_max which means skip all tokens.
     auto stop = std::make_shared<v1::Multiply>(int_max_const, read_value);
 
-    std::shared_ptr<v8::Slice> slice_node = std::make_shared<v8::Slice>(skip_tokens_const, start_const, stop, one_const);
+    // If already has slice just replace the stop input.
+    if (skip_tokens_slice) {
+        skip_tokens_slice->input(2).replace_source_output(stop);
+    } else {
+        std::shared_ptr<v8::Slice> slice_node = std::make_shared<v8::Slice>(skip_tokens_const, start_const, stop, one_const);
+        vocab_decoder_node->input(4).replace_source_output(slice_node->output(0));
+    }
     
-    vocab_decoder_node->input(4).replace_source_output(slice_node->output(0));
-
     auto assign = std::make_shared<v6::Assign>(read_value, variable);
     model->add_sinks({assign});
     model->add_variables({variable});

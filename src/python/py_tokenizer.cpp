@@ -68,7 +68,7 @@ void init_tokenizer(py::module_& m) {
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
                 return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"), py::arg("skip_special_tokens") = false,
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a sequence into a string prompt.)"
         )
 
@@ -79,7 +79,7 @@ void init_tokenizer(py::module_& m) {
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
                 return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"), py::arg("skip_special_tokens") = false,
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode tensor into a list of string prompts.)")
 
         .def(
@@ -89,7 +89,7 @@ void init_tokenizer(py::module_& m) {
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
                 return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"), py::arg("skip_special_tokens") = false,
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,

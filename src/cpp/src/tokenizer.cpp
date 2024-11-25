@@ -74,7 +74,7 @@ public:
     // To change the adding special tokens mode we use a statefull subgraph, 
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;
-    bool m_skip_special_tokens = false;
+    bool m_skip_special_tokens = true;
     bool m_older_than_24_5 = false;
     
     int64_t m_pad_token_id = -1;
@@ -89,7 +89,7 @@ public:
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
         bool add_special_tokens_flag = true;
-        bool skip_special_tokens_flag = false;
+        bool skip_special_tokens_flag = true;
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
 
@@ -164,7 +164,6 @@ public:
             m_detokenizer = core.compile_model(ov_detokenizer, device, properties);
         }
 
-        
         const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::optimal_number_of_infer_requests);
         m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             INFER_REQUEST_QUEUE_SIZE,

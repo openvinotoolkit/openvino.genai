@@ -87,7 +87,7 @@ public:
     /**
     * @brief decode sequence of tokens
     * @param tokens vector storing tokens
-    * @param tokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
+    * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return sequence string
     */
     std::string decode(std::vector<int64_t> tokens, const ov::AnyMap& detokenization_params = {});
@@ -106,7 +106,7 @@ public:
     /**
     * @brief decode tokens. 
     * @param tokens ov::Tensor with tokens with shape [batch_size, seq_len]
-    * @param tokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
+    * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return vector of std::string, with size = batch_size
     */
     std::vector<std::string> decode(ov::Tensor tokens, const ov::AnyMap& detokenization_params = {});
@@ -125,7 +125,7 @@ public:
     /**
     * @brief batched decoding of tokens. 
     * @param tokens vector of vectors with tokens, tokens.size() is equal to batch_size
-    * @param tokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
+    * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return vector of std::string, with size equal to batch_size
     */
     std::vector<std::string> decode(std::vector<std::vector<int64_t>> tokens, const ov::AnyMap& detokenization_params = {});
