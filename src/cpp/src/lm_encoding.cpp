@@ -106,8 +106,11 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     auto logits = m_llm.get_tensor("logits");
 
     int64_t sequence_len = logits.get_shape().at(1);
-    for (auto& sequence_group : sequence_groups)
+    for (auto& sequence_group : sequence_groups) {
+        sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - sequence_len);
         sequence_group->schedule_tokens(sequence_len);
+
+    }
 
     std::map<size_t, size_t> beam_offets;
     for (size_t i = 0; i < sequence_groups.size(); i++)

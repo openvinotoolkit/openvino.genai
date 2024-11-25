@@ -92,6 +92,8 @@ def test_image_model_genai(model_id, model_type):
     ]
     result = run_wwb(wwb_args)
     assert result.returncode == 0
+    assert os.path.exists(GT_FILE)
+    assert os.path.exists("reference")
 
     wwb_args = [
         "--target-model",
@@ -108,6 +110,31 @@ def test_image_model_genai(model_id, model_type):
     ]
     result = run_wwb(wwb_args)
 
+    assert result.returncode == 0
+    assert "Metrics for model" in result.stderr
+    similarity = float(str(result.stderr).split(" ")[-1])
+    assert similarity >= 0.98
+    assert os.path.exists("target")
+
+    output_dir = tempfile.TemporaryDirectory().name
+    wwb_args = [
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--output",
+        output_dir,
+    ]
+    result = run_wwb(wwb_args)
+    assert os.path.exists(os.path.join(output_dir, "target"))
+    assert os.path.exists(os.path.join(output_dir, "target.json"))
+
     try:
         os.remove(GT_FILE)
     except OSError:
@@ -115,11 +142,7 @@ def test_image_model_genai(model_id, model_type):
     shutil.rmtree("reference", ignore_errors=True)
     shutil.rmtree("target", ignore_errors=True)
     shutil.rmtree(MODEL_PATH, ignore_errors=True)
-
-    assert result.returncode == 0
-    assert "Metrics for model" in result.stderr
-    similarity = float(str(result.stderr).split(" ")[-1])
-    assert similarity >= 0.98
+    shutil.rmtree(output_dir, ignore_errors=True)
 
 
 @pytest.mark.parametrize(

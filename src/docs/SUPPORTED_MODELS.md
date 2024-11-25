@@ -203,6 +203,14 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo"><code>stabilityai/stable-diffusion-3.5-large-turbo</code></a></li>
         </ul>
       </td>
+      <tr>
+      <td><code>Flux</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"><code>black-forest-labs/FLUX.1-schnell</code></a></li>
+        </ul>
+      </td>
+    </tr>
     </tr>
   </tbody>
 </table>
