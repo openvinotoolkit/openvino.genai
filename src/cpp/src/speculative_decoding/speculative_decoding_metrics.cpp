@@ -117,6 +117,34 @@ void SpeculativeDecodingMetrics::print_acceptance_rates() {
     }
 }
 
+void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
+    if (total_duration == 0) {
+        total_duration = draft_duration + main_duration;
+    }
+    std::cout << "\n=============================== " << std::endl;
+    std::cout << "Total duration, ms: " << total_duration << std::endl;
+    std::cout << "Draft model duration, ms: " << draft_duration << std::endl;
+    std::cout << "Main model duration, ms: " << main_duration << std::endl;
+    std::cout << "Draft model duration, %: " << get_draft_duration_percentage() << std::endl;
+    std::cout << "Main model duration, %: " << get_main_duration_percentage() << std::endl;
+    std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(-1) << std::endl;
+    std::cout << "=============================== " << std::endl;
+    if (is_printing_per_request) {
+        for (const auto& i : get_requests_id()) {
+            std::cout << "REQUEST_ID: " << i << std::endl;
+            std::cout << "Main model iterations: " << get_iteration_number(i) << std::endl;
+            std::cout << "Token per sec: " << float(get_generated_len(i)) / total_duration << std::endl;
+            std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(i) << std::endl;
+            std::cout << "Accepted tokens by draft model: " << get_draft_accepted_tokens_counter(i) << std::endl;
+            std::cout << "Generated tokens: " << get_generated_len(i) << std::endl;
+            std::cout << "Accepted token rate, %: " << get_draft_accepted_tokens_percentage(i) << std::endl;
+            std::cout << "=============================== " << std::endl;
+        }
+        print_acceptance_rates();
+    }
+
+}
+
 void SpeculativeDecodingMetrics::clean_up() {
     m_acceptance_rate.clear();
     m_draft_accepted_tokens.clear();

@@ -62,26 +62,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     }
 
     if (generated_len_after.empty() && 0) {
-        m_sd_metrics.total_duration = m_sd_metrics.draft_duration + m_sd_metrics.main_duration;
-        std::cout << "\n=============================== " << std::endl;
-        std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
-        std::cout << "Draft model duration, ms: " << m_sd_metrics.draft_duration << std::endl;
-        std::cout << "Main model duration, ms: " << m_sd_metrics.main_duration << std::endl;
-        std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
-        std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
-        std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(-1) << std::endl;
-        std::cout << "=============================== " << std::endl;
-        for (const auto& i : m_sd_metrics.get_requests_id()) {
-            std::cout << "REQUEST_ID: " << i << std::endl;
-            std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(i) << std::endl;
-            std::cout << "Token per sec: " << float(m_sd_metrics.get_generated_len(i)) / m_sd_metrics.total_duration << std::endl;
-            std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(i) << std::endl;
-            std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(i) << std::endl;
-            std::cout << "Generated tokens: " << m_sd_metrics.get_generated_len(i) << std::endl;
-            std::cout << "Accepted token rate, %: " << m_sd_metrics.get_draft_accepted_tokens_percentage(i) << std::endl;
-            std::cout << "=============================== " << std::endl;
-        }
-        m_sd_metrics.print_acceptance_rates();
+        m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
 }
@@ -164,22 +145,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
     m_sd_metrics.total_duration = generate_timer.get_duration();
-
-    // Print Speculative decoding metrics
-    if (0) {
-        std::cout << std::endl;
-        std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
-        std::cout << "Draft model duration, ms: " << m_sd_metrics.draft_duration << std::endl;
-        std::cout << "Main model duration, ms: " << m_sd_metrics.main_duration << std::endl;
-        std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
-        std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
-        std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(0) << std::endl;
-        std::cout << "Token per sec: " << float(sampling_params[0].max_new_tokens) / m_sd_metrics.total_duration << std::endl;
-        std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(0) << std::endl;
-        std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(0) << std::endl;
-        std::cout << "Generated tokens: " << sampling_params[0].max_new_tokens << std::endl;
-        std::cout << "Accepted token rate, %: " << m_sd_metrics.get_draft_accepted_tokens_percentage(0) << std::endl;
-    }
 
     return results;
 }

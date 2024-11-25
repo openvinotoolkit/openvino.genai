@@ -16,7 +16,6 @@ protected:
     SpeculativeDecodingMetrics m_sd_metrics;
     
 public:
-// models_path, scheduler_config, device, properties_without_draft_model, tokenizer_properties
     PromptLookupImpl(
         const std::filesystem::path& models_path,
         const Tokenizer& tokenizer,
