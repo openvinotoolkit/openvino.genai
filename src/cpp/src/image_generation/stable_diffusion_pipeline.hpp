@@ -211,15 +211,22 @@ public:
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
         ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
 
-        if (initial_image && (!is_strength_max || return_image_latent)) {
+        if (initial_image) {
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
             proccesed_image = m_image_processor->execute(proccesed_image);
-            image_latent = m_vae->encode(proccesed_image, generation_config.generator);
 
-            // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with image_latent
-            if (!is_strength_max) {
-                image_latent.copy_to(latent);
-                latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
+            // prepate image latent for cases:
+            // - image to image
+            // - inpainting with strength < 1.0
+            // - inpainting with non-specialized model
+            if (!is_strength_max || return_image_latent) {
+                image_latent = m_vae->encode(proccesed_image, generation_config.generator);
+
+                // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with image_latent
+                if (!is_strength_max) {
+                    image_latent.copy_to(latent);
+                    latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
+                }
             }
         }
 
@@ -245,7 +252,7 @@ public:
 
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        const bool is_inpainting_model = m_unet->get_config().in_channels == (m_vae->get_config().in_channels * 2 + 1);
+        const bool is_inpainting_model = m_unet->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1);
         ov::Shape target_shape = processed_image.get_shape();
 
         ov::Tensor mask_condition = m_image_resizer->execute(mask_image, target_shape[2], target_shape[3]);
@@ -305,7 +312,7 @@ public:
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        const bool is_inpainting_model = unet_config.in_channels == (m_vae->get_config().in_channels * 2 + 1);
+        const bool is_inpainting_model = unet_config.in_channels == (m_vae->get_config().latent_channels * 2 + 1);
 
         if (generation_config.height < 0)
             compute_dim(generation_config.height, initial_image, 1 /* assume NHWC */);
