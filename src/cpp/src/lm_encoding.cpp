@@ -9,12 +9,11 @@
 #include <regex>
 #include <vector>
 
+#include "utils.hpp"
+#include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
-#include "utils.hpp"
-
-#include "debug_utils.hpp"
 
 namespace ov {
 namespace genai {

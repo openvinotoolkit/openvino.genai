@@ -266,6 +266,14 @@ ov::Core singleton_core() {
     return core;
 }
 
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, std::vector<int64_t> add_to_front) {
+    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + add_to_front.size()}};
+    auto new_tensor_data = new_tensor.data<int64_t>();
+    std::copy(add_to_front.begin(), add_to_front.end(), new_tensor_data);
+    std::copy(base_tensor.data<int64_t>(), base_tensor.data<int64_t>() + base_tensor.get_size(), new_tensor_data + add_to_front.size());
+    return new_tensor;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
