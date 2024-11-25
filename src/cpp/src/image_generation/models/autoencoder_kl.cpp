@@ -137,7 +137,7 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     const size_t vae_scale_factor = get_vae_scale_factor();
 
     OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by ",
             vae_scale_factor);
 
     if (m_encoder_model) {

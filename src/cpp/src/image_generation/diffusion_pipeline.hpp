@@ -99,7 +99,7 @@ protected:
 
     void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
-        OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current and initial image latents must match");
+        OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current", latent.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor noised_image_latent(image_latent.get_element_type(), {});
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();

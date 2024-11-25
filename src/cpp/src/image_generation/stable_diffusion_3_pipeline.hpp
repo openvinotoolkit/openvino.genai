@@ -637,7 +637,7 @@ private:
 
         OPENVINO_ASSERT((height % (vae_scale_factor * patch_size) == 0 || height < 0) &&
                             (width % (vae_scale_factor * patch_size) == 0 || width < 0),
-                        "Both 'width' and 'height' must be divisible by",
+                        "Both 'width' and 'height' must be divisible by ",
                         vae_scale_factor);
     }
 

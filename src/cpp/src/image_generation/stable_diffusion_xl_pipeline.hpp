@@ -519,7 +519,7 @@ private:
         assert(m_vae != nullptr);
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by ",
             vae_scale_factor);
     }
 

@@ -28,19 +28,19 @@ class StableDiffusionPipeline : public DiffusionPipeline {
 public:
     explicit StableDiffusionPipeline(PipelineType pipeline_type) :
         DiffusionPipeline(pipeline_type) {
+        // TODO: support GPU as well
+        const std::string device = "CPU";
+
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
             const bool do_normalize = true, do_binarize = false;
-            m_image_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
+            m_image_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize);
+            m_image_resizer = std::make_shared<ImageResizer>(device, ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
         }
 
         if (m_pipeline_type == PipelineType::INPAINTING) {
             const bool do_normalize = false, do_binarize = true;
-            m_mask_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
-
-            // TODO: allow to specify target shape dynamically
-            size_t dst_height = 512 / 8;
-            size_t dst_width = 512 / 8;
-            m_mask_resizer = std::make_shared<ImageResizer>(dst_height, dst_width);
+            m_mask_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize);
+            m_mask_resizer = std::make_shared<ImageResizer>(device, ov::element::f32, "NCHW", ov::op::v11::Interpolate::InterpolateMode::NEAREST);
         }
     }
 
@@ -128,22 +128,6 @@ public:
         initialize_generation_config(data["_class_name"].get<std::string>());
 
         update_adapters_from_properties(properties, m_generation_config.adapters);
-
-                // create image & mask processors
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-            const bool do_normalize = true, do_binarize = false;
-            m_image_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
-        }
-
-        if (m_pipeline_type == PipelineType::INPAINTING) {
-            const bool do_normalize = false, do_binarize = true;
-            m_mask_processor = std::make_shared<ImageProcessor>(do_normalize, do_binarize);
-
-            // TODO: allow to specify target shape dynamically
-            size_t dst_height = 512 / m_vae->get_vae_scale_factor();
-            size_t dst_width = 512 / m_vae->get_vae_scale_factor();
-            m_mask_resizer = std::make_shared<ImageResizer>(dst_height, dst_width);
-        }
     }
 
     StableDiffusionPipeline(
@@ -214,7 +198,7 @@ public:
 
     std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         std::vector<int64_t> timesteps = m_scheduler->get_timesteps();
-        OPENVINO_ASSERT(!timesteps.empty(), "Timesteps are not compute yet");
+        OPENVINO_ASSERT(!timesteps.empty(), "Timesteps are not computed yet");
         int64_t latent_timestep = timesteps.front();
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -228,16 +212,20 @@ public:
         ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
 
         if (initial_image && (!is_strength_max || return_image_latent)) {
-            proccesed_image = m_image_processor->execute(initial_image);
+            proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
+            proccesed_image = m_image_processor->execute(proccesed_image);
             image_latent = m_vae->encode(proccesed_image, generation_config.generator);
 
-            image_latent.copy_to(latent);
-            latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
+            // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with image_latent
+            if (!is_strength_max) {
+                image_latent.copy_to(latent);
+                latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
+            }
         }
 
         noise = generation_config.generator->randn_tensor(latent_shape);
 
-        if (image_latent) {
+        if (!latent.get_shape().empty()) {
             m_scheduler->add_noise(latent, noise, latent_timestep);
         } else {
             latent.set_shape(noise.get_shape());
@@ -256,12 +244,15 @@ public:
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
 
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const bool is_inpainting_model = m_unet->get_config().in_channels == (m_vae->get_config().in_channels * 2 + 1);
+        ov::Shape target_shape = processed_image.get_shape();
 
-        ov::Tensor mask_condition = m_mask_processor->execute(mask_image);
+        ov::Tensor mask_condition = m_image_resizer->execute(mask_image, target_shape[2], target_shape[3]);
+        mask_condition = m_mask_processor->execute(mask_condition);
 
         // resize mask to shape of latent space
-        ov::Tensor mask = m_mask_resizer->execute(mask_condition);
+        ov::Tensor mask = m_mask_resizer->execute(mask_condition, target_shape[2] / vae_scale_factor, target_shape[3] / vae_scale_factor);
         mask = numpy_utils::repeat(mask, generation_config.num_images_per_prompt * batch_size_multiplier);
 
         ov::Tensor masked_image_latent;
@@ -345,6 +336,8 @@ public:
         if (m_pipeline_type == PipelineType::INPAINTING) {
             std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, generation_config);
         }
+
+        read_tensor("/home/devuser/ilavreno/openvino.genai/mask.txt", mask);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -459,7 +452,7 @@ private:
         assert(m_vae != nullptr);
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by ",
             vae_scale_factor);
     }
 
@@ -481,13 +474,6 @@ private:
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by ", pipeline_name);
 
         if ((m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) && initial_image) {
-            ov::Shape initial_image_shape = initial_image.get_shape();
-            size_t height = initial_image_shape[1], width = initial_image_shape[2];
-
-            OPENVINO_ASSERT(generation_config.height == height,
-                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
-            OPENVINO_ASSERT(generation_config.width == width,
-                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
                 "'Strength' generation parameter must be withion [0, 1] range");
         } else {
@@ -502,7 +488,8 @@ private:
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
     std::shared_ptr<UNet2DConditionModel> m_unet = nullptr;
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
-    std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor = nullptr, m_mask_resizer = nullptr;
+    std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor = nullptr;
+    std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
 };
 
 }  // namespace genai
