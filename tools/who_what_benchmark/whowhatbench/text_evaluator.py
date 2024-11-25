@@ -155,7 +155,7 @@ class TextEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def score(self, model, gen_answer_fn=None):
+    def score(self, model, gen_answer_fn=None, **kwargs):
         predictions = self._generate_data(model, gen_answer_fn, self.generation_config)
         self.predictions = predictions
 

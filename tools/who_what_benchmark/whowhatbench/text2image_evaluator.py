@@ -84,10 +84,14 @@ class Text2ImageEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def score(self, model, gen_image_fn=None):
+    def score(self, model, gen_image_fn=None, output_dir=None, **kwargs):
         model.resolution = self.resolution
+        if output_dir is None:
+            image_folder = os.path.join(self.gt_dir, "target")
+        else:
+            image_folder = os.path.join(output_dir, "target")
         predictions = self._generate_data(
-            model, gen_image_fn, os.path.join(self.gt_dir, "target")
+            model, gen_image_fn, image_folder
         )
         self.predictions = predictions
 

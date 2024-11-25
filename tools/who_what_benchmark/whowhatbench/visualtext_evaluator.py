@@ -64,7 +64,7 @@ class VisualTextEvaluator(TextEvaluator):
             seqs_per_request=seqs_per_request,
         )
 
-    def score(self, model, gen_answer_fn=None):
+    def score(self, model, gen_answer_fn=None, **kwargs):
         predictions = self._generate_data(model, gen_answer_fn)
         self.predictions = predictions
 

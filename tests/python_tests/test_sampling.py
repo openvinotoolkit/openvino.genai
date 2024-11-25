@@ -334,7 +334,7 @@ def test_echo_without_completion(tmp_path, get_generation_config, max_num_batche
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix()), scheduler_config, "CPU", {})
 
     outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(outputs))
@@ -361,7 +361,7 @@ def test_echo_with_completion(tmp_path, get_generation_config, max_num_batched_t
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix()), scheduler_config, "CPU", {})
 
     outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(outputs))
@@ -389,7 +389,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     models_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
-    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), Tokenizer(models_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), Tokenizer(models_path.absolute().as_posix()), scheduler_config, "CPU", {})
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert (len(output))
