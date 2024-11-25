@@ -38,8 +38,12 @@ protected:
     ChatHistory m_history;
     // Templated chat history
     std::string m_templated_chat_history;
+    // Tokenized chat history
+    std::vector<int64_t> m_tokenized_chat_history;
     // Whether we have computed some inputs already
     bool m_is_cache_empty = true;
+    // Whether the text history has unambiguous encoded representation
+    bool m_trust_encoded_history = true;
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
@@ -52,8 +56,18 @@ public:
         return m_tokenizer;
     }
 
+    std::vector<int64_t> get_tokenized_chat_history() const {
+        return m_tokenized_chat_history;
+    }
+
+    void update_tokenized_chat_history(std::vector<int64_t> encoded_result) {
+        std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_chat_history));
+    }
+
     virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
+        m_trust_encoded_history = true;
+        m_tokenized_chat_history.clear();
         if (!m_is_cache_empty) {
             m_history.clear();
             m_templated_chat_history.clear();
@@ -77,9 +91,11 @@ public:
     virtual void finish_chat() {
         m_is_chat_conversation = false;
         m_is_cache_empty = true;
+        m_trust_encoded_history = true;
 
         m_history.clear();
         m_templated_chat_history.clear();
+        m_tokenized_chat_history.clear();
     }
 
 protected:
@@ -139,19 +155,30 @@ protected:
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
             }
             ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
-            if (m_is_cache_empty) {
+            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+
+            // some symbols combinations can be encoded by the tokenizer in different ways
+            // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
+            // and find the difference as a prompt
+            // so let's check it out and use the whole history in this case
+            if (!m_is_cache_empty && m_trust_encoded_history) {
+                m_trust_encoded_history = ov::genai::utils::is_tokenized_history_same(prev_chat_tokens.input_ids, m_tokenized_chat_history);
+            }
+
+            if (m_is_cache_empty || m_trust_encoded_history) {
                 encoded_input_ids = new_chat_tokens;
                 // after first `get_inputs_embeds` is called, we supposed LLM is inferred and cache is not empty
                 m_is_cache_empty = false;
             } else {
-                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
-                    m_templated_chat_history
-                );
                 encoded_input_ids = utils::subtract_chat_tokenized_inputs(
                     {new_chat_tokens}, prev_chat_tokens
                 ).input_ids;
             }
             m_templated_chat_history = std::move(new_templated_chat_history);
+            m_tokenized_chat_history.clear();
+            std::copy(new_chat_tokens.data<int64_t>(), new_chat_tokens.data<int64_t>() + new_chat_tokens.get_size(),
+                        std::back_inserter(m_tokenized_chat_history));
+            m_trust_encoded_history = true;
         } else {
             encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
         }
@@ -1121,6 +1148,14 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
+}
+
+std::vector<int64_t> InputsEmbedder::get_tokenized_chat_history() const {
+    return m_impl->get_tokenized_chat_history();
+}
+
+void InputsEmbedder::update_tokenized_chat_history(std::vector<int64_t> encoded_result) {
+    return m_impl->update_tokenized_chat_history(encoded_result);
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {

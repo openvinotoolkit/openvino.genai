@@ -13,6 +13,8 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 
+#include "sampler.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -263,6 +265,22 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
+}
+
+bool is_tokenized_history_same(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
+    size_t i = 0;
+    // encoded_history should be eq or less then tokenized_history, tokenized_history also include eos token
+    if (encoded_history.get_size() > tokenized_history.size())
+        return false;
+    auto encoded_history_data = encoded_history.data<int64_t>();
+    while(i < encoded_history.get_size()) {
+        if (encoded_history_data[i] != tokenized_history[i])
+            break;
+        i++;
+    }
+
+    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
+    return i == tokenized_history.size() || i == tokenized_history.size() - 1;
 }
 
 }  // namespace utils

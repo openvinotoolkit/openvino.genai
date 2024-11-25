@@ -150,8 +150,14 @@ public:
         size_t request_id = 0;
         size_t block_size = 1; // not used
         bool enable_prefix_caching = false;
+
+        auto tokenized_chat_history = m_inputs_embedder->get_tokenized_chat_history();
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+        // inputs_embeds contains whole history
+        if (inputs_embeds_size == tokenized_chat_history.size()) {
+            history_size = 0;
+        }
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
@@ -176,16 +182,18 @@ public:
         OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
                         "Currently streaming is possible only for greedy or multinomial decoding");
 
-        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds.get_shape()[1] }};
+        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds.get_shape()[1] }};
+        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
 
         ov::genai::EncodedResults encoded_result;
         int32_t m_selected_beam = 0;
         std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
                                                                                       position_ids, m_embedding, std::nullopt);
+        
+        m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
 
         DecodedResults decoded;
         for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {

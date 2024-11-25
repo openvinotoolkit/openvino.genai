@@ -39,6 +39,11 @@ public:
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
+    // returns tokenized chat history
+    std::vector<int64_t> get_tokenized_chat_history() const;
+    // add new results to tokenized chat history
+    void update_tokenized_chat_history(std::vector<int64_t> encoded_result);
+
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
     // adds currently generated text to chat history
