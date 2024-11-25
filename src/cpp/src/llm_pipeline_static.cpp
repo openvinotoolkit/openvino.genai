@@ -237,12 +237,18 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
-int get_data_size(ov::Shape shape, int dim) {
-    int data_size = 1;
+/**
+ * @brief Calculates the step size for a given tensor shape and dimension.
+ *
+ * The step size represents the number of elements that need to be skipped 
+ * in the tensor to move from one slice of the specified dimension to the next.
+ */
+int get_step_for(ov::Shape shape, int dim) {
+    int step_size = 1;
     for (int i = dim + 1; i < shape.size(); ++i) {
-        data_size *= shape[i];
+        step_size *= shape[i];
     }
-    return data_size;
+    return step_size;
 }
 
 struct NPUDesc {
@@ -707,19 +713,25 @@ EncodedResults StaticLLMPipeline::generate(
     const auto& kvcache_compiled = m_kvcache_request.get_compiled_model();
     for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
         const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
-        auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name); 
+        auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
         fill_tensor<ov::float16>(kvcache_in_tensor, 0);
 
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
         auto prefill_out_tensor = m_prefill_request.get_tensor(output_name);
 
-        uint16_t* src_ptr = (uint16_t*)prefill_out_tensor.data() + (m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens) * get_data_size(prefill_out_tensor.get_shape(), m_kvcache_desc.dim);
+        auto prefill_out_dim_step = get_step_for(prefill_out_tensor.get_shape(), m_kvcache_desc.dim);
+        auto prefill_out_dim_offset = prefill_out_dim_step * (m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens);
+        auto src_full_dim_size = prefill_out_dim_step * prefill_out_tensor.get_shape()[m_kvcache_desc.dim];
+        uint16_t* src_ptr = (uint16_t*)prefill_out_tensor.data() + prefill_out_dim_offset;
+
+        auto kvcache_in_dim_step = get_step_for(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim);
+        auto dst_full_dim_size = kvcache_in_dim_step * kvcache_in_tensor.get_shape()[m_kvcache_desc.dim];
         uint16_t* dst_ptr = (uint16_t*)kvcache_in_tensor.data();
-        int src_gap_size = get_data_size(prefill_out_tensor.get_shape(), m_kvcache_desc.dim - 1);
-        int dst_gap_size = get_data_size(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim - 1);
-        int copy_size = get_data_size(prefill_out_tensor.get_shape(), m_kvcache_desc.dim);
-        for(int k = 0; k < (m_kvcache_desc.dim > 0 ? kvcache_in_tensor.get_shape().at(m_kvcache_desc.dim - 1) : 1); k++) {
-            memcpy(dst_ptr + k * dst_gap_size, src_ptr + k * src_gap_size, copy_size * sizeof(ov::float16) * m_kvcache_desc.num_stored_tokens);
+
+        auto num_dim_repeats = m_kvcache_desc.dim > 0 ? kvcache_in_tensor.get_shape().at(m_kvcache_desc.dim - 1) : 1;
+        size_t bytes_to_copy = prefill_out_dim_step * sizeof(ov::float16) * m_kvcache_desc.num_stored_tokens;
+        for(int k = 0; k < num_dim_repeats; k++) {
+            memcpy(dst_ptr + k * dst_full_dim_size, src_ptr + k * src_full_dim_size, bytes_to_copy);
         }
     }
 
@@ -766,13 +778,19 @@ EncodedResults StaticLLMPipeline::generate(
             const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
             auto kvcache_out_tensor = m_kvcache_request.get_tensor(output_name);
 
+            auto kvcache_out_dim_step = get_step_for(kvcache_out_tensor.get_shape(), m_kvcache_desc.dim);
+            auto src_full_dim_size = kvcache_out_dim_step * kvcache_out_tensor.get_shape()[m_kvcache_desc.dim];
             uint16_t* src_ptr = (uint16_t*)kvcache_out_tensor.data();
-            uint16_t* dst_ptr = (uint16_t*)kvcache_in_tensor.data() + (m_kvcache_desc.num_stored_tokens - 1) * get_data_size(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim);
-            int src_gap_size = get_data_size(kvcache_out_tensor.get_shape(), m_kvcache_desc.dim - 1);
-            int dst_gap_size = get_data_size(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim - 1);
-            int copy_size = get_data_size(kvcache_out_tensor.get_shape(), m_kvcache_desc.dim);
-            for(int k = 0; k < (m_kvcache_desc.dim > 0 ? kvcache_in_tensor.get_shape().at(m_kvcache_desc.dim - 1) : 1); k++) {
-                memcpy(dst_ptr + k * dst_gap_size, src_ptr + k * src_gap_size, copy_size * sizeof(ov::float16));
+
+            auto kvcache_in_dim_step = get_step_for(kvcache_in_tensor.get_shape(), m_kvcache_desc.dim);
+            auto kvcache_in_dim_offset = kvcache_in_dim_step * (m_kvcache_desc.num_stored_tokens - 1);
+            auto dst_full_dim_size = kvcache_in_dim_step * kvcache_in_tensor.get_shape()[m_kvcache_desc.dim];
+            uint16_t* dst_ptr = (uint16_t*)kvcache_in_tensor.data() + kvcache_in_dim_offset;
+
+            auto num_dim_repeats = m_kvcache_desc.dim > 0 ? kvcache_in_tensor.get_shape().at(m_kvcache_desc.dim - 1) : 1;
+            size_t bytes_to_copy = kvcache_out_dim_step * sizeof(ov::float16);
+            for(int k = 0; k < num_dim_repeats; k++) {
+                memcpy(dst_ptr + k * dst_full_dim_size, src_ptr + k * src_full_dim_size, bytes_to_copy);
             }
         }
     }
