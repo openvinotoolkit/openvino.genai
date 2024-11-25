@@ -753,6 +753,36 @@ class Image2ImagePipeline:
             :rtype: ov.Tensor
         """
     @typing.overload
+    def generate(self, prompt: str, initial_image: openvino._pyopenvino.Tensor, **kwargs) -> typing.Any:
+        """
+            Generates images for text-to-image models.
+        
+            :param prompt: input prompt
+            :type prompt: str
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+        
+            Expected parameters list:
+            prompt_2: str - second prompt,
+            prompt_3: str - third prompt,
+            negative_prompt: str - negative prompt,
+            negative_prompt_2: str - second negative prompt,
+            negative_prompt_3: str - third negative prompt,
+            num_images_per_prompt: int - number of images, that should be generated per prompt,
+            guidance_scale: float - guidance scale,
+            generation_config: GenerationConfig,
+            height: int - height of resulting images,
+            width: int - width of resulting images,
+            num_inference_steps: int - number of inference steps,
+            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            adapters: LoRA adapters,
+            strength: strength for image to image generation. 1.0f means initial image is fully noised,
+            max_sequence_length: int - length of t5_encoder_model input
+        
+            :return: ov.Tensor with resulting images
+            :rtype: ov.Tensor
+        """
+    @typing.overload
     def generate(self, prompt: str, **kwargs) -> typing.Any:
         """
             Generates images for text-to-image models.

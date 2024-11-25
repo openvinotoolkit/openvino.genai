@@ -44,6 +44,8 @@ def main():
 
     initial_image = read_image(args.image)
     _, H, W, _ = list(initial_image.shape)
+    H = H // 2
+    W = W // 2
     mask_image = read_image(args.mask)
 
     image_tensor = pipe.generate(
@@ -52,6 +54,7 @@ def main():
         mask_image,
         width=W,
         height=H,
+        strength=0.8,
         generator=Generator(42)
     )
 

@@ -260,18 +260,19 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("initial_image"), "Initial image",
             py::arg("mask"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        // .def(
-        //     "generate",
-        //     [](ov::genai::Image2ImagePipeline& pipe,
-        //         const std::string& prompt,
-        //         const ov::Tensor& initial_image,
-        //         const py::kwargs& kwargs
-        //     ) {
-        //         ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-        //         return py::cast(pipe.generate(prompt, initial_image, params));
-        //     },
-        //     py::arg("prompt"), "Input string",
-        //     (text2image_generate_docstring + std::string(" \n ")).c_str())
+        .def(
+            "generate",
+            [](ov::genai::Image2ImagePipeline& pipe,
+                const std::string& prompt,
+                const ov::Tensor& initial_image,
+                const py::kwargs& kwargs
+            ) {
+                ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
+                return py::cast(pipe.generate(prompt, initial_image, params));
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("initial_image"), "Initial image",
+            (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def(
             "generate",
             [](ov::genai::Image2ImagePipeline& pipe,

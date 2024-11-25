@@ -308,9 +308,9 @@ public:
         const bool is_inpainting_model = unet_config.in_channels == (m_vae->get_config().in_channels * 2 + 1);
 
         if (generation_config.height < 0)
-            generation_config.height = unet_config.sample_size * vae_scale_factor;
+            compute_dim(generation_config.height, initial_image, 1 /* assume NHWC */);
         if (generation_config.width < 0)
-            generation_config.width = unet_config.sample_size * vae_scale_factor;
+            compute_dim(generation_config.width, initial_image, 2 /* assume NHWC */);
         check_inputs(generation_config, initial_image);
 
         m_clip_text_encoder->set_adapters(generation_config.adapters);
@@ -336,8 +336,6 @@ public:
         if (m_pipeline_type == PipelineType::INPAINTING) {
             std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, generation_config);
         }
-
-        read_tensor("/home/devuser/ilavreno/openvino.genai/mask.txt", mask);
 
         // prepare latents passed to models taking into account guidance scale (batch size multipler)
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -426,14 +424,34 @@ public:
     }
 
 private:
+    void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        const auto& unet_config = m_unet->get_config();
+
+        // in case of image to image generation_config_value is just ignored and computed based on initial image
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            OPENVINO_ASSERT(initial_image, "Initial image is empty for image to image pipeline");
+            ov::Shape shape = initial_image.get_shape();
+            int64_t dim_val = shape[dim_idx];
+
+            generation_config_value = dim_val - (dim_val % vae_scale_factor);
+        }
+
+        if (generation_config_value < 0)
+            generation_config_value = unet_config.sample_size * vae_scale_factor;
+    }
+
     void initialize_generation_config(const std::string& class_name) override {
         assert(m_unet != nullptr);
         assert(m_vae != nullptr);
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        m_generation_config.height = unet_config.sample_size * vae_scale_factor;
-        m_generation_config.width = unet_config.sample_size * vae_scale_factor;
+        // in case of image to image, the shape is computed based on initial image
+        if (m_pipeline_type != PipelineType::IMAGE_2_IMAGE) {
+            m_generation_config.height = unet_config.sample_size * vae_scale_factor;
+            m_generation_config.width = unet_config.sample_size * vae_scale_factor;
+        }
 
         if (class_name == "StableDiffusionPipeline" || class_name == "StableDiffusionInpaintPipeline" || class_name == "StableDiffusionInpaintPipeline") {
             m_generation_config.guidance_scale = 7.5f;
