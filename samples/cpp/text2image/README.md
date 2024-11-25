@@ -39,6 +39,28 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
    ![](./512x512.bmp)
 
+## Run with callback
+
+You can also add a callback to the `main.cpp` file to interrupt the image generation process earlier if you are satisfied with the intermediate result of the image generation or to add logs.
+
+Please find the template of the callback usage below.
+
+```cpp
+ov::genai::Text2ImagePipeline pipe(models_path, device);
+
+auto callback = [&](size_t step, ov::Tensor& intermediate_res) -> bool {
+   std::cout << "Image generation step: " << step << std::endl;
+   ov::Tensor img = pipe.decode(intermediate_res); // get intermediate image tensor
+   if (your_condition) // return true if you want to interrupt image generation
+      return true;
+   return false;
+};
+
+ov::Tensor image = pipe.generate(prompt,
+   ...
+   ov::genai::callback(callback)
+);
+```
 
 ## Run with optional LoRA adapters
 

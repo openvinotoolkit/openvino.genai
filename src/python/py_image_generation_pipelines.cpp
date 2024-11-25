@@ -67,106 +67,6 @@ auto text2image_generate_docstring = R"(
 )";
 
 
-void update_image_generation_config_from_kwargs(
-    ov::genai::ImageGenerationConfig& config,
-    const py::kwargs& kwargs) {
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (key == "prompt_2") {
-            config.prompt_2 = py::cast<std::string>(value);
-        } else if (key == "prompt_3") {
-            config.prompt_3 = py::cast<std::string>(value);
-        } else if (key == "negative_prompt") {
-            config.negative_prompt = py::cast<std::string>(value);
-        } else if (key == "negative_prompt_2") {
-            config.negative_prompt_2 = py::cast<std::string>(value);
-        } else if (key == "negative_prompt_3") {
-            config.negative_prompt_3 = py::cast<std::string>(value);
-        } else if (key == "num_images_per_prompt") {
-            config.num_images_per_prompt = py::cast<size_t>(value);
-        } else if (key == "guidance_scale") {
-            config.guidance_scale = py::cast<float>(value);
-        } else if (key == "height") {
-            config.height = py::cast<int64_t>(value);
-        } else if (key == "width") {
-            config.width = py::cast<int64_t>(value);
-        } else if (key == "num_inference_steps") {
-            config.num_inference_steps = py::cast<size_t>(value);
-        } else if (key == "generator") {
-            auto py_generator = py::cast<std::shared_ptr<ov::genai::Generator>>(value);
-            config.generator = py_generator;
-        } else if (key == "adapters") {
-            config.adapters = py::cast<ov::genai::AdapterConfig>(value);
-        } else if (key == "strength") {
-            config.strength = py::cast<float>(value);
-        } else if (key == "max_sequence_length") {
-            config.max_sequence_length = py::cast<size_t>(value);
-        } else {
-            throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                        "Use help(openvino_genai.ImageGenerationConfig) to get list of acceptable parameters."));
-        }
-    }
-}
-
-ov::AnyMap text2image_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
-    ov::AnyMap params = {};
-
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (key == "prompt_2") {
-            params.insert({ov::genai::prompt_2(std::move(py::cast<std::string>(value)))});
-        } else if (key == "prompt_3") {
-            params.insert({ov::genai::prompt_3(std::move(py::cast<std::string>(value)))});
-        } else if (key == "negative_prompt") {
-            params.insert({ov::genai::negative_prompt(std::move(py::cast<std::string>(value)))});
-        } else if (key == "negative_prompt_2") {
-            params.insert({ov::genai::negative_prompt_2(std::move(py::cast<std::string>(value)))});
-        } else if (key == "negative_prompt_3") {
-            params.insert({ov::genai::negative_prompt_3(std::move(py::cast<std::string>(value)))});
-        } else if (key == "num_images_per_prompt") {
-            params.insert({ov::genai::num_images_per_prompt(std::move(py::cast<size_t>(value)))});
-        } else if (key == "guidance_scale") {
-            params.insert({ov::genai::guidance_scale(std::move(py::cast<float>(value)))});
-        } else if (key == "height") {
-            params.insert({ov::genai::height(std::move(py::cast<int64_t>(value)))});
-        } else if (key == "width") {
-            params.insert({ov::genai::width(std::move(py::cast<int64_t>(value)))});
-        } else if (key == "num_inference_steps") {
-            params.insert({ov::genai::num_inference_steps(std::move(py::cast<size_t>(value)))});
-        } else if (key == "generator") {
-            auto py_generator =py::cast<std::shared_ptr<ov::genai::Generator>>(value);
-            params.insert({ov::genai::generator(std::move(py_generator))});
-        } else if (key == "adapters") {
-            params.insert({ov::genai::adapters(std::move(py::cast<ov::genai::AdapterConfig>(value)))});
-        } else if (key == "strength") {
-            params.insert({ov::genai::strength(std::move(py::cast<float>(value)))});
-        } else if (key == "max_sequence_length") {
-            params.insert({ov::genai::max_sequence_length(std::move(py::cast<size_t>(value)))});
-        }
-        else {
-            if (allow_compile_properties) {
-                // convert arbitrary objects to ov::Any
-                // not supported properties are not checked, as these properties are passed to compile(), which will throw exception in case of unsupported property
-                if (pyutils::py_object_is_any_map(value)) {
-                    auto map = pyutils::py_object_to_any_map(value);
-                    params.insert(map.begin(), map.end());
-                } else {
-                    params[key] = pyutils::py_object_to_any(value);
-                }
-            }
-            else {
-                // generate doesn't run compile(), so only Text2ImagePipeline specific properties are allowed
-                throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                            "Use help(openvino_genai.Text2ImagePipeline.generate) to get list of acceptable parameters."));
-            }
-        }
-    }
-    return params;
-}
 
 } // namespace
 
@@ -228,7 +128,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def("update_generation_config", [](
             ov::genai::ImageGenerationConfig config,
             const py::kwargs& kwargs) {
-            update_image_generation_config_from_kwargs(config, kwargs);
+            config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
@@ -250,7 +150,7 @@ void init_image_generation_pipelines(py::module_& m) {
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Text2ImagePipeline>(models_path, device, text2image_kwargs_to_any_map(kwargs, true));
+            return std::make_unique<ov::genai::Text2ImagePipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"), "folder with exported model files.",
         py::arg("device"), "device on which inference will be done",
@@ -287,10 +187,10 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& prompt,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
-                ov::AnyMap params = text2image_kwargs_to_any_map(kwargs, false);
+                ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 return py::cast(pipe.generate(prompt, params));
             },
             py::arg("prompt"), "Input string",
-            (text2image_generate_docstring + std::string(" \n ")).c_str()
-        );
+            (text2image_generate_docstring + std::string(" \n ")).c_str())
+        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));;
 }

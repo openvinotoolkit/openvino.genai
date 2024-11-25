@@ -72,46 +72,6 @@ py::object call_vlm_generate(
     return py::cast(pipe.generate(prompt, images, updated_config, streamer));
 }
 
-ov::AnyMap vlm_kwargs_to_any_map(const py::kwargs& kwargs, bool allow_compile_properties=true) {
-    ov::AnyMap params = {};
-
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (key == "images") {
-            params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(value)))});
-        } else if (key == "image") {
-            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(value)))});
-        } else if (key == "generation_config") {
-            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(value)))});
-        } else if (key == "streamer") {
-            auto py_streamer = py::cast<pyutils::PyBindStreamerVariant>(value);
-            params.insert({ov::genai::streamer(std::move(pyutils::pystreamer_to_streamer(py_streamer)))});
-
-        } 
-        else {
-            if (allow_compile_properties) {
-                // convert arbitrary objects to ov::Any
-                // not supported properties are not checked, as these properties are passed to compile(), which will throw exception in case of unsupported property
-                if (pyutils::py_object_is_any_map(value)) {
-                    auto map = pyutils::py_object_to_any_map(value);
-                    params.insert(map.begin(), map.end());
-                } else {
-                    params[key] = pyutils::py_object_to_any(value);
-                }
-            }
-            else {
-                // generate doesn't run compile(), so only VLMPipeline specific properties are allowed
-                throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
-                                        "Use help(openvino_genai.VLMPipeline.generate) to get list of acceptable parameters."));
-            }
-        }
-    }
-
-    return params;
-}
-
 void init_vlm_pipeline(py::module_& m) {
     py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
         .def(py::init([](
@@ -120,7 +80,7 @@ void init_vlm_pipeline(py::module_& m) {
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, vlm_kwargs_to_any_map(kwargs, true));
+            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"), "folder with exported model files",
         py::arg("device"), "device on which inference will be done"
@@ -177,7 +137,7 @@ void init_vlm_pipeline(py::module_& m) {
                const std::string& prompt,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::DecodedResults> {
-                return py::cast(pipe.generate(prompt, vlm_kwargs_to_any_map(kwargs, false)));
+                return py::cast(pipe.generate(prompt, pyutils::kwargs_to_any_map(kwargs)));
             },
             py::arg("prompt"), "Input string",
             (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()

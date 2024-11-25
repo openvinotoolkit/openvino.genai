@@ -204,6 +204,21 @@ def create_text_gen_model(model_path, device, **kwargs):
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 
+def get_scheduler_config_genai(user_config, config_name="CB config"):
+    import openvino_genai
+
+    default_cb_config = {"cache_size": 1}
+    scheduler_config = openvino_genai.SchedulerConfig()
+    scheduler_params = user_config or default_cb_config
+    if scheduler_params:
+        log.info(f"Scheduler parameters for {config_name}:\n{scheduler_params}")
+
+        for param, value in scheduler_params.items():
+            setattr(scheduler_config, param, value)
+
+    return scheduler_config
+
+
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_tokenizers  # noqa: F401
     import openvino_genai
@@ -214,18 +229,20 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
+    draft_model_path = kwargs.get("draft_model", '')
     cb = kwargs.get("use_cb", False)
-    if cb:
+    if cb or draft_model_path:
         log.info("Continuous Batching mode activated")
-        default_cb_config = {"cache_size": 1}
-        scheduler_config = openvino_genai.SchedulerConfig()
-        scheduler_params = kwargs.get("cb_config") or default_cb_config
-        if scheduler_params:
-            log.info(f"Scheduler parameters:\n{scheduler_params}")
+        ov_config["scheduler_config"] = get_scheduler_config_genai(kwargs.get("cb_config"))
 
-            for param, value in scheduler_params.items():
-                setattr(scheduler_config, param, value)
-        ov_config["scheduler_config"] = scheduler_config
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
+        log.info("Speculative Decoding is activated")
+        draft_device = kwargs.get('draft_device', None) or device
+        draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), "draft CB config")}\
+            if kwargs.get("draft_cb_config") is not None else {}
+        ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
     if adapter_config:
@@ -263,7 +280,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb else None
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb or draft_model_path else None
 
     return llm_pipe, tokenizer, end - start, streamer, True
 
