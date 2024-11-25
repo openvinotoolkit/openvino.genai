@@ -1062,7 +1062,7 @@ EncodedResults StaticLLMPipeline::generate(
             auto dst_full_dim_size = kvcache_in_dim_step * kvcache_in_tensor.get_shape()[kv_dim];
             uint16_t* dst_ptr = (uint16_t*)kvcache_in_tensor.data() + kvcache_in_dim_offset;
 
-            auto num_dim_repeats = kv_dim > 0 ? kvcache_in_tensor.get_shape().at(kv_dim- 1) : 1;
+            auto num_dim_repeats = kv_dim > 0 ? kvcache_in_tensor.get_shape().at(kv_dim - 1) : 1;
             size_t bytes_to_copy = kvcache_out_dim_step * sizeof(ov::float16);
             for(int k = 0; k < num_dim_repeats; k++) {
                 memcpy(dst_ptr + k * dst_full_dim_size, src_ptr + k * src_full_dim_size, bytes_to_copy);
