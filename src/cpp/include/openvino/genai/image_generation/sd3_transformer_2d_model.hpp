@@ -33,6 +33,16 @@ public:
     SD3Transformer2DModel(const std::filesystem::path& root_dir,
                           const std::string& device,
                           const ov::AnyMap& properties = {});
+    
+    SD3Transformer2DModel(const std::string &model,
+                          const Tensor &weights,
+                          const std::filesystem::path& config_path);
+
+    SD3Transformer2DModel(const std::string &model,
+                          const Tensor &weights,
+                          const std::filesystem::path& config_path,
+                          const std::string& device,
+                          const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>

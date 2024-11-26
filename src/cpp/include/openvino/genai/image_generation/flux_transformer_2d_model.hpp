@@ -28,8 +28,18 @@ public:
     explicit FluxTransformer2DModel(const std::filesystem::path& root_dir);
 
     FluxTransformer2DModel(const std::filesystem::path& root_dir,
-                          const std::string& device,
-                          const ov::AnyMap& properties = {});
+                           const std::string& device,
+                           const ov::AnyMap& properties = {});
+
+    FluxTransformer2DModel(const std::string &model,
+                           const Tensor &weights,
+                           const std::filesystem::path& config_path);
+
+    FluxTransformer2DModel(const std::string &model,
+                           const Tensor &weights,
+                           const std::filesystem::path& config_path,
+                           const std::string& device,
+                           const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>

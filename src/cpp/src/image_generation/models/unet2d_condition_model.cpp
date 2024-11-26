@@ -42,6 +42,24 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
     compile(device, properties);
 }
 
+UNet2DConditionModel::UNet2DConditionModel(const std::string &model,
+                                           const Tensor &weights,
+                                           const std::filesystem::path& config_path) :
+    m_config(config_path / "config.json") {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+    m_vae_scale_factor = get_vae_scale_factor(config_path.parent_path() / "vae_decoder" / "config.json");
+}
+
+UNet2DConditionModel::UNet2DConditionModel(const std::string &model,
+                                           const Tensor &weights,
+                                           const std::filesystem::path& config_path,
+                                           const std::string& device,
+                                           const ov::AnyMap& properties) :
+    UNet2DConditionModel(model, weights, config_path) {
+    compile(device, properties);
+}
+
 UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
 
 const UNet2DConditionModel::Config& UNet2DConditionModel::get_config() const {

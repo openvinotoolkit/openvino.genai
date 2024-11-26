@@ -36,6 +36,16 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties = {});
 
+    UNet2DConditionModel(const std::string &model,
+                         const Tensor &weights,
+                         const std::filesystem::path& config_path);
+
+    UNet2DConditionModel(const std::string &model,
+                         const Tensor &weights,
+                         const std::filesystem::path& config_path,
+                         const std::string& device,
+                         const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     UNet2DConditionModel(const std::filesystem::path& root_dir,

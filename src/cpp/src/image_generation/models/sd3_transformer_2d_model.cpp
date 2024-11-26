@@ -39,6 +39,24 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_d
     compile(device, properties);
 }
 
+SD3Transformer2DModel::SD3Transformer2DModel(const std::string &model,
+                                             const Tensor &weights,
+                                             const std::filesystem::path& config_path) :
+    m_config(config_path / "config.json") {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+    m_vae_scale_factor = get_vae_scale_factor(config_path.parent_path() / "vae_decoder" / "config.json");
+}
+
+SD3Transformer2DModel::SD3Transformer2DModel(const std::string &model,
+                                             const Tensor &weights,
+                                             const std::filesystem::path& config_path,
+                                             const std::string& device,
+                                             const ov::AnyMap& properties) :
+    SD3Transformer2DModel(model, weights, config_path) {
+    compile(device, properties);
+}
+
 SD3Transformer2DModel::SD3Transformer2DModel(const SD3Transformer2DModel&) = default;
 
 const SD3Transformer2DModel::Config& SD3Transformer2DModel::get_config() const {

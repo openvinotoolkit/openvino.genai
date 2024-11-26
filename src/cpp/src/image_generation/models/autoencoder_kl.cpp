@@ -129,6 +129,60 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     }
 }
 
+AutoencoderKL::AutoencoderKL(const std::string &vae_decoder_model,
+                             const Tensor &vae_decoder_weights,
+                             const std::filesystem::path& vae_decoder_config_path)
+    : m_config(vae_decoder_config_path / "config.json") {
+    ov::Core core = utils::singleton_core();
+    m_decoder_model = core.read_model(vae_decoder_model, vae_decoder_weights);
+    // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
+    merge_vae_image_post_processing();
+}
+
+AutoencoderKL::AutoencoderKL(const std::string &vae_encoder_model,
+                             const Tensor &vae_encoder_weights,
+                             const std::string &vae_decoder_model,
+                             const Tensor &vae_decoder_weights,
+                             const std::filesystem::path& vae_config_path)
+    : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_config_path) {
+    ov::Core core = utils::singleton_core();
+    m_encoder_model = core.read_model(vae_encoder_model, vae_encoder_weights);
+    // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
+    merge_vae_image_pre_processing();
+}
+
+AutoencoderKL::AutoencoderKL(const std::string &vae_decoder_model,
+                             const Tensor &vae_decoder_weights,
+                             const std::filesystem::path& vae_decoder_config_path,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_decoder_config_path) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
+}
+
+AutoencoderKL::AutoencoderKL(const std::string &vae_encoder_model,
+                             const Tensor &vae_encoder_weights,
+                             const std::string &vae_decoder_model,
+                             const Tensor &vae_decoder_weights,
+                             const std::filesystem::path& vae_config_path,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : AutoencoderKL(vae_encoder_model,
+                    vae_encoder_weights,
+                    vae_decoder_model,
+                    vae_decoder_weights,
+                    vae_config_path) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
+}
+
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
