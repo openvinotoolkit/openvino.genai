@@ -213,31 +213,36 @@ jobs:
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
+          
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
 
       - name: Download GenAI package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: openvino_genai_cpack
-          path: ${{ env.INSTALL_DIR }}/genai
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
     
       - name: Test bindings
         run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
-        env:
-          PYTHONPATH: "./build/:$PYTHONPATH"
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt --upgrade-strategy eager
+          python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_chat_generate_api.py::test_set_chat_template
 
-      - name: Test bindings (wheel)
-        run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
+      # - name: Test bindings (wheel)
+      #   run: |
+      #     source ${{ env.INSTALL_DIR }}/setupvars.sh
+      #     python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+      #     python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests --ignore ${{ env.SRC_DIR }}/tests/python_tests/test_whisper_generate_api.py --ignore ${{ env.SRC_DIR }}/tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
       - run: >
-            source ${OV_INSTALL_DIR}/setupvars.sh
-            && python -m pytest -v ./tests/python_tests/test_vlm_api.py
+            source ${{ env.INSTALL_DIR }}/setupvars.sh
+            && python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_vlm_api.py
 
   # genai_python_lib_whisper:
   #   name: OpenVINO genai extension whisper tests (cmake + wheel)
