@@ -103,10 +103,10 @@ jobs:
       - name: CMake configure - GenAI
         run: |    
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ${{ env.BUILD_DIR}}
+          cmake -DCMAKE_BUILD_TYPE=Release -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
       
       - name: Cmake build - GenAI
-        run: cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) 
+        run: cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc)
 
       - name: Cmake install - GenAI
         run: cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
