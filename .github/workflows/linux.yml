@@ -133,8 +133,8 @@ jobs:
             -DENABLE_STRICT_DEPENDENCIES=OFF \
             -DENABLE_SYSTEM_OPENCL=ON \
             -DCMAKE_VERBOSE_MAKEFILE=ON \
-            -DCPACK_GENERATOR=NPM \
-            -DENABLE_JS=OFF \
+            -DCPACK_GENERATOR=TGZ \
+            -DENABLE_JS=ON \
             -DENABLE_SAMPLES=ON \
             -DENABLE_OV_ONNX_FRONTEND=OFF \
             -DENABLE_OV_PADDLE_FRONTEND=OFF \
@@ -430,7 +430,7 @@ jobs:
       - name: Build genai
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_JS=ON -S ./ -B ./build/
           cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
 
       # - name: Build and Install dependencies
