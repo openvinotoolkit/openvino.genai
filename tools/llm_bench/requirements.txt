@@ -1,17 +1,17 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino
-openvino-tokenizers
-openvino_genai
+openvino~=2024.5.0
+openvino-tokenizers~=2024.5.0
+openvino_genai~=2024.5.0
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
-transformers>=4.40.0
+transformers~=4.46.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
-git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
+git+https://github.com/huggingface/optimum-intel.git@d35737671ec226a66c495159588b7603066e1b07##egg=optimum-intel
+nncf ~= 2.14.0
 packaging
 psutil
 timm
