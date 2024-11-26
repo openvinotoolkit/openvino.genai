@@ -4,6 +4,7 @@
 #include "utils.hpp"
 
 #include <fstream>
+#include <memory>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
@@ -230,23 +231,32 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
     return {new_input_ids, new_attention_mask};
 }
 
-void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
-    auto last_node = model->output(0).get_node()->input_value(0).get_node();
-    ov::Node* matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node);
-    if (matmul) {
-        // we have found matmul, do nothing
-    } else if(auto add = dynamic_cast<ov::op::v1::Add*>(last_node)) {
-        matmul = dynamic_cast<ov::op::v0::MatMul*>(add->input_value(0).get_node());
-    } else if (auto transpose = dynamic_cast<ov::op::v1::Transpose*>(last_node)) {
-        matmul = dynamic_cast<ov::op::v0::MatMul*>(transpose->input_value(0).get_node());
-    } else if (auto multiply = dynamic_cast<ov::op::v1::Multiply*>(last_node)) {
-        if (auto tanh = dynamic_cast<ov::op::v0::Tanh*>(multiply->input_value(0).get_node())) {
-            if (auto divide = dynamic_cast<ov::op::v1::Divide*>(tanh->input_value(0).get_node())) {
-                matmul = dynamic_cast<ov::op::v0::MatMul*>(divide->input_value(0).get_node());
+std::shared_ptr<ov::Node> find_llm_matmul(const std::shared_ptr<ov::Model>& model) {
+    auto last_node = model->output(0).get_node()->input_value(0).get_node_shared_ptr();
+    std::shared_ptr<ov::Node> matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(last_node);
+    // There are several patterns for matmul we are looking for:
+    // Matmul -> Result
+    // Matmul -> Add -> Result
+    // Matmul -> Transpose -> Result
+    // MatMul -> Divide -> Tanh -> Multiply -> Result
+    if (!matmul) {
+        if(auto add = std::dynamic_pointer_cast<ov::op::v1::Add>(last_node)) {
+            matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
+        } else if (auto transpose = std::dynamic_pointer_cast<ov::op::v1::Transpose>(last_node)) {
+            matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
+        } else if (auto multiply = std::dynamic_pointer_cast<ov::op::v1::Multiply>(last_node)) {
+            if (auto tanh = std::dynamic_pointer_cast<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
+                if (auto divide = std::dynamic_pointer_cast<ov::op::v1::Divide>(tanh->input_value(0).get_node_shared_ptr())) {
+                    matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(divide->input_value(0).get_node_shared_ptr());
+                }
             }
         }
     }
+    return matmul;
+}
 
+void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
+    auto matmul = find_llm_matmul(model);
     if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
         auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
         auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-2});

@@ -114,13 +114,23 @@ public:
         subsequence_begins_data[0] = 0;
         block_indices_begins_data[0] = 0;
 
+        bool matmul_gathering_is_required = false;
+        int64_t gathering_current_index = 0;
+        std::vector<int64_t> gather_indice_values;
+        try {
+            std::ignore = m_request.get_tensor("gather_indices");
+            matmul_gathering_is_required = true;
+        } catch (const ov::Exception&) {}
+
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
-            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
             size_t num_running_sequences = running_sequences.size();
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             size_t group_position_id = sequence_group->get_num_processed_tokens();
+            auto prompt_len = sequence_group->get_prompt_len();
+            size_t tokens_num_to_sample = 0;
 
             // spec: In case of multiple input tokens for current sequence (prompt_len > 1),
             // context_len corresponds to first token within subgroup of scheduled tokens
@@ -129,12 +139,20 @@ public:
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
                 Sequence::CPtr sequence = running_sequences[seq_id];
 
-                for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id) {
+                for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     input_ids_data[token_id] = position_id < sequence_group->get_prompt_len() ?
                         sequence_group->get_prompt_ids()[position_id] :
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
+                    if (matmul_gathering_is_required) {
+                        if (group_position_id + token_id >= prompt_len - 1) {
+                            gather_indice_values.push_back(gathering_current_index);
+                            tokens_num_to_sample++;
+                        }
+                    } else {
+                        tokens_num_to_sample++;
+                    }
                     position_ids_data[token_id] = position_id;
                 }
 
@@ -153,6 +171,7 @@ public:
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
             }
+            sequence_group->set_seq_len_to_sample(tokens_num_to_sample);
         }
 
         // typical LLM parameters
@@ -167,6 +186,12 @@ public:
 
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
+
+        if (matmul_gathering_is_required) {
+            ov::Tensor gather_indices(ov::element::i64, {gather_indice_values.size()});
+            std::memcpy(gather_indices.data(), gather_indice_values.data(), gather_indice_values.size() * sizeof(int64_t));
+            m_request.set_tensor("gather_indices", gather_indices);
+        }
 
         // print_tensor("input_ids", input_ids);
         // print_tensor("position_ids", position_ids);

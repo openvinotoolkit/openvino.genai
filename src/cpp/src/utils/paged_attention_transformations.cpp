@@ -5,6 +5,11 @@
 
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
+#include "utils.hpp"
+
+#include "openvino/op/constant.hpp"
+#include "openvino/op/gather.hpp"
+#include "openvino/op/parameter.hpp"
 
 namespace ov {
 namespace genai {
@@ -76,6 +81,19 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control) {
     apply_paged_attention_transformations(model, per_layer_cache_control);
     set_kv_cache_type_and_shape(model, device_config);
+}
+
+void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
+    auto matmul =  ov::genai::utils::find_llm_matmul(model);
+    if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
+        auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+        indices->set_friendly_name("gather_indices");
+        indices->output(0).get_tensor().set_names({"gather_indices"});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+        auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
+        matmul->input(0).replace_source_output(gather);
+        model->add_parameters({indices});
+    }
 }
 
 }  // namespace utils

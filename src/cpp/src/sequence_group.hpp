@@ -222,6 +222,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_num_validation_tokens = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
+    // seq len to sample at current iteration
+    size_t m_seq_len_to_sample = 0;
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
@@ -392,6 +394,14 @@ public:
 
     size_t get_num_processed_tokens() const {
         return m_num_processed_tokens;
+    }
+
+    size_t get_seq_len_to_sample() const {
+        return m_seq_len_to_sample;
+    }
+
+    void set_seq_len_to_sample(size_t len) {
+        m_seq_len_to_sample = len;
     }
 
     /**
