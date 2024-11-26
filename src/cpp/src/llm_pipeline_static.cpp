@@ -19,6 +19,7 @@
 #include "openvino/core/preprocess/pre_post_process.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
+#include "openvino/runtime/internal_properties.hpp"
 #include "openvino/core/parallel.hpp"
 
 #include <jinja2cpp/user_callable.h>
@@ -471,7 +472,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     bool compiler_dq = false;
     const auto supported_internal_properties = core.get_property("NPU", ov::internal::supported_properties);
     if (std::find(supported_internal_properties.begin(), supported_internal_properties.end(),
-                  ov::internal::npu_compiler_dq) != supported_internal_properties.end()) {
+                  "NPU_COMPILER_DQ") != supported_internal_properties.end()) {
         compiler_dq = true;
     }
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
