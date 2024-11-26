@@ -30,15 +30,17 @@ protected:
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 
+    size_t m_num_decoder_layers = 0;
+
     // Pre-allocated per-layer storages for the per-token cache re-rotation coefficients used in cache eviction case
     std::vector<ov::Tensor> m_rotation_coefficient_stores;
 
+    std::map<size_t, std::vector<std::set<size_t>>> m_previous_evicted_block_logical_indices_per_sequence;
+
     // Per-layer ROI tensors, reusing storage from the pre-allocated tensors above, that actually represent the
     // re-rotation coefficients to be sent to the proper model inputs at the *next* pipeline step.
-    std::vector<ov::Tensor> m_next_step_rotation_coefficients;
-
-    using SeqIdToRotatedLogicalBlocksMap = std::map<size_t, std::vector<size_t>>;
-    std::vector<SeqIdToRotatedLogicalBlocksMap> m_next_step_rotated_block_logical_indices_per_sequence;
+    std::vector<ov::Tensor> m_current_step_rotation_coefficients;
+    std::vector<std::map<size_t, std::vector<size_t>>> m_current_step_rotated_block_indices_per_sequence;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 
@@ -53,7 +55,8 @@ protected:
     void _notify_requests_dropped_by_handle();
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
-    void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+    void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+    void _compute_cache_rotation_data(const std::set<size_t>& live_sequences);
 
     void init(std::shared_ptr<ov::Model> model,
               const SchedulerConfig& scheduler_config,
