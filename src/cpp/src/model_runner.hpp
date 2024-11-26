@@ -273,7 +273,14 @@ private:
                 }
             }
         }
+        for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
+            const auto& target_tensor_name = dst_tensor_names[layer_idx];
+            size_t tensor_size = m_request.get_tensor(target_tensor_name).get_size();
+            size_t last_filled_element_idx = block_offsets_per_layer[layer_idx];
+            OPENVINO_ASSERT(tensor_size == last_filled_element_idx, "did not fill tensor ", target_tensor_name, " completely, tensor size in elements ", tensor_size, ", last filled idx ", last_filled_element_idx);
+        }
     }
+
     void _set_block_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                             const Scheduler::Output& scheduler_output,
                             size_t total_num_blocks) {
@@ -311,6 +318,7 @@ private:
             auto rotated_block_indices_tensor = m_request.get_tensor(tensor_name);
             rotated_block_indices_tensor.set_shape({num_indices});
         }
+
 
         // NB: the order of per-sequence index filling in the function below must be the same
         // as the order of `seq_id`s in which the "rotation_coefficients.N" inputs are filled
