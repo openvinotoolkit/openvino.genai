@@ -170,6 +170,7 @@ jobs:
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
+        working-directory: ${{ env.INSTALL_DIR }}
               
       - name: Build GenAI wheel
         run: |
