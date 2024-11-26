@@ -799,6 +799,7 @@ jobs:
     with:
       model_id: llava-hf/llava-1.5-7b-hf
       model_dir: llava_1_5_7b_ov
+      compare_with_ref: true
 
   visual_language_chat_sample-ubuntu-llava_next:
     uses: ./.github/workflows/job_vlm_sample_llava.yml
