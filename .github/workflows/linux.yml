@@ -60,14 +60,14 @@ jobs:
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
   genai_build_cmake:
-    name: OpenVINO genai extension (cmake)
+    name: Build GenAI extension (cmake)
     needs: [ openvino_download ]
     if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 120
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-16gb-staging
+    runs-on: aks-linux-8-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -124,14 +124,14 @@ jobs:
           if-no-files-found: 'error'
   
   genai_build_wheel:
-    name: OpenVINO GenAI extension (wheel)
+    name: Build GenAI extension (wheel)
     needs: [ openvino_download ]
     if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-16gb-staging
+    runs-on: aks-linux-8-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -193,7 +193,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-8gb-staging
+    runs-on: aks-linux-4-cores-8gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
