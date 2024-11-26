@@ -41,20 +41,20 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::filesystem::
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string &model,
                                                          const Tensor &weights,
-                                                         const std::filesystem::path& config_path) :
-    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(config_path)),
-    m_config(config_path / "config.json") {
-
+                                                         const Config& config,
+                                                         const Tokenizer& clip_tokenizer) :
+    m_clip_tokenizer(clip_tokenizer), m_config(config) {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model(model, weights);
 }
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string &model,
                                                          const Tensor &weights,
-                                                         const std::filesystem::path& config_path,
+                                                         const Config& config,
+                                                         const Tokenizer& clip_tokenizer,
                                                          const std::string& device,
                                                          const ov::AnyMap& properties) :
-    CLIPTextModelWithProjection(model, weights, config_path) {
+    CLIPTextModelWithProjection(model, weights, config, clip_tokenizer) {
     compile(device, properties);
 }
 

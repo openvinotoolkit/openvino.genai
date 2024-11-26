@@ -36,11 +36,13 @@ public:
     
     SD3Transformer2DModel(const std::string &model,
                           const Tensor &weights,
-                          const std::filesystem::path& config_path);
+                          const Config& config,
+                          const size_t vae_scale_factor);
 
     SD3Transformer2DModel(const std::string &model,
                           const Tensor &weights,
-                          const std::filesystem::path& config_path,
+                          const Config& config,
+                          const size_t vae_scale_factor,
                           const std::string& device,
                           const ov::AnyMap& properties = {});
 

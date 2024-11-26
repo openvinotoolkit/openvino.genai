@@ -38,20 +38,21 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::string &model,
-                                                         const Tensor &weights,
-                                                         const std::filesystem::path& config_path) :
-    m_config(config_path / "config.json") {
+                                               const Tensor &weights,
+                                               const Config& config,
+                                               const size_t vae_scale_factor) :
+    m_config(config), m_vae_scale_factor(vae_scale_factor) {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model(model, weights);
-    m_vae_scale_factor = ov::genai::get_vae_scale_factor(config_path.parent_path() / "vae_decoder" / "config.json");
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::string &model,
-                                                         const Tensor &weights,
-                                                         const std::filesystem::path& config_path,
-                                                         const std::string& device,
-                                                         const ov::AnyMap& properties) :
-    FluxTransformer2DModel(model, weights, config_path) {
+                                               const Tensor &weights,
+                                               const Config& config,
+                                               const size_t vae_scale_factor,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties) :
+    FluxTransformer2DModel(model, weights, config, vae_scale_factor) {
     compile(device, properties);
 }
 

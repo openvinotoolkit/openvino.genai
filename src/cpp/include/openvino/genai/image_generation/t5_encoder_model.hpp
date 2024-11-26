@@ -26,6 +26,16 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    T5EncoderModel(const std::string &model,
+                   const Tensor &weights,
+                   const Tokenizer& tokenizer);
+
+    T5EncoderModel(const std::string &model,
+                   const Tensor &weights,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     T5EncoderModel(const std::filesystem::path& root_dir,

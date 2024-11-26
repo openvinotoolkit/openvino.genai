@@ -35,11 +35,13 @@ public:
 
     CLIPTextModelWithProjection(const std::string &model,
                                 const Tensor &weights,
-                                const std::filesystem::path& config_path);
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer);
 
     CLIPTextModelWithProjection(const std::string &model,
                                 const Tensor &weights,
-                                const std::filesystem::path& config_path,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer,
                                 const std::string& device,
                                 const ov::AnyMap& properties = {});
 
