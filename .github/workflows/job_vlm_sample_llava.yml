@@ -9,6 +9,10 @@ on:
       model_dir:
         required: true
         type: string
+      compare_with_ref:
+        required: false
+        type: boolean
+        default: false
 
 env:
   l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241105_x86_64.tgz
@@ -43,3 +47,18 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./${{ inputs.model_dir }} monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
+      - name: Generate reference
+        if: ${{ inputs.compare_with_ref }}
+        run: >
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && .github/scripts/generate_reference_llava.py -m ${{ inputs.model_dir }} -i monalisa.jpg
+      - name: Save C++ output
+        if: ${{ inputs.compare_with_ref }}
+        run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./${{ inputs.model_dir }} monalisa.jpg
+          <<< $'Describe the images.' | tee cpp.txt
+      - name: Compare reference and C++ output
+        if: ${{ inputs.compare_with_ref }}
+        run: diff ref.txt cpp.txt
