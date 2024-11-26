@@ -52,9 +52,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
+    m_num_decoder_layers = device_config.get_num_layers();
+
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
-    for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
+    for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
         infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
         infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
     }
@@ -72,26 +74,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
         can_use_partial_preemption = false;
     }
 
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), updated_config, m_num_decoder_layers, can_use_partial_preemption);
 
     // and finally create model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     if (is_use_cache_eviction) {
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
                                                        m_scheduler->get_block_size(),
-                                                       device_config.get_num_layers(),
+                                                       m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true);
-        m_rotation_coefficient_stores.reserve(device_config.get_num_layers());
+        m_rotation_coefficient_stores.reserve(m_num_decoder_layers);
         ov::Shape rotation_coefficient_store_shape{device_config.get_head_size() *
                                                    (m_scheduler->get_block_size() * scheduler_config.num_kv_blocks)};
-        for (size_t i = 0; i < device_config.get_num_layers(); i++) {
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
             ov::Tensor store(ov::element::f32, rotation_coefficient_store_shape);
             std::memset(store.data(), 0, store.get_byte_size());
             m_rotation_coefficient_stores.push_back(store);
         }
-        m_next_step_rotation_coefficients.resize(device_config.get_num_layers());
-        m_next_step_rotated_block_logical_indices_per_sequence.resize(device_config.get_num_layers());
         m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
             m_scheduler->get_block_size(),
             // TODO (vshampor): LUT size equal to max cache size in tokens
@@ -100,7 +100,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
             device_config.get_head_size());
     } else {
         m_model_runner =
-            std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers());
+            std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), m_num_decoder_layers);
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
@@ -161,6 +161,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     m_pipeline_metrics.requests = m_requests.size();
 
+    const auto& sched_config = m_scheduler->get_config();
     Scheduler::Output scheduler_output;
     {
         static ManualTimer timer("scheduling");
@@ -174,6 +175,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
+
+        if (sched_config.use_cache_eviction) {
+            std::set<size_t> live_sequences;
+            for (const auto& seq_id_and_block_table : scheduler_output.m_block_tables) {
+                live_sequences.insert(seq_id_and_block_table.first);
+            }
+            _compute_cache_rotation_data(live_sequences);
+            m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotation_coefficients),
+                                                    std::move(m_current_step_rotated_block_indices_per_sequence));
+        }
+
         timer.end();
     }
 
@@ -203,13 +215,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
     dumper.dump_cache_state(*m_scheduler, m_requests, step_count);
 #endif
-    const auto& sched_config = m_scheduler->get_config();
 
     // evict unimportant blocks from KV cache, if requested
     if (sched_config.use_cache_eviction) {
-        maybe_evict_cache_blocks(sched_config);
-        m_model_runner->set_cache_rotation_data(std::move(m_next_step_rotation_coefficients),
-                                                std::move(m_next_step_rotated_block_logical_indices_per_sequence));
+        _maybe_evict_cache_blocks(sched_config);
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -410,36 +419,31 @@ float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_a
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
-    std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
-    auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
-
-    OPENVINO_ASSERT(!sequence_attention_scores.empty());
-    size_t num_decoder_layers = sequence_attention_scores.begin()->second.size();
-    std::vector<size_t> num_blocks_to_rotate_for_each_layer(num_decoder_layers, 0);
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation_data(const std::set<size_t>& live_sequences) {
     size_t head_size = m_cache_rotation_calculator->get_head_size();
-
     // necessary since we move from these members during previous steps
-    m_next_step_rotation_coefficients.clear();
-    m_next_step_rotated_block_logical_indices_per_sequence.clear();
-    m_next_step_rotated_block_logical_indices_per_sequence.resize(num_decoder_layers);
+    m_current_step_rotation_coefficients.clear();
+    m_current_step_rotated_block_indices_per_sequence.clear();
+    m_current_step_rotated_block_indices_per_sequence.resize(m_num_decoder_layers);
 
-    for (auto& seq_id_and_attention_scores : sequence_attention_scores) {
-        auto seq_id = seq_id_and_attention_scores.first;
-        const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
-        if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
-            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_scheduler->get_block_size(), num_decoder_layers);
+    std::vector<size_t> num_blocks_to_rotate_for_each_layer(m_num_decoder_layers, 0);
+
+
+    for (const auto& seq_id_and_evicted_blocks : m_previous_evicted_block_logical_indices_per_sequence) {
+        size_t seq_id = seq_id_and_evicted_blocks.first;
+        // Skip sequences that, in the meanwhile before previous step's forward execution and now,
+        // have left the cache (e.g. finished or were preempted)
+        if (live_sequences.find(seq_id) == live_sequences.end()) {
+            continue;
         }
-        auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
 
-        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
-        auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
+        const auto& logical_blocks_to_evict = seq_id_and_evicted_blocks.second;
 
         for (size_t layer_idx = 0; layer_idx < logical_blocks_to_evict.size(); layer_idx++) {
             if (logical_blocks_to_evict[layer_idx].empty()) {
                 continue;
             }
-            size_t num_blocks_before_eviction = m_scheduler->get_block_tables(seq_id)[layer_idx].size();
+            size_t num_blocks_before_eviction = m_scheduler->get_block_tables(seq_id)[layer_idx].size() + logical_blocks_to_evict[layer_idx].size();
             auto rotation_multipliers =
                 m_cache_rotation_calculator->get_rotation_coefficients(logical_blocks_to_evict[layer_idx],
                                                                        num_blocks_before_eviction);
@@ -450,7 +454,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
                 OPENVINO_ASSERT(rotation_multipliers_cos.size() == rotation_multipliers_sin.size());
                 OPENVINO_ASSERT(rotation_multipliers_cos.size() == m_scheduler->get_block_size());
 
-                m_next_step_rotated_block_logical_indices_per_sequence[layer_idx][seq_id].push_back(
+                m_current_step_rotated_block_indices_per_sequence[layer_idx][seq_id].push_back(
                     block_rotation_data.logical_block_idx);
 
                 // Fill the store tensor with rotation coefficient data - cos and sin coefficients are each contiguous,
@@ -471,6 +475,37 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
                 num_blocks_to_rotate_for_each_layer[layer_idx] += 1;
             }
         }
+    }
+    // Select the previously filled rotation coefficients from the store tensor
+    for (size_t i = 0; i < m_num_decoder_layers; i++) {
+        m_current_step_rotation_coefficients.emplace_back(
+            m_rotation_coefficient_stores[i],
+            ov::Coordinate{0},
+            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i] * m_scheduler->get_block_size() * head_size});
+    }
+}
+
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
+    std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
+    auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
+
+    OPENVINO_ASSERT(!sequence_attention_scores.empty());
+    size_t num_decoder_layers = sequence_attention_scores.begin()->second.size();
+
+    m_previous_evicted_block_logical_indices_per_sequence.clear();
+
+    for (auto& seq_id_and_attention_scores : sequence_attention_scores) {
+        auto seq_id = seq_id_and_attention_scores.first;
+        const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
+        if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_scheduler->get_block_size(), num_decoder_layers);
+        }
+        auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
+
+        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
+        auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
+        m_previous_evicted_block_logical_indices_per_sequence[seq_id] = logical_blocks_to_evict;
 
         m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
 
@@ -485,14 +520,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
             seq_group_to_num_blocks_evicted_map[seq_group_ptr] = num_blocks_evicted;
         }
 
-    }
-
-    // Select the previously filled rotation coefficients from the store tensor
-    for (size_t i = 0; i < num_decoder_layers; i++) {
-        m_next_step_rotation_coefficients.emplace_back(
-            m_rotation_coefficient_stores[i],
-            ov::Coordinate{0},
-            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i] * m_scheduler->get_block_size() * head_size});
     }
 
     for (const auto& seq_group_ptr_and_num_blocks_evicted : seq_group_to_num_blocks_evicted_map) {
