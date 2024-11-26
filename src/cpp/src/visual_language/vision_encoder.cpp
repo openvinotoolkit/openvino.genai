@@ -8,35 +8,6 @@
 using namespace ov::genai;
 
 namespace {
-/**
- * @brief Converts an OpenVINO image tensor (1HWC) to a clip_image_u8 structure.
- *
- * @param image_tensor An OpenVINO tensor (1HWC) containing the image data.
- * @return A clip_image_u8 structure containing the image data.
- */
-clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
-    clip_image_u8 image{
-        int(image_tensor.get_shape().at(2)),
-        int(image_tensor.get_shape().at(1)),
-        {image_tensor.data<uint8_t>(), image_tensor.data<uint8_t>() + image_tensor.get_size()}
-    };
-    return image;
-}
-
-/**
- * @brief Converts a clip_image_f32 structure to an OpenVINO image tensor (1CHW).
- *
- * @param image A clip_image_f32 structure containing the image data.
- * @return An OpenVINO tensor containing the image data (1CHW).
- */
-ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
-    ov::Tensor image_tensor{
-        ov::element::f32,
-        {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}
-    };
-    std::memcpy(image_tensor.data<float>(), image.buf.data(), image.buf.size() * sizeof(float));
-    return image_tensor;
-}
 
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
