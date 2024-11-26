@@ -182,12 +182,14 @@ if(pybind11_stubgen_AVAILABLE)
         VERBATIM)
 
     add_custom_target(${TARGET_NAME}_stub ALL DEPENDS ${output_file})
-else()
+elseif(OpenVINODeveloperPackage_FOUND)
     # Produce warning message at build time as well
     add_custom_command(OUTPUT pybind11_stub_gen_not_found.txt
         COMMAND ${CMAKE_COMMAND}
             -E cmake_echo_color --red "Warning: Please, install ${pybind11_stubgen_dep}")
     add_custom_target(${TARGET_NAME}_stub ALL DEPENDS pybind11_stub_gen_not_found.txt)
+else()
+    add_custom_target(${TARGET_NAME}_stub ALL)
 endif()
 
 add_dependencies(${TARGET_NAME}_stub ${TARGET_NAME})
