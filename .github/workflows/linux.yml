@@ -483,7 +483,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
+    needs: [openvino_download, openvino_build, genai_package]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
