@@ -3,17 +3,17 @@
 
 name: llm_bench Python Test
 
-on:
-  push:
-    branches: [ "master" ]
-    paths:
-      - tools/llm_bench/**
-      - tools/who_what_benchmark/**
-  pull_request:
-    paths:
-      - tools/llm_bench/**
-      - tools/who_what_benchmark/**
-      - .github/workflows/llm_bench-python.yml
+# on:
+#   push:
+#     branches: [ "master" ]
+#     paths:
+#       - tools/llm_bench/**
+#       - tools/who_what_benchmark/**
+#   pull_request:
+#     paths:
+#       - tools/llm_bench/**
+#       - tools/who_what_benchmark/**
+#       - .github/workflows/llm_bench-python.yml
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 

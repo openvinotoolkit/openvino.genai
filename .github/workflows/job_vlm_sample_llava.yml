@@ -1,14 +1,14 @@
 name: visual_language_chat sample - LLaVA
 
-on:
-  workflow_call:
-    inputs:
-      model_id:
-        required: true
-        type: string
-      model_dir:
-        required: true
-        type: string
+# on:
+#   workflow_call:
+#     inputs:
+#       model_id:
+#         required: true
+#         type: string
+#       model_dir:
+#         required: true
+#         type: string
 
 env:
   l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241105_x86_64.tgz
