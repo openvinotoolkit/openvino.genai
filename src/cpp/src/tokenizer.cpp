@@ -55,6 +55,14 @@ ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention
     return {input_ids, attention_mask};
 }
 
+void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames) {
+    for (const auto& [key, value] : parameters) {
+        if (allowed_argnames.find(key) == allowed_argnames.end()) {
+            OPENVINO_THROW("unacceptable parameter key: " + key);
+        }
+    }
+}
+
 constexpr char bos_token_key_name[] = "bos_token";
 constexpr char eos_token_key_name[] = "eos_token";
 constexpr char pad_token_key_name[] = "pad_token";
@@ -88,8 +96,8 @@ public:
     std::string m_chat_template = {};
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
-        bool add_special_tokens_flag = true;
-        bool skip_special_tokens_flag = true;
+        bool add_special_tokens_flag = m_add_special_tokens;
+        bool skip_special_tokens_flag = m_skip_special_tokens;
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
 
@@ -145,7 +153,7 @@ public:
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
         auto ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
-        std::shared_ptr<ov::Model> ov_detokenizer;
+        std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
         if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
             ov_detokenizer = core.read_model(tokenizer_path / "openvino_detokenizer.xml");
         }
@@ -155,12 +163,11 @@ public:
         manager_tok.register_pass<MakeCombineSegmentsSatateful>();
         manager_tok.run_passes(ov_tokenizer);
         
-        ov::pass::Manager manager_detok;
-        manager_detok.register_pass<MakeVocabDecoderSatateful>();
-        manager_detok.run_passes(ov_detokenizer);
-        
         m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
-        if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
+        if (ov_detokenizer) {
+            ov::pass::Manager manager_detok;
+            manager_detok.register_pass<MakeVocabDecoderSatateful>();
+            manager_detok.run_passes(ov_detokenizer);
             m_detokenizer = core.compile_model(ov_detokenizer, device, properties);
         }
 
@@ -516,30 +523,37 @@ Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyM
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params) {
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
     return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 
 std::string Tokenizer::decode(std::vector<int64_t> tokens, const ov::AnyMap& detokenization_params) {
+    check_arguments(detokenization_params, {ov::genai::skip_special_tokens.name()});
     return m_pimpl->decode(tokens, detokenization_params);
 }
 
 std::vector<std::string> Tokenizer::decode(ov::Tensor tokens, const ov::AnyMap& detokenization_params) {
+    check_arguments(detokenization_params, {ov::genai::skip_special_tokens.name()});
     return m_pimpl->decode(tokens, detokenization_params);
 }
 
 std::vector<std::string> Tokenizer::decode(std::vector<std::vector<int64_t>> lines, const ov::AnyMap& detokenization_params) {
+    check_arguments(detokenization_params, {ov::genai::skip_special_tokens.name()});
     return m_pimpl->decode(lines, detokenization_params);
 }
 
