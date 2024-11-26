@@ -232,6 +232,13 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
 
+      - name: Install tokenizers
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+        env:
+          PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+
       - name: Test bindings (wheel)
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
