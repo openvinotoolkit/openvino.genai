@@ -119,7 +119,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: openvino_genai_release_cpack
+          name: genai_archive
           path: ${{ env.BUILD_DIR }}/*.tar.gz
           if-no-files-found: 'error'
   
@@ -224,7 +224,7 @@ jobs:
       - name: Download GenAI package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: openvino_genai_cpack
+          name: genai_archive
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
     
