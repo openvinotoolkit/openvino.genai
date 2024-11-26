@@ -611,9 +611,10 @@ jobs:
           print(predicted_greedy)
           print('Prompt lookup generated')
           print(predicted_prompt_lookup)
+          print('--------------------------------------------------------------------')
+          assert predicted_greedy == predicted_prompt_lookup
+          print('Passes')
           "
-          echo '-------------------------------Diff--------------------------------------'
-          diff predictions_prompt_lookup.txt predictions_greedy.txt
           echo "Prompt lookup" passed
 
   cpp-Phi-1_5:
