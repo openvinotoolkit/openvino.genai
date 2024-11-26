@@ -133,7 +133,7 @@ jobs:
             -DENABLE_STRICT_DEPENDENCIES=OFF \
             -DENABLE_SYSTEM_OPENCL=ON \
             -DCMAKE_VERBOSE_MAKEFILE=ON \
-            -DCPACK_GENERATOR=TGZ \
+            -DCPACK_GENERATOR=NPM \
             -DENABLE_JS=OFF \
             -DENABLE_SAMPLES=ON \
             -DENABLE_OV_ONNX_FRONTEND=OFF \
