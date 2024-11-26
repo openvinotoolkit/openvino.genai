@@ -31,6 +31,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    utils::apply_gather_before_matmul_transformation(model);
 
     init(model, scheduler_config, compile_properties, device_config, core);
 }

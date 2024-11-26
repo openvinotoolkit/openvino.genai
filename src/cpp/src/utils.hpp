@@ -82,6 +82,8 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& pr
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
+std::shared_ptr<ov::Node> find_llm_matmul(const std::shared_ptr<ov::Model>& model);
+
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
