@@ -1303,17 +1303,17 @@ class Tokenizer:
         Embeds input prompts with special tags for a chat scenario.
         """
     @typing.overload
-    def decode(self, tokens: list[int]) -> str:
+    def decode(self, tokens: list[int], skip_special_tokens: bool = True) -> str:
         """
         Decode a sequence into a string prompt.
         """
     @typing.overload
-    def decode(self, tokens: openvino._pyopenvino.Tensor) -> list[str]:
+    def decode(self, tokens: openvino._pyopenvino.Tensor, skip_special_tokens: bool = True) -> list[str]:
         """
         Decode tensor into a list of string prompts.
         """
     @typing.overload
-    def decode(self, tokens: list[list[int]]) -> list[str]:
+    def decode(self, tokens: list[list[int]], skip_special_tokens: bool = True) -> list[str]:
         """
         Decode a batch of tokens into a list of string prompt.
         """
