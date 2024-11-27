@@ -222,7 +222,8 @@ class SequenceGroup {
     bool m_is_gen_paused = false;
     // seq len to sample at current iteration
     size_t m_seq_len_to_sample = 0;
-
+    // flag shows wheather last matmul was sliced
+    bool m_sliced_matmul = false;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
@@ -398,6 +399,11 @@ public:
 
     void set_seq_len_to_sample(size_t len) {
         m_seq_len_to_sample = len;
+        m_sliced_matmul = true;
+    }
+
+    bool is_matmul_sliced() const {
+        return m_sliced_matmul;
     }
 
     /**
@@ -449,6 +455,8 @@ public:
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
         m_num_validation_tokens = 0;
+        m_seq_len_to_sample = 0;
+        m_sliced_matmul = false;
     }
 
     bool is_scheduled() const {
