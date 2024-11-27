@@ -5,12 +5,7 @@ static ov::CompiledModel resize_model = create_resize_model();
 ov::CompiledModel create_resize_model() {
     using namespace ov::op;
 
-    ov::PartialShape image_shape{
-        ov::Dimension::dynamic(),
-        ov::Dimension::dynamic(),
-        ov::Dimension::dynamic(),
-        ov::Dimension::dynamic()
-    };
+    ov::PartialShape image_shape = ov::PartialShape::dynamic(4);
     
     auto input = std::make_shared<v0::Parameter>(ov::element::u8, image_shape);
     auto converted = std::make_shared<v0::Convert>(input, ov::element::f32);
