@@ -150,8 +150,6 @@ public:
                             gather_indice_values.push_back(gathering_current_index);
                             tokens_num_to_sample++;
                         }
-                    } else {
-                        tokens_num_to_sample++;
                     }
                     position_ids_data[token_id] = position_id;
                 }
