@@ -147,7 +147,7 @@ auto raw_perf_metrics_docstring = R"(
 auto perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+    :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
     :type get_features_extraction_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics

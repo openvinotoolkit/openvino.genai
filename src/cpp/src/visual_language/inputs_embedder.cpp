@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 #include "visual_language/clip.hpp"
@@ -40,7 +41,7 @@ protected:
     bool m_is_cache_empty = true;
 
 public:
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
     EmbeddingsModel get_embedding_model() const {
         return m_embedding;
@@ -198,7 +199,8 @@ public:
         m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
     }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
+        auto start_time = std::chrono::steady_clock::now();
         std::string images_prompt;
         std::vector<EncodedImage> embeds;
 
@@ -240,6 +242,7 @@ public:
             m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
             "Unexpected embedding size"
         );
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor special_tokens = m_tokenizer.encode(
             m_vlm_config.im_start
             + m_vlm_config.im_end
@@ -291,6 +294,10 @@ public:
             m_image_id = 0;
         }
 
+        auto end_time = std::chrono::steady_clock::now();
+
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_time - start_tokenizer_time));
+        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(start_tokenizer_time - start_time));
         return inputs_embeds;
     }
 
@@ -484,7 +491,8 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
+        auto start_time = std::chrono::steady_clock::now();
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
@@ -508,11 +516,15 @@ public:
         if (images.empty()) {
             return text_embeds;
         }
-
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+        auto result = merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 
-        return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+        auto end_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_time - start_tokenizer_time));
+        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(start_tokenizer_time - start_time));
+        return result;
     }
 
 protected:
@@ -587,7 +599,8 @@ public:
         const ov::AnyMap device_config) :
         InputsEmbedderLLaVA(vlm_config, model_dir, device, device_config) { }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
+        auto start_time = std::chrono::steady_clock::now();
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
@@ -625,11 +638,15 @@ public:
         if (images.empty()) {
             return text_embeds;
         }
-
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+        auto result = merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 
-        return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+        auto end_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_time - start_tokenizer_time));
+        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(start_tokenizer_time - start_time));
+        return result;
     }
 
 private:
@@ -903,7 +920,8 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
+        auto start_time = std::chrono::steady_clock::now();
         std::string image_start_token = m_vlm_config.image_start_token;
         std::string image_context_token = m_vlm_config.image_context_token;
         std::string image_end_token = m_vlm_config.image_end_token;
@@ -937,11 +955,15 @@ public:
         if (images.empty()) {
             return text_embeds;
         }
-
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
         int64_t image_context_token_id = encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
+        auto result = merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id);
 
-        return merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id);
+        auto end_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_time - start_tokenizer_time));
+        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(start_tokenizer_time - start_time));
+        return result;
     }
 
 protected:
@@ -1023,8 +1045,8 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
     }
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) {
-    return m_impl->get_inputs_embeds(prompt, images);
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
