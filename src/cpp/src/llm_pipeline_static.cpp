@@ -19,7 +19,6 @@
 #include "openvino/core/preprocess/pre_post_process.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
-#include "openvino/runtime/internal_properties.hpp"
 #include "openvino/core/parallel.hpp"
 
 #include <jinja2cpp/user_callable.h>
@@ -470,9 +469,9 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
 
     bool compiler_dq = false;
-    const auto supported_internal_properties = core.get_property("NPU", ov::internal::supported_properties);
-    if (std::find(supported_internal_properties.begin(), supported_internal_properties.end(),
-                  "NPU_COMPILER_DQ") != supported_internal_properties.end()) {
+    const auto device_caps = core.get_property("NPU", ov::device::capabilities);
+    if (std::find(device_caps.begin(), device_caps.end(),
+                  "COMPILER_DYNAMIC_QUANTIZATION") != device_caps.end()) {
         compiler_dq = true;
     }
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
