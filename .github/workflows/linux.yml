@@ -276,7 +276,7 @@ jobs:
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
         
       - name: Pack Artifacts
-        run: tar -cvf - * | pigz > ${{ github.workspace}}/genai_samples.tar.gz
+        run: tar -cvf - * | pigz > ${{ env.INSTALL_DIR }}/genai_samples.tar.gz
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Upload OpenVINO GenAI package
@@ -284,7 +284,7 @@ jobs:
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: genai_samples
-          path: ${{ github.workspace }}/*.tar.gz
+          path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
           
   genai_tests_archive:
