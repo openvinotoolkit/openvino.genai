@@ -52,7 +52,7 @@ jobs:
         run: >
           set -o pipefail
           && source ./ov/setupvars.sh
-          && .github/scripts/generate_reference_llava.py -m ${{ inputs.model_dir }} -i monalisa.jpg
+          && python .github/scripts/generate_reference_llava.py -m ${{ inputs.model_dir }} -i monalisa.jpg
       - name: Save C++ output
         if: ${{ inputs.compare_with_ref }}
         run: >
