@@ -123,6 +123,7 @@ jobs:
           python -m pytest -v ./tests/python_tests/test_vlm_api.py
         env:
           PYTHONPATH: ${{ env.INSTALL_DIR }}/python/:$PYTHONPATH
+          LD_LIBRARY_PATH: ${{ env.INSTALL_DIR }}/runtime/lib/intel64/:$LD_LIBRARY_PATH
         working-directory: ${{ env.SRC_DIR }}
         
       - name: Pack Artifacts
@@ -197,6 +198,8 @@ jobs:
       - name: Install GenAI wheels
         run: |
           python -m pip install ${{ env.BUILD_DIR }}/*.whl --force-reinstall
+        env:
+          PIP_EXTRA_INDEX_URL: ${{ env.INSTALL_DIR }}/wheels
         
       - name: Install Test Requirements
         run: |
