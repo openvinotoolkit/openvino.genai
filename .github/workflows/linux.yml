@@ -411,145 +411,98 @@ jobs:
           python -m pytest -v ./${{ matrix.TEST_COMMAND }}
         working-directory: ${{ env.SRC_DIR }}
         
-      - name: Install GenAI wheels
-        run: |
-          python -m pip install ${{ env.INSTALL_DIR }}/wheels/*.whl --force-reinstall
+  genai_samples_tests:
+    name: GenAI Samples Tests
+    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-2-cores-8gb-staging
+    container:
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+      options: -v ${{ github.workspace }}:${{ github.workspace }}
+
+    env:
+      INSTALL_DIR: ${{ github.workspace }}/install
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build
+      MODELS_DIR: ${{ github.workspace }}/models
         
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+          
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download GenAI wheels
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: genai[|_wheels|_samples]*
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+      
+      - name: Extract Artifacts
+        run: |
+          pigz -dc genai.tar.gz | tar -xf - -C ${{ env.INSTALL_DIR }}
+          pigz -dc genai_samples.tar.gz | tar -xf - -C ${{ env.INSTALL_DIR }}
+        working-directory: ${{ env.INSTALL_DIR }}
+     
       - name: Install Test Requirements
         run: |
-          python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
+          python -m pip install -r ./samples/requirements.txt --upgrade-strategy eager
         working-directory: ${{ env.SRC_DIR }}
-    
-      - name: Test - ${{ matrix.TEST_NAME }}
+     
+      - name: Tests Prerequisites
+        run: |
+          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
+          wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+        working-directory: ${{ env.MODELS_DIR }}
+        
+      - name: Test Python Sample (multinomial_causal_lm)
+        timeout-minutes: 1
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ./${{ matrix.TEST_COMMAND }}
-        working-directory: ${{ env.SRC_DIR }}
+          ${{ env.INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        working-directory: ${{ env.MODELS_DIR }}
 
-  # genai_package:
-  #   name: OpenVINO genai extension (install to OpenVINO package)
-  #   strategy:
-  #     matrix:
-  #       build-type: [Release, Debug]
-  #   needs: [ openvino_download, openvino_build ]
-  #   if: |
-  #     always() &&
-  #     (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-  #   timeout-minutes: 60
-  #   defaults:
-  #     run:
-  #       shell: bash
-  #   runs-on: ubuntu-20.04
-  #   env:
-  #     CMAKE_BUILD_PARALLEL_LEVEL: null
-  #     OV_INSTALL_DIR: ${{ github.workspace }}/ov
-  #     CCACHE_DIR: ${{ github.workspace }}/ccache
-  #     CCACHE_MAXSIZE: 500Mi
-  #     CMAKE_CXX_COMPILER_LAUNCHER: ccache
-  #     CMAKE_C_COMPILER_LAUNCHER: ccache
+      - name: Test Python Sample (whisper_speech_recognition)
+        timeout-minutes: 1
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          ${{ env.INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        working-directory: ${{ env.MODELS_DIR }}
+      
+      - name: C++ Tests Prerequisites
+        run: |
+          python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
+        
+      - name: Test C++ Sample (greedy_causal_lm)
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+        working-directory: ${{ env.MODELS_DIR }}
 
-  #   steps:
-  #     - name: Clone openvino.genai
-  #       uses: actions/checkout@v4
-  #       with:
-  #         submodules: recursive
-
-  #     - name: Setup Python ${{ env.PYTHON_VERSION }}
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: ${{ env.PYTHON_VERSION }}
-  #         cache: 'pip'
-
-  #     - name: Download OpenVINO package
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: openvino_package
-  #         path: ${{ env.OV_INSTALL_DIR }}
-
-  #     - name: Extract OpenVINO packages
-  #       run: |
-  #         pushd ${OV_INSTALL_DIR}
-  #           tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
-  #         popd
-
-  #     - name: Set apt
-  #       run: |
-  #         echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
-  #         echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
-  #         echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-  #         echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
-
-  #     - name: Install build dependencies
-  #       run: |
-  #         sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
-  #         sudo apt-get install ccache
-
-  #     - name: Setup ccache
-  #       uses: actions/cache@v4
-  #       with:
-  #         save-always: true
-  #         path: ${{ env.CCACHE_DIR }}
-  #         key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-${{ matrix.build-type }}-${{ github.sha }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-${{ runner.arch }}-ccache-genai-${{ matrix.build-type }}
-
-  #     - name: Build genai
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-  #         cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
-
-  #     - name: Build and Install dependencies
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
-  #         python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
-  #         optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-  #         optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
-
-  #     - name: Install samples
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
-
-  #     - name: Build samples (Release)
-  #       if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
-  #       run: |
-  #         ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
-
-  #     - name: Build samples (Debug)
-  #       if: ${{ 'Release' != matrix.build-type }}
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${OV_INSTALL_DIR}/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j
-  #         cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
-
-  #     - name: Test C++ samples (greedy_causal_lm)
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
-
-  #     - name: Test C++ samples (whisper_speech_recognition)
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
-  #         timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
-
-  #     - name: Test python samples (multinomial_causal_lm)
-  #       if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-
-  #     - name: Test python samples (whisper_speech_recognition)
-  #       if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-  #       run: |
-  #         source ${OV_INSTALL_DIR}/setupvars.sh
-  #         timeout 25s ${OV_INSTALL_DIR}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+      - name: Test C++ samples (whisper_speech_recognition)
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+           ${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+        working-directory: ${{ env.MODELS_DIR }}
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_archive, genai_tests_wheel]
+    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_archive, genai_tests_wheel, genai_samples_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
