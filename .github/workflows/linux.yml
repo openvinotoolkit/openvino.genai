@@ -106,7 +106,6 @@ jobs:
 
       - name: Build openvino + genai
         run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DOPENVINO_EXTRA_MODULES=./ -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
                 -DCPACK_GENERATOR=NPM -UTBB* -DENABLE_SYSTEM_TBB=OFF \
                 -DENABLE_WHEEL=OFF \
