@@ -396,6 +396,7 @@ jobs:
           
       - name: Install GenAI wheels
         run: |
+          ls -la ${{ env.INSTALL_DIR }}
           python -m pip install ${{ env.INSTALL_DIR }}/wheels/*.whl openvino-tokenizers[transformers] --force-reinstall
         env:
           PIP_FIND_LINKS: ${{ env.INSTALL_DIR }}/wheels
