@@ -458,7 +458,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_tests]
+    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_tests_archive, genai_tests_wheel]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
