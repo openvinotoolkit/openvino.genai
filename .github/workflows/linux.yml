@@ -66,9 +66,10 @@ jobs:
       CMAKE_GENERATOR: 'Ninja Multi-Config'
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CMAKE_C_COMPILER_LAUNCHER: ccache
-      OPENVINO_REPO: ${{ github.workspace }}/../openvino
-      BUILD_DIR: ${{ github.workspace }}/../build
-      CCACHE_DIR: ${{ github.workspace }}/../ccache
+      OPENVINO_REPO: ${{ github.workspace }}/openvino
+      GENAI_REPO: ${{ github.workspace }}/openvino.genai
+      BUILD_DIR: ${{ github.workspace }}/build
+      CCACHE_DIR: ${{ github.workspace }}/ccache
       CCACHE_MAXSIZE: 2000Mi
 
     steps:
@@ -92,6 +93,12 @@ jobs:
           sudo -E ${OPENVINO_REPO}/install_build_dependencies.sh
           sudo apt-get install ccache
 
+      - name: Clone GenAI
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.GENAI_REPO }}
+          submodules: recursive
+
       - name: Setup ccache
         uses: actions/cache@v4
         with:
@@ -105,11 +112,11 @@ jobs:
 
       - name: Build openvino + genai
         run: |
-          cd .. && cmake -DOPENVINO_EXTRA_MODULES=openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
+          cmake -DOPENVINO_EXTRA_MODULES=./openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
                 -DCPACK_GENERATOR=NPM -UTBB* -DENABLE_SYSTEM_TBB=OFF \
                 -DENABLE_WHEEL=OFF \
                 -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
-                -S openvino -B ./build
+                -S ./openvino -B ./build
           cmake --build ./build --target package -j
 
       #
@@ -121,7 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: genai_nodejs_bindings
-          path: ../build/genai_nodejs_bindings.tar.gz
+          path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
 
   Overall_Status:
