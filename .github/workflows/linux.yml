@@ -219,7 +219,7 @@ jobs:
           
   genai_build_samples:
     name: Build GenAI Samples
-    needs: [ openvino_download ]
+    needs: [ openvino_download, genai_build_cmake ]
     if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 120
     defaults:
@@ -329,6 +329,7 @@ jobs:
       - name: Install Test Requirements
         run: |
           python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
+          python -m pip uninstall openvino openvino-tokenizers -y
         working-directory: ${{ env.SRC_DIR }}
     
       - name: Test - ${{ matrix.TEST_NAME }}
@@ -338,7 +339,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
-    name: GenAI Tests  (${{ matrix.TEST_NAME }})
+    name: GenAI Tests (${{ matrix.TEST_NAME }})
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
       matrix:
