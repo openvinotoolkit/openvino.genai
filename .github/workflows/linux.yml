@@ -66,10 +66,9 @@ jobs:
       CMAKE_GENERATOR: 'Ninja Multi-Config'
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CMAKE_C_COMPILER_LAUNCHER: ccache
-      OPENVINO_REPO: ${{ github.workspace }}/openvino
-      INSTALL_DIR: ${{ github.workspace }}/openvino/install
-      BUILD_DIR: ${{ github.workspace }}/openvino/build
-      CCACHE_DIR: ${{ github.workspace }}/ccache
+      OPENVINO_REPO: ${{ github.workspace }}/../openvino
+      BUILD_DIR: ${{ github.workspace }}/../build
+      CCACHE_DIR: ${{ github.workspace }}/../ccache
       CCACHE_MAXSIZE: 2000Mi
 
     steps:
@@ -106,13 +105,12 @@ jobs:
 
       - name: Build openvino + genai
         run: |
-          cmake -DOPENVINO_EXTRA_MODULES=./ -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
+          cd .. && cmake -DOPENVINO_EXTRA_MODULES=openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
                 -DCPACK_GENERATOR=NPM -UTBB* -DENABLE_SYSTEM_TBB=OFF \
                 -DENABLE_WHEEL=OFF \
-                -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}/openvino_package \
                 -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
-                -S ${OPENVINO_REPO} -B ./build
-          cmake --build ./build/ --target package -j
+                -S openvino -B ./build
+          cmake --build ./build --target package -j
 
       #
       # Upload build artifacts and logs
@@ -123,7 +121,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: genai_nodejs_bindings
-          path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
+          path: ../build/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
 
   Overall_Status:
