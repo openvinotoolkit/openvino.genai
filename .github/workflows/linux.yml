@@ -345,7 +345,8 @@ jobs:
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -v ./${{ matrix.TEST_COMMAND }}
-        PYTHONPATH: ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/python/:$PYTHONPATH
+        env:
+          PYTHONPATH: ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/python/:$PYTHONPATH
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
