@@ -60,7 +60,7 @@ jobs:
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
   genai_build_cmake:
-    name: Build GenAI extension (cmake)
+    name: Build GenAI Archive
     needs: [ openvino_download ]
     if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 120
@@ -110,7 +110,16 @@ jobs:
 
       - name: Cmake install - GenAI
         run: cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
-
+        
+      - name: Smoke tests
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
+          python -m pytest -v ./tests/python_tests/test_vlm_api.py
+        env:
+          PYTHONPATH: ${{ env.INSTALL_DIR }}/python/:$PYTHONPATH
+        working-directory: ${{ env.SRC_DIR }}
+        
       - name: Pack Artifacts
         run: tar -cvf - * | pigz > ${BUILD_DIR}/ov_genai.tar.gz
         working-directory: ${{ env.INSTALL_DIR }}
@@ -124,7 +133,7 @@ jobs:
           if-no-files-found: 'error'
   
   genai_build_wheel:
-    name: Build GenAI extension (wheel)
+    name: Build GenAI Wheel
     needs: [ openvino_download ]
     if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 60
@@ -184,13 +193,18 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: gena_ai_wheels
+          name: genai_wheels
           path: ${{ env.BUILD_DIR }}/*.whl
           if-no-files-found: 'error'
           
   genai_tests:
-    name: OpenVINO GenAI tests
+    name: GenAI Python Tests API (${{ matrix.TEST_NAME }})
     needs: [ openvino_download, genai_build_cmake ]
+    strategy:
+      matrix:
+        include:
+          - TEST_NAME: 'Whisper Generate API'
+            TEST_COMMAND: 'tests/python_tests/test_whisper_generate_api.py -k test_smoke'
     timeout-minutes: 45
     defaults:
       run:
@@ -227,23 +241,17 @@ jobs:
           name: genai_archive
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
-    
-      - name: Test bindings
+      
+      - name: Install Test Requirements
         run: |
-          source ./setupvars.sh
           python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
-          python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
-        working-directory: ${{ env.INSTALL_DIR }}
-
-      # - name: Test bindings (wheel)
-      #   run: |
-      #     source ${{ env.INSTALL_DIR }}/setupvars.sh
-      #     python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
-      #     python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests --ignore ${{ env.SRC_DIR }}/tests/python_tests/test_whisper_generate_api.py --ignore ${{ env.SRC_DIR }}/tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
-
-      - run: >
-            source ${{ env.INSTALL_DIR }}/setupvars.sh
-            && python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_vlm_api.py
+        working-directory: ${{ env.SRC_DIR }}
+    
+      - name: Test - ${{ matrix.TEST_NAME }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pytest -v ./${{ matrix.TEST_COMMAND }}
+        working-directory: ${{ env.SRC_DIR }}
 
   # genai_python_lib_whisper:
   #   name: OpenVINO genai extension whisper tests (cmake + wheel)
