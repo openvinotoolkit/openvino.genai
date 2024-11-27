@@ -230,9 +230,10 @@ jobs:
     
       - name: Test bindings
         run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pip install -r ${{ env.SRC_DIR }}/tests/python_tests/requirements.txt --upgrade-strategy eager
-          python -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_chat_generate_api.py::test_set_chat_template
+          source ./setupvars.sh
+          python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
+          python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
+        working-directory: ${{ env.INSTALL_DIR }}
 
       # - name: Test bindings (wheel)
       #   run: |
