@@ -113,7 +113,9 @@ jobs:
         
       - name: Install Test Requirements
         run: |
-          python -m pip install pytest numpy
+          python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
+          python -m pip uninstall openvino openvino-tokenizers -y
+        working-directory: ${{ env.SRC_DIR }}
         
       - name: Smoke tests
         run: |
