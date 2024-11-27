@@ -260,6 +260,25 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
     }
 }
 
+std::shared_ptr<ov::Model> get_model_from_buffer(ov::Core& core, std::vector<uint8_t>& model_buffer, std::vector<uint8_t>& weights_buffer) {
+    OPENVINO_ASSERT(!model_buffer.empty(), "Model buffer is empty!");
+    OPENVINO_ASSERT(!weights_buffer.empty(), "Weights buffer is empty!");
+
+    std::string str_model(model_buffer.begin(), model_buffer.end());
+    return core.read_model(str_model, ov::Tensor(ov::element::u8, {weights_buffer.size()}, weights_buffer.data()));
+}
+
+template <typename T>
+void read_rt_info(std::shared_ptr<ov::Model>& model, std::string& name, T& value) {
+    if (!model)
+        return;
+    if (model->get_rt_info().count(name) == 0)
+        return;
+    auto str_value = model->get_rt_info().at(name).as<std::string>();
+    value = std::is_same<T, int64_t>::value ? str_value : std::stoi(str_value);
+    value = std::is_same<T, std::string>::value ? str_value : str_value;
+}
+
 ov::Core singleton_core() {
     static ov::Core core;
     return core;

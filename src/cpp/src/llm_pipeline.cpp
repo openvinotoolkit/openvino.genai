@@ -598,6 +598,37 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
+ov::genai::LLMPipeline::LLMPipeline(
+    std::vector<uint8_t>& model_buffer,
+    std::vector<uint8_t>& weights_buffer,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
+    const ov::AnyMap& config
+){
+    auto start_time = std::chrono::steady_clock::now();
+    if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
+        auto config_without_scheduler_config = config;
+        config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
+        auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        // TODO: make infer request for continious batching
+        // TODO: check why compiled model does not have scheduler config
+        // m_pimpl = std::make_unique<ContinuousBatchingAdapter>("models_path", tokenizer, config);
+    } else if ("NPU" == device) {
+        // TOOD: implement
+        m_pimpl = std::make_unique<StaticLLMPipeline>("models_path", device, config);
+    } else {
+        // TODO: check what's with the adapters
+        ov::InferRequest request;
+        ov::Core core = utils::singleton_core();
+        auto model = utils::get_model_from_buffer(core, model_buffer, weights_buffer);
+        utils::slice_matmul_statefull_model(model);
+        request = utils::singleton_core().compile_model(model, device, config).create_infer_request();
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer);
+    }
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
+
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
 }

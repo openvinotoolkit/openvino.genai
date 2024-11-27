@@ -28,11 +28,41 @@ struct TokenizedInputs {
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
     /**
-    * @brief ov::genai::Tokenizer constructor.
-    * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
-    * @param properties Properties passed to ov::Core::compile_model
-    */
+     * @brief ov::genai::Tokenizer constructor.
+     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
+     * @param properties Properties passed to ov::Core::compile_model
+     */
     Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
+
+    /**
+     * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights
+     * @param tokenizer_model_buffer buffer with tokenizer model
+     * @param tokenizer_weights_buffer buffer with tokenizer weights
+     * @param detokenizer_model_buffer buffer with detokenizer model
+     * @param detokenizer_weights_buffer buffer with detokenizer weights
+     * @param properties Properties passed to ov::Core::compile_model
+     */
+    Tokenizer(
+        std::vector<uint8_t>& tokenizer_model_buffer,
+        std::vector<uint8_t>& tokenizer_weights_buffer,
+        std::vector<uint8_t>& detokenizer_model_buffer,
+        std::vector<uint8_t>& detokenizer_weights_buffer,
+        const ov::AnyMap& properties = {}
+    );
+
+    /**
+     * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights
+     * @param model_buffer buffer with model
+     * @param weights_buffer buffer with weights
+     * @param properties Properties passed to ov::Core::compile_model
+     */
+    Tokenizer(
+        std::vector<uint8_t>& model_buffer,
+        std::vector<uint8_t>& weights_buffer,
+        const ov::AnyMap& properties = {}
+    );
+
+    // TODO: add constructor for ov::Properties as well
 
     /**
      * @brief ov::genai::Tokenizer constructor with variable number of properties

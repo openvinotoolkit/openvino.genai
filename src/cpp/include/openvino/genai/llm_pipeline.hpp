@@ -112,6 +112,14 @@ public:
         const ov::AnyMap& properties = {}
     );
 
+    LLMPipeline(
+        std::vector<uint8_t>& model_buffer,
+        std::vector<uint8_t>& weights_buffer,
+        const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
+
     OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
     explicit LLMPipeline(const std::filesystem::path& path) :
         LLMPipeline(path, "CPU") { }
