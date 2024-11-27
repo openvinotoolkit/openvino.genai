@@ -128,7 +128,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
       - name: Pack Artifacts
-        run: tar -cvf - * | pigz > ${BUILD_DIR}/ov_genai.tar.gz
+        run: tar -cvf - * | pigz > ${BUILD_DIR}/genai.tar.gz
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Upload OpenVINO GenAI package
@@ -268,7 +268,7 @@ jobs:
           
       - name: Extract Artifacts
         run: |
-            pigz -dc genai_archive.tar.gz | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
+            pigz -dc genai.tar.gz | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
             
       - name: Build samples (Release)
         run: |
@@ -333,7 +333,7 @@ jobs:
       
       - name: Extract Artifacts
         run: |
-            pigz -dc genai_archive.tar.gz | tar -xf - -C ${{ env.INSTALL_DIR }}
+            pigz -dc genai.tar.gz | tar -xf - -C ${{ env.INSTALL_DIR }}
   
       - name: Install Test Requirements
         run: |
