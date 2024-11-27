@@ -909,5 +909,7 @@ EncodedImage VisionEncoder::encode_phi3_v(const ov::Tensor& image, const Process
     const auto& [pixel_values, image_size, num_img_tokens] = phi3_v::get_pixel_values_phi3_v(image, config);
     m_vision_encoder.set_input_tensor(pixel_values);
     m_vision_encoder.infer();
+    // 2, 5, 3, 336, 336 2, 5, 576, 1024
+    std::cout << pixel_values.get_shape() << ' ' << m_vision_encoder.get_output_tensor().get_shape() << '\n';
     return {m_vision_encoder.get_output_tensor(), image_size};
 }

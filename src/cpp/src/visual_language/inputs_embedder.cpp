@@ -6,6 +6,7 @@
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/embedding_model.hpp"
+#include "openvino/opsets/opset13.hpp"
 
 #include "utils.hpp"
 
@@ -1006,20 +1007,207 @@ protected:
     }
 };
 
+namespace {
+namespace phi3_v {
+ov::InferRequest create_hd_feature_transformer() {
+    using namespace ov;
+    using namespace element;
+    using namespace opset13;
+    using namespace std;
+    auto t0 = make_shared<Parameter>(f32, PartialShape{-1, 576, 1024});
+    auto t1 = make_shared<Parameter>(i32, PartialShape{});
+    auto t2 = make_shared<Parameter>(i32, PartialShape{});
+    auto t3 = make_shared<ShapeOf>(t0);
+    auto t4 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t5 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t6 = make_shared<Gather>(t3, t4, t5);
+    auto t7 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{1});
+    auto t8 = make_shared<Reshape>(t6, t7, false);
+    auto t9 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{1});
+    auto t10 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t11 = make_shared<Gather>(t3, t9, t10);
+    auto t12 = make_shared<Convert>(t11, element::f32);
+    auto t13 = make_shared<Constant>(f32, Shape{}, vector<float>{0.5});
+    auto t14 = make_shared<Power>(t12, t13, "numpy");
+    auto t15 = make_shared<Convert>(t14, element::i32);
+    auto t16 = make_shared<Convert>(t15, element::i64);
+    auto t17 = make_shared<Constant>(i32, Shape{}, vector<int32_t>{0});
+    auto t18 = make_shared<Unsqueeze>(t16, t17);
+    auto t19 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{2});
+    auto t20 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t21 = make_shared<Gather>(t3, t19, t20);
+    auto t22 = make_shared<Concat>(NodeVector{t8, t18, t18, t21}, 0);
+    auto t23 = make_shared<Reshape>(t0, t22, false);
+    auto t24 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{2});
+    auto t25 = make_shared<Divide>(t16, t24, "numpy");
+    auto t26 = make_shared<Floor>(t25);
+    auto t27 = make_shared<Constant>(i32, Shape{}, vector<int32_t>{0});
+    auto t28 = make_shared<Unsqueeze>(t26, t27);
+    auto t29 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{2});
+    auto t30 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{2});
+    auto t31 = make_shared<Concat>(NodeVector{t8, t28, t29, t28, t30, t21}, 0);
+    auto t32 = make_shared<Reshape>(t23, t31, false);
+    auto t33 = make_shared<Constant>(i64, Shape{6}, vector<int64_t>{0, 1, 3, 2, 4, 5});
+    auto t34 = make_shared<Transpose>(t32, t33);
+    auto t35 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{-1});
+    auto t36 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{4});
+    auto t37 = make_shared<Multiply>(t21, t36, "numpy");
+    auto t38 = make_shared<Concat>(NodeVector{t8, t35, t37}, 0);
+    auto t39 = make_shared<Reshape>(t34, t38, false);
+    auto t40 = make_shared<Multiply>(t1, t2, "numpy");
+    auto t41 = make_shared<Convert>(t40, element::i64);
+    auto t42 = make_shared<Divide>(t6, t41, "numpy");
+    auto t43 = make_shared<Floor>(t42);
+    auto t44 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t45 = make_shared<Unsqueeze>(t43, t44);
+    auto t46 = make_shared<Convert>(t1, element::i64);
+    auto t47 = make_shared<Unsqueeze>(t46, t44);
+    auto t48 = make_shared<Convert>(t2, element::i64);
+    auto t49 = make_shared<Unsqueeze>(t48, t44);
+    auto t50 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{-1});
+    auto t51 = make_shared<Concat>(NodeVector{t45, t47, t49, t28, t28, t50}, 0);
+    auto t52 = make_shared<Reshape>(t39, t51, false);
+    auto t53 = make_shared<Constant>(i64, Shape{6}, vector<int64_t>{0, 1, 3, 2, 4, 5});
+    auto t54 = make_shared<Transpose>(t52, t53);
+    auto t55 = make_shared<Multiply>(t1, t15, "numpy");
+    auto t56 = make_shared<Convert>(t55, element::i64);
+    auto t57 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{2});
+    auto t58 = make_shared<Divide>(t56, t57, "numpy");
+    auto t59 = make_shared<Floor>(t58);
+    auto t60 = make_shared<Constant>(i32, Shape{}, vector<int32_t>{0});
+    auto t61 = make_shared<Unsqueeze>(t59, t60);
+    auto t62 = make_shared<Multiply>(t2, t15, "numpy");
+    auto t63 = make_shared<Convert>(t62, element::i64);
+    auto t64 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{2});
+    auto t65 = make_shared<Divide>(t63, t64, "numpy");
+    auto t66 = make_shared<Floor>(t65);
+    auto t67 = make_shared<Unsqueeze>(t66, t60);
+    auto t68 = make_shared<Concat>(NodeVector{t45, t61, t67, t37}, 0);
+    auto t69 = make_shared<Reshape>(t54, t68, false);
+
+    // t0 = opset.Parameter({'shape': [-1, 576, 1024], 'element_type': 'f32'},  #  -> f32[?,576,1024]
+    // t1 = opset.Parameter({'shape': [], 'element_type': 'i32'},  #  -> i32[]
+    // t2 = opset.Parameter({'shape': [], 'element_type': 'i32'},  #  -> i32[]
+    // t3 = opset.ShapeOf([t0], {'output_type': 'i64'},  # f32[?,576,1024] -> i64[3]
+    // t4 = opset.Constant(model, 4,    #  -> i64[](0)
+    // t5 = opset.Constant(model, 5,    #  -> i64[](0)
+    // t6 = opset.Gather([t3, t4, t5], {'batch_dims': 0},  # i64[3], i64[], i64[] -> i64[]
+    // t7 = opset.Constant(model, 7,    #  -> i64[1]([1])
+    // t8 = opset.Reshape([t6, t7], {'special_zero': False},  # i64[], i64[1] -> i64[1]
+    // t9 = opset.Constant(model, 9,    #  -> i64[](1)
+    // t10 = opset.Constant(model, 10,  #  -> i64[](0)
+    // t11 = opset.Gather([t3, t9, t10], {'batch_dims': 0},  # i64[3], i64[], i64[] -> i64[]
+    // t12 = opset.Convert([t11], {'destination_type': 'f32'},  # i64[] -> f32[]
+    // t13 = opset.Constant(model, 13,  #  -> f32[](0.5)
+    // t14 = opset.Power([t12, t13], {'auto_broadcast': 'numpy'},  # f32[], f32[] -> f32[]
+    // t15 = opset.Convert([t14], {'destination_type': 'i32'},  # f32[] -> i32[]
+    // t16 = opset.Convert([t15], {'destination_type': 'i64'},  # i32[] -> i64[]
+    // t17 = opset.Constant(model, 17,    #  -> i32[](0)
+    // t18 = opset.Unsqueeze([t16, t17], {},  # i64[], i32[] -> i64[1]
+    // t19 = opset.Constant(model, 19,  #  -> i64[1]([2])
+    // t20 = opset.Constant(model, 20,  #  -> i64[](0)
+    // t21 = opset.Gather([t3, t19, t20], {'batch_dims': 0},  # i64[3], i64[1], i64[] -> i64[1]
+    // t22 = opset.Concat([t8, t18, t18, t21], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    // t23 = opset.Reshape([t0, t22], {'special_zero': False},  # f32[?,576,1024], i64[4] -> f32[?,24,24,1024]
+    // t24 = opset.Constant(model, 24,  #  -> i64[](2)
+    // t25 = opset.Divide([t16, t24], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
+    // t26 = opset.Floor([t25], {},  # i64[] -> i64[]
+    // t27 = opset.Constant(model, 27,   #  -> i32[](0)
+    // t28 = opset.Unsqueeze([t26, t27], {},  # i64[], i32[] -> i64[1]
+    // t29 = opset.Constant(model, 29,   #  -> i64[1]([2])
+    // t30 = opset.Constant(model, 30,   #  -> i64[1]([2])
+    // t31 = opset.Concat([t8, t28, t29, t28, t30, t21], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[6]
+    // t32 = opset.Reshape([t23, t31], {'special_zero': False},  # f32[?,24,24,1024], i64[6] -> f32[?,12,2,12,2,1024]
+    // t33 = opset.Constant(model, 33,
+    // t34 = opset.Transpose([t32, t33], {},  # f32[?,12,2,12,2,1024], i64[6] -> f32[?,12,12,2,2,1024]
+    // t35 = opset.Constant(model, 35,   #  -> i64[1]([-1])
+    // t36 = opset.Constant(model, 36,  #  -> i64[1]([4])
+    // t37 = opset.Multiply([t21, t36], {'auto_broadcast': 'numpy'},  # i64[1], i64[1] -> i64[1]
+    // t38 = opset.Concat([t8, t35, t37], {'axis': 0},  # i64[1], i64[1], i64[1] -> i64[3]
+    // t39 = opset.Reshape([t34, t38], {'special_zero': False},  # f32[?,12,12,2,2,1024], i64[3] -> f32[?,?,4096]
+    // t40 = opset.Multiply([t1, t2], {'auto_broadcast': 'numpy'},  # i32[], i32[] -> i32[]
+    // t41 = opset.Convert([t40], {'destination_type': 'i64'},  # i32[] -> i64[]
+    // t42 = opset.Divide([t6, t41], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
+    // t43 = opset.Floor([t42], {},  # i64[] -> i64[]
+    // t44 = opset.Constant(model, 44,   #  -> i32[](0)
+    // t45 = opset.Unsqueeze([t43, t44], {},  # i64[], i32[] -> i64[1]
+    // t46 = opset.Convert([t1], {'destination_type': 'i64'},  # i32[] -> i64[]
+    // t47 = opset.Unsqueeze([t46, t44], {},  # i64[], i32[] -> i64[1]
+    // t48 = opset.Convert([t2], {'destination_type': 'i64'},  # i32[] -> i64[]
+    // t49 = opset.Unsqueeze([t48, t44], {},  # i64[], i32[] -> i64[1]
+    // t50 = opset.Constant(model, 50,  #  -> i64[1]([-1])
+    // t51 = opset.Concat([t45, t47, t49, t28, t28, t50], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[6]
+    // t52 = opset.Reshape([t39, t51], {'special_zero': False},  # f32[?,?,4096], i64[6] -> f32[?,?,?,?,?,?]
+    // t53 = opset.Constant(model, 53,
+    // t54 = opset.Transpose([t52, t53], {},  # f32[?,?,?,?,?,?], i64[6] -> f32[?,?,?,?,?,?]
+    // t55 = opset.Multiply([t1, t15], {'auto_broadcast': 'numpy'},  # i32[], i32[] -> i32[]
+    // t56 = opset.Convert([t55], {'destination_type': 'i64'},  # i32[] -> i64[]
+    // t57 = opset.Constant(model, 57,  #  -> i64[](2)
+    // t58 = opset.Divide([t56, t57], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
+    // t59 = opset.Floor([t58], {},  # i64[] -> i64[]
+    // t60 = opset.Constant(model, 60,  #  -> i32[](0)
+    // t61 = opset.Unsqueeze([t59, t60], {},  # i64[], i32[] -> i64[1]
+    // t62 = opset.Multiply([t2, t15], {'auto_broadcast': 'numpy'},  # i32[], i32[] -> i32[]
+    // t63 = opset.Convert([t62], {'destination_type': 'i64'},  # i32[] -> i64[]
+    // t64 = opset.Constant(model, 64,  #  -> i64[](2)
+    // t65 = opset.Divide([t63, t64], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
+    // t66 = opset.Floor([t65], {},  # i64[] -> i64[]
+    // t67 = opset.Unsqueeze([t66, t60], {},  # i64[], i32[] -> i64[1]
+    // t68 = opset.Concat([t45, t61, t67, t37], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1] -> i64[4]
+    // t69 = opset.Reshape([t54, t68], {'special_zero': False},  # f32[?,?,?,?,?,?], i64[4] -> f32[?,?,?,?]
+    shared_ptr<Model> model = make_shared<Model>(make_shared<Result>(t69), ParameterVector{t0, t1, t2});
+    ov::InferRequest hd_feature_transformer = utils::singleton_core().compile_model(
+        model, "CPU"
+    ).create_infer_request();
+    // hd_feature_transformer.set_input_tensor(0, ov::Tensor{f32, {4, 576, 1024}});
+    // ov::Tensor h_crop = ov::Tensor{i32, {}};
+    // h_crop.data<int32_t>()[0] = 2;
+    // hd_feature_transformer.set_input_tensor(1, h_crop);
+    // ov::Tensor w_crop = ov::Tensor{i32, {}};
+    // w_crop.data<int32_t>()[0] = 2;
+    // hd_feature_transformer.set_input_tensor(2, w_crop);
+    // hd_feature_transformer.infer();
+    return hd_feature_transformer;
+}
+
+ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop) {
+    ov::Shape shape = image_features.get_shape();
+    OPENVINO_ASSERT(3 == shape.size());
+    OPENVINO_ASSERT(1 == shape.at(0));
+    OPENVINO_ASSERT(24 * 24 == shape.at(1));
+    OPENVINO_ASSERT(1024 == shape.at(2));
+    return {};
+}
+
+// image_features.resized_source: (num_crops+1, 24*24, 1024)
+ov::Tensor hd_feature_transform(const EncodedImage& image_features) {
+    ov::Tensor global_image_features{ov::element::f32, {1, 24*24, 1024}, image_features.resized_source.data<float>()};
+    // global feature can be viewed as a special HD case with num_crops 1x1
+    ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1);
+    return {};
+}
+}
+}
+
 class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
 public:
+    ov::InferRequest m_hd_feature_transformer;
+
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap device_config
-    ) : IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0} {}
+    ):
+        IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
+        m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()} {}
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
         std::string images_prompt;
         std::vector<EncodedImage> embeds;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
+            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image);
         }
         ov::Tensor inputs_embeds;
         //     if (m_vlm_config.use_image_id) {
@@ -1055,17 +1243,17 @@ public:
         // OPENVINO_ASSERT(
         //     m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         //     "Unexpected embedding size"
-        // );
+        //;
         // ov::Tensor special_tokens = m_tokenizer.encode(
         //     m_vlm_config.im_start
         //     + m_vlm_config.im_end
         //     + m_vlm_config.slice_start
         //     + m_vlm_config.slice_end
-        // ).input_ids;
+        //.input_ids;
         // OPENVINO_ASSERT(
         //     4 == special_tokens.get_shape().at(1),
         //     "Every special token must be represented with a single int."
-        // );
+        //;
         // int64_t im_start_id = special_tokens.data<int64_t>()[0];
         // int64_t im_end_id = special_tokens.data<int64_t>()[1];
         // int64_t slice_start_id = special_tokens.data<int64_t>()[2];
