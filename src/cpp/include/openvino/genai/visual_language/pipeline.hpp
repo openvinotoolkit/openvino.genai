@@ -10,6 +10,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "vlm_models_map.hpp"
 
 namespace ov::genai {
 
@@ -17,7 +18,7 @@ namespace ov::genai {
 /// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
-    /// @brief Construct a pipeline form a folder containing tokenizer
+    /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs.
     /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled
@@ -29,7 +30,22 @@ public:
         const ov::AnyMap& properties = {}
     );
 
-    /// @brief Construct a pipeline form a folder containing tokenizer
+    /// @brief Construct a pipeline from a map of models.
+    /// @param models_map A map of models IRs (e.g. openvino_text_embeddings_model, openvino_language_model etc.).
+    /// @param tokenizer A tokenizer.
+    /// @param config_dir_path A path to directory containing config.json.
+    /// @param device Inference device. A tokenizer is always compiled
+    /// for CPU.
+    /// @param properties A config to pass to ov::Core::compile_model().
+    VLMPipeline(
+        const VLMModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
+
+    /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs. Accepts arbitrary list of optional properties.
     /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled

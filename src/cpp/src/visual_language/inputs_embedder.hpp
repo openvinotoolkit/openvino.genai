@@ -12,6 +12,7 @@
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
+#include "openvino/genai/visual_language/vlm_models_map.hpp"
 
 namespace ov::genai {
 
@@ -19,6 +20,13 @@ class InputsEmbedder {
 public:
     InputsEmbedder(const VLMConfig& vlm_config,
                    const std::filesystem::path& model_dir,
+                   const std::string& device,
+                   const ov::AnyMap device_config);
+
+    InputsEmbedder(const VLMConfig& vlm_config,
+                   const VLMModelsMap& models_map,
+                   const Tokenizer& tokenizer,
+                   const std::filesystem::path& config_dir_path,
                    const std::string& device,
                    const ov::AnyMap device_config);
 

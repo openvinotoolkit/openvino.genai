@@ -618,6 +618,22 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMMo
         );
 }
 
+VisionEncoder::VisionEncoder(
+    const std::string& model,
+    const ov::Tensor& weights,
+    const std::filesystem::path& config_dir_path,
+    const VLMModelType model_type,
+    const std::string& device,
+    const ov::AnyMap device_config,
+    ov::Core core
+) :
+    model_type(model_type) {
+        m_vision_encoder = core.compile_model(model, weights, device, device_config).create_infer_request();
+        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
+            config_dir_path, "preprocessor_config.json"
+        );
+}
+
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfig& config) {
     if (model_type == VLMModelType::MINICPM) {
         return encode_minicpm(image, config);
