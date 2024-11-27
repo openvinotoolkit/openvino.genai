@@ -44,6 +44,30 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    AutoencoderKL(const std::string &vae_decoder_model,
+                  const Tensor &vae_decoder_weights,
+                  const Config& vae_decoder_config);
+
+    AutoencoderKL(const std::string &vae_encoder_model,
+                  const Tensor &vae_encoder_weights,
+                  const std::string &vae_decoder_model,
+                  const Tensor &vae_decoder_weights,
+                  const Config& vae_decoder_config);
+
+    AutoencoderKL(const std::string &vae_decoder_model,
+                  const Tensor &vae_decoder_weights,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
+    AutoencoderKL(const std::string &vae_encoder_model,
+                  const Tensor &vae_encoder_weights,
+                  const std::string &vae_decoder_model,
+                  const Tensor &vae_decoder_weights,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     AutoencoderKL(const std::filesystem::path& vae_decoder_path,
