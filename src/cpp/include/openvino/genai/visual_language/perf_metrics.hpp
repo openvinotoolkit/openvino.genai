@@ -15,7 +15,7 @@ struct OPENVINO_GENAI_EXPORTS VLMRawPerfMetrics {
 };
 
 struct OPENVINO_GENAI_EXPORTS VLMPerfMetrics : public PerfMetrics {
-    /** @brief Mean and standard deviation of Features Extraction Duration in milliseconds */
+    /** @brief Mean and standard deviation of preparation of embeddings in milliseconds */
     MeanStdPair prepare_embeddings_duration;
 
     MeanStdPair get_prepare_embeddings_duration();
