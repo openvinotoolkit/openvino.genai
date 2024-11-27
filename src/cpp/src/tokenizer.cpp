@@ -189,18 +189,23 @@ public:
         m_eos_token = decode(std::vector{m_eos_token_id});
     }
 
-    TokenizerImpl(std::vector<uint8_t>& tokenizer_model_buffer, std::vector<uint8_t>& tokenizer_weights_buffer,
-                  std::vector<uint8_t>& detokenizer_model_buffer, std::vector<uint8_t>& detokenizer_weights_buffer,
-                  const ov::AnyMap& properties) {
+    TokenizerImpl(
+        std::string& tokenizer_model_str,
+        ov::Tensor& tokenizer_weights_tensor,
+        std::string& detokenizer_model_str,
+        ov::Tensor& detokenizer_weights_tensor,
+        const ov::AnyMap& properties
+    ) {
         auto core = *get_core();
-        auto ov_tokenizer = utils::get_model_from_buffer(core, tokenizer_model_buffer, tokenizer_weights_buffer);
-        auto ov_detokenize = utils::get_model_from_buffer(core, detokenizer_model_buffer, detokenizer_weights_buffer);
+
+        auto ov_tokenizer = core.read_model(tokenizer_model_str, tokenizer_weights_tensor);
+        auto ov_detokenize = core.read_model(detokenizer_model_str, detokenizer_weights_tensor);
         *this = TokenizerImpl(std::make_pair(ov_tokenizer, ov_detokenize), properties);
     }
 
-    TokenizerImpl(std::vector<uint8_t>& model_buffer, std::vector<uint8_t>& weights_buffer, const ov::AnyMap& properties) {
+    TokenizerImpl(std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties = {}) {
         auto core = *get_core();
-        auto model = utils::get_model_from_buffer(core, model_buffer, weights_buffer);
+        auto model = core.read_model(model_str, weights_tensor);
         
         auto parameters = model->get_parameters();
         OPENVINO_ASSERT(!parameters.empty());
@@ -403,27 +408,23 @@ Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyM
 }
 
 Tokenizer::Tokenizer(
-    std::vector<uint8_t>& tokenizer_model_buffer,
-    std::vector<uint8_t>& tokenizer_weights_buffer,
-    std::vector<uint8_t>& detokenizer_model_buffer,
-    std::vector<uint8_t>& detokenizer_weights_buffer,
+    std::string& tokenizer_model_str,
+    ov::Tensor& tokenizer_weights_tensor,
+    std::string& detokenizer_model_str,
+    ov::Tensor&  detokenizer_weights_tensor,
     const ov::AnyMap& properties
 ) {
     m_pimpl = std::make_shared<TokenizerImpl>(
-        tokenizer_model_buffer,
-        tokenizer_weights_buffer,
-        detokenizer_model_buffer,
-        detokenizer_weights_buffer,
+        tokenizer_model_str,
+        tokenizer_weights_tensor,
+        detokenizer_model_str,
+        detokenizer_weights_tensor,
         properties
     );
 }
 
-Tokenizer::Tokenizer(
-    std::vector<uint8_t>& model_buffer,
-    std::vector<uint8_t>& weights_buffer,
-    const ov::AnyMap& properties
-) {
-    m_pimpl = std::make_shared<TokenizerImpl>(model_buffer, weights_buffer, properties);
+Tokenizer::Tokenizer(std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties) {
+    m_pimpl = std::make_shared<TokenizerImpl>(model_str, weights_tensor, properties);
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {

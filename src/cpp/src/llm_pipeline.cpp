@@ -599,8 +599,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    std::vector<uint8_t>& model_buffer,
-    std::vector<uint8_t>& weights_buffer,
+    std::string& model_str,
+    ov::Tensor& weights_tensor,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& config
@@ -620,7 +620,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         // TODO: check what's with the adapters
         ov::InferRequest request;
         ov::Core core = utils::singleton_core();
-        auto model = utils::get_model_from_buffer(core, model_buffer, weights_buffer);
+        auto model = core.read_model(model_str, weights_tensor);
+
         utils::slice_matmul_statefull_model(model);
         request = utils::singleton_core().compile_model(model, device, config).create_infer_request();
         m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer);

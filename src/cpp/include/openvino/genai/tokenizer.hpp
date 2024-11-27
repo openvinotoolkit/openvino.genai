@@ -36,31 +36,28 @@ public:
 
     /**
      * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights
-     * @param tokenizer_model_buffer buffer with tokenizer model
-     * @param tokenizer_weights_buffer buffer with tokenizer weights
-     * @param detokenizer_model_buffer buffer with detokenizer model
-     * @param detokenizer_weights_buffer buffer with detokenizer weights
+     * @param tokenizer_model_str tokenizer model string
+     * @param tokenizer_weights_tensor ov::Tensor with tokenizer weights
+     * @param detokenizer_model_str detokenizer model string
+     * @param detokenizer_weights_tensor ov::Tensor with detokenizer weights
      * @param properties Properties passed to ov::Core::compile_model
      */
     Tokenizer(
-        std::vector<uint8_t>& tokenizer_model_buffer,
-        std::vector<uint8_t>& tokenizer_weights_buffer,
-        std::vector<uint8_t>& detokenizer_model_buffer,
-        std::vector<uint8_t>& detokenizer_weights_buffer,
+        std::string& tokenizer_model_str,
+        ov::Tensor& tokenizer_weights_tensor,
+        std::string& detokenizer_model_str,
+        ov::Tensor&  detokenizer_weights_tensor,
         const ov::AnyMap& properties = {}
     );
 
     /**
-     * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights
-     * @param model_buffer buffer with model
-     * @param weights_buffer buffer with weights
+     * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights. 
+     * Whether it's tokenizer or detokenizer is defined from model input signature
+     * @param model_str model string
+     * @param weights_tensor ov::Tensor with model weights
      * @param properties Properties passed to ov::Core::compile_model
      */
-    Tokenizer(
-        std::vector<uint8_t>& model_buffer,
-        std::vector<uint8_t>& weights_buffer,
-        const ov::AnyMap& properties = {}
-    );
+    Tokenizer(std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties = {});
 
     // TODO: add constructor for ov::Properties as well
 

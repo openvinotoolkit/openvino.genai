@@ -69,7 +69,7 @@ std::shared_ptr<ov::Model> get_model_from_buffer(ov::Core& core, std::vector<uin
 ov::Core singleton_core();
 
 template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const std::string& name, T& value);
+void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
 
 }  // namespace utils
 }  // namespace genai

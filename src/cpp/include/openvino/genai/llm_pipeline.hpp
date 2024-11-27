@@ -113,8 +113,8 @@ public:
     );
 
     LLMPipeline(
-        std::vector<uint8_t>& model_buffer,
-        std::vector<uint8_t>& weights_buffer,
+        std::string& model_str,
+        ov::Tensor& weights_tensor,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& properties = {}
