@@ -17,44 +17,13 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
-  OV_BRANCH: 0080d90974ca84f9a6d359da3388a2a18a93b753
+  OV_BRANCH: 1c9b23ccca1cca72e3f11f8cdad2e88fc7f7e633
   OV_TARBALL: ''
 
 jobs:
-  openvino_download:
-    name: Download OpenVINO package
-    outputs:
-      status: ${{ steps.openvino_download.outcome }}
-    timeout-minutes: 10
-    defaults:
-      run:
-        shell: bash
-    runs-on: ubuntu-20.04
-
-    steps:
-      - name: Download OpenVINO build
-        id: openvino_download
-        run: |
-          wget ${{ env.OV_TARBALL}} --progress=bar:force:noscroll -O openvino_package.tar.gz
-          tar -tvf openvino_package.tar.gz
-        continue-on-error: true
-
-      #
-      # Upload to artifacts
-      #
-
-      - name: Upload openvino package
-        if: steps.openvino_download.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: openvino_package
-          path: openvino_package.tar.gz
-          if-no-files-found: 'error'
 
   genai_nodejs_bindings:
     name: Produce genai nodejs binaries archive
-    needs: [openvino_download]
-    if: needs.openvino_download.outputs.status != 'success'
     timeout-minutes: 150
     defaults:
       run:
@@ -99,6 +68,12 @@ jobs:
           path: ${{ env.GENAI_REPO }}
           submodules: recursive
 
+      - name: Check GenAI repo contents
+        run: |
+          ls -la ${{ env.GENAI_REPO }}/src/js
+          cd ${{ env.GENAI_REPO }}
+          git log
+
       - name: Setup ccache
         uses: actions/cache@v4
         with:
@@ -112,8 +87,9 @@ jobs:
 
       - name: Build openvino + genai
         run: |
-          cmake -DOPENVINO_EXTRA_MODULES=./openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
+          cmake -DOPENVINO_EXTRA_MODULES=../openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
                 -DCPACK_GENERATOR=NPM -UTBB* -DENABLE_SYSTEM_TBB=OFF \
+                -DENABLE_PYTHON=OFF \
                 -DENABLE_WHEEL=OFF \
                 -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
                 -S ./openvino -B ./build
@@ -133,7 +109,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_nodejs_bindings]
+    needs: [genai_nodejs_bindings]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
