@@ -42,6 +42,7 @@ jobs:
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes: [ "/mount:/mount" ]
+      options: -v ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
@@ -67,7 +68,7 @@ jobs:
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
   genai_build_cmake:
-    name: Build Archive (${{ matrix.build-type }})
+    name: Build Archive - ${{ matrix.build-type }}
     strategy:
       fail-fast: false
       matrix:
