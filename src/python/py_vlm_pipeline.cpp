@@ -28,7 +28,7 @@ auto vlm_generate_docstring = R"(
     :type images: List[ov.Tensor] or ov.Tensor
 
     :param generation_config: generation_config
-    :type generation_config: GenerationConfig or a Dict
+    :type generation_config: GenerationConfig or a  Dict
 
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
     :type : Callable[[str], bool], ov.genai.StreamerBase
