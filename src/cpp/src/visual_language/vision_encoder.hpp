@@ -72,7 +72,7 @@ public:
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
         const VLMModelType model_type,
-        const std::string& device="CPU",
+        const std::string& device,
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
     );
@@ -91,7 +91,7 @@ public:
         const ov::Tensor& weights,
         const std::filesystem::path& config_dir_path,
         const VLMModelType model_type,
-        const std::string& device="CPU",
+        const std::string& device,
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
     );
