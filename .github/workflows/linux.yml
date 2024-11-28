@@ -350,7 +350,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
-    name: GenAI Tests (archive) - ${{ matrix.TEST_NAME }}
+    name: GenAI Tests (wheel) - ${{ matrix.TEST_NAME }}
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
       matrix:
