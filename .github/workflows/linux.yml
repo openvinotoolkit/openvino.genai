@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
-  OV_BRANCH: 1c9b23ccca1cca72e3f11f8cdad2e88fc7f7e633
+  OV_BRANCH: 0080d90974ca84f9a6d359da3388a2a18a93b753
   OV_TARBALL: ''
 
 jobs:
@@ -67,12 +67,6 @@ jobs:
         with:
           path: ${{ env.GENAI_REPO }}
           submodules: recursive
-
-      - name: Check GenAI repo contents
-        run: |
-          ls -la ${{ env.GENAI_REPO }}/src/js
-          cd ${{ env.GENAI_REPO }}
-          git log
 
       - name: Setup ccache
         uses: actions/cache@v4
