@@ -10,9 +10,10 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "vlm_models_map.hpp"
 
 namespace ov::genai {
+
+using VLMModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
 
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.

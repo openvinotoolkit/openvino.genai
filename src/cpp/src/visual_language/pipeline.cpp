@@ -27,6 +27,17 @@ constexpr size_t BATCH_SIZE = 1;
 
 } // namespace
 
+namespace ov::genai {
+
+const VLMModelsMap::mapped_type& get_model_weights_pair(const VLMModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in VLM models map.");
+}
+
+}
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
 public:

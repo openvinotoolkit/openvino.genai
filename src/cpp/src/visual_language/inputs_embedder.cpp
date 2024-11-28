@@ -17,6 +17,8 @@ constexpr size_t BATCH_SIZE = 1;
 
 namespace ov::genai {
 
+const VLMModelsMap::mapped_type& get_model_weights_pair(const VLMModelsMap& models_map, const std::string& key);
+
 class InputsEmbedder::IInputsEmbedder {
 protected:
     // VLM config

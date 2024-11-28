@@ -8,11 +8,11 @@
 #include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
-#include "openvino/genai/visual_language/vlm_models_map.hpp"
 
 namespace ov::genai {
 
