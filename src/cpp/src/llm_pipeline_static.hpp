@@ -10,6 +10,12 @@
 namespace ov {
 namespace genai {
 
+struct ModelConfigDesc {
+    std::string type;
+    std::string name_or_path;
+    int num_key_value_heads;
+};
+
 class StaticLLMPipeline final : public LLMPipelineImplBase {
 public:
     StaticLLMPipeline(
@@ -20,14 +26,25 @@ public:
     );
 
     StaticLLMPipeline(
+        const std::string& model_str,
+        const ov::Tensor& weights_tensor,
+        const ModelConfigDesc& model_desc,
+        const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config = {}
+    );
+
+    StaticLLMPipeline(
         const std::filesystem::path& path,
         const std::string& device,
         const ov::AnyMap& config
     );
 
     void setupAndCompileModels(
-        const std::filesystem::path& path,
+        std::shared_ptr<ov::Model>& model,
         const std::string& device,
+        const ModelConfigDesc& model_desc,
         ov::AnyMap& pipeline_config);
 
     void setupAndImportModels(

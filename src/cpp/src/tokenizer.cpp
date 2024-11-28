@@ -141,6 +141,7 @@ public:
         if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
             ov_detokenizer = get_core()->read_model(tokenizer_path / "openvino_detokenizer.xml");
         }
+        // TODO: reimplement without this hack.
         *this = TokenizerImpl(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
     }
 
@@ -200,6 +201,7 @@ public:
 
         auto ov_tokenizer = core.read_model(tokenizer_model_str, tokenizer_weights_tensor);
         auto ov_detokenize = core.read_model(detokenizer_model_str, detokenizer_weights_tensor);
+        // TODO: reimplement without this hack.
         *this = TokenizerImpl(std::make_pair(ov_tokenizer, ov_detokenize), properties);
     }
 
@@ -211,9 +213,11 @@ public:
         OPENVINO_ASSERT(!parameters.empty());
         if (parameters.front()->get_element_type() == ov::element::string) {
             // It's a tokenizer
+            // TODO: reimplement without this hack.
             *this = TokenizerImpl(std::make_pair(model, nullptr), properties);
         } else {
             // It's a detokenizer
+            // TODO: reimplement without this hack.
             *this = TokenizerImpl(std::make_pair(nullptr, model), properties);
         }
     }

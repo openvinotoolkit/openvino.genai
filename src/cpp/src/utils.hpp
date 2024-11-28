@@ -58,8 +58,11 @@ ProcessorConfig from_any_map(
     const ProcessorConfig& initial
 );
 
+
 std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties);
 std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties);
+
+std::shared_ptr<ov::Model> read_model_with_config(const std::string& models_path, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 

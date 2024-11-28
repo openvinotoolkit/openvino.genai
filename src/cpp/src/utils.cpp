@@ -232,6 +232,14 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
     return {plugin_config, scheduler_config};
 };
 
+std::shared_ptr<ov::Model> read_model_with_config(const std::string& models_path, const ov::AnyMap& properties) {
+    auto [core_properties, compile_properties] = split_core_complile_config(properties);
+    ov::Core core;
+    core.set_property(core_properties);
+    std::filesystem::path openvino_model_name = "openvino_model.xml";
+    return core.read_model((models_path / openvino_model_name).string());
+}
+
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
     auto subtrahend_size = subtrahend.input_ids.get_size();

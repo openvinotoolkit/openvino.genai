@@ -59,23 +59,31 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ) : LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(models_path))
-    {
+    ) : StatefulLLMPipeline{
+            ov::genai::utils::read_model_with_config(models_path, plugin_config), 
+            tokenizer, 
+            device, 
+            plugin_config, 
+            utils::from_config_json_if_exists(models_path)
+        } {}
+
+    StatefulLLMPipeline(
+        const std::shared_ptr<ov::Model>& model,
+        const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
+        const ov::AnyMap& config,
+        const ov::genai::GenerationConfig& generation_config
+    ) : LLMPipelineImplBase(tokenizer, generation_config) {
         ov::Core core;
+        auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_complile_config(config);
+        utils::slice_matmul_statefull_model(model);
+
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
-            core.set_property(core_plugin_config);
-            auto model = core.read_model(models_path / "openvino_model.xml");
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
             m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-            utils::slice_matmul_statefull_model(model);
-            m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
+            m_model_runner = core.compile_model(model, device, *filtered_plugin_config).create_infer_request();
         } else {
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
-            core.set_property(core_plugin_config);
-            auto model = core.read_model(models_path / "openvino_model.xml");
-            utils::slice_matmul_statefull_model(model);
-            m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
+            m_model_runner = core.compile_model(model, device, plugin_config).create_infer_request();
         }
 
         // If eos_token_id was not provided, take value
@@ -397,8 +405,8 @@ std::pair<std::string, Any> draft_model(
     ov::Tensor& weights_tensor,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::genai::GenerationConfig& generation_config,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config) {
     auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
@@ -445,22 +453,21 @@ public:
     }
 
     ContinuousBatchingAdapter(
-        std::string& model_str,
-        ov::Tensor& weights_tensor,
+        const std::string& model_str,
+        const ov::Tensor& weights_tensor,
         const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
-        const ov::AnyMap& generation_config,
-        const ov::AnyMap& plugin_config
+        const ov::AnyMap& plugin_config,
+        const ov::genai::GenerationConfig& generation_config
     ): LLMPipelineImplBase{tokenizer}, m_impl{
         model_str, 
         weights_tensor,
         tokenizer,
         scheduler_config,
         device,
-        plugin_config} {
-            m_generation_config.update_generation_config(generation_config);
-    }
+        plugin_config,
+        generation_config} {}
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
@@ -595,10 +602,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 ){
     auto start_time = std::chrono::steady_clock::now();
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
-        auto config_without_scheduler_config = properties;
-        config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
-        auto& scheduler_config = properties.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, config_without_scheduler_config);
+        auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, plugin_config);
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
     } else {
@@ -614,11 +619,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& config
 ){
     auto start_time = std::chrono::steady_clock::now();
+
     if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
-        auto config_without_scheduler_config = config;
-        config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
-        auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, config_without_scheduler_config);
+        auto [plugin_config, scheduler_config] = utils::split_scheduler_config(config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, plugin_config);
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
     } else {
@@ -629,32 +633,30 @@ ov::genai::LLMPipeline::LLMPipeline(
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    std::string& model_str,
-    ov::Tensor& weights_tensor,
+    const std::string& model_str,
+    const ov::Tensor& weights_tensor,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& config
+    const ov::AnyMap& config,
+    const ov::genai::GenerationConfig& generation_config
 ){
     auto start_time = std::chrono::steady_clock::now();
     if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
-        auto config_without_scheduler_config = config;
-        config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
-        auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        // TODO: make infer request for continious batching
         // TODO: check why compiled model does not have scheduler config
-        // m_pimpl = std::make_unique<ContinuousBatchingAdapter>("models_path", tokenizer, config);
+        auto [plugin_config, scheduler_config] = utils::split_scheduler_config(config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
+                                                              tokenizer, scheduler_config, device, plugin_config, generation_config);
     } else if ("NPU" == device) {
-        // TOOD: implement
-        m_pimpl = std::make_unique<StaticLLMPipeline>("models_path", device, config);
+        ModelConfigDesc model_descr;
+        m_pimpl = std::make_unique<StaticLLMPipeline>(model_str, weights_tensor, model_descr,
+                                                      tokenizer, device, config, generation_config);
     } else {
-        // TODO: check what's with the adapters
-        ov::InferRequest request;
-        ov::Core core = utils::singleton_core();
+        auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(config);
+        ov::Core core;
+        core.set_property(core_properties);
+        
         auto model = core.read_model(model_str, weights_tensor);
-
-        utils::slice_matmul_statefull_model(model);
-        request = utils::singleton_core().compile_model(model, device, config).create_infer_request();
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, compile_properties, generation_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();

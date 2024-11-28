@@ -113,11 +113,12 @@ public:
     );
 
     LLMPipeline(
-        std::string& model_str,
-        ov::Tensor& weights_tensor,
+        const std::string& model_str,
+        const ov::Tensor& weights_tensor,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
-        const ov::AnyMap& properties = {}
+        const ov::AnyMap& properties = {},
+        const ov::genai::GenerationConfig& generation_config = {}
     );
 
     OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
@@ -287,8 +288,8 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
     ov::Tensor& weights_tensor,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device = {},
-    const ov::genai::GenerationConfig& generation_config = {},
-    const ov::AnyMap& properties = {});
+    const ov::AnyMap& properties = {},
+    const ov::genai::GenerationConfig& generation_config = {});
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
