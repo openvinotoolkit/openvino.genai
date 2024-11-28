@@ -65,8 +65,6 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
-std::shared_ptr<ov::Model> get_model_from_buffer(ov::Core& core, std::vector<uint8_t>& model_buffer, std::vector<uint8_t>& weights_buffer);
-
 ov::Core singleton_core();
 
 template <typename T>
