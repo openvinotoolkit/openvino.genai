@@ -18,6 +18,12 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  CMAKE_CXX_COMPILER_LAUNCHER: sccache
+  CMAKE_C_COMPILER_LAUNCHER: sccache
+  SCCACHE_IGNORE_SERVER_IO_ERROR: 1
+  SCCACHE_SERVER_PORT: 35555
+  SCCACHE_CACHE_SIZE: 30G
+  SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
 
 jobs:
   openvino_download:
@@ -79,12 +85,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      SCCACHE_IGNORE_SERVER_IO_ERROR: 1
-      SCCACHE_SERVER_PORT: 35555
-      SCCACHE_CACHE_SIZE: 30G
-      SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
 
     steps:
       - name: Clone openvino.genai
@@ -158,12 +158,6 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      SCCACHE_IGNORE_SERVER_IO_ERROR: 1
-      SCCACHE_SERVER_PORT: 35555
-      SCCACHE_CACHE_SIZE: 30G
-      SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
 
     steps:
       - name: Clone openvino.genai
@@ -240,12 +234,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      SCCACHE_IGNORE_SERVER_IO_ERROR: 1
-      SCCACHE_SERVER_PORT: 35555
-      SCCACHE_CACHE_SIZE: 30G
-      SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
 
     steps:
       - name: Clone openvino.genai
