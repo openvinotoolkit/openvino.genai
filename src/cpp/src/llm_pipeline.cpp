@@ -383,14 +383,26 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    }
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(models_path, device, plugin_config, scheduler_config) };
+    auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
+    
+    std::filesystem::path openvino_model_name = "openvino_model.xml";
+    auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
+    auto generation_config = ov::genai::GenerationConfig(models_path);
+    auto tokenizer = ov::genai::Tokenizer(models_path);
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
+}
+
+std::pair<std::string, Any> draft_model(
+    std::string& model_str,
+    ov::Tensor& weights_tensor,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
+    const ov::genai::GenerationConfig& generation_config,
+    const ov::AnyMap& properties) {
+    auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
+
+    auto model = utils::singleton_core().read_model(model_str, weights_tensor);
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
 }  // namespace genai
@@ -430,6 +442,24 @@ public:
         device,
         plugin_config} {
         m_generation_config = m_impl.get_config();
+    }
+
+    ContinuousBatchingAdapter(
+        std::string& model_str,
+        ov::Tensor& weights_tensor,
+        const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& generation_config,
+        const ov::AnyMap& plugin_config
+    ): LLMPipelineImplBase{tokenizer}, m_impl{
+        model_str, 
+        weights_tensor,
+        tokenizer,
+        scheduler_config,
+        device,
+        plugin_config} {
+            m_generation_config.update_generation_config(generation_config);
     }
 
     ContinuousBatchingAdapter(
