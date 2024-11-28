@@ -153,6 +153,7 @@ jobs:
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
     env:
       CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       BUILD_DIR: ${{ github.workspace }}/build
@@ -169,7 +170,7 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
-          path: ${{ env.INSTALL_DIR }}
+          path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
           
       - name: Build tokenizers wheel
@@ -178,7 +179,7 @@ jobs:
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
-        working-directory: ${{ env.INSTALL_DIR }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
               
       - name: Build GenAI wheel
         run: |
@@ -186,17 +187,16 @@ jobs:
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
-        working-directory: ${{ env.INSTALL_DIR }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
         
       - name: Install GenAI wheels
         run: |
-          python -m pip install ${{ env.WHEELS_DIR }}/*.whl openvino-tokenizers[transformers] --force-reinstall
+          python -m pip install ${{ env.WHEELS_DIR }}/openvino_genai*.whl openvino-tokenizers[transformers] --force-reinstall
         env:
-          PIP_FIND_LINKS: ${{ env.WHEELS_DIR }}
+          PIP_FIND_LINKS: ${{ env.OV_INSTALL_DIR }}/wheels
         
       - name: Install Test Requirements
-        run: |
-          python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
+        run: python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
         working-directory: ${{ env.SRC_DIR }}
         
       - name: Smoke tests
@@ -254,8 +254,7 @@ jobs:
           merge-multiple: true
           
       - name: Extract Artifacts
-        run: |
-            pigz -dc genai.tar.gz | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
+        run: pigz -dc genai.tar.gz | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
             
       - name: Build samples
         run: |
@@ -319,8 +318,7 @@ jobs:
           merge-multiple: true
       
       - name: Extract Artifacts
-        run: |
-            pigz -dc genai.tar.gz | tar -xf - -C ${{ env.INSTALL_DIR }}
+        run: pigz -dc genai.tar.gz | tar -xf - -C ${{ env.INSTALL_DIR }}
   
       - name: Install Test Requirements
         run: |
@@ -382,15 +380,12 @@ jobs:
           merge-multiple: true
           
       - name: Install GenAI wheels
-        run: |
-          ls -la ${{ env.INSTALL_DIR }}
-          python -m pip install ${{ env.INSTALL_DIR }}/wheels/*.whl openvino-tokenizers[transformers] --force-reinstall
+        run: python -m pip install ${{ env.INSTALL_DIR }}/wheels/openvino_genai*.whl openvino-tokenizers[transformers] --force-reinstall
         env:
           PIP_FIND_LINKS: ${{ env.INSTALL_DIR }}/wheels
             
       - name: Install Test Requirements
-        run: |
-          python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
+        run: python -m pip install -r ./tests/python_tests/requirements.txt --upgrade-strategy eager
         working-directory: ${{ env.SRC_DIR }}
     
       - name: Test - ${{ matrix.TEST_NAME }}
@@ -401,7 +396,7 @@ jobs:
         
   genai_samples_tests:
     name: GenAI Samples Tests
-    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
+    needs: [ openvino_download, genai_build_samples, genai_build_wheel ] 
     timeout-minutes: 45
     defaults:
       run:
@@ -447,8 +442,7 @@ jobs:
         working-directory: ${{ env.INSTALL_DIR }}
      
       - name: Install Test Requirements
-        run: |
-          python -m pip install -r ./samples/requirements.txt --upgrade-strategy eager
+        run: python -m pip install -r ./samples/requirements.txt --upgrade-strategy eager
         working-directory: ${{ env.SRC_DIR }}
      
       - name: Tests Prerequisites
@@ -473,8 +467,7 @@ jobs:
         working-directory: ${{ env.MODELS_DIR }}
       
       - name: C++ Tests Prerequisites
-        run: |
-          python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
+        run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
         
       - name: Test C++ Sample (greedy_causal_lm)
         run: |
