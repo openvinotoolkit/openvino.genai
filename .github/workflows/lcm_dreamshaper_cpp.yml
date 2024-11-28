@@ -1,13 +1,13 @@
 name: lcm_dreamshaper
 
-on:
-  workflow_dispatch:
-  pull_request:
-  merge_group:
-  push:
-    branches:
-      - master
-      - 'releases/**'
+# on:
+#   workflow_dispatch:
+#   pull_request:
+#   merge_group:
+#   push:
+#     branches:
+#       - master
+#       - 'releases/**'
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-  
+
       - name: Build app
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -106,10 +106,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-  
+
       - name: Create virtual environment
         run: python -m venv openvino_lcm_cpp
-  
+
       - name: Build app
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"

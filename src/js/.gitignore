@@ -1,0 +1,7 @@
+.vscode
+bin
+bin.*
+build
+thirdparty
+node_modules
+tests/models
