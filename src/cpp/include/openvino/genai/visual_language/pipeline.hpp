@@ -13,7 +13,7 @@
 
 namespace ov::genai {
 
-using VLMModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
+using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
 
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.
@@ -39,7 +39,7 @@ public:
     /// for CPU.
     /// @param properties A config to pass to ov::Core::compile_model().
     VLMPipeline(
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,

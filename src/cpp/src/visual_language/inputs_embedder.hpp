@@ -24,7 +24,7 @@ public:
                    const ov::AnyMap device_config);
 
     InputsEmbedder(const VLMConfig& vlm_config,
-                   const VLMModelsMap& models_map,
+                   const ModelsMap& models_map,
                    const Tokenizer& tokenizer,
                    const std::filesystem::path& config_dir_path,
                    const std::string& device,

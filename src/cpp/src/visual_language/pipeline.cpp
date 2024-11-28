@@ -29,12 +29,12 @@ constexpr size_t BATCH_SIZE = 1;
 
 namespace ov::genai {
 
-const VLMModelsMap::mapped_type& get_model_weights_pair(const VLMModelsMap& models_map, const std::string& key) {
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
     auto it = models_map.find(key);
     if (it != models_map.end()) {
         return it->second;
     }
-    OPENVINO_THROW("Model with key '", key, "' not found in VLM models map.");
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
 }
@@ -92,7 +92,7 @@ public:
     }
 
     VLMPipelineImpl(
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -269,7 +269,7 @@ VLMPipeline::VLMPipeline(
 ) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_dir, device, properties)} {}
 
 VLMPipeline::VLMPipeline(
-    const VLMModelsMap& models_map,
+    const ModelsMap& models_map,
     const Tokenizer& tokenizer,
     const std::filesystem::path& config_dir_path,
     const std::string& device,

@@ -17,7 +17,7 @@ constexpr size_t BATCH_SIZE = 1;
 
 namespace ov::genai {
 
-const VLMModelsMap::mapped_type& get_model_weights_pair(const VLMModelsMap& models_map, const std::string& key);
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
 class InputsEmbedder::IInputsEmbedder {
 protected:
@@ -95,7 +95,7 @@ protected:
     
     IInputsEmbedder(
         const VLMConfig& vlm_config,
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -227,7 +227,7 @@ public:
 
     InputsEmbedderMiniCPM(
         const VLMConfig& vlm_config,
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -532,7 +532,7 @@ public:
 
     InputsEmbedderLLaVA(
         const VLMConfig& vlm_config,
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -644,7 +644,7 @@ public:
 
     InputsEmbedderLLaVANext(
         const VLMConfig& vlm_config,
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -969,7 +969,7 @@ public:
 
     InputsEmbedderInternVLChat(
         const VLMConfig& vlm_config,
-        const VLMModelsMap& models_map,
+        const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -1097,7 +1097,7 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
 }
 
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
-                               const VLMModelsMap& models_map,
+                               const ModelsMap& models_map,
                                const Tokenizer& tokenizer,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
