@@ -806,6 +806,7 @@ jobs:
     with:
       model_id: llava-hf/llava-v1.6-mistral-7b-hf
       model_dir: llava_v1_6_mistral_7b_ov
+      compare_with_ref: true
 
   visual_language_chat_sample-ubuntu-internvl2:
     runs-on: ubuntu-22.04-16-cores
