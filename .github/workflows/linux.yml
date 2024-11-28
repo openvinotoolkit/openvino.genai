@@ -216,7 +216,7 @@ jobs:
           if-no-files-found: 'error'
           
   genai_build_samples:
-    name: Build GenAI Samples (${{ matrix.build-type }})
+    name: Build GenAI Samples - ${{ matrix.build-type }}
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -288,7 +288,7 @@ jobs:
           if-no-files-found: 'error'
           
   genai_tests_archive:
-    name: GenAI Python Tests API (${{ matrix.TEST_NAME }})
+    name: GenAI Python Tests (archive) - ${{ matrix.TEST_NAME }}
     needs: [ openvino_download, genai_build_cmake ]
     strategy:
       matrix:
@@ -350,7 +350,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
-    name: GenAI Tests (${{ matrix.TEST_NAME }})
+    name: GenAI Tests (archive) - ${{ matrix.TEST_NAME }}
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
       matrix:
@@ -410,7 +410,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
-    name: GenAI Samples Tests (${{ matrix.build-type }})
+    name: GenAI Samples Tests - ${{ matrix.build-type }}
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -449,7 +449,7 @@ jobs:
       - name: Download GenAI wheels
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          pattern: genai[archive_${{ matrix.build-type }}|_wheels|_samples_${{ matrix.build-type }}]*
+          pattern: genai_[archive_${{ matrix.build-type }}|wheels|samples_${{ matrix.build-type }}]*
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
       
