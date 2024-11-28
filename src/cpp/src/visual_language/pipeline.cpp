@@ -111,7 +111,7 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        auto m_language_pair = get_model_weights_pair(models_map, "openvino_language_model");
+        auto m_language_pair = get_model_weights_pair(models_map, "language");
         m_language = utils::singleton_core().compile_model(
             m_language_pair.first, m_language_pair.second, device, properties
         ).create_infer_request();

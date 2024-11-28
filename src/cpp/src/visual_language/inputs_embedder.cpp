@@ -102,16 +102,16 @@ protected:
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
         m_vision_encoder(
-            get_model_weights_pair(models_map, "openvino_vision_embeddings_model").first,
-            get_model_weights_pair(models_map, "openvino_vision_embeddings_model").second,
+            get_model_weights_pair(models_map, "vision_embeddings").first,
+            get_model_weights_pair(models_map, "vision_embeddings").second,
             config_dir_path,
             m_vlm_config.model_type,
             device,
             device_config
         ),
         m_embedding(
-            get_model_weights_pair(models_map, "openvino_text_embeddings_model").first,
-            get_model_weights_pair(models_map, "openvino_text_embeddings_model").second,
+            get_model_weights_pair(models_map, "text_embeddings").first,
+            get_model_weights_pair(models_map, "text_embeddings").second,
             m_vlm_config.scale_emb,
             device,
             device_config
@@ -234,8 +234,8 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
             m_resampler = utils::singleton_core().compile_model(
-                get_model_weights_pair(models_map, "openvino_resampler_model").first,
-                get_model_weights_pair(models_map, "openvino_resampler_model").second,
+                get_model_weights_pair(models_map, "resampler").first,
+                get_model_weights_pair(models_map, "resampler").second,
                 device,
                 device_config
             ).create_infer_request();

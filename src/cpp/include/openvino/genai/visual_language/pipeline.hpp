@@ -31,8 +31,9 @@ public:
         const ov::AnyMap& properties = {}
     );
 
-    /// @brief Construct a pipeline from a map of models.
-    /// @param models_map A map of models IRs (e.g. openvino_text_embeddings_model, openvino_language_model etc.).
+    /// @brief Construct a pipeline from a map of models and their weights.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+    /// and value is a pair of model IR as string and weights as tensor.
     /// @param tokenizer A tokenizer.
     /// @param config_dir_path A path to directory containing config.json.
     /// @param device Inference device. A tokenizer is always compiled
