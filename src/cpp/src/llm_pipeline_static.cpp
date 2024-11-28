@@ -548,7 +548,7 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     if (hint == GenerateHint::FAST_COMPILE) {
         config.emplace("NPUW_UNFOLD_IREQS", "YES");
     }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
+<    if (npudesc.has_value() && npudesc->compiler_dq) {
         config.emplace("NPUW_DQ_FULL", "NO");
     }
     return config;
