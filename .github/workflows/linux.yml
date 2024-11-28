@@ -68,7 +68,6 @@ jobs:
   genai_build_cmake:
     name: Build GenAI Archive
     needs: [ openvino_download ]
-    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 120
     defaults:
       run:
@@ -217,7 +216,6 @@ jobs:
   genai_build_samples:
     name: Build GenAI Samples
     needs: [ openvino_download, genai_build_cmake ]
-    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 120
     defaults:
       run:
