@@ -66,7 +66,10 @@ jobs:
         echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
 
   genai_build_cmake:
-    name: Build GenAI Archive
+    name: Build GenAI Archive (${{ matrix.build-type }})
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
     needs: [ openvino_download ]
     timeout-minutes: 120
     defaults:
@@ -102,13 +105,13 @@ jobs:
       - name: CMake configure - GenAI
         run: |    
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
       
       - name: Cmake build - GenAI
-        run: cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc)
+        run: cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc)
 
       - name: Cmake install - GenAI
-        run: cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+        run: cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
         
       - name: Install Test Requirements
         run: |
@@ -134,7 +137,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: genai_archive
+          name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/*.tar.gz
           if-no-files-found: 'error'
   
@@ -213,7 +216,10 @@ jobs:
           if-no-files-found: 'error'
           
   genai_build_samples:
-    name: Build GenAI Samples
+    name: Build GenAI Samples (${{ matrix.build-type }})
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
     needs: [ openvino_download, genai_build_cmake ]
     timeout-minutes: 120
     defaults:
@@ -249,16 +255,25 @@ jobs:
       - name: Download GenAI package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: genai_archive
+          name: genai_archive_${{ matrix.build-type }}
           merge-multiple: true
           
       - name: Extract Artifacts
         run: pigz -dc genai.tar.gz | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
             
-      - name: Build samples
+      - name: Build samples (Release)
+        if: ${{ 'Release' == matrix.build-type }}
         run: |
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
+          
+      - name: Build samples (Debug)
+        if: ${{ 'Release' != matrix.build-type }}
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }}/samples/cpp/ -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc)
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --component samples_bin --prefix ${{ env.INSTALL_DIR }}
         
       - name: Pack Artifacts
         run: tar -cvf - * | pigz > ${{ env.INSTALL_DIR }}/genai_samples.tar.gz
@@ -268,7 +283,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: genai_samples
+          name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
           
@@ -277,6 +292,7 @@ jobs:
     needs: [ openvino_download, genai_build_cmake ]
     strategy:
       matrix:
+        build-type: [Release, Debug]
         include:
           - TEST_NAME: 'Whisper Generate API'
             TEST_COMMAND: 'tests/python_tests/test_whisper_generate_api.py -k test_smoke'
@@ -313,7 +329,7 @@ jobs:
       - name: Download GenAI package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: genai_archive
+          name: genai_archive_${{ matrix.build-type }}
           merge-multiple: true
       
       - name: Extract Artifacts
@@ -394,7 +410,10 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
-    name: GenAI Samples Tests
+    name: GenAI Samples Tests (${{ matrix.build-type }})
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
     needs: [ openvino_download, genai_build_samples, genai_build_wheel ] 
     timeout-minutes: 45
     defaults:
@@ -430,7 +449,7 @@ jobs:
       - name: Download GenAI wheels
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          pattern: genai[|_wheels|_samples]*
+          pattern: genai[archive_${{ matrix.build-type }}|_wheels|_samples]*
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
       
