@@ -129,8 +129,8 @@ public:
             size_t num_running_sequences = running_sequences.size();
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             size_t group_position_id = sequence_group->get_num_processed_tokens();
-            auto prompt_len = sequence_group->get_prompt_len();
-            size_t tokens_num_to_sample = 0;
+            size_t prompt_len = sequence_group->get_prompt_len();
+            size_t seq_len_after_gather = 0;
 
             // spec: In case of multiple input tokens for current sequence (prompt_len > 1),
             // context_len corresponds to first token within subgroup of scheduled tokens
@@ -148,7 +148,7 @@ public:
                     if (matmul_gathering_is_required) {
                         if (group_position_id + token_id >= prompt_len - 1) {
                             gather_indice_values.push_back(gathering_current_index);
-                            tokens_num_to_sample++;
+                            seq_len_after_gather++;
                         }
                     }
                     position_ids_data[token_id] = position_id;
@@ -169,7 +169,7 @@ public:
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
             }
-            sequence_group->set_seq_len_to_sample(tokens_num_to_sample);
+            sequence_group->set_seq_len_to_sample(matmul_gathering_is_required ? std::min(seq_len_after_gather, num_scheduled_tokens) : num_scheduled_tokens);
         }
 
         // typical LLM parameters
