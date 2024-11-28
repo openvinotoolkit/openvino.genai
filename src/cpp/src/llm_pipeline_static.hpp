@@ -61,10 +61,6 @@ private:
         bool v_tensors_transposed;
     };
 
-    // FIXME: Ideally, we don't need to keep those
-    std::shared_ptr<ov::Model> m_kvcache_model;
-    std::shared_ptr<ov::Model> m_prefill_model;
-
     KVCacheDesc m_kvcache_desc;
     ov::InferRequest m_kvcache_request;
     ov::InferRequest m_prefill_request;

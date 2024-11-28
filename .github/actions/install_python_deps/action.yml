@@ -11,5 +11,5 @@ runs:
       shell: bash
       run: |
         source ${{ inputs.ov_dir }}/setupvars.sh
-        python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-        python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+        python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+        python -m pip install -r ./samples/requirements.txt
