@@ -87,7 +87,7 @@ protected:
         const std::string& device,
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, utils::singleton_core()),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
         m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
         m_tokenizer{model_dir.string(), device_config} { }
     
@@ -105,8 +105,7 @@ protected:
             config_dir_path,
             m_vlm_config.model_type,
             device,
-            device_config,
-            utils::singleton_core()
+            device_config
         ),
         m_embedding(
             get_model_weights_pair(models_map, "openvino_text_embeddings_model").first,

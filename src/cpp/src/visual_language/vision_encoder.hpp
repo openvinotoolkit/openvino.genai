@@ -68,13 +68,11 @@ public:
     /// @param device A device to compile the encoder for.
     /// @param device_config A config to be passed to
     /// ov::Core::compile_model().
-    /// @param core ov::Core to be used to compile the model.
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
         const VLMModelType model_type,
         const std::string& device,
-        const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{}
+        const ov::AnyMap device_config={}
     );
 
     /// @brief Construct the encoder from models map.
@@ -85,15 +83,13 @@ public:
     /// @param device A device to compile the encoder for.
     /// @param device_config A config to be passed to
     /// ov::Core::compile_model().
-    /// @param core ov::Core to be used to compile the model.
     explicit VisionEncoder(
         const std::string& model,
         const ov::Tensor& weights,
         const std::filesystem::path& config_dir_path,
         const VLMModelType model_type,
         const std::string& device,
-        const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{}
+        const ov::AnyMap device_config={}
     );
 
     /// @brief Compute embeddings of an image.
