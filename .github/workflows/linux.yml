@@ -45,7 +45,7 @@ jobs:
       options: -v ${{ github.workspace }}:${{ github.workspace }} -e GITHUB_WORKSPACE=${{ github.workspace }}
 
     steps:
-    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@refs/pull/27820/head
       id: openvino_download
       with:
         platform: ubuntu22
