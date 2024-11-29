@@ -37,7 +37,9 @@ public:
     /**
      * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights
      * 
-     * This constructor is used when tokenizer and detokenizer are separate models already loaded into memory.
+     * This constructor is used when tokenizer and detokenizer are separate models already loaded into memory. 
+     * When this constructor is used bos, eos, pad token ids are expected to be in IR. 
+     * If your IR is older (< 2024.3) then this tokens will be udefined.
      * @param tokenizer_model_str tokenizer model string
      * @param tokenizer_weights_tensor ov::Tensor with tokenizer weights
      * @param detokenizer_model_str detokenizer model string
