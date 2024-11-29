@@ -232,7 +232,7 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
     return {plugin_config, scheduler_config};
 };
 
-std::shared_ptr<ov::Model> read_model_with_config(const std::string& models_path, const ov::AnyMap& properties) {
+std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
     auto [core_properties, compile_properties] = split_core_complile_config(properties);
     ov::Core core;
     core.set_property(core_properties);

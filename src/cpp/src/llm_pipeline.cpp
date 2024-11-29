@@ -60,7 +60,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ) : StatefulLLMPipeline{
-            ov::genai::utils::read_model_with_config(models_path, plugin_config), 
+            ov::genai::utils::read_model_with_config(models_path, plugin_config),
             tokenizer, 
             device, 
             plugin_config, 
@@ -95,7 +95,7 @@ public:
         const std::filesystem::path& models_path,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ) : StatefulLLMPipeline{models_path, Tokenizer(models_path.string()), device, plugin_config} {}
+    ) : StatefulLLMPipeline{models_path, Tokenizer(models_path), device, plugin_config} {}
 
     DecodedResults generate(
         StringInputs inputs,

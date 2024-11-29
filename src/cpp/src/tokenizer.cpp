@@ -185,6 +185,8 @@ public:
         utils::read_rt_info(ov_tokenizer, "bos_token_id", m_bos_token_id);
         utils::read_rt_info(ov_tokenizer, "eos_token_id", m_eos_token_id);
 
+        m_chat_template = patch_chat_template(m_chat_template);
+
         m_pad_token = decode(std::vector{m_pad_token_id});
         m_bos_token = decode(std::vector{m_bos_token_id});
         m_eos_token = decode(std::vector{m_eos_token_id});
