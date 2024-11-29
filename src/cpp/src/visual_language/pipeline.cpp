@@ -98,7 +98,9 @@ public:
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
 
+        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         Sampler sampler = Sampler(m_tokenizer);
 
@@ -169,7 +171,7 @@ public:
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
         
         // VLM specific perf metrics
-        decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.insert(decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(), raw_vlm_counters.prepare_embeddings_durations.begin(), raw_vlm_counters.prepare_embeddings_durations.end());
+        decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
