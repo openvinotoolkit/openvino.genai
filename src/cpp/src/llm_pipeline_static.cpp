@@ -457,6 +457,7 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
 struct NPUDesc {
     std::string arch;
     int64_t max_tiles;
+    bool compiler_dq;
 };
 
 std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
@@ -466,7 +467,14 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     }
     const auto arch = core.get_property("NPU", ov::device::architecture);
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
-    return std::make_optional(NPUDesc{arch, max_tiles});
+
+    bool compiler_dq = false;
+    const auto device_caps = core.get_property("NPU", ov::device::capabilities);
+    if (std::find(device_caps.begin(), device_caps.end(),
+                  "COMPILER_DYNAMIC_QUANTIZATION") != device_caps.end()) {
+        compiler_dq = true;
+    }
+    return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
 }
 
 ov::AnyMap get_baseline_common_config() {
@@ -508,6 +516,9 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
         npudesc->max_tiles != -1) {
         config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
+    if (npudesc.has_value() && npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ_FULL", "NO");
+    }
     return config;
 }
 
@@ -522,6 +533,9 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     config.emplace("NPUW_DQ", "YES");
     if (npudesc.has_value() && npudesc->arch == "4000") {
         config.emplace("NPU_DPU_GROUPS", 4);
+    }
+    if (npudesc.has_value() && npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ_FULL", "NO");
     }
     return config;
 }
