@@ -105,23 +105,17 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: CMake onfigure
+      - name: CMake Build
         run: |    
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
-      
-      - name: Cmake build
-        run: cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc)
-
-      - name: Cmake install
-        run: cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
-        
-      - name: Install Test Requirements
-        run: python -m pip install pytest numpy
+          cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc)
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
 
       - name: Smoke Tests
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          python -m pip install numpy
           python -c "import numpy, openvino, openvino_genai; openvino_genai.TokenizedInputs(openvino.Tensor(numpy.empty(0))
         env:
           PYTHONPATH: ${{ env.INSTALL_DIR }}/python/:${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/python/:$PYTHONPATH
@@ -195,11 +189,10 @@ jobs:
         env:
           PIP_FIND_LINKS: ${{ env.OV_INSTALL_DIR }}/wheels
         
-      - name: Install Test Requirements
-        run: python -m pip install numpy
-        
       - name: Smoke Tests
-        run: python -c "import numpy, openvino, openvino_genai; openvino_genai.TokenizedInputs(openvino.Tensor(numpy.empty(0))
+        run: |
+          python -m pip install numpy
+          python -c "import numpy, openvino, openvino_genai; openvino_genai.TokenizedInputs(openvino.Tensor(numpy.empty(0))
 
       - name: Upload Wheels
         if: ${{ always() }}
