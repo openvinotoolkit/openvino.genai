@@ -86,7 +86,7 @@ void init_vlm_pipeline(py::module_& m) {
         py::arg("device"), "device on which inference will be done"
         R"(
             VLMPipeline class constructor.
-            models_path (str): Path to the folder with exported model files.
+            models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             kwargs: Device properties
         )")
