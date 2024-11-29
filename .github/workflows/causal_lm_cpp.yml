@@ -306,19 +306,11 @@ jobs:
         run: |
           . ./ov/setupvars.sh
           echo "why sun is yellow?" > ./prompt.txt
-          
+          echo '--------------------------------C++ Generated--------------------------------------------------'
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee cpp.txt
+          echo '-------------------------------Python Generated------------------------------------------------'
           samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)"| tee py.txt
-          python -c "
-          with open('cpp.txt', 'r') as f:
-            greedy_cp = f.read()
-          with open('py.txt', 'r') as f:
-            greedy_py = f.read()
-          print('In c++ generated')
-          print(greedy_cp)
-          print('In python generated')
-          print(greedy_py)
-          "
+          echo '-----------------------------------------------------------------------------------------------'
           diff cpp.txt py.txt
           echo "Why sun is yellow?" passed
         env:
@@ -607,11 +599,6 @@ jobs:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          print('greedy generated')
-          print(predicted_greedy)
-          print('Prompt lookup generated')
-          print(predicted_prompt_lookup)
-          print('--------------------------------------------------------------------')
           assert predicted_greedy == predicted_prompt_lookup
           print('Passes')
           "
