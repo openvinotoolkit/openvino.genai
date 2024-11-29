@@ -47,7 +47,7 @@ public:
      * @param properties Properties passed to ov::Core::compile_model
      */
     Tokenizer(
-        std::string& tokenizer_model_str,
+        const std::string& tokenizer_model_str,
         ov::Tensor& tokenizer_weights_tensor,
         std::string& detokenizer_model_str,
         ov::Tensor&  detokenizer_weights_tensor,
@@ -64,7 +64,7 @@ public:
      * @param weights_tensor ov::Tensor with model weights
      * @param properties Properties passed to ov::Core::compile_model
      */
-    Tokenizer(std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties = {});
+    Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties = {});
 
     // TODO: add constructor for ov::Properties as well
 

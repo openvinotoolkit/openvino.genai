@@ -518,7 +518,7 @@ Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyM
 }
 
 Tokenizer::Tokenizer(
-    std::string& tokenizer_model_str,
+    const std::string& tokenizer_model_str,
     ov::Tensor& tokenizer_weights_tensor,
     std::string& detokenizer_model_str,
     ov::Tensor&  detokenizer_weights_tensor,
@@ -532,7 +532,7 @@ Tokenizer::Tokenizer(
     m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
 }
 
-Tokenizer::Tokenizer(std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties) {
+Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties) {
     ScopedVar env_manager(tokenizers_relative_to_genai().string());
     auto core = get_core_singleton();
     auto model = core.read_model(model_str, weights_tensor);
