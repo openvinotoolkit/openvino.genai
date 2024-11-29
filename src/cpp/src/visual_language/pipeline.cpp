@@ -72,7 +72,11 @@ public:
                 models_dir, "config.json"
             )
         },
-        m_generation_config{models_dir / "generation_config.json"},
+        m_generation_config{
+            utils::from_config_json_if_exists<GenerationConfig>(
+                models_dir, "generation_config.json"
+            )
+        },
         m_is_chat_conversation{false} {
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
             m_vlm_config, models_dir, device, properties);
