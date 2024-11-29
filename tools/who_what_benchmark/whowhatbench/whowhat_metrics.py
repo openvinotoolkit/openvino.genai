@@ -114,7 +114,7 @@ class TextSimilarity:
         if hasattr(tokenizer, "pad_token") and tokenizer.pad_token:
             pad_token = tokenizer.pad_token
         else:
-            pad_token = tokenizer.eos_token 
+            pad_token = tokenizer.eos_token
         self.model = SentenceTransformer(model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=True)
 
     def evaluate(self, gt, prediction):
