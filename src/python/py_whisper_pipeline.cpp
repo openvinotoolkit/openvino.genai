@@ -262,7 +262,7 @@ void init_whisper_pipeline(py::module_& m) {
              "openvino.properties map",
              R"(
             WhisperPipeline class constructor.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
         )")
 

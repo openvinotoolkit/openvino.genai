@@ -19,7 +19,7 @@ class Adapter:
     def __init__(self, path: os.PathLike) -> None:
         """
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
-                    path (str): Path to adapter file in safetensors format.
+                    path (os.PathLike): Path to adapter file in safetensors format.
         """
 class AdapterConfig:
     """
@@ -162,20 +162,20 @@ class AutoencoderKL:
     def __init__(self, vae_decoder_path: os.PathLike) -> None:
         """
                     AutoencoderKL class initialized only with decoder model.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
     def __init__(self, vae_encoder_path: os.PathLike, vae_decoder_path: os.PathLike) -> None:
         """
                     AutoencoderKL class initialized with both encoder and decoder models.
-                    vae_encoder_path (str): VAE encoder directory.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with decoder model.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -183,8 +183,8 @@ class AutoencoderKL:
     def __init__(self, vae_encoder_path: os.PathLike, vae_decoder_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with both encoder and decoder models.
-                    vae_encoder_path (str): VAE encoder directory.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -228,13 +228,13 @@ class CLIPTextModel:
     def __init__(self, root_dir: os.PathLike) -> None:
         """
                     CLIPTextModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
         """
                     CLIPTextModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -277,13 +277,13 @@ class CLIPTextModelWithProjection:
     def __init__(self, root_dir: os.PathLike) -> None:
         """
                     CLIPTextModelWithProjection class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
         """
                     CLIPTextModelWithProjection class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -790,7 +790,7 @@ class LLMPipeline:
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
         """
                     LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
-                    models_path (str): Path to the model file.
+                    models_path (os.PathLike): Path to the model file.
                     tokenizer (openvino_genai.Tokenizer): tokenizer object.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
@@ -800,7 +800,7 @@ class LLMPipeline:
     def __init__(self, models_path: os.PathLike, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
         """
                     LLMPipeline class constructor.
-                    models_path (str): Path to the model file.
+                    models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
                     kwargs: Device properties.
@@ -1231,13 +1231,13 @@ class Text2ImagePipeline:
     def __init__(self, models_path: os.PathLike) -> None:
         """
                     Text2ImagePipeline class constructor.
-                    models_path (str): Path to the folder with exported model files.
+                    models_path (os.PathLike): Path to the folder with exported model files.
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     Text2ImagePipeline class constructor.
-                    models_path (str): Path with exported model files.
+                    models_path (os.PathLike): Path with exported model files.
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Text2ImagePipeline properties
         """
@@ -1358,13 +1358,13 @@ class UNet2DConditionModel:
     def __init__(self, root_dir: os.PathLike) -> None:
         """
                     UNet2DConditionModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
         """
                     UNet2DConditionModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -1401,7 +1401,7 @@ class VLMPipeline:
         """
         device on which inference will be done
                     VLMPipeline class constructor.
-                    models_path (str): Path to the folder with exported model files.
+                    models_path (os.PathLike): Path to the folder with exported model files.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     kwargs: Device properties
         """
@@ -1610,7 +1610,7 @@ class WhisperPipeline:
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     WhisperPipeline class constructor.
-                    models_path (str): Path to the model file.
+                    models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
     def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | ChunkStreamerBase | None = None, **kwargs) -> DecodedResults:
