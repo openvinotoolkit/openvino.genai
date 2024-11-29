@@ -80,13 +80,12 @@ public:
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
 
-        // TODO:
-        // const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
-        // if (text_encoder_2 == "T5EncoderModel") {
-        //     m_t5_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3");
-        // } else {
-        //     OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
-        // }
+        const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
+        if (text_encoder_3 == "T5EncoderModel") {
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3");
+        } else {
+            m_t5_text_encoder = nullptr;
+        }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
@@ -142,13 +141,12 @@ public:
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
 
-        // TODO:
-        // const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
-        // if (text_encoder_2 == "T5EncoderModel") {
-        //     m_t5_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
-        // } else {
-        //     OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
-        // }
+        const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
+        if (text_encoder_3 == "T5EncoderModel") {
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
+        } else {
+            m_t5_text_encoder = nullptr;
+        }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
@@ -199,6 +197,7 @@ public:
             do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
         m_clip_text_encoder_1->reshape(batch_size_multiplier);
         m_clip_text_encoder_2->reshape(batch_size_multiplier);
+        m_t5_text_encoder->reshape(batch_size_multiplier, m_generation_config.max_sequence_length);
         m_transformer->reshape(num_images_per_prompt * batch_size_multiplier,
                                height,
                                width,
@@ -211,6 +210,7 @@ public:
 
         m_clip_text_encoder_1->compile(device, properties);
         m_clip_text_encoder_2->compile(device, properties);
+        m_t5_text_encoder->compile(device, properties);
         m_transformer->compile(device, properties);
         m_vae->compile(device, properties);
     }
@@ -244,44 +244,58 @@ public:
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
         ov::Tensor text_encoder_2_hidden_state = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
 
-        // get positive prompt_2_embed_out
-        ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out;
+        ov::Tensor text_encoder_3_output;
+        if (m_t5_text_encoder == nullptr) {
+            ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
+                                               m_clip_text_encoder_1->get_config().max_position_embeddings,
+                                               transformer_config.joint_attention_dim};
+            std::vector<float> t5_prompt_embed(ov::shape_size(t5_prompt_embed_shape), 0.0f);
+
+            text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);
+            std::copy(t5_prompt_embed.begin(), t5_prompt_embed.end(), text_encoder_3_output.data<float>());
+        } else {
+            text_encoder_3_output = m_t5_text_encoder->infer(prompt_3_str,
+                                                             negative_prompt_3_str,
+                                                             do_classifier_free_guidance(generation_config.guidance_scale),
+                                                             m_generation_config.max_sequence_length);
+        }
+
+        ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out, t5_prompt_embed_out;
 
         if (do_classifier_free_guidance(generation_config.guidance_scale)) {
             pooled_prompt_embed_out = get_tensor_batch(text_encoder_1_output, 1);
             prompt_embed_out = get_tensor_batch(text_encoder_1_hidden_state, 1);
             pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 1);
             prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 1);
+            t5_prompt_embed_out = get_tensor_batch(text_encoder_3_output, 1);
         } else {
             pooled_prompt_embed_out = text_encoder_1_output;
             prompt_embed_out = text_encoder_1_hidden_state;
             pooled_prompt_2_embed_out = text_encoder_2_output;
             prompt_2_embed_out = text_encoder_2_hidden_state;
+            t5_prompt_embed_out = text_encoder_3_output;
         }
 
-        ov::Tensor pooled_prompt_embed, prompt_embed, pooled_prompt_2_embed, prompt_2_embed;
+        ov::Tensor pooled_prompt_embed, prompt_embed, pooled_prompt_2_embed, prompt_2_embed, t5_prompt_embed;
         if (generation_config.num_images_per_prompt == 1) {
             pooled_prompt_embed = pooled_prompt_embed_out;
             prompt_embed = prompt_embed_out;
             pooled_prompt_2_embed = pooled_prompt_2_embed_out;
             prompt_2_embed = prompt_2_embed_out;
+            t5_prompt_embed = t5_prompt_embed_out;
         } else {
             pooled_prompt_embed = numpy_utils::repeat(pooled_prompt_embed_out, generation_config.num_images_per_prompt);
             prompt_embed = numpy_utils::repeat(prompt_embed_out, generation_config.num_images_per_prompt);
             pooled_prompt_2_embed = numpy_utils::repeat(pooled_prompt_2_embed_out, generation_config.num_images_per_prompt);
             prompt_2_embed = numpy_utils::repeat(prompt_2_embed_out, generation_config.num_images_per_prompt);
+            t5_prompt_embed = numpy_utils::repeat(t5_prompt_embed_out, generation_config.num_images_per_prompt);
         }
 
         // concatenate hidden_states from two encoders
         ov::Tensor clip_prompt_embeds = numpy_utils::concat(prompt_embed, prompt_2_embed, -1);
         ov::Shape clip_prompt_embeds_shape = clip_prompt_embeds.get_shape();
 
-        // TODO: text_encoder_3
-        ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
-                                           m_clip_text_encoder_1->get_config().max_position_embeddings,
-                                           transformer_config.joint_attention_dim};
-        ov::Tensor t5_prompt_embed(ov::element::f32, t5_prompt_embed_shape);
-        std::fill_n(t5_prompt_embed.data<float>(), t5_prompt_embed.get_size(), 0.0f);
+        ov::Shape t5_prompt_embed_shape = t5_prompt_embed.get_shape();
 
         // padding for clip_prompt_embeds
         ov::Shape pad_embeds_shape = {clip_prompt_embeds_shape[0], clip_prompt_embeds_shape[1], t5_prompt_embed_shape[2]};
@@ -301,31 +315,32 @@ public:
             ov::Tensor negative_prompt_embed_out = get_tensor_batch(text_encoder_1_hidden_state, 0);
             ov::Tensor negative_pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 0);
             ov::Tensor negative_prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 0);
-
-            ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed, negative_prompt_2_embed;
+            ov::Tensor negative_t5_prompt_embed_out = get_tensor_batch(text_encoder_3_output, 0);
+            
+            ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed,
+                negative_prompt_2_embed, negative_t5_prompt_embed;
             if (generation_config.num_images_per_prompt == 1) {
                 negative_pooled_prompt_embed = negative_pooled_prompt_embed_out;
                 negative_prompt_embed = negative_prompt_embed_out;
                 negative_pooled_prompt_2_embed = negative_pooled_prompt_2_embed_out;
                 negative_prompt_2_embed = negative_prompt_2_embed_out;
+                negative_t5_prompt_embed = negative_t5_prompt_embed_out;
             } else {
                 negative_pooled_prompt_embed = numpy_utils::repeat(negative_pooled_prompt_embed_out, generation_config.num_images_per_prompt);
                 negative_prompt_embed = numpy_utils::repeat(negative_prompt_embed_out, generation_config.num_images_per_prompt);
                 negative_pooled_prompt_2_embed = numpy_utils::repeat(negative_pooled_prompt_2_embed_out, generation_config.num_images_per_prompt);
                 negative_prompt_2_embed = numpy_utils::repeat(negative_prompt_2_embed_out, generation_config.num_images_per_prompt);
+                negative_t5_prompt_embed = numpy_utils::repeat(negative_t5_prompt_embed_out, generation_config.num_images_per_prompt);
             }
 
             // concatenate hidden_states from two encoders
             ov::Tensor neg_clip_prompt_embeds = numpy_utils::concat(negative_prompt_embed, negative_prompt_2_embed, -1);
 
-            // TODO: replace with actual T5 embeddings once they are supported by SD3
-            ov::Tensor t5_neg_prompt_embed = t5_prompt_embed;
-
             // padding for neg_clip_prompt_embeds
             padding_right(neg_clip_prompt_embeds, pad_embeds);
 
             // negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
-            ov::Tensor neg_prompt_embeds = numpy_utils::concat(pad_embeds, t5_neg_prompt_embed, -2);
+            ov::Tensor neg_prompt_embeds = numpy_utils::concat(pad_embeds, negative_t5_prompt_embed, -2);
             // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1)
             ov::Tensor neg_pooled_prompt_embeds = numpy_utils::concat(negative_pooled_prompt_embed, negative_pooled_prompt_2_embed, -1);
 
@@ -545,8 +560,7 @@ private:
 
     std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_1;
     std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2;
-    // TODO:
-    // std::shared_ptr<T5EncoderModel> m_t5_encoder;
+    std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
     std::shared_ptr<SD3Transformer2DModel> m_transformer;
     std::shared_ptr<AutoencoderKL> m_vae;
 };

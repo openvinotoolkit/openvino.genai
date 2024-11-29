@@ -246,7 +246,7 @@ public:
         m_clip_text_encoder->infer(positive_prompt, "", false);
         ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
 
-        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
 
         ov::Tensor pooled_prompt_embeds, prompt_embeds;
         if (generation_config.num_images_per_prompt == 1) {
