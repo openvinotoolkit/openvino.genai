@@ -269,17 +269,17 @@ jobs:
           if-no-files-found: 'error'
           
   genai_tests_archive:
-    name: Python Tests (archive) - ${{ matrix.build-type }} - ${{ matrix.TEST_NAME }}
+    name: Python Tests (archive) - ${{ matrix.build-type }} - ${{ matrix.test.name }}
     needs: [ openvino_download, genai_build_cmake ]
     strategy:
       fail-fast: false
       matrix:
         build-type: [Release]
-        include:
-          - TEST_NAME: 'test_chat_generate_api.py::test_set_chat_template'
-            TEST_COMMAND: 'python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template'
-          - TEST_NAME: 'Whisper Generate API'
-            TEST_COMMAND: 'tests/python_tests/test_whisper_generate_api.py -k test_smoke'
+        test:
+          - name: 'test_chat_generate_api.py::test_set_chat_template'
+            cmd: 'tests/python_tests/test_chat_generate_api.py::test_set_chat_template'
+          - name: 'Whisper Generate API'
+            cmd: 'tests/python_tests/test_whisper_generate_api.py -k test_smoke'
     timeout-minutes: 45
     defaults:
       run:
@@ -325,24 +325,24 @@ jobs:
           python -m pip uninstall openvino openvino-tokenizers -y
         working-directory: ${{ env.SRC_DIR }}
     
-      - name: Test - ${{ matrix.TEST_NAME }}
+      - name: Test - ${{ matrix.test.name }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ./${{ matrix.TEST_COMMAND }}
+          python -m pytest -v ./${{ matrix.test.cmd }}
         env:
           PYTHONPATH: ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/python/:$PYTHONPATH
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
-    name: Python Tests (wheel) - ${{ matrix.TEST_NAME }}
+    name: Python Tests (wheel) - ${{ matrix.test.name }}
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
       matrix:
-        include:
-          - TEST_NAME: 'test_vlm_api'
-            TEST_COMMAND: 'tests/python_tests/test_vlm_api.py'
-          - TEST_NAME: 'Whisper Generate API'
-            TEST_COMMAND: 'tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"'
+        test:
+          - name: 'test_vlm_api'
+            cmd: 'tests/python_tests/test_vlm_api.py'
+          - name: 'Whisper Generate API'
+            cmd: 'tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"'
     timeout-minutes: 60
     defaults:
       run:
@@ -388,10 +388,10 @@ jobs:
         run: python -m pip install -r ./tests/python_tests/requirements.txt
         working-directory: ${{ env.SRC_DIR }}
     
-      - name: Test - ${{ matrix.TEST_NAME }}
+      - name: Test - ${{ matrix.test.name }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ./${{ matrix.TEST_COMMAND }}
+          python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
