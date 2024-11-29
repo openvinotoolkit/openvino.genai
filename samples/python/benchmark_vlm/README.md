@@ -25,9 +25,9 @@ python benchmark_vlm.py [OPTIONS]
 
 ### Options
 
-- `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` The prompt to generate text.
-- `-i, --image`: Path to the image.
+- `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
+- `-p, --prompt` (default: `What is on the image?`): The prompt to generate text.
+- `-i, --image` (default: `image.jpg`): Path to the image.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
