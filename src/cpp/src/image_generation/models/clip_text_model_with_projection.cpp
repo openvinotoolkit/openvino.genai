@@ -39,8 +39,8 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::filesystem::
     compile(device, properties);
 }
 
-CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string &model,
-                                                         const Tensor &weights,
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& model,
+                                                         const Tensor& weights,
                                                          const Config& config,
                                                          const Tokenizer& clip_tokenizer) :
     m_clip_tokenizer(clip_tokenizer), m_config(config) {
@@ -48,8 +48,8 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string &mode
     m_model = core.read_model(model, weights);
 }
 
-CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string &model,
-                                                         const Tensor &weights,
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& model,
+                                                         const Tensor& weights,
                                                          const Config& config,
                                                          const Tokenizer& clip_tokenizer,
                                                          const std::string& device,

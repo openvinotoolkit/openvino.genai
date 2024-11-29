@@ -39,8 +39,8 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_d
     compile(device, properties);
 }
 
-SD3Transformer2DModel::SD3Transformer2DModel(const std::string &model,
-                                             const Tensor &weights,
+SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
+                                             const Tensor& weights,
                                              const Config& config,
                                              const size_t vae_scale_factor) :
     m_config(config), m_vae_scale_factor(vae_scale_factor) {
@@ -48,8 +48,8 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string &model,
     m_model = core.read_model(model, weights);
 }
 
-SD3Transformer2DModel::SD3Transformer2DModel(const std::string &model,
-                                             const Tensor &weights,
+SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
+                                             const Tensor& weights,
                                              const Config& config,
                                              const size_t vae_scale_factor,
                                              const std::string& device,

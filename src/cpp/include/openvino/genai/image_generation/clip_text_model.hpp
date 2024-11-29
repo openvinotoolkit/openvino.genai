@@ -33,13 +33,13 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
-    CLIPTextModel(const std::string &model,
-                  const Tensor &weights,
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
                   const Config& config,
                   const Tokenizer& clip_tokenizer);
 
-    CLIPTextModel(const std::string &model,
-                  const Tensor &weights,
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
                   const Config& config,
                   const Tokenizer& clip_tokenizer,
                   const std::string& device,
@@ -51,6 +51,21 @@ public:
                   const std::string& device,
                   Properties&&... properties)
         : CLIPTextModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  Properties&&... properties)
+        : CLIPTextModel(model,
+                        weights,
+                        config,
+                        clip_tokenizer,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     CLIPTextModel(const CLIPTextModel&);
 
