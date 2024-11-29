@@ -42,7 +42,7 @@ jobs:
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes: [ "/mount:/mount" ]
-      options: -v ${{ github.workspace }}:${{ github.workspace }} -e GITHUB_WORKSPACE=${{ github.workspace }}
+      options: -v ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@refs/pull/27820/head
