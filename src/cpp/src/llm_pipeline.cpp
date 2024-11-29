@@ -395,7 +395,7 @@ std::pair<std::string, Any> draft_model(
     
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
-    auto generation_config = ov::genai::GenerationConfig(models_path);
+    auto generation_config = ov::genai::GenerationConfig(models_path / "generation_config.json");
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
