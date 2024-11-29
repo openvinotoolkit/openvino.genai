@@ -42,12 +42,14 @@ public:
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
     /// @param properties A config to pass to ov::Core::compile_model().
+    /// @param generation_config Optional generation configuration for the pipeline.
     VLMPipeline(
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
-        const ov::AnyMap& properties = {}
+        const ov::AnyMap& properties = {},
+        const ov::genai::GenerationConfig& generation_config = {}
     );
 
     /// @brief Construct a pipeline from a folder containing tokenizer

@@ -72,6 +72,7 @@ public:
                 models_dir, "config.json"
             )
         },
+        m_generation_config{models_dir / "generation_config.json"},
         m_is_chat_conversation{false} {
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
             m_vlm_config, models_dir, device, properties);
@@ -96,13 +97,15 @@ public:
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
-        const ov::AnyMap& properties
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config
     ) :
         m_vlm_config{
             utils::from_config_json_if_exists<VLMConfig>(
                 config_dir_path, "config.json"
             )
         },
+        m_generation_config{generation_config},
         m_is_chat_conversation{false} {
         
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
@@ -273,8 +276,9 @@ VLMPipeline::VLMPipeline(
     const Tokenizer& tokenizer,
     const std::filesystem::path& config_dir_path,
     const std::string& device,
-    const ov::AnyMap& properties
-) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties)} {}
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config)} {}
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;
 
