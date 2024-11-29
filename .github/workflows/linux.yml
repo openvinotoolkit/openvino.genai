@@ -450,7 +450,7 @@ jobs:
         run: python -m pip install ${{ env.INSTALL_DIR }}/wheels/openvino_genai*.whl openvino-tokenizers[transformers] ${{ needs.openvino_download.outputs.ov_wheel_source }} --force-reinstall
         working-directory: ${{ env.INSTALL_DIR }}
      
-      - name: Install Test Requirements
+      - name: Install Samples Requirements
         run: python -m pip install -r ./samples/requirements.txt
         working-directory: ${{ env.SRC_DIR }}
      
