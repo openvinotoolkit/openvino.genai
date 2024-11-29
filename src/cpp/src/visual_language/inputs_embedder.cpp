@@ -1009,6 +1009,21 @@ protected:
 
 namespace {
 namespace phi3_v {
+// Reimplementation of python
+// N, L, C = image_features.shape
+// assert L == 24 * 24 and C == 1024 and N % (h_crop * w_crop) == 0
+// num_images = N // (h_crop * w_crop)
+// H = int(L**0.5)
+// print(L, H)
+// image_features_hd = (
+//     image_features.reshape(N, H, H, C)  # N, 24, 24, 1024
+//     .reshape(N, H // 2, 2, H // 2, 2, C)  # N, 12, 2, 12, 2, 1024
+//     .permute(0, 1, 3, 2, 4, 5)  # N, 12, 12, 2, 2, 1024
+//     .reshape(N, -1, 4 * C)  # N, 144, 4096
+//     .reshape(num_images, h_crop, w_crop, H // 2, H // 2, -1)  # n_img, h_crop, w_crop, 12, 12, 4096
+//     .permute(0, 1, 3, 2, 4, 5)  # n_img, h_crop, 12, w_crop, 12, 4096
+//     .reshape(num_images, h_crop * H // 2, w_crop * H // 2, 4 * C)  # n_img, h_crop*12, w_crop*12, 4096
+// )
 ov::InferRequest create_hd_feature_transformer() {
     using namespace ov;
     using namespace element;
@@ -1159,31 +1174,38 @@ ov::InferRequest create_hd_feature_transformer() {
     ov::InferRequest hd_feature_transformer = utils::singleton_core().compile_model(
         model, "CPU"
     ).create_infer_request();
-    // hd_feature_transformer.set_input_tensor(0, ov::Tensor{f32, {4, 576, 1024}});
+    // hd_feature_transformer.set_input_tensor(0, ov::Tensor{f32, {1, 576, 1024}});
     // ov::Tensor h_crop = ov::Tensor{i32, {}};
-    // h_crop.data<int32_t>()[0] = 2;
+    // h_crop.data<int32_t>()[0] = 1;
     // hd_feature_transformer.set_input_tensor(1, h_crop);
     // ov::Tensor w_crop = ov::Tensor{i32, {}};
-    // w_crop.data<int32_t>()[0] = 2;
+    // w_crop.data<int32_t>()[0] = 1;
     // hd_feature_transformer.set_input_tensor(2, w_crop);
     // hd_feature_transformer.infer();
+    // std::cout << hd_feature_transformer.get_output_tensor().get_shape() << '\n';  // [1,24,24,4096]
     return hd_feature_transformer;
 }
 
-ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop) {
+ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop, InferRequest& hd_feature_transformer) {
     ov::Shape shape = image_features.get_shape();
     OPENVINO_ASSERT(3 == shape.size());
     OPENVINO_ASSERT(1 == shape.at(0));
     OPENVINO_ASSERT(24 * 24 == shape.at(1));
     OPENVINO_ASSERT(1024 == shape.at(2));
-    return {};
+    hd_feature_transformer.set_input_tensor(0, image_features);
+    ov::Tensor height{ov::element::i32, {}, &h_crop};
+    hd_feature_transformer.set_input_tensor(1, height);
+    ov::Tensor width{ov::element::i32, {}, &w_crop};
+    hd_feature_transformer.set_input_tensor(2, width);
+    hd_feature_transformer.infer();
+    return hd_feature_transformer.get_output_tensor();
 }
 
 // image_features.resized_source: (num_crops+1, 24*24, 1024)
-ov::Tensor hd_feature_transform(const EncodedImage& image_features) {
+ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer) {
     ov::Tensor global_image_features{ov::element::f32, {1, 24*24, 1024}, image_features.resized_source.data<float>()};
     // global feature can be viewed as a special HD case with num_crops 1x1
-    ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1);
+    ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1, hd_feature_transformer);
     return {};
 }
 }
@@ -1207,7 +1229,7 @@ public:
         std::vector<EncodedImage> embeds;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
-            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image);
+            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer);
         }
         ov::Tensor inputs_embeds;
         //     if (m_vlm_config.use_image_id) {
