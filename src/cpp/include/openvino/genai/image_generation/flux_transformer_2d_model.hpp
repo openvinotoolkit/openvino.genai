@@ -28,13 +28,35 @@ public:
     explicit FluxTransformer2DModel(const std::filesystem::path& root_dir);
 
     FluxTransformer2DModel(const std::filesystem::path& root_dir,
-                          const std::string& device,
-                          const ov::AnyMap& properties = {});
+                           const std::string& device,
+                           const ov::AnyMap& properties = {});
+
+    FluxTransformer2DModel(const std::string& model,
+                           const Tensor& weights,
+                           const Config& config,
+                           const size_t vae_scale_factor);
+
+    FluxTransformer2DModel(const std::string& model,
+                           const Tensor& weights,
+                           const Config& config,
+                           const size_t vae_scale_factor,
+                           const std::string& device,
+                           const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     FluxTransformer2DModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
         : FluxTransformer2DModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    FluxTransformer2DModel(const std::string& model,
+                           const Tensor& weights,
+                           const Config& config,
+                           const size_t vae_scale_factor,
+                           const std::string& device,
+                           Properties&&... properties)
+        : FluxTransformer2DModel(model, weights, config, vae_scale_factor, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     FluxTransformer2DModel(const FluxTransformer2DModel&);
 
