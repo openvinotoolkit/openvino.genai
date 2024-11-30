@@ -72,7 +72,10 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 bool is_tokenized_history_same(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end);
 
 }  // namespace utils
 }  // namespace genai

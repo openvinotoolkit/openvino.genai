@@ -40,10 +40,9 @@ protected:
     std::string m_templated_chat_history;
     // Tokenized chat history
     std::vector<int64_t> m_tokenized_chat_history;
-    // Whether we have computed some inputs already
-    bool m_is_cache_empty = true;
-    // Whether the text history has unambiguous encoded representation
-    bool m_trust_encoded_history = true;
+    // The number of elements, which need to remove from the end of KV cache
+    // removed elements will be added to inputs_ids
+    size_t m_to_remove_from_hist = 0;
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
@@ -60,18 +59,22 @@ public:
         return m_tokenized_chat_history;
     }
 
+    size_t get_amount_to_remove_from_hist() const {
+        return m_to_remove_from_hist;
+    }
+
     void update_tokenized_chat_history(std::vector<int64_t> encoded_result) {
         std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_chat_history));
+        m_to_remove_from_hist = 0;
     }
 
     virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
-        m_trust_encoded_history = true;
-        m_tokenized_chat_history.clear();
-        if (!m_is_cache_empty) {
+        m_to_remove_from_hist = 0;
+        if (!m_tokenized_chat_history.empty()) {
             m_history.clear();
             m_templated_chat_history.clear();
-            m_is_cache_empty = true;
+            m_tokenized_chat_history.clear();
         }
         if (system_message.empty()) {
             return;
@@ -90,8 +93,7 @@ public:
 
     virtual void finish_chat() {
         m_is_chat_conversation = false;
-        m_is_cache_empty = true;
-        m_trust_encoded_history = true;
+        m_to_remove_from_hist = 0;
 
         m_history.clear();
         m_templated_chat_history.clear();
@@ -134,6 +136,7 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
+
     ov::Tensor get_encoded_input_ids(const std::string& prompt, const std::string& chat_template_fallback = "") {
         ov::Tensor encoded_input_ids;
         if (m_is_chat_conversation) {
@@ -159,16 +162,22 @@ protected:
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
-            // and find the difference as a prompt
-            // so let's check it out and use the whole history in this case
-            if (!m_is_cache_empty && m_trust_encoded_history) {
-                m_trust_encoded_history = ov::genai::utils::is_tokenized_history_same(prev_chat_tokens.input_ids, m_tokenized_chat_history);
-            }
+            // and find the difference as a prompt so let's check it out and use the whole history in this case
+            auto last_same_hist_token = 0;
+            if (!m_tokenized_chat_history.empty())
+                last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history);
 
-            if (m_is_cache_empty || m_trust_encoded_history) {
+            if (m_tokenized_chat_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
-                // after first `get_inputs_embeds` is called, we supposed LLM is inferred and cache is not empty
-                m_is_cache_empty = false;
+            } else if (!(last_same_hist_token == m_tokenized_chat_history.size() - 1) &&
+                       !(last_same_hist_token == m_tokenized_chat_history.size())) {
+                m_to_remove_from_hist = m_tokenized_chat_history.size() - 1 - last_same_hist_token;
+
+                ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(), {1, new_chat_tokens.get_shape().at(1) - last_same_hist_token});
+                auto data = new_chat_tokens.data<int64_t>();
+                std::copy(data + last_same_hist_token, data + new_chat_tokens.get_size(), new_tensor.data<int64_t>());
+
+                encoded_input_ids = new_tensor;
             } else {
                 encoded_input_ids = utils::subtract_chat_tokenized_inputs(
                     {new_chat_tokens}, prev_chat_tokens
@@ -178,7 +187,6 @@ protected:
             m_tokenized_chat_history.clear();
             std::copy(new_chat_tokens.data<int64_t>(), new_chat_tokens.data<int64_t>() + new_chat_tokens.get_size(),
                         std::back_inserter(m_tokenized_chat_history));
-            m_trust_encoded_history = true;
         } else {
             encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
         }
@@ -655,7 +663,6 @@ protected:
                 merged_idx++;
             }
         }
-
         return merged_embeds;
     }
 };
@@ -1156,6 +1163,10 @@ std::vector<int64_t> InputsEmbedder::get_tokenized_chat_history() const {
 
 void InputsEmbedder::update_tokenized_chat_history(std::vector<int64_t> encoded_result) {
     return m_impl->update_tokenized_chat_history(encoded_result);
+}
+
+size_t InputsEmbedder::get_amount_to_remove_from_hist() const {
+    return m_impl->get_amount_to_remove_from_hist();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {

@@ -43,6 +43,8 @@ public:
     std::vector<int64_t> get_tokenized_chat_history() const;
     // add new results to tokenized chat history
     void update_tokenized_chat_history(std::vector<int64_t> encoded_result);
+    // returns amount of elements, which need to remove from the end of the KV cache
+    size_t get_amount_to_remove_from_hist() const;
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);

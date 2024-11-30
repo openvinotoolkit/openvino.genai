@@ -144,6 +144,11 @@ public:
 
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
 
+        auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
+        if (to_remove_from_hist > 0) {
+            ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist);
+        }
+
         Sampler sampler = Sampler(m_tokenizer);
 
         std::vector<SequenceGroup::Ptr> requests;
@@ -154,10 +159,10 @@ public:
         auto tokenized_chat_history = m_inputs_embedder->get_tokenized_chat_history();
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
-        // inputs_embeds contains whole history
-        if (inputs_embeds_size == tokenized_chat_history.size()) {
-            history_size = 0;
-        }
+
+        if (to_remove_from_hist > 0)
+            history_size = history_size - to_remove_from_hist;
+
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
@@ -192,8 +197,6 @@ public:
         int32_t m_selected_beam = 0;
         std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
                                                                                       position_ids, m_embedding, std::nullopt);
-        
-        m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
 
         DecodedResults decoded;
         for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
@@ -208,6 +211,8 @@ public:
             m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
+
+        m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
         return decoded;
     }
 
