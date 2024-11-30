@@ -406,12 +406,14 @@ ModelDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
     return desc;
 }
 
-std::map<std::string, std::string> model_desc_to_map(const ModelDesc& model_desc) {
+std::string model_desc_to_string(const ModelDesc& model_desc) {
     std::map<std::string, std::string> model_desc_map;
     model_desc_map["type"] = model_desc.type;
     model_desc_map["name_or_path"] = model_desc.name_or_path;
     model_desc_map["num_key_value_heads"] = std::to_string(model_desc.num_key_value_heads);
-    return model_desc_map;
+    std::stringstream result;
+    ov::util::Write<std::map<std::string,std::string>>()(result, model_desc_map);
+    return result.str();
 }
 
 void reshape_to_static(std::shared_ptr<ov::Model> model,
@@ -480,7 +482,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
 ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
-        { "NPUW_DEVICES", "NPU,CPU" },
+        { "NPUW_DEVICES", "NPU" },
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
@@ -564,6 +566,12 @@ std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& 
     return std::nullopt;
 }
 
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
     ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
     start_shape[dim] = start_pos;
@@ -624,22 +632,18 @@ SMStaticLLMPipeline::SMStaticLLMPipeline(
     auto model = core.read_model((models_path / "openvino_model.xml").string());
 
     ov::AnyMap properties = config;
+
     const uint32_t kMaxPromptLen = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
     std::string generate_hint = pop_or_default<std::string>(properties, "GENERATE_HINT", "FAST_COMPILE");
     ModelDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
 
-    if (properties.count("NPU_USE_NPUW") == 0u) {
-        properties.insert({{"NPU_USE_NPUW", "YES"}});
-    }
-    if (properties.count("NPUW_LLM") == 0u) {
-        properties.insert({{"NPUW_LLM", "YES"}});
-    }
-
-    properties.insert({{"NPUW_LLM_MODEL_DESC", model_desc_to_map(model_desc)}});
-    properties.insert({{"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen}});
-    properties.insert({{"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen}});
-    properties.insert({{"NPUW_LLM_GENERATE_HINT", generate_hint}});
+    update_config(properties, {"NPU_USE_NPUW", "YES"});
+    update_config(properties, {"NPUW_LLM", "YES"});
+    update_config(properties, {"NPUW_LLM_MODEL_DESC", model_desc_to_string(model_desc)});
+    update_config(properties, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
+    update_config(properties, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
+    update_config(properties, {"NPUW_LLM_GENERATE_HINT", generate_hint});
     auto compiled = core.compile_model(model, "NPU", properties);
 
     m_request  = compiled.create_infer_request();
@@ -666,16 +670,7 @@ DecodedResults SMStaticLLMPipeline::generate(
     }
 
     ov::genai::TokenizedInputs tokenized_input;
-    //if (m_is_chat_conversation) {
-        //m_history.push_back({{"role", "user"}, {"content", prompt}});
-        //constexpr bool add_generation_prompt = true;
-        //prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        //// for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
-        //tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
-    //} else {
-        //tokenized_input = m_tokenizer.encode(prompt);
-    //}
-
+    // FIXME: Support chat conversation.
     tokenized_input = m_tokenizer.encode(prompt);
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
@@ -684,10 +679,6 @@ DecodedResults SMStaticLLMPipeline::generate(
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
-    //if (m_is_chat_conversation) {
-        //auto answer = decoded_results.texts[0];
-        //m_history.push_back({{"role", "assistant"}, {"content", answer}});
-    //}
     // generate_durations
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
@@ -699,16 +690,6 @@ DecodedResults SMStaticLLMPipeline::generate(
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
-}
-
-template <typename T>
-void print_tensor(ov::Tensor t) {
-    auto* ptr = t.data<T>();
-    std::cout << "[ ";
-    for (int i = 0; i < t.get_size(); ++i) {
-        std::cout << ptr[i] << " ";
-    }
-    std::cout << " ]" << std::endl;
 }
 
 EncodedResults SMStaticLLMPipeline::generate(
@@ -760,7 +741,7 @@ EncodedResults SMStaticLLMPipeline::generate(
     results.scores[0] = 0u;
     results.tokens.resize(1u);
 
-    // NB: Check if there is enough space in KV-cache to process input prompt
+    // TODO: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
 
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
@@ -812,11 +793,13 @@ EncodedResults SMStaticLLMPipeline::generate(
 }
 
 void SMStaticLLMPipeline::start_chat(const std::string& system_message) {
-    std::cout << "[LOG_DEBUG] start_chat not supported!" << std::endl;
+    // FIXME: Implement later.
+    return;
 }
 
 void SMStaticLLMPipeline::finish_chat() {
-    std::cout << "[LOG_DEBUG] finish_chat not supported!" << std::endl;
+    // FIXME: Implement later.
+    return;
 }
 
 std::unique_ptr<LLMPipelineImplBase>
@@ -824,8 +807,12 @@ StaticLLMPipelineFactory::create(const std::filesystem::path& models_path,
                                  const ov::genai::Tokenizer& tokenizer,
                                  const std::string& device,
                                  const ov::AnyMap& config) {
-    //return std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, config);
-    return std::make_unique<SMStaticLLMPipeline>(models_path, tokenizer, device, config);
+    auto properties = config;
+    const auto use_sm_pipeline = pop_or_default(properties, "USE_SM_PIPELINE", false);
+    if (use_sm_pipeline) {
+        return std::make_unique<SMStaticLLMPipeline>(models_path, tokenizer, device, properties);
+    }
+    return std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
 }
 
 std::unique_ptr<LLMPipelineImplBase>
