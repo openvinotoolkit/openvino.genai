@@ -203,7 +203,7 @@ ProcessorConfig from_any_map(
  * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
  * Move this options to `core.set_property` config
  */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties) {
+std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
     const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
     ov::AnyMap core_properties;
     ov::AnyMap compile_properties{properties};
