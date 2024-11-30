@@ -30,6 +30,8 @@ protected:
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 
+    bool m_is_profiling_enabled = false;
+
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif
