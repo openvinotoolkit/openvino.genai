@@ -578,8 +578,10 @@ ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, si
     return ov::Tensor(tensor, start_shape, end_shape);
 }
 
-void drop_cache_dir(ov::AnyMap& config) {
-    if (config.count("NPU_USE_NPUW") != 0u) {
+void set_npuw_cache_dir(ov::AnyMap& config) {
+    std::optional<std::string> cache_dir = get_option<std::string>(config, "CACHE_DIR");
+    if (config.count("NPU_USE_NPUW") != 0u && cache_dir) {
+        config.emplace("NPUW_CACHE_DIR", cache_dir.value());
         pop_option(config, "CACHE_DIR");
     }
 }
@@ -724,9 +726,9 @@ void StaticLLMPipeline::setupAndCompileModels(
     );
     merge_config_with(prefill_config, properties);
     merge_config_with(generate_config, properties);
-    // FIXME: Drop CACHE_DIR option if NPUW is enabled
-    drop_cache_dir(prefill_config);
-    drop_cache_dir(generate_config);
+    // Replace CACHE_DIR option if NPUW is enabled
+    set_npuw_cache_dir(prefill_config);
+    set_npuw_cache_dir(generate_config);
 
     m_kvcache_request = core.compile_model(
         m_kvcache_model, device, generate_config
