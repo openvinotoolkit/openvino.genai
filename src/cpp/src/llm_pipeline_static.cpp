@@ -644,6 +644,10 @@ SMStaticLLMPipeline::SMStaticLLMPipeline(
     update_config(properties, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(properties, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
     update_config(properties, {"NPUW_LLM_GENERATE_HINT", generate_hint});
+
+    // FIXME: Support CACHE_DIR in future
+    drop_cache_dir(properties);
+    
     auto compiled = core.compile_model(model, "NPU", properties);
 
     m_request  = compiled.create_infer_request();
