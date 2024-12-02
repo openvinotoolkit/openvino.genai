@@ -14,7 +14,6 @@
 #include "timer.hpp"
 #include "utils.hpp"
 #include "debug_utils.hpp"
-#include "cache_state_dumper.hpp"
 
 using namespace ov::genai;
 
