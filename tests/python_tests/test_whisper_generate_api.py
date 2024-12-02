@@ -240,6 +240,7 @@ def test_max_new_tokens(model_descr, test_sample):
     "test_sample", get_samples_from_dataset(language="fr", length=3)
 )
 @pytest.mark.precommit
+@pytest.mark.suite_1
 def test_language_mode_fr(model_descr, test_sample):
     model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
@@ -265,6 +266,7 @@ def test_language_mode_fr(model_descr, test_sample):
     "test_sample", get_samples_from_dataset(language="de", length=3)
 )
 @pytest.mark.precommit
+@pytest.mark.suite_1
 def test_language_mode_de(model_descr, test_sample):
     model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
@@ -366,6 +368,7 @@ def test_task_mode(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.suite_1
 def test_language_autodetect(model_descr, test_sample):
     model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
@@ -393,6 +396,7 @@ def test_language_autodetect(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.suite_1
 def test_return_timestamps_short_form(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
     # long form audio not supported yet
@@ -426,6 +430,7 @@ def test_return_timestamps_short_form(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.suite_1
 def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
     # long form audio not supported yet
@@ -468,6 +473,7 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.suite_1
 def test_longform_audio_return_timestamps_multilingual(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 

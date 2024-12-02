@@ -282,7 +282,7 @@ jobs:
           - name: 'test_chat_generate_api.py::test_set_chat_template'
             cmd: 'tests/python_tests/test_chat_generate_api.py::test_set_chat_template'
           - name: 'Whisper Generate API'
-            cmd: 'tests/python_tests/test_whisper_generate_api.py -k test_longform_audio_return_timestamps_multilingual'
+            cmd: 'tests/python_tests/test_whisper_generate_api.py -m "precommit and suite_1'
     timeout-minutes: 45
     defaults:
       run:
@@ -346,7 +346,7 @@ jobs:
           - name: 'test_vlm_api'
             cmd: 'tests/python_tests/test_vlm_api.py'
           - name: 'Whisper Generate API'
-            cmd: 'tests/python_tests/test_whisper_generate_api.py -k "not test_longform_audio_return_timestamps_multilingual"'
+            cmd: 'tests/python_tests/test_whisper_generate_api.py -m "precommit and not suite_1"'
     timeout-minutes: 60
     defaults:
       run:
