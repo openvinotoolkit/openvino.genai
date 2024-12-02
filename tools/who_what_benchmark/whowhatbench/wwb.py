@@ -178,9 +178,14 @@ def load_visual_text_model(
                 model_id, trust_remote_code=True, device_map=device.lower()
             )
         except ValueError:
-            model = AutoModel.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device.lower()
-            )
+            try:
+                model = AutoModel.from_pretrained(
+                    model_id, trust_remote_code=True, device_map=device.lower()
+                )
+            except ValueError:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_id, trust_remote_code=True, device_map=device.lower(), _attn_implementation="eager", use_flash_attention_2=False
+                )
         model.eval()
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
