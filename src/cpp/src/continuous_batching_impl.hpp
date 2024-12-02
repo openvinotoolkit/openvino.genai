@@ -36,6 +36,7 @@ protected:
     std::vector<ov::Tensor> m_rotation_coefficient_stores;
 
     std::map<size_t, std::vector<std::set<size_t>>> m_previous_evicted_block_logical_indices_per_sequence;
+    std::map<size_t, size_t> m_previous_num_blocks_before_eviction_per_sequence;
 
     // Per-layer ROI tensors, reusing storage from the pre-allocated tensors above, that actually represent the
     // re-rotation coefficients to be sent to the proper model inputs at the *next* pipeline step.
@@ -56,7 +57,7 @@ protected:
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
-    void _compute_cache_rotation_data(const std::set<size_t>& live_sequences);
+    void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
 
     void init(std::shared_ptr<ov::Model> model,
               const SchedulerConfig& scheduler_config,

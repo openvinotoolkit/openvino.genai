@@ -1,10 +1,12 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <openvino/runtime/properties.hpp>
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
 #include "utils/paged_attention_transformations.hpp"
+#include "cache_state_dumper.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -173,11 +175,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
 
         if (sched_config.use_cache_eviction) {
-            std::set<size_t> live_sequences;
-            for (const auto& seq_id_and_block_table : scheduler_output.m_block_tables) {
-                live_sequences.insert(seq_id_and_block_table.first);
-            }
-            _compute_cache_rotation_data(live_sequences);
+            _compute_cache_rotation_data(m_requests, scheduler_output);
             m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotation_coefficients),
                                                     std::move(m_current_step_rotated_block_indices_per_sequence));
         }
@@ -394,7 +392,26 @@ float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_a
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation_data(const std::set<size_t>& live_sequences) {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+        const Scheduler::Output& scheduler_output) {
+    size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+    std::map<size_t, size_t> live_seq_ids_to_num_occupied_blocks;
+    for (size_t i = 0; i < num_sequence_groups; ++i) {
+        size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+        SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+        std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+        size_t num_running_sequences = running_sequences.size();
+
+        for (size_t i = 0; i < num_running_sequences; ++i) {
+            Sequence::CPtr sequence = running_sequences[i];
+            size_t num_blocks = sequence_group->get_num_logical_blocks();
+            size_t seq_id = sequence->get_id();
+            OPENVINO_ASSERT(live_seq_ids_to_num_occupied_blocks.find(seq_id) == live_seq_ids_to_num_occupied_blocks.end(),
+                    "duplicate seq_id ", seq_id, " among sequence groups");
+            live_seq_ids_to_num_occupied_blocks[seq_id] = num_blocks;
+        }
+    }
+
     size_t head_size = m_cache_rotation_calculator->get_head_size();
     // necessary since we move from these members during previous steps
     m_current_step_rotation_coefficients.clear();
@@ -418,7 +435,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
             if (logical_blocks_to_evict[layer_idx].empty()) {
                 continue;
             }
-            size_t num_blocks_before_eviction = m_scheduler->get_block_tables(seq_id)[layer_idx].size() + logical_blocks_to_evict[layer_idx].size();
+            size_t num_blocks_before_eviction = m_previous_num_blocks_before_eviction_per_sequence[seq_id];
             auto rotation_multipliers =
                 m_cache_rotation_calculator->get_rotation_coefficients(logical_blocks_to_evict[layer_idx],
                                                                        num_blocks_before_eviction);
@@ -469,6 +486,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
     size_t num_decoder_layers = sequence_attention_scores.begin()->second.size();
 
     m_previous_evicted_block_logical_indices_per_sequence.clear();
+    m_previous_num_blocks_before_eviction_per_sequence.clear();
 
     for (auto& seq_id_and_attention_scores : sequence_attention_scores) {
         auto seq_id = seq_id_and_attention_scores.first;
@@ -477,16 +495,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
             m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_scheduler->get_block_size(), num_decoder_layers);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
-
         cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
+
+        auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
+        OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);
+        auto seq_group_ptr = *seq_group_ptr_it;
+
+         if (!seq_group_ptr->can_generate_tokens()) {
+             // do not evict during prefill
+             continue;
+         }
+
+        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = seq_group_ptr->get_num_logical_blocks();
+
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
         m_previous_evicted_block_logical_indices_per_sequence[seq_id] = logical_blocks_to_evict;
 
         m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
 
-        auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
-        OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);
-        auto seq_group_ptr = *seq_group_ptr_it;
         size_t num_blocks_evicted = logical_blocks_to_evict[0].size();
 
         if (seq_group_to_num_blocks_evicted_map.find(seq_group_ptr) != seq_group_to_num_blocks_evicted_map.end()) {
