@@ -22,7 +22,7 @@ from common import TESTS_ROOT
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r') as f:
-        return {"prompts": [s for s in f]}
+        return {"questions": [s for s in f]}
 
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -58,6 +58,7 @@ def converted_model(tmp_path_factory):
 
 @dataclass
 class CacheOptTestStruct:
+    test_id: str
     prompt_file: str
     max_new_tokens: int
     num_kv_blocks: int
@@ -69,6 +70,31 @@ class CacheOptTestStruct:
 
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
+
+def print_text_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(
+        top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        ref_text = ""
+        actual_text = ""
+        diff = ""
+        for l1, l2 in zip(
+            e["source_model"].splitlines(), e["optimized_model"].splitlines()
+        ):
+            if l1 == "" and l2 == "":
+                continue
+            ref_text += l1 + "\n"
+            actual_text += l2 + "\n"
+            diff += diff_strings(l1, l2) + "\n"
+
+        print(
+            "--------------------------------------------------------------------------------------"
+        )
+        print("## Reference text %d:\n%s", i + 1, ref_text)
+        print("## Actual text %d:\n%s", i + 1, actual_text)
+        print("## Diff %d: ", i + 1)
+        print(diff)
 
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform in ("win32", "darwin"), reason="doesn't work on win due to optimum-intel export bug, segfault on mac")
@@ -118,7 +144,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
-    evaluator = whowhatbench.TextEvaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
+    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
                                        generation_config=generation_config,
                                        generation_config_base=generation_config,
                                        max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
