@@ -131,8 +131,14 @@ public:
                 // some symbols combinations can be encoded by the tokenizer in different ways
                 // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
                 // and find the difference as a prompt, so let's check it out and use the whole history in this case
-                if (!m_tokenized_chat_history.empty() && m_trust_encoded_history)
-                    m_trust_encoded_history = ov::genai::utils::is_tokenized_history_same(prev_chat_tokens.input_ids, m_tokenized_chat_history);
+                if (!m_tokenized_chat_history.empty()) {
+                    auto stop_tokens = config.stop_token_ids;
+                    // config could be reset by user and stop_tokens could be empty
+                    // but model/tokenizer still will rely to eos token, so let's add it
+                    stop_tokens.insert(m_tokenizer.get_eos_token_id());
+                    size_t last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
+                    m_trust_encoded_history = last_same_hist_token == SIZE_MAX;
+                }
 
                 if (!m_trust_encoded_history) {
                     reset_kv_state();

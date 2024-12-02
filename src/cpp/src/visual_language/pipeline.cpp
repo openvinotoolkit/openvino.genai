@@ -157,11 +157,8 @@ public:
         bool enable_prefix_caching = false;
 
         auto tokenized_chat_history = m_inputs_embedder->get_tokenized_chat_history();
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
-
-        if (to_remove_from_hist > 0)
-            history_size = history_size - to_remove_from_hist;
 
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);

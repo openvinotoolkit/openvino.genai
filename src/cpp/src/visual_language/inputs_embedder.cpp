@@ -109,7 +109,7 @@ protected:
         m_vlm_config{vlm_config},
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
         m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
-        m_tokenizer{model_dir.string(), device_config} { }
+        m_tokenizer{model_dir, device_config} { }
     
     IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -162,21 +162,21 @@ protected:
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
-            // and find the difference as a prompt so let's check it out and use the whole history in this case
-            auto last_same_hist_token = 0;
-            if (!m_tokenized_chat_history.empty())
-                last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history);
+            // so let's check it out, find the trusted part and use it in on the next step
+            size_t last_same_hist_token = 0;
+            if (!m_tokenized_chat_history.empty()) {
+                std::set<int64_t> stop_tokens = {m_tokenizer.get_eos_token_id()};
+                last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
+            }
 
             if (m_tokenized_chat_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
-            } else if (!(last_same_hist_token == m_tokenized_chat_history.size() - 1) &&
-                       !(last_same_hist_token == m_tokenized_chat_history.size())) {
+            } else if (last_same_hist_token != SIZE_MAX) {
                 m_to_remove_from_hist = m_tokenized_chat_history.size() - 1 - last_same_hist_token;
 
-                ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(), {1, new_chat_tokens.get_shape().at(1) - last_same_hist_token});
-                auto data = new_chat_tokens.data<int64_t>();
-                std::copy(data + last_same_hist_token, data + new_chat_tokens.get_size(), new_tensor.data<int64_t>());
-
+                ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
+                                                   {1, new_chat_tokens.get_shape().at(1) - last_same_hist_token},
+                                                   new_chat_tokens.data<int64_t>() + last_same_hist_token);
                 encoded_input_ids = new_tensor;
             } else {
                 encoded_input_ids = utils::subtract_chat_tokenized_inputs(
