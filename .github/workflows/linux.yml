@@ -282,7 +282,7 @@ jobs:
           - name: 'test_chat_generate_api.py::test_set_chat_template'
             cmd: 'tests/python_tests/test_chat_generate_api.py::test_set_chat_template'
           - name: 'Whisper Generate API'
-            cmd: 'tests/python_tests/test_whisper_generate_api.py -m "precommit and suite_1'
+            cmd: 'tests/python_tests/test_whisper_generate_api.py -m "precommit and suite_1"'
     timeout-minutes: 45
     defaults:
       run:
