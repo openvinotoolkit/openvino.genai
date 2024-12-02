@@ -9,6 +9,7 @@
 #include <chrono>
 
 #include "sequence_group.hpp"
+#include "timer.hpp"
 
 namespace ov::genai {
 class KVCacheBlock {
@@ -70,7 +71,7 @@ public:
 
 class Evictor {
     std::map<size_t, KVCacheBlock::Ptr> m_blocks;
-    public:
+public:
     void add(KVCacheBlock::Ptr block) {
         m_blocks[block->get_hash()] = block;
     }
@@ -107,24 +108,29 @@ class Evictor {
 
 class BlockAllocator {
     std::list<KVCacheBlock::Ptr> m_free_blocks;
+    // We keep m_free_blocks_num instead of m_free_blocks.size() to WA old CXX library implementation issue for std::list::size()
+    // see https://stackoverflow.com/questions/13157164/why-isnt-stdlist-size-constant-time
+    size_t m_free_blocks_num = 0;
     ov::genai::Evictor m_evictor;
     int m_total_num_blocks;
     bool m_enable_prefix_caching;
+
 public:
     BlockAllocator(int num_blocks, bool enable_prefix_caching) :
         m_total_num_blocks(num_blocks), m_enable_prefix_caching(enable_prefix_caching) {
         for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
             m_free_blocks.push_back(std::make_shared<KVCacheBlock>(block_id));
         }
+        m_free_blocks_num = m_total_num_blocks;
     }
 
     ~BlockAllocator() {
         // sanity check to validate that all blocks are freed
-        // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
+        // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks_num);
     }
 
     size_t num_free_blocks() const {
-        return m_free_blocks.size() + m_evictor.num_blocks();
+        return m_free_blocks_num + m_evictor.num_blocks();
     }
 
     bool can_allocate_blocks(size_t num_blocks) const {
@@ -140,6 +146,7 @@ public:
             }
             else {
                 m_free_blocks.push_back(block);
+                ++m_free_blocks_num;
             }
         }
     }
@@ -150,13 +157,14 @@ public:
         KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
         allocated_block->increment();
         m_free_blocks.pop_front();
+        --m_free_blocks_num;
         return allocated_block;
     }
 
     KVCacheBlock::Ptr allocate_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
-        if (m_free_blocks.size() > 0) {
+        if (m_free_blocks_num > 0) {
             // allocate new empty block
             KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
             allocated_block->increment();
@@ -164,6 +172,8 @@ public:
             cached_blocks[hash] = allocated_block;
 
             m_free_blocks.pop_front();
+            --m_free_blocks_num;
+
             return allocated_block;
         }
         if (m_evictor.num_blocks() > 0) {
@@ -396,7 +406,7 @@ public:
 
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
-        size_t blocks_count= 0; // totat number of needed blocks for sequence group
+        size_t blocks_count = 0; // total number of needed blocks for sequence group
         std::set<size_t> last_block_ids; // unique last block indices
 
         for (auto seq: running_sequences) {
@@ -441,11 +451,11 @@ public:
                 blocks_count += needed_blocks_per_sequence;
             }
         }
+
         return blocks_count;
     }
 
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
-
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::Ptr> running_sequences = seq_group->get_running_sequences();
 
