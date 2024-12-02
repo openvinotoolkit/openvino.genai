@@ -328,7 +328,7 @@ jobs:
       - name: Test - ${{ matrix.test.name }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ./${{ matrix.test.cmd }}
+          python -m pytest -vv ./${{ matrix.test.cmd }}
         env:
           PYTHONPATH: ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/python/:$PYTHONPATH
         working-directory: ${{ env.SRC_DIR }}
@@ -337,6 +337,7 @@ jobs:
     name: Python Tests (wheel) - ${{ matrix.test.name }}
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
+      fail-fast: false
       matrix:
         test:
           - name: 'test_vlm_api'
@@ -391,7 +392,7 @@ jobs:
       - name: Test - ${{ matrix.test.name }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -v ./${{ matrix.test.cmd }}
+          python -m pytest -vv ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
