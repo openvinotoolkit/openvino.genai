@@ -220,6 +220,8 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& p
 };
 
 /**
+ * scheduler_config is a separate config for continuous batching pipeline. 
+ * This routine splits scheduler_config from plugin_config.
  */
 std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
     ov::AnyMap plugin_config = properties;

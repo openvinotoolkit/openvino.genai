@@ -59,16 +59,17 @@ constexpr char bos_token_key_name[] = "bos_token";
 constexpr char eos_token_key_name[] = "eos_token";
 constexpr char pad_token_key_name[] = "pad_token";
 
-static std::shared_ptr<ov::Core> core;
 static ov::Core get_core_singleton() {
-    if (core) {
-        return *core;
+    static ov::Core core;
+    static bool is_extension_added = false;
+
+    if (!is_extension_added) {
+        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+        OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
+        core.add_extension(ov_tokenizer_path);
+        is_extension_added = true;
     }
-    core = std::make_shared<ov::Core>();
-    const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-    OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
-    core->add_extension(ov_tokenizer_path);
-    return *core;
+    return core;
 }
 
 }  // namespace
@@ -80,7 +81,6 @@ class Tokenizer::TokenizerImpl {
 public:
     ov::CompiledModel m_tokenizer;
     ov::CompiledModel m_detokenizer;
-    std::shared_ptr<ov::Core> m_core = nullptr;
     
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
@@ -162,10 +162,12 @@ public:
         }
         
         // Initialize tokenizer's cache to save time later.
-        // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-        auto tokenized_input = encode("non empty string").input_ids;
+        if (m_tokenizer) {
+            // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+            encode("non empty string").input_ids;
         if (m_detokenizer)
-            decode(tokenized_input);
+            decode({1, 33, 199, 42, 42});
+        }
 
         utils::read_rt_info(ov_tokenizer, "chat_template", m_chat_template);
         utils::read_rt_info(ov_tokenizer, "pad_token_id", m_pad_token_id);
@@ -173,10 +175,11 @@ public:
         utils::read_rt_info(ov_tokenizer, "eos_token_id", m_eos_token_id);
 
         m_chat_template = patch_chat_template(m_chat_template);
-
-        m_pad_token = decode(std::vector{m_pad_token_id});
-        m_bos_token = decode(std::vector{m_bos_token_id});
-        m_eos_token = decode(std::vector{m_eos_token_id});
+        if (m_detokenizer) {
+            m_pad_token = decode(std::vector{m_pad_token_id});
+            m_bos_token = decode(std::vector{m_bos_token_id});
+            m_eos_token = decode(std::vector{m_eos_token_id});
+        }
     }
 
     // load special tokens ids from config.json

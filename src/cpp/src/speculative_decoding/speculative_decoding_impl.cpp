@@ -71,8 +71,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
-    Tokenizer main_model_tokenizer = main_model_desc.tokenizer_model;
-    Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer_model;
+    Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
+    Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");

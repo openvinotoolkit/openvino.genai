@@ -39,7 +39,7 @@ public:
      * 
      * This constructor is used when tokenizer and detokenizer are separate models already loaded into memory. 
      * When this constructor is used bos, eos, pad token ids are expected to be in IR. 
-     * If your IR is older (< 2024.3) then this tokens will be udefined.
+     * If an IR is older (< 2024.3) then this tokens are default initialized to be ignored.
      * @param tokenizer_model_str tokenizer model string
      * @param tokenizer_weights_tensor ov::Tensor with tokenizer weights
      * @param detokenizer_model_str detokenizer model string
@@ -50,7 +50,7 @@ public:
         const std::string& tokenizer_model_str,
         ov::Tensor& tokenizer_weights_tensor,
         std::string& detokenizer_model_str,
-        ov::Tensor&  detokenizer_weights_tensor,
+        ov::Tensor& detokenizer_weights_tensor,
         const ov::AnyMap& properties = {}
     );
 
@@ -59,7 +59,7 @@ public:
      * 
      * This constructor is used when tokenizer (or detokenizer) already loaded into memory. Whether it's 
      * tokenizer or detokenizer is defined from model input signature. When this constructor is used bos, eos, pad token ids
-     * are expected to be in IR. If your IR is older (< 2024.3) then this tokens will be udefined.
+     * are expected to be in IR. If an IR is older (< 2024.3) then this tokens are default initialized to be ignored.
      * @param model_str model string
      * @param weights_tensor ov::Tensor with model weights
      * @param properties Properties passed to ov::Core::compile_model
