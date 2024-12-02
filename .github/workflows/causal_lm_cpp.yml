@@ -759,7 +759,6 @@ jobs:
           set -o pipefail
           && source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/benchmark_vlm  -m ./tiny-random-minicpmv-2_6/ -i ./images/cat.png -n 3
-          <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
       - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
         run: >
