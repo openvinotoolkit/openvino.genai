@@ -227,56 +227,61 @@ private:
                         seq_id_to_select_logical_idx_maps.empty());
         bool is_fill_all = seq_id_to_select_logical_idx_maps.empty();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
-        std::vector<size_t> block_offsets_per_layer(dst_tensor_names.size(), 0);
+        std::vector<size_t> filled_blocks_per_layer(dst_tensor_names.size(), 0);
 
-        for (size_t i = 0; i < num_sequence_groups; ++i) {
-            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
-            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
-            size_t num_running_sequences = running_sequences.size();
 
-            for (size_t i = 0; i < num_running_sequences; ++i) {
-                Sequence::CPtr sequence = running_sequences[i];
-                size_t seq_id = sequence->get_id();
+        for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
+            auto input_tensor = m_request.get_tensor(dst_tensor_names[layer_idx]);
+            auto block_indices_data = input_tensor.data<int32_t>();
+            if (is_fill_all) {
+                for (size_t i = 0; i < num_sequence_groups; ++i) {
+                    size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                    SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                    std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+                    size_t num_running_sequences = running_sequences.size();
 
-                size_t num_blocks =
-                    (sequence_group->get_context_len() - sequence_group->get_num_evicted_tokens() + m_block_size - 1) /
-                    m_block_size;
-                const auto& kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
+                    for (size_t i = 0; i < num_running_sequences; ++i) {
+                        Sequence::CPtr sequence = running_sequences[i];
 
-                for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
-                    auto input_tensor = m_request.get_tensor(dst_tensor_names[layer_idx]);
-                    auto block_indices_data = input_tensor.data<int32_t>() + block_offsets_per_layer[layer_idx];
+                        size_t num_blocks = sequence_group->get_num_logical_blocks();
+                        const auto& kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
 
-                    if (is_fill_all) {
+
                         for (size_t block_id = 0; block_id < num_blocks; ++block_id) {
                             // In case no cache eviction is requested, all per-layer block tables are expected to be
                             // identical at all times
                             block_indices_data[block_id] = kv_blocks[layer_idx][block_id]->get_index();
                         }
-                        block_offsets_per_layer[layer_idx] += num_blocks;
-                    } else {
-                        auto seq_id_to_select_logical_idx_map = seq_id_to_select_logical_idx_maps[layer_idx];
-                        auto it = seq_id_to_select_logical_idx_map.find(seq_id);
-                        if (it == seq_id_to_select_logical_idx_map.end()) {
-                            continue;
-                        }
-                        auto select_logical_idxs = it->second;
+                        block_indices_data += num_blocks;
+                        filled_blocks_per_layer[layer_idx] += num_blocks;
+                    }
+                }
+            } else {
+                    // This branch will fill the block indices in the seq_id order defined by the seq_id_to_select_logical_idx_maps argument
+                    auto seq_id_to_select_logical_idx_map = seq_id_to_select_logical_idx_maps[layer_idx];
+                    for (const auto& kv : seq_id_to_select_logical_idx_map) {
+                        size_t seq_id = kv.first;
+                        auto block_table_it = scheduler_output.m_block_tables.find(seq_id);
+                        OPENVINO_ASSERT(block_table_it != scheduler_output.m_block_tables.end());
+                        const auto& select_logical_idxs = kv.second;
+                        const auto& kv_blocks = block_table_it->second;
+                        size_t block_table_size = kv_blocks[layer_idx].size();
+
                         for (size_t block_id = 0; block_id < select_logical_idxs.size(); ++block_id) {
                             size_t logical_block_idx = select_logical_idxs[block_id];
-                            OPENVINO_ASSERT(logical_block_idx < num_blocks);
+                            OPENVINO_ASSERT(logical_block_idx < block_table_size);
+
                             block_indices_data[block_id] = kv_blocks[layer_idx][logical_block_idx]->get_index();
                         }
-
-                        block_offsets_per_layer[layer_idx] += select_logical_idxs.size();
-                    }
+                    block_indices_data += select_logical_idxs.size();
+                    filled_blocks_per_layer[layer_idx] += select_logical_idxs.size();
                 }
             }
         }
         for (size_t layer_idx = 0; layer_idx < dst_tensor_names.size(); layer_idx++) {
             const auto& target_tensor_name = dst_tensor_names[layer_idx];
             size_t tensor_size = m_request.get_tensor(target_tensor_name).get_size();
-            size_t last_filled_element_idx = block_offsets_per_layer[layer_idx];
+            size_t last_filled_element_idx = filled_blocks_per_layer[layer_idx];
             OPENVINO_ASSERT(tensor_size == last_filled_element_idx, "did not fill tensor ", target_tensor_name, " completely, tensor size in elements ", tensor_size, ", last filled idx ", last_filled_element_idx);
         }
     }

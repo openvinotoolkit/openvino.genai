@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <filesystem>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -713,20 +714,26 @@ INSTANTIATE_TEST_SUITE_P(VariousInputsAndInitParams,
                          CacheRotationCalculatorRefCoefficientsParameterizedTest,
                          testing::ValuesIn(CACHE_ROTATION_CALCULATOR_REF_COEFFICIENTS_TEST_CASES));
 
-TEST(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreSimilarToPOCResults) {
-    std::ifstream input_file("tests/cpp/data/cache_rotation_poc_ref_coefficients_per_block.txt", std::ios::in);
+using CacheRotationCalculatorPOCRefCoefficientsTest = ::testing::TestWithParam<std::string>;
+TEST_P(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreSimilarToPOCResults) {
+    std::filesystem::path base_dir("tests/cpp/data/");
+    std::ifstream input_file(base_dir / GetParam(), std::ios::in);
 
-    const size_t ref_block_size = 16;
     const size_t ref_max_context_length = 1024;
-    const size_t ref_head_size = 64;
+    size_t ref_block_size = 0;
+    size_t ref_head_size = 0;
 
-    auto calc = ov::genai::CacheRotationCalculator(ref_block_size, ref_max_context_length, ref_head_size);
+    input_file >> ref_block_size;
+    input_file >> ref_head_size;
+
     size_t num_blocks_before_eviction = 0;
+    size_t num_evicted_blocks = 0;
+    size_t num_rotated_blocks = 0;
+
     std::set<size_t> ref_evicted_logical_block_indices;
     std::vector<ov::genai::CacheRotationCalculator::BlockRotationData> ref_data;
 
     input_file >> num_blocks_before_eviction;
-    size_t num_evicted_blocks;
     input_file >> num_evicted_blocks;
     for (size_t i = 0; i < num_evicted_blocks; i++) {
         size_t evicted_block_idx = 0;
@@ -734,7 +741,6 @@ TEST(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreSim
         ref_evicted_logical_block_indices.insert(evicted_block_idx);
     }
 
-    size_t num_rotated_blocks = 0;
     input_file >> num_rotated_blocks;
     ref_data.resize(num_rotated_blocks);
 
@@ -761,6 +767,14 @@ TEST(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreSim
         }
     }
 
+    auto calc = ov::genai::CacheRotationCalculator(ref_block_size, ref_max_context_length, ref_head_size);
     auto test_data = calc.get_rotation_coefficients(ref_evicted_logical_block_indices, num_blocks_before_eviction);
     compare_rotation_data(test_data, ref_data, 1e-2);  // the dump values were originally calculated in FP16 precision
 }
+
+INSTANTIATE_TEST_SUITE_P(VariousPOCDumps,
+                         CacheRotationCalculatorPOCRefCoefficientsTest,
+                         testing::Values("cache_rotation_poc_ref_coefficients_per_block_0.txt",
+                                         "cache_rotation_poc_ref_coefficients_per_block_1.txt",
+                                         "cache_rotation_poc_ref_coefficients_per_block_2.txt",
+                                         "cache_rotation_poc_ref_coefficients_per_block_3.txt"));
