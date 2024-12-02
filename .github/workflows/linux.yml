@@ -41,8 +41,9 @@ jobs:
     runs-on: aks-linux-2-cores-8gb-staging
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
-      volumes: [ "/mount:/mount" ]
-      options: -v ${{ github.workspace }}:${{ github.workspace }}
+      volumes: 
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
 
     steps:
     - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
@@ -143,9 +144,10 @@ jobs:
     runs-on: aks-linux-4-cores-16gb-staging
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
+      volumes: 
         - /mount:/mount
-      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -216,9 +218,10 @@ jobs:
     runs-on: aks-linux-4-cores-16gb-staging
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
+      volumes: 
         - /mount:/mount
-      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -287,9 +290,9 @@ jobs:
     runs-on: aks-linux-2-cores-8gb-staging
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
+      volumes: 
         - /mount:/mount
-      options: -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -351,9 +354,9 @@ jobs:
     runs-on: aks-linux-2-cores-8gb-staging
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
+      volumes: 
         - /mount:/mount
-      options: -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -409,9 +412,9 @@ jobs:
     runs-on: aks-linux-2-cores-8gb-staging
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
+      volumes: 
         - /mount:/mount
-      options: -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
