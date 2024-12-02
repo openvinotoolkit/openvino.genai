@@ -4,7 +4,6 @@
 
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/benchmark_genai)
-add_subdirectory(cpp/benchmark_vlm)
 add_subdirectory(cpp/chat_sample)
 add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/lora_greedy_causal_lm)
@@ -25,7 +24,6 @@ install(FILES
 install(DIRECTORY
             cpp/beam_search_causal_lm
             cpp/benchmark_genai
-            cpp/benchmark_vlm
             cpp/chat_sample
             cpp/greedy_causal_lm
             cpp/lora_greedy_causal_lm
@@ -40,7 +38,6 @@ install(DIRECTORY
 install(DIRECTORY
             python/beam_search_causal_lm
             python/benchmark_genai
-            python/benchmark_vlm
             python/chat_sample
             python/greedy_causal_lm
             python/multinomial_causal_lm

@@ -34,8 +34,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Perf metrics is stored in DecodedResults.
-    # In order to get DecodedResults instead of a string input should be a list.
+    # Perf metrics is stored in VLMDecodedResults.
+    # In order to get VLMDecodedResults instead of a string input should be a list.
     prompt = args.prompt
     models_path = args.model
     image = read_image(args.image)
