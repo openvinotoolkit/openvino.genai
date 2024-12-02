@@ -727,7 +727,7 @@ jobs:
           ov_link: ${{ env.l_u22_ov_link }}
       - uses: ./.github/actions/build_app
         with:
-          build_target: 'visual_language_chat py_openvino_genai'
+          build_target: 'visual_language_chat benchmark_vlm py_openvino_genai'
       - uses: ./.github/actions/install_python_deps
       - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
