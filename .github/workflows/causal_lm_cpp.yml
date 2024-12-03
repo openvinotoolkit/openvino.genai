@@ -796,7 +796,7 @@ jobs:
           ov_link: ${{ env.l_u22_ov_link }}
       - uses: ./.github/actions/build_app
         with:
-          build_target: 'visual_language_chat py_openvino_genai'
+          build_target: 'visual_language_chat benchmark_vlm py_openvino_genai'
       - uses: ./.github/actions/install_python_deps
       - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
@@ -823,12 +823,25 @@ jobs:
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
+      - name: Run benchmark_vlm C++ sample - tiny-random-minicpmv-2_6
+        run: >
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/benchmark_vlm  -m ./tiny-random-minicpmv-2_6/ -i ./images/cat.png -n 3
+        timeout-minutes: 2
       - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
           && source ./ov/setupvars.sh
           && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee py.txt
+        env:
+          PYTHONPATH: "./build/"
+      - name: Run benchmark_vlm Python sample - tiny-random-minicpmv-2_6
+        run: >
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/benchmark_vlm.py -m ./tiny-random-minicpmv-2_6/ -i ./images/cat.png -n 3
         env:
           PYTHONPATH: "./build/"
       - name: Encode cpp.txt with Python encoding instead of terminal one
