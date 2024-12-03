@@ -233,15 +233,26 @@ enum class GenerateHint {
     BEST_PERF
 };
 
+std::string to_string(GenerateHint h) {
+    switch(h) {
+        case GenerateHint::FAST_COMPILE : 
+            return "FAST_COMPILE";
+        case GenerateHint::BEST_PERF : 
+            return "BEST_PERF";
+        default:
+            OPENVINO_THROW("Unsupported value for type GenerateHint provided");        
+    }
+}
+
 GenerateHint str_to_hint(const std::string& str) {
-    if (str == "FAST_COMPILE") {
+    if (str == to_string(GenerateHint::FAST_COMPILE)) {
         return GenerateHint::FAST_COMPILE;
     }
-    if (str == "BEST_PERF") {
+    if (str == to_string(GenerateHint::BEST_PERF)) {
         return GenerateHint::BEST_PERF;
     }
     OPENVINO_THROW("Unsupported \"GENERATE_HINT\" provided: " +
-                   str + ". Please select either \"FAST_COMPILE\" or \"BEST_PERF\".");
+                   str + ". Please select either \"" + to_string(GenerateHint::BEST_PERF) + "\" or \"" + to_string(GenerateHint::FAST_COMPILE) +"\".");
 }
 
 std::shared_ptr<ov::Model> cvt_kvcache_to_fp16(const std::shared_ptr<ov::Model>& model) {
@@ -534,6 +545,9 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     if (npudesc.has_value() && npudesc->arch == "4000") {
         config.emplace("NPU_DPU_GROUPS", 4);
     }
+    if (hint == GenerateHint::FAST_COMPILE) {
+        config.emplace("NPUW_UNFOLD_IREQS", "YES");
+    }
     if (npudesc.has_value() && npudesc->compiler_dq) {
         config.emplace("NPUW_DQ_FULL", "NO");
     }
@@ -727,7 +741,7 @@ void StaticLLMPipeline::setupAndCompileModels(
         properties, "PREFILL_CONFIG", get_default_prefill_config(prefill_model, npudesc)
     );
     // NB: GENERATE_HINT is only applicable for default generate config!
-    auto generate_hint = str_to_hint(pop_or_default<std::string>(properties, "GENERATE_HINT", "FAST_COMPILE"));
+    auto generate_hint = str_to_hint(pop_or_default<std::string>(properties, "GENERATE_HINT", to_string(GenerateHint::FAST_COMPILE)));
     auto generate_config = pop_or_default(
         properties, "GENERATE_CONFIG", get_default_generate_config(kvcache_model, npudesc, generate_hint)
     );
