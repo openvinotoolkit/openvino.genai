@@ -512,7 +512,8 @@ Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyM
 
     // If special tokens were not found from IR, try to read them from config.
     // This will work be triggered only for IRs older than 2024.3.
-    if (m_pimpl->m_pad_token_id == -1 || m_pimpl->m_bos_token_id == -1 || m_pimpl->m_eos_token_id == -1) {
+    if (m_pimpl->m_pad_token_id == -1 || m_pimpl->m_bos_token_id == -1 || m_pimpl->m_eos_token_id == -1 ||
+        m_pimpl->m_pad_token.empty() || m_pimpl->m_bos_token.empty() || m_pimpl->m_eos_token.empty()) {
         m_pimpl->read_config(tokenizer_path);
         m_pimpl->read_special_tokens_map(tokenizer_path);
         // Try to read tokenizer_config if some token ids or token str are not defined.

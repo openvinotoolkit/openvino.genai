@@ -223,6 +223,37 @@ def model_tmp_path(tmpdir_factory):
                 shutil.copy(src_file, temp_path / src_file.name)
     yield model_id, Path(temp_path)
 
+@pytest.fixture(scope="module")
+def model_tokenizers_path_tmp_path(tmpdir_factory):
+    model_id, path, _, _, _ = read_model(get_models_list()[0])
+    temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
+
+    # Need to remove RT info from IR so that it will load from configs
+    import openvino as ov
+    # copy openvino converted model and tokenizers
+    for pattern in ['*.xml', '*.bin']:
+        for src_file in path.glob(pattern):
+            core = ov.Core()
+
+            # Update files if they are openvino_tokenizer.xml or openvino_detokenizer.xml
+            if src_file.name in ['openvino_tokenizer.xml', 'openvino_detokenizer.xml']:
+                if src_file.exists():
+                    # Load the XML content
+                    ov_model = core.read_model(src_file)
+                    # Add rt_info about chat_template
+                    ov_model.set_rt_info("pad_token_id", "")
+                    ov_model.set_rt_info("eos_token_id", "")
+                    ov_model.set_rt_info("chat_template", "")
+                    breakpoint()
+                    ov.save_model(ov_model, str(temp_path / src_file.name))
+                    print("AAAAAAAAAAAAAAAAA", ov_model.get_rt_info("pad_token_id"))
+                    
+            if src_file in ['openvino_tokenizer.bin', 'openvino_detokenizer.bin']:
+                continue
+            if src_file.is_file():
+                shutil.copy(src_file, temp_path / src_file.name)
+    yield model_id, Path(temp_path)
+
 
 def load_tok(configs: List[Tuple], temp_path):
     # load Tokenizer where all configs are cleared.
