@@ -31,7 +31,7 @@ void init_clip_text_model(py::module_& m) {
         py::arg("root_dir"), "Model root directory", 
         R"(
             CLIPTextModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
         )")
         .def(py::init([](
             const std::filesystem::path& root_dir,
@@ -45,7 +45,7 @@ void init_clip_text_model(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             CLIPTextModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -101,7 +101,7 @@ void init_unet2d_condition_model(py::module_& m) {
         py::arg("root_dir"), "Model root directory", 
         R"(
             UNet2DConditionModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
         )")
         .def(py::init([](
             const std::filesystem::path& root_dir,
@@ -114,7 +114,7 @@ void init_unet2d_condition_model(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             UNet2DConditionModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -172,7 +172,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_path"), "VAE decoder directory", 
         R"(
             AutoencoderKL class initialized only with decoder model.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
         )")
         .def(py::init([](
             const std::filesystem::path& vae_encoder_path,
@@ -184,8 +184,8 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_path"), "VAE decoder directory",
         R"(
             AutoencoderKL class initialized with both encoder and decoder models.
-            vae_encoder_path (str): VAE encoder directory.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
         )")
         .def(py::init([](
             const std::filesystem::path& vae_decoder_path,
@@ -198,7 +198,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             AutoencoderKL class initialized only with decoder model.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )")
@@ -215,8 +215,8 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             AutoencoderKL class initialized only with both encoder and decoder models.
-            vae_encoder_path (str): VAE encoder directory.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -276,7 +276,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
         py::arg("root_dir"), "Model root directory", 
         R"(
             CLIPTextModelWithProjection class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
         )")
         .def(py::init([](
             const std::filesystem::path& root_dir,
@@ -290,7 +290,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             CLIPTextModelWithProjection class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
