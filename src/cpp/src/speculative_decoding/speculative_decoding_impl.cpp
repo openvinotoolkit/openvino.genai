@@ -31,7 +31,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const ov::genai::ModelDesc draft_model_desc,
     const ov::AnyMap& tokenizer_properties) {
     ov::Core core;
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(main_properties);
+    auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(main_properties);
     core.set_property(core_properties);
 
     std::filesystem::path openvino_model_name = "openvino_model.xml",
