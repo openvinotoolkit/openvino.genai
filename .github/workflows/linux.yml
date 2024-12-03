@@ -119,8 +119,12 @@ jobs:
       
       - name: Pack Artifacts
         run: |
-          tar -cvf - ${{ env.INSTALL_DIR }}/* | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
-          tar -cvf - ${{ env.INSTALL_SAMPLES_DIR }}/* | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_SAMPLES_NAME }}
+          pushd ${{ env.INSTALL_DIR }}
+            tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+          popd
+          pushd ${{ env.INSTALL_SAMPLES_DIR }}
+            tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_SAMPLES_NAME }}
+          popd
           
       - name: Smoke Tests
         run: |
