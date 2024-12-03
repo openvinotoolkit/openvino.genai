@@ -34,6 +34,18 @@ public:
                           const std::string& device,
                           const ov::AnyMap& properties = {});
 
+    SD3Transformer2DModel(const std::string &model,
+                          const Tensor &weights,
+                          const Config& config,
+                          const size_t vae_scale_factor);
+
+    SD3Transformer2DModel(const std::string &model,
+                          const Tensor &weights,
+                          const Config& config,
+                          const size_t vae_scale_factor,
+                          const std::string& device,
+                          const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     SD3Transformer2DModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)

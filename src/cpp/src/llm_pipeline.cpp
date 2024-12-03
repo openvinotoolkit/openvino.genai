@@ -36,13 +36,13 @@ std::pair<EncodedResults, int32_t> beam_search(
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
-
     bool is_chat_conversation = false;
-    bool m_is_cache_empty = true;
+    bool m_trust_encoded_history = true;
     std::optional<int32_t> m_selected_beam = std::nullopt;
     ChatHistory m_history;
     std::string m_templated_chat_history = {};
-    TokenizedInputs m_tokenized_chat_history;
+    std::vector<int64_t> m_tokenized_chat_history;
+    ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -94,6 +94,13 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
+            m_chat_input_type = ov::genai::utils::GenerationChatInputsType::STRING;
+
+        if (is_chat_conversation)
+            OPENVINO_ASSERT(m_chat_input_type != ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS,
+                            "Chat doesn't support switching between input types. Please, continue using EncodedInputs or restart the chat.");
+
         auto start_time = std::chrono::steady_clock::now();
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         TokenizedInputs encoded_input;
@@ -119,14 +126,36 @@ public:
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
                 // Do not add special tokens in chat scenario to be aligned with HF.
                 auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
-                if (m_is_cache_empty) {
-                    encoded_input = new_chat_tokens;
-                } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+                auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+
+                // some symbols combinations can be encoded by the tokenizer in different ways
+                // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
+                // and find the difference as a prompt, so let's check it out and use the whole history in this case
+                if (!m_tokenized_chat_history.empty()) {
+                    auto stop_tokens = config.stop_token_ids;
+                    // config could be reset by user and stop_tokens could be empty
+                    // but model/tokenizer still will rely to eos token, so let's add it
+                    stop_tokens.insert(m_tokenizer.get_eos_token_id());
+                    size_t last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
+                    m_trust_encoded_history = last_same_hist_token == SIZE_MAX;
+                }
+
+                if (!m_trust_encoded_history) {
+                    reset_kv_state();
+                    m_selected_beam = std::nullopt;
+                }
+
+                if (!m_tokenized_chat_history.empty() && m_trust_encoded_history) {
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
+                } else {
+                    encoded_input = new_chat_tokens;
                 }
                 m_templated_chat_history = new_templated_chat_history;
-                m_tokenized_chat_history = new_chat_tokens;
+                m_tokenized_chat_history.clear();
+                m_tokenized_chat_history.reserve(new_chat_tokens.input_ids.get_size());
+                std::copy_n(new_chat_tokens.input_ids.data<int64_t>(), new_chat_tokens.input_ids.get_size(),
+                            std::back_inserter(m_tokenized_chat_history));
+
                 // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
             } else {
                 encoded_input = m_tokenizer.encode(prompt);
@@ -180,6 +209,14 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
+            m_chat_input_type = ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS;
+
+        if (is_chat_conversation)
+            // if chat was run in StringInputs mode, but it was called EncodedInputs generate, last m_history entry will be with assistant role
+            OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.back()["role"] == "user",
+                            "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
+
         auto start_time = std::chrono::steady_clock::now();
         ov::Tensor input_ids;
         ov::Tensor attention_mask;
@@ -190,6 +227,9 @@ public:
             input_ids = data->input_ids;
             attention_mask = data->attention_mask;
         }
+
+        if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
+            std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
 
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
@@ -222,24 +262,29 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-
+        ov::Tensor tokenized_chat_history = ov::Tensor(ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data());
         size_t kv_cache_len = 0;
         ov::Tensor concatenated_attention_mask;
-        if (is_chat_conversation && !m_is_cache_empty) {
-            OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
-            // If history is saved in KV cache, concatenate new attention_mask with the already existing.
-            // Between subsequent runs attention_mask should not be modified.
-            auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
-            auto prompt_len = attention_mask.get_shape()[1];
-            kv_cache_len = atten_mask_history.get_shape()[1];
+        if (is_chat_conversation && !m_tokenized_chat_history.empty()) {
+            if (m_trust_encoded_history) {
+                OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
+                // If history is saved in KV cache, concatenate new attention_mask with the already existing.
+                // Between subsequent runs attention_mask should not be modified.
+                auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
+                auto prompt_len = attention_mask.get_shape()[1];
+                kv_cache_len = atten_mask_history.get_shape()[1];
 
-            ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
-            auto start_atten_hst = atten_mask_history.data<int64_t>() + kv_cache_len * (*m_selected_beam);
-            std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
-                    new_atten_mask.data<int64_t>());
-            std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
-                    new_atten_mask.data<int64_t>() + kv_cache_len);
-            concatenated_attention_mask = new_atten_mask;
+                ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
+                auto start_atten_hst = atten_mask_history.data<int64_t>() + kv_cache_len * (*m_selected_beam);
+                std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
+                        new_atten_mask.data<int64_t>());
+                std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
+                        new_atten_mask.data<int64_t>() + kv_cache_len);
+                concatenated_attention_mask = new_atten_mask;
+            } else {
+                attention_mask = ov::genai::utils::init_attention_mask(tokenized_chat_history);
+                concatenated_attention_mask = attention_mask;
+            }
         } else {
             concatenated_attention_mask = attention_mask;
         }
@@ -247,28 +292,36 @@ public:
         bool position_ids_available = (num_inputs == 4);
         std::optional<ov::Tensor> position_ids = std::nullopt;
         if (position_ids_available) {
-            position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-            utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
+            if (is_chat_conversation && !m_trust_encoded_history) {
+                position_ids = ov::Tensor{ov::element::i64, tokenized_chat_history.get_shape()};
+            } else {
+                position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
+            }
+           utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
         }
 
         if(m_adapter_controller) {
             m_adapter_controller->apply(m_model_runner, config.adapters);
         }
 
+        auto input_tokens = input_ids;
+        if (is_chat_conversation && !m_trust_encoded_history) {
+            input_tokens = tokenized_chat_history;
+            m_trust_encoded_history = true;
+        }
+
         ov::genai::EncodedResults result;
         if (config.is_beam_search() && is_chat_conversation) {
-            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask,
+            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_tokens, concatenated_attention_mask,
                                                             config, position_ids, m_selected_beam);
         } else {
             std::vector<SequenceGroup::Ptr> requests;
             size_t block_size = 1;
             bool enable_prefix_caching = false;
-
-            config.stop_token_ids.insert(config.eos_token_id);
             for (size_t request_id = 0; request_id < batch_size; request_id++) {
                 SequenceGroup::Ptr sequence_group;
-                if (is_chat_conversation && !m_is_cache_empty) {
-                    sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenized_chat_history.input_ids, config, block_size, enable_prefix_caching);
+                if (is_chat_conversation) {
+                    sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_chat_history, config, block_size, enable_prefix_caching);
                 } else {
                     size_t seq_len = input_ids.get_shape().at(1);
                     size_t batch_offset = request_id * seq_len;
@@ -283,16 +336,17 @@ public:
             }
 
             Sampler sampler = Sampler(m_tokenizer);
-            std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr,
-                                                                                  sampler, requests, position_ids, std::nullopt, m_selected_beam);
+            std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_tokens, concatenated_attention_mask, streamer_ptr,
+                                                                                sampler, requests, position_ids, std::nullopt, m_selected_beam);
         }
 
-        if (!is_chat_conversation) {
+        if (is_chat_conversation) {
+            std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
+        } else {
             reset_kv_state();
             m_selected_beam = std::nullopt;
-        } else {
-            m_is_cache_empty = false;
         }
+
         auto stop_time = std::chrono::steady_clock::now();
 
         // If is called without tokenization then that stat will not be reported.
@@ -306,12 +360,14 @@ public:
 
     void start_chat(const std::string& system_message) override {
         is_chat_conversation = true;
-        m_selected_beam  = std::nullopt;
-        if (!m_is_cache_empty) {
+        m_selected_beam = std::nullopt;
+        m_trust_encoded_history = true;
+        m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
+        if (!m_tokenized_chat_history.empty()) {
             reset_kv_state();
-            m_is_cache_empty = true;
             m_history = {};
             m_templated_chat_history = "";
+            m_tokenized_chat_history.clear();
         }
         if (system_message.empty())
             return;
@@ -325,11 +381,13 @@ public:
     void finish_chat() override {
         is_chat_conversation = false;
         m_selected_beam = std::nullopt;
-        if (!m_is_cache_empty) {
+        m_trust_encoded_history = true;
+        m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
+        if (!m_tokenized_chat_history.empty()) {
             reset_kv_state();
-            m_is_cache_empty = true;
             m_history.clear();
             m_templated_chat_history.clear();
+            m_tokenized_chat_history.clear();
         }
     }
 };
