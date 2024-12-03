@@ -91,7 +91,7 @@ jobs:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
-      INSTALL_SAMPLES_DIR: ${{ github.workspace }}/install/samples
+      INSTALL_SAMPLES_DIR: ${{ github.workspace }}/samples
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
 
@@ -294,7 +294,7 @@ jobs:
       fail-fast: false
       matrix:
         test:
-          - name: 'test_vlm_api'
+          - name: 'VLM API'
             cmd: 'tests/python_tests/test_vlm_api.py'
           - name: 'Whisper Generate API'
             cmd: 'tests/python_tests/test_whisper_generate_api.py -k "${PRECOMMIT_FILTER}"'
