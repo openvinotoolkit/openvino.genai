@@ -6,6 +6,10 @@ from test_whisper_generate_api import get_samples_from_dataset
 import openvino_genai as ov_genai
 import pytest
 
+config = {"NPU_USE_NPUW" : "YES",
+          "NPUW_DEVICES" : "CPU",
+          "NPUW_ONLINE_PIPELINE" : "NONE"}
+
 def compare_results_with_assert(expected, actual_out):
     if expected.texts[0] != actual_out.texts[0]:
         print(f'expected: {expected.texts[0]}\n')
@@ -22,7 +26,7 @@ def test_static_whisper_generation_compare_with_cpu(model_descr, test_sample):
     cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
     expected = cpu_pipe.generate(test_sample)
 
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU")
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
     actual_out = npu_pipe.generate(test_sample)
 
     compare_results_with_assert(expected, actual_out)
@@ -42,7 +46,7 @@ def test_static_whisper_autodetect(model_descr, test_sample):
     cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
     expected = cpu_pipe.generate(test_sample)
 
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU")
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
     actual_out = npu_pipe.generate(test_sample)
 
     compare_results_with_assert(expected, actual_out)
@@ -59,7 +63,7 @@ def test_static_whisper_language_de(model_descr, test_sample):
     cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
     expected = cpu_pipe.generate(test_sample, max_new_tokens=30, language="<|de|>")
 
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU")
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
     actual_out = npu_pipe.generate(test_sample, max_new_tokens=30, language="<|de|>")
 
     compare_results_with_assert(expected, actual_out)
@@ -76,7 +80,7 @@ def test_static_whisper_language_fr(model_descr, test_sample):
     cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
     expected = cpu_pipe.generate(test_sample, max_new_tokens=30, language="<|fr|>")
 
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU")
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
     actual_out = npu_pipe.generate(test_sample, max_new_tokens=30, language="<|fr|>")
 
     compare_results_with_assert(expected, actual_out)
@@ -93,7 +97,7 @@ def test_static_whisper_language_ru(model_descr, test_sample):
     cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
     expected = cpu_pipe.generate(test_sample, max_new_tokens=30, language="<|ru|>")
 
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU")
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
     actual_out = npu_pipe.generate(test_sample, max_new_tokens=30, language="<|ru|>")
 
     compare_results_with_assert(expected, actual_out)
