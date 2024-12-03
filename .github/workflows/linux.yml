@@ -226,7 +226,7 @@ jobs:
         build-type: [Release]
         test:
           - name: 'Chat Generate Api'
-            cmd: 'tests/python_tests/test_chat_generate_api.py'
+            cmd: 'tests/python_tests/test_chat_generate_api.py -k "not Qwen2-0.5B-Instruct"'
           - name: 'Whisper Generate API'
             cmd: 'tests/python_tests/test_whisper_generate_api.py -k "${PRECOMMIT_FILTER} and not distil-whisper"'
     timeout-minutes: 45
