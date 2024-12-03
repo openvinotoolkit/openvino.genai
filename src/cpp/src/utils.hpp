@@ -12,6 +12,12 @@ namespace ov {
 namespace genai {
 namespace utils {
 
+enum class GenerationChatInputsType {
+    UNDEF = 0, // Default value, type of inputs is not defined
+    STRING = 1, // Type of inputs is StringInputs
+    ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
+};
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);
@@ -69,6 +75,10 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
+
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens);
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end);
 
 template <typename T>
 void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);

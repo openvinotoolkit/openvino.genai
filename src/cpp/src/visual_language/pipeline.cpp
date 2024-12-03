@@ -27,6 +27,17 @@ constexpr size_t BATCH_SIZE = 1;
 
 } // namespace
 
+namespace ov::genai {
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+}
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
 public:
@@ -61,6 +72,11 @@ public:
                 models_dir, "config.json"
             )
         },
+        m_generation_config{
+            utils::from_config_json_if_exists<GenerationConfig>(
+                models_dir, "generation_config.json"
+            )
+        },
         m_is_chat_conversation{false} {
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
             m_vlm_config, models_dir, device, properties);
@@ -70,6 +86,41 @@ public:
 
         m_language = utils::singleton_core().compile_model(
             models_dir / "openvino_language_model.xml", device, properties
+        ).create_infer_request();
+
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
+    }
+
+    VLMPipelineImpl(
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config
+    ) :
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(
+                config_dir_path, "config.json"
+            )
+        },
+        m_generation_config{generation_config},
+        m_is_chat_conversation{false} {
+        
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(
+            m_vlm_config, models_map, tokenizer, config_dir_path, device, properties);
+
+        m_tokenizer = m_inputs_embedder->get_tokenizer();
+        m_embedding = m_inputs_embedder->get_embedding_model();
+
+        auto m_language_pair = get_model_weights_pair(models_map, "language");
+        m_language = utils::singleton_core().compile_model(
+            m_language_pair.first, m_language_pair.second, device, properties
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
@@ -93,14 +144,22 @@ public:
 
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
 
+        auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
+        if (to_remove_from_hist > 0) {
+            ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist);
+        }
+
         Sampler sampler = Sampler(m_tokenizer);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
         bool enable_prefix_caching = false;
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
+
+        auto tokenized_chat_history = m_inputs_embedder->get_tokenized_chat_history();
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
@@ -125,10 +184,10 @@ public:
         OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
                         "Currently streaming is possible only for greedy or multinomial decoding");
 
-        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds.get_shape()[1] }};
+        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds.get_shape()[1] }};
+        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
 
         ov::genai::EncodedResults encoded_result;
@@ -149,6 +208,8 @@ public:
             m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
+
+        m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
         return decoded;
     }
 
@@ -223,6 +284,15 @@ VLMPipeline::VLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties
 ) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_dir, device, properties)} {}
+
+VLMPipeline::VLMPipeline(
+    const ModelsMap& models_map,
+    const Tokenizer& tokenizer,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config)} {}
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;
 
