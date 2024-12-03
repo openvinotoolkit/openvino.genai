@@ -8,3 +8,4 @@ pandas>=2.0.3
 numpy>=1.23.5
 tqdm>=4.66.1
 diffusers
+onnx<=1.16.1; sys_platform=='win32'
