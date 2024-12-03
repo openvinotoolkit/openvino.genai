@@ -700,7 +700,6 @@ ov::genai::LLMPipeline::LLMPipeline(
 ){
     auto start_time = std::chrono::steady_clock::now();
     if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
-        // TODO: check why compiled model does not have scheduler config
         auto [plugin_config, scheduler_config] = utils::split_scheduler_config(config);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, plugin_config, generation_config);

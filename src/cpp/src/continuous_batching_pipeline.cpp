@@ -45,7 +45,6 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     if (draft_model_desr.model == nullptr) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     } else {
-        // todo: check properties
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     }
@@ -66,7 +65,6 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (draft_model_desr.model == nullptr) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     } else {
-        // todo: check properties
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     }
