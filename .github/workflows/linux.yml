@@ -483,17 +483,13 @@ jobs:
       - name: Test Python Sample (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 1
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          ${{ env.INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        run: ${{ env.OV_INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         working-directory: ${{ env.MODELS_DIR }}
 
       - name: Test Python Sample (whisper_speech_recognition)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 1
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          ${{ env.INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        run: ${{ env.OV_INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
       
       - name: C++ Tests Prerequisites
