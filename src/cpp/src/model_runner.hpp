@@ -131,6 +131,7 @@ public:
             size_t group_position_id = sequence_group->get_num_processed_tokens();
             size_t prompt_len = sequence_group->get_prompt_len();
             size_t seq_len_after_gather = 0;
+            bool echo_output = sequence_group->get_sampling_parameters().echo;
 
             // spec: In case of multiple input tokens for current sequence (prompt_len > 1),
             // context_len corresponds to first token within subgroup of scheduled tokens
@@ -146,7 +147,7 @@ public:
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
                     if (matmul_gathering_is_required) {
-                        if (group_position_id + token_id >= prompt_len - 1) {
+                        if (group_position_id + token_id >= prompt_len - 1 || echo_output) {
                             gather_indice_values.push_back(gathering_current_index);
                             seq_len_after_gather++;
                         }
