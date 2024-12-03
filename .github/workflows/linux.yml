@@ -222,7 +222,7 @@ jobs:
           if-no-files-found: 'error'
           
   genai_tests_archive:
-    name: Python Tests (archive) - ${{ matrix.build-type }} - ${{ matrix.test.name }}
+    name: Python Tests (archive - ${{ matrix.build-type }}) - ${{ matrix.test.name }}
     needs: [ openvino_download, genai_build_cmake ]
     strategy:
       fail-fast: false
