@@ -26,6 +26,7 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
+  OV_SAMPLES_NAME: samples.tar.gz
 
 jobs:
   openvino_download:
@@ -277,14 +278,14 @@ jobs:
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --component samples_bin --prefix ${{ env.INSTALL_DIR }}
         
       - name: Pack Artifacts
-        run: tar -cvf - * | pigz > ${{ env.INSTALL_DIR }}/genai_samples.tar.gz
+        run: tar -cvf - * | pigz > ${{ env.INSTALL_DIR }}/${{ env.OV_SAMPLES_NAME }}
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Upload Samples Build Package
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: genai_samples_${{ matrix.build-type }}
+          name: samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
           
@@ -423,7 +424,7 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [Release]
-    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ] 
+    needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
     timeout-minutes: 45
     defaults:
       run:
@@ -437,6 +438,7 @@ jobs:
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
@@ -451,7 +453,7 @@ jobs:
       - name: Download OpenVINO Package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          name: +[${{ needs.openvino_download.outputs.ov_artifact_name }}|samples_${{ matrix.build-type }}]
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -464,7 +466,8 @@ jobs:
       
       - name: Extract Artifacts
         run: |
-          pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
+          pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
+          pigz -dc ${{ env.OV_SAMPLES_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
         
@@ -504,14 +507,14 @@ jobs:
         
       - name: Test C++ Sample (greedy_causal_lm)
         run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
         working-directory: ${{ env.MODELS_DIR }}
 
       - name: Test C++ Sample (whisper_speech_recognition)
         run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-           ${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+           ${{ env.OV_INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
 
   Overall_Status:
