@@ -555,9 +555,9 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_decoder(decoder_model);
     preprocess_decoder(decoder_with_past_model);
 
-    m_models.encoder = core.compile_model(encoder_model, "NPU").create_infer_request();
-    m_models.decoder = core.compile_model(decoder_model, "NPU").create_infer_request();
-    m_models.decoder_with_past = core.compile_model(decoder_with_past_model, "NPU").create_infer_request();
+    m_models.encoder = core.compile_model(encoder_model, "NPU", properties).create_infer_request();
+    m_models.decoder = core.compile_model(decoder_model, "NPU", properties).create_infer_request();
+    m_models.decoder_with_past = core.compile_model(decoder_with_past_model, "NPU", properties).create_infer_request();
 
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1) {
