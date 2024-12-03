@@ -26,7 +26,7 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
-  OV_SAMPLES_NAME: samples.tar.gz
+  OV_SAMPLES_NAME: ov_samples.tar.gz
 
 jobs:
   openvino_download:
@@ -285,7 +285,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: samples_${{ matrix.build-type }}
+          name: ov_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
           
@@ -453,14 +453,12 @@ jobs:
       - name: Download OpenVINO Package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: +(${{ needs.openvino_download.outputs.ov_artifact_name }}|samples_${{ matrix.build-type }}) # Download OpenVINO and Samples
-          path: ${{ env.INSTALL_DIR }}
-          merge-multiple: true
-
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          pattern: genai_+(archive_${{ matrix.build-type }}|wheels|samples_${{ matrix.build-type }}) # Download GenAI artifacts
+          pattern: |
+            ${{ needs.openvino_download.outputs.ov_artifact_name }}
+            ov_samples_${{ matrix.build-type }}
+            genai_archive_${{ matrix.build-type }}
+            genai_samples_${{ matrix.build-type }}
+            genai_wheels
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
       
