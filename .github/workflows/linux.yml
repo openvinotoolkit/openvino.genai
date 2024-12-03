@@ -459,6 +459,7 @@ jobs:
       
       - name: Extract Artifacts
         run: |
+          mkdir -p ${{ env.OV_INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
           pigz -dc ${{ env.OV_SAMPLES_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
