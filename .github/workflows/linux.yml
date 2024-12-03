@@ -193,7 +193,7 @@ jobs:
         
       - name: Smoke Tests
         run: |
-          python -m pip install numpy
+          python -m pip install "numpy<2.0.0"
           python -c "import numpy, openvino, openvino_genai; openvino_genai.TokenizedInputs(openvino.Tensor(numpy.empty(0)), openvino.Tensor(numpy.empty(0)))"
 
       - name: Upload Wheels
