@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -204,7 +204,7 @@ class AutoencoderKL:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
-    def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
+    def encode(self, image: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def get_config(self) -> AutoencoderKL.Config:
         ...
@@ -337,25 +337,6 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
-class ChunkStreamerBase:
-    """
-    
-        Base class for chunk streamers. In order to use inherit from from this class.
-    """
-    def __init__(self) -> None:
-        ...
-    def end(self) -> None:
-        """
-        End is called at the end of generation. It can be used to flush cache if your own streamer has one
-        """
-    def put(self, arg0: int) -> bool:
-        """
-        Put is called every time new token is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
-        """
-    def put_chunk(self, arg0: list[int]) -> bool:
-        """
-        Put is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
-        """
 class ContinuousBatchingPipeline:
     """
     This class is used for generation with LLMs with continuous batchig
@@ -484,9 +465,9 @@ class GenerationConfig:
         ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
         eos_token_id:  token_id of <eos> (end of sentence)
         min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-        stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+        stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
         include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-        stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+        stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -706,7 +687,6 @@ class ImageGenerationConfig:
     generator: Generator
     guidance_scale: float
     height: int
-    max_sequence_length: int
     negative_prompt: str | None
     negative_prompt_2: str | None
     negative_prompt_3: str | None
@@ -757,9 +737,9 @@ class LLMPipeline:
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
             min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-            stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-            stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -838,9 +818,9 @@ class LLMPipeline:
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
             min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-            stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-            stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -1268,10 +1248,9 @@ class Text2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
-            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
-            adapters: LoRA adapters,
-            strength: strength for image to image generation. 1.0f means initial image is fully noised,
-            max_sequence_length: int - length of t5_encoder_model input
+            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator
+            adapters: LoRA adapters
+            strength: strength for image to image generation. 1.0f means initial image is fully noised
         
             :return: ov.Tensor with resulting images
             :rtype: ov.Tensor
@@ -1381,8 +1360,6 @@ class UNet2DConditionModel:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def do_classifier_free_guidance(self, guidance_scale: float) -> bool:
-        ...
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
     def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -1613,7 +1590,7 @@ class WhisperPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | ChunkStreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
