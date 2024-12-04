@@ -233,15 +233,26 @@ enum class GenerateHint {
     BEST_PERF
 };
 
+std::string to_string(GenerateHint h) {
+    switch(h) {
+        case GenerateHint::FAST_COMPILE : 
+            return "FAST_COMPILE";
+        case GenerateHint::BEST_PERF : 
+            return "BEST_PERF";
+        default:
+            OPENVINO_THROW("Unsupported value for type GenerateHint provided");        
+    }
+}
+
 GenerateHint str_to_hint(const std::string& str) {
-    if (str == "FAST_COMPILE") {
+    if (str == to_string(GenerateHint::FAST_COMPILE)) {
         return GenerateHint::FAST_COMPILE;
     }
-    if (str == "BEST_PERF") {
+    if (str == to_string(GenerateHint::BEST_PERF)) {
         return GenerateHint::BEST_PERF;
     }
     OPENVINO_THROW("Unsupported \"GENERATE_HINT\" provided: " +
-                   str + ". Please select either \"FAST_COMPILE\" or \"BEST_PERF\".");
+                   str + ". Please select either \"" + to_string(GenerateHint::BEST_PERF) + "\" or \"" + to_string(GenerateHint::FAST_COMPILE) +"\".");
 }
 
 std::shared_ptr<ov::Model> cvt_kvcache_to_fp16(const std::shared_ptr<ov::Model>& model) {
@@ -457,6 +468,7 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
 struct NPUDesc {
     std::string arch;
     int64_t max_tiles;
+    bool compiler_dq;
 };
 
 std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
@@ -466,7 +478,14 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     }
     const auto arch = core.get_property("NPU", ov::device::architecture);
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
-    return std::make_optional(NPUDesc{arch, max_tiles});
+
+    bool compiler_dq = false;
+    const auto device_caps = core.get_property("NPU", ov::device::capabilities);
+    if (std::find(device_caps.begin(), device_caps.end(),
+                  "COMPILER_DYNAMIC_QUANTIZATION") != device_caps.end()) {
+        compiler_dq = true;
+    }
+    return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
 }
 
 ov::AnyMap get_baseline_common_config() {
@@ -508,6 +527,9 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
         npudesc->max_tiles != -1) {
         config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
+    if (npudesc.has_value() && npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ_FULL", "NO");
+    }
     return config;
 }
 
@@ -522,6 +544,12 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     config.emplace("NPUW_DQ", "YES");
     if (npudesc.has_value() && npudesc->arch == "4000") {
         config.emplace("NPU_DPU_GROUPS", 4);
+    }
+    if (hint == GenerateHint::FAST_COMPILE) {
+        config.emplace("NPUW_UNFOLD_IREQS", "YES");
+    }
+    if (npudesc.has_value() && npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ_FULL", "NO");
     }
     return config;
 }
@@ -571,8 +599,10 @@ ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, si
     return ov::Tensor(tensor, start_shape, end_shape);
 }
 
-void drop_cache_dir(ov::AnyMap& config) {
-    if (config.count("NPU_USE_NPUW") != 0u) {
+void set_npuw_cache_dir(ov::AnyMap& config) {
+    std::optional<std::string> cache_dir = get_option<std::string>(config, "CACHE_DIR");
+    if (config.count("NPU_USE_NPUW") != 0u && cache_dir) {
+        config.emplace("NPUW_CACHE_DIR", cache_dir.value());
         pop_option(config, "CACHE_DIR");
     }
 }
@@ -675,57 +705,57 @@ void StaticLLMPipeline::setupAndCompileModels(
     // NB: Get information about NPU if available
     auto npudesc = extract_npu_descriptor(core);
     // (1) Read the template model - this will be kvcache model
-    m_kvcache_model = core.read_model((models_path / "openvino_model.xml").string());
+    auto kvcache_model = core.read_model((models_path / "openvino_model.xml").string());
     // (2) Expose KV-cache input and output layers from kvcache model
-    ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
+    ov::pass::StatefulToStateless().run_on_model(kvcache_model);
     // (3) Align u4 ZP constants
-    align_u4_zp_constants(m_kvcache_model);
+    align_u4_zp_constants(kvcache_model);
     // (4) Clone the model - this will be prefill
-    m_prefill_model = m_kvcache_model->clone();
-    m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
+    auto prefill_model = kvcache_model->clone();
+    prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
     // (5) Reshape both models to static shape
     const uint32_t kMaxPromptLen = align_to(pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u), 64u);
     const uint32_t kMinResponseLen = align_to(pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u), 64u);
     ModelDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
     KVAxesPosition axes = get_kv_axes(model_desc.type);
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len, false};
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
+    reshape_to_static(prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
+    reshape_to_static(kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (6) Apply opt layout if applicable
     // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
     if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
         (model_desc.type == "llama" && model_desc.num_key_value_heads == 32)) {
-        if (optimize_value_tensors(m_kvcache_model)) {
+        if (optimize_value_tensors(kvcache_model)) {
             // NB: Check if TransposeValueTensors transformation was applied
             m_kvcache_desc.v_tensors_transposed = true;
-            m_prefill_model = cvt_value_tensors_layout(m_prefill_model);
+            prefill_model = cvt_value_tensors_layout(prefill_model);
         }
     }
     // (7) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
-    m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
+    kvcache_model = redirect_new_kv_to_output(kvcache_model);
     // (8) Convert kvcache tensors to fp16 precision
-    m_kvcache_model = cvt_kvcache_to_fp16(m_kvcache_model);
-    m_prefill_model = cvt_kvcache_to_fp16(m_prefill_model);
+    kvcache_model = cvt_kvcache_to_fp16(kvcache_model);
+    prefill_model = cvt_kvcache_to_fp16(prefill_model);
     // (9) Compile both model
     auto prefill_config = pop_or_default(
-        properties, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, npudesc)
+        properties, "PREFILL_CONFIG", get_default_prefill_config(prefill_model, npudesc)
     );
     // NB: GENERATE_HINT is only applicable for default generate config!
-    auto generate_hint = str_to_hint(pop_or_default<std::string>(properties, "GENERATE_HINT", "FAST_COMPILE"));
+    auto generate_hint = str_to_hint(pop_or_default<std::string>(properties, "GENERATE_HINT", to_string(GenerateHint::FAST_COMPILE)));
     auto generate_config = pop_or_default(
-        properties, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, npudesc, generate_hint)
+        properties, "GENERATE_CONFIG", get_default_generate_config(kvcache_model, npudesc, generate_hint)
     );
     merge_config_with(prefill_config, properties);
     merge_config_with(generate_config, properties);
-    // FIXME: Drop CACHE_DIR option if NPUW is enabled
-    drop_cache_dir(prefill_config);
-    drop_cache_dir(generate_config);
+    // Replace CACHE_DIR option if NPUW is enabled
+    set_npuw_cache_dir(prefill_config);
+    set_npuw_cache_dir(generate_config);
 
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, device, generate_config
+        kvcache_model, device, generate_config
     ).create_infer_request();
     m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
+        prefill_model, device, prefill_config
     ).create_infer_request();
 }
 

@@ -48,6 +48,25 @@ CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir,
     compile(device, properties);
 }
 
+CLIPTextModel::CLIPTextModel(const std::string& model,
+                             const Tensor& weights,
+                             const Config& config,
+                             const Tokenizer& clip_tokenizer) :
+    m_clip_tokenizer(clip_tokenizer), m_config(config) {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+}
+
+CLIPTextModel::CLIPTextModel(const std::string& model,
+                             const Tensor& weights,
+                             const Config& config,
+                             const Tokenizer& clip_tokenizer,
+                             const std::string& device,
+                             const ov::AnyMap& properties) :
+    CLIPTextModel(model, weights, config, clip_tokenizer) {
+    compile(device, properties);
+}
+
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
 
 const CLIPTextModel::Config& CLIPTextModel::get_config() const {
