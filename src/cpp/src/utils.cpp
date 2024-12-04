@@ -272,7 +272,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, ov::Core
     const char* env_var_value = std::getenv(env_var_name);
 
     // Check if the environment variable was found
-    if (env_var_value != nullptr && atoi(env_var_value) > 2) {
+    if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
         // output of the actual settings that the device selected
         auto supported_properties = compiled_Model.get_property(ov::supported_properties);
         std::cout << "Model:" << std::endl;

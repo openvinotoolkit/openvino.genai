@@ -81,6 +81,10 @@ public:
             m_model_runner = compiled_Model.create_infer_request();
         }
         ov::genai::utils::print_compiled_model_properties(compiled_Model, core);
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
     }
 
     StatefulLLMPipeline(
