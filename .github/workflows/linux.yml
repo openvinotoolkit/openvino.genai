@@ -466,7 +466,7 @@ jobs:
         
       - name: Test Python Samples
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        run: python -m pytest -vv ${{ env.INSTALL_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and py"
+        run: python -m pytest -vv ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and py"
         working-directory: ${{ env.INSTALL_DIR }}/samples/python
       
       - name: C++ Tests Prerequisites
@@ -475,7 +475,7 @@ jobs:
       - name: Test C++ Samples
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vv ${{ env.INSTALL_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and cpp"
+          python -m pytest -vv ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and cpp"
         working-directory: ${{ env.INSTALL_DIR }}/samples_bin
 
   Overall_Status:
