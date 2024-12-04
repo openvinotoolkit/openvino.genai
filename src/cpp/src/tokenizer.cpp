@@ -99,8 +99,6 @@ public:
 
     std::string m_chat_template = {};
 
-
-
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, bool add_special_tokens) {
         // If user requested add_special_tokens mode different from the current one,
         // need to set state variable.
@@ -132,7 +130,51 @@ public:
 
     TokenizerImpl() = default;
 
+    TokenizerImpl(const std::filesystem::path& models_papth,  const ov::AnyMap& properties) {
+        setupTokenizer(models_papth, properties);
+    }
+
     TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,  const ov::AnyMap& properties) {
+        setupTokenizer(models, properties);
+    }
+
+    void setupTokenizer(const std::filesystem::path& models_path,  const ov::AnyMap& properties) {
+        ScopedVar env_manager(tokenizers_relative_to_genai().string());
+        auto core = get_core_singleton();
+
+        OPENVINO_ASSERT(models_path.extension() != ".xml", "'models_papth' parameter should be a path to a dir not a xml file");
+
+        std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
+        std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
+
+        if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
+            ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml");
+        }
+        
+        if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
+            ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml");
+        }
+
+        setupTokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+
+        // If special tokens were not found from IR, try to read them from config.
+        // This will be triggered only for IRs older than 2024.3.
+        if (m_pad_token_id == -1 || m_bos_token_id == -1 || m_eos_token_id == -1 ||
+            m_pad_token.empty() || m_bos_token.empty() || m_eos_token.empty()) {
+            read_config(models_path);
+            read_special_tokens_map(models_path);
+            // Try to read tokenizer_config if some token ids or token str are not defined.
+            read_tokenizer_config_if_necessary(models_path);
+        }
+        
+        // If chat_template was not found in IR, try to read them from config.
+        if (m_chat_template.empty()) {
+            m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
+        }
+    }
+    
+
+    void setupTokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,  const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
 
         m_older_than_24_5 = ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") != 1;
@@ -431,6 +473,21 @@ public:
         return template_str;
     }
 
+    std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
+        auto tokenizer_config_file_path = path / "tokenizer_config.json";
+        if (!std::filesystem::exists(tokenizer_config_file_path))
+            return "";
+
+        std::ifstream file(tokenizer_config_file_path);
+        if (!file.is_open())
+            return "";
+
+        std::string res;
+        ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
+
+        return patch_chat_template(res);
+    }
+
     std::string apply_chat_template(ChatHistory history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template) const {
@@ -492,33 +549,7 @@ public:
 };
 
 Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
-    ScopedVar env_manager(tokenizers_relative_to_genai().string());
-    auto core = get_core_singleton();
-
-    OPENVINO_ASSERT(tokenizer_path.extension() != ".xml", "'tokenizer_path' parameter should be a path to a dir not a xml file");
-
-    std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
-    std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-
-    if (std::filesystem::exists(tokenizer_path / "openvino_tokenizer.xml")) {
-        ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
-    }
-    
-    if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
-        ov_detokenizer = core.read_model(tokenizer_path / "openvino_detokenizer.xml");
-    }
-
-    m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
-
-    // If special tokens were not found from IR, try to read them from config.
-    // This will work be triggered only for IRs older than 2024.3.
-    if (m_pimpl->m_pad_token_id == -1 || m_pimpl->m_bos_token_id == -1 || m_pimpl->m_eos_token_id == -1 ||
-        m_pimpl->m_pad_token.empty() || m_pimpl->m_bos_token.empty() || m_pimpl->m_eos_token.empty()) {
-        m_pimpl->read_config(tokenizer_path);
-        m_pimpl->read_special_tokens_map(tokenizer_path);
-        // Try to read tokenizer_config if some token ids or token str are not defined.
-        m_pimpl->read_tokenizer_config_if_necessary(tokenizer_path);
-    }
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, properties);
 }
 
 Tokenizer::Tokenizer(
