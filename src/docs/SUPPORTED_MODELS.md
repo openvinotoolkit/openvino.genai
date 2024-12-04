@@ -157,8 +157,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 > [!NOTE]
 >* Models should belong to the same family and have the same tokenizers.
 >* `optimum-cli` requires the `--task text-generation-with-past` argument for the `THUDM/chatglm3-6b` model
->* The **beam search** is not supported for `ChatGLM3-6B model`.
-
+>* The **beam search** is not supported for `THUDM/chatglm3-6b` model.
 ## Text 2 image models
 
 <table>

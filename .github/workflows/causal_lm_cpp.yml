@@ -275,7 +275,7 @@ jobs:
           && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Chatglm3-6b:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-20.04-4-cores
     defaults:
       run:
         shell: bash
@@ -312,7 +312,6 @@ jobs:
           samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)"| tee py.txt
           echo '-----------------------------------------------------------------------------------------------'
           diff cpp.txt py.txt
-          echo "Why sun is yellow?" passed
         env:
           PYTHONPATH: "./build"
           
