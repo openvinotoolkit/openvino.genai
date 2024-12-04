@@ -62,6 +62,7 @@ public:
     ) : LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(models_path))
     {
         ov::Core core;
+        ov::CompiledModel compiled_Model;
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_compile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
@@ -69,18 +70,17 @@ public:
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
             m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
             utils::slice_matmul_statefull_model(model);
-            m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
+            compiled_Model = core.compile_model(model, device, compile_plugin_config);
+            m_model_runner = compiled_Model.create_infer_request();
         } else {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_compile_config(plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
             utils::slice_matmul_statefull_model(model);
-            m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
+            compiled_Model = core.compile_model(model, device, compile_plugin_config);
+            m_model_runner = compiled_Model.create_infer_request();
         }
-
-        // If eos_token_id was not provided, take value
-        if (m_generation_config.eos_token_id == -1)
-            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        ov::genai::utils::print_compiled_model_properties(compiled_Model, core);
     }
 
     StatefulLLMPipeline(
