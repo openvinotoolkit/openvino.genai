@@ -87,7 +87,7 @@ def test_python_sample_whisper_speech_recognition(convert_model, download_test_c
 @pytest.mark.llm
 @pytest.mark.parametrize("convert_model", ["TinyLlama"], indirect=True)
 def test_cpp_sample_greedy_causal_lm(convert_model):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'samples_bin/greedy_causal_lm')
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
     exit_code = subprocess.run([cpp_sample, convert_model, ""]).returncode
     assert exit_code == 0, "C++ sample execution failed"
 
@@ -96,6 +96,6 @@ def test_cpp_sample_greedy_causal_lm(convert_model):
 @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
 @pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
 def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_content):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'samples_bin/whisper_speech_recognition')
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')
     exit_code = subprocess.run([cpp_sample, convert_model, download_test_content]).returncode
     assert exit_code == 0, "C++ sample execution failed"
