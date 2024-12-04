@@ -510,8 +510,6 @@ jobs:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          print(predicted_greedy)
-          print(predicted_prompt_lookup)
           assert predicted_greedy == predicted_prompt_lookup
           "
           echo "Prompt lookup" passed

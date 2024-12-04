@@ -7,7 +7,7 @@
 
 int main(int argc, char* argv[]) try {
     if (3 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT>'");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
 
     ov::genai::GenerationConfig config;
@@ -41,6 +41,7 @@ int main(int argc, char* argv[]) try {
     // Since the streamer is set, the results will
     // be printed each time a new token is generated.
     pipe.generate(prompt, config, streamer);
+    std::cout << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
