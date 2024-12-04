@@ -744,18 +744,18 @@ ov::genai::LLMPipeline::LLMPipeline(
 
         m_pimpl = std::make_unique<StaticLLMPipeline>(
             utils::singleton_core().read_model(model_str, weights_tensor), 
-            model_descr, 
-            tokenizer, 
-            device, 
-            plugin_config, 
+            model_descr,
+            tokenizer,
+            device,
+            properties,
             generation_config
         );
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(
             utils::singleton_core().read_model(model_str, weights_tensor), 
-            tokenizer, 
-            device, 
-            plugin_config, 
+            tokenizer,
+            device,
+            plugin_config,
             generation_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
