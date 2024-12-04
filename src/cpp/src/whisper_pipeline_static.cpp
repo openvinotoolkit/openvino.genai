@@ -439,6 +439,7 @@ void reshape_to_static_encoder(std::shared_ptr<ov::Model> model, const size_t fe
         ov::PartialShape new_shape;
         if (input_name.find("input_features") != std::string::npos) {
             const auto& partial_shape = input.get_partial_shape();
+            OPENVINO_ASSERT(partial_shape.size() >= 3);
             new_shape = partial_shape;
             new_shape[0] = 1;  // batch_dim
             new_shape[1] = feature_size;
