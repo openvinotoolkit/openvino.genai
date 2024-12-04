@@ -23,6 +23,7 @@ from whowhatbench import EVALUATOR_REGISTRY
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
