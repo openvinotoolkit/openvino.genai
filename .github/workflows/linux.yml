@@ -254,21 +254,16 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Download OpenVINO package
+      - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }}}"
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
           
-      - name: Download Archive Distribution Package
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: genai_archive_${{ matrix.build-type }}
-          merge-multiple: true
-          
       - name: Extract Artifacts
-        run: pigz -dc genai.tar.gz | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
+        run: pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
                     
       - name: Build Samples - ${{ matrix.build-type }}
         run: |
@@ -325,21 +320,16 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
           
-      - name: Download OpenVINO Package
+      - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }}}"
           path: ${{ env.INSTALL_DIR }}
-          merge-multiple: true
-
-      - name: Download GenAI Archive
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: genai_archive_${{ matrix.build-type }}
           merge-multiple: true
       
       - name: Extract Artifacts
         run: pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
+        working-directory: ${{ env.INSTALL_DIR }}
   
       - name: Install Test Requirements
         run: |
@@ -390,17 +380,10 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
           
-      - name: Download OpenVINO package
+      - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
-          path: ${{ env.INSTALL_DIR }}
-          merge-multiple: true
-
-      - name: Download GenAI Wheels
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: genai_wheels
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
           
@@ -437,8 +420,8 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
 
     env:
-      INSTALL_DIR: ${{ github.workspace }}/install
-      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_SECONDARY_DIR: ${{ github.workspace }}/ov_extra
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
@@ -450,7 +433,7 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
           
-      - name: Download OpenVINO Package
+      - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},ov_samples_${{ matrix.build-type }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
@@ -459,10 +442,10 @@ jobs:
       
       - name: Extract Artifacts
         run: |
-          mkdir -p ${{ env.OV_INSTALL_DIR }}
-          pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
-          pigz -dc ${{ env.OV_SAMPLES_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
+          pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
+          mkdir -p ${{ env.INSTALL_SECONDARY_DIR }}
+          pigz -dc ${{ env.OV_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_SECONDARY_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
         
       - name: Install GenAI Wheels
@@ -483,13 +466,13 @@ jobs:
       - name: Test Python Sample (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 1
-        run: ${{ env.OV_INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        run: ${{ env.INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         working-directory: ${{ env.MODELS_DIR }}
 
       - name: Test Python Sample (whisper_speech_recognition)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 1
-        run: ${{ env.OV_INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        run: ${{ env.INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
       
       - name: C++ Tests Prerequisites
@@ -497,14 +480,14 @@ jobs:
         
       - name: Test C++ Sample (greedy_causal_lm)
         run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
           ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
         working-directory: ${{ env.MODELS_DIR }}
 
       - name: Test C++ Sample (whisper_speech_recognition)
         run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-           ${{ env.OV_INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+           ${{ env.INSTALL_SECONDARY_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
 
   Overall_Status:
