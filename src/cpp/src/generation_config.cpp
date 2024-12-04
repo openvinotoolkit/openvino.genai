@@ -50,7 +50,8 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "logprobs", logprobs);
 
     // append EOS to stop_token_ids
-    set_eos_token_id(eos_token_id);
+    if (eos_token_id != -1)
+        set_eos_token_id(eos_token_id);
 
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
