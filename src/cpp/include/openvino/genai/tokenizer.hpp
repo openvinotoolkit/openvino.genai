@@ -66,8 +66,34 @@ public:
      */
     Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties = {});
 
-    // TODO: add constructor for ov::Properties as well
-
+    /**
+     * @brief ov::genai::Tokenizer constructor with variable number of properties
+     * @param tokenizer_model_str tokenizer model string
+     * @param tokenizer_weights_tensor ov::Tensor with tokenizer weights
+     * @param detokenizer_model_str detokenizer model string
+     * @param detokenizer_weights_tensor ov::Tensor with detokenizer weights
+     * @param properties optional properties
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Tokenizer(
+        const std::string& tokenizer_model_str,
+        ov::Tensor& tokenizer_weights_tensor,
+        std::string& detokenizer_model_str,
+        ov::Tensor& detokenizer_weights_tensor,
+        Properties&&... properties
+        ) : Tokenizer(tokenizer_model_str, tokenizer_weights_tensor, detokenizer_model_str, detokenizer_weights_tensor, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    
+    /**
+     * @brief ov::genai::Tokenizer constructor with variable number of properties
+     * @param model_str model string
+     * @param weights_tensor ov::Tensor with model weights
+     * @param properties optional properties
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor,
+              Properties&&... properties)
+        : Tokenizer(model_str, weights_tensor, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    
     /**
      * @brief ov::genai::Tokenizer constructor with variable number of properties
      * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
