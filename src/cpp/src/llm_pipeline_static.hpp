@@ -26,8 +26,7 @@ public:
     );
 
     StaticLLMPipeline(
-        const std::string& model_str,
-        const ov::Tensor& weights_tensor,
+        const std::shared_ptr<ov::Model>& model,
         const ModelConfigDesc& model_desc,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
@@ -42,7 +41,7 @@ public:
     );
 
     void setupAndCompileModels(
-        std::shared_ptr<ov::Model>& model,
+        const std::shared_ptr<ov::Model>& model,
         const std::string& device,
         const ModelConfigDesc& model_desc,
         ov::AnyMap& pipeline_config);
@@ -89,6 +88,14 @@ private:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 };
+
+/* 
+* NPU reads some properties from the config file, but when LLMPipeline is initialized
+* from the model_str and weights_tensor, there are not files. 
+* In the later case ModelDesc is stored in properties.
+* This function pops ModelDescr from the the properties and returns a pair of updated properties and ModelDescr.
+*/
+std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties);
 
 }  // namespace genai
 }  // namespace ov

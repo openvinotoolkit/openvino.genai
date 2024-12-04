@@ -660,8 +660,7 @@ StaticLLMPipeline::StaticLLMPipeline(
 }
 
 StaticLLMPipeline::StaticLLMPipeline(
-    const std::string& model_str,
-    const ov::Tensor& weights_tensor,
+    const std::shared_ptr<ov::Model>& model,
     const ModelConfigDesc& model_desc,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
@@ -677,7 +676,6 @@ StaticLLMPipeline::StaticLLMPipeline(
     // Using model_str and weights_tesnor with blobs is meaningless.
     OPENVINO_ASSERT(!use_blobs, "blobs cannot be used with model string and weights tensor");
 
-    auto model = genai::utils::singleton_core().read_model(model_str, weights_tensor);
     auto properties_ = properties;
     setupAndCompileModels(model, device, model_desc, properties_);
 
@@ -691,7 +689,7 @@ StaticLLMPipeline::StaticLLMPipeline(
 }
 
 void StaticLLMPipeline::setupAndCompileModels(
-    std::shared_ptr<ov::Model>& model,
+    const std::shared_ptr<ov::Model>& model,
     const std::string& device,
     const ModelConfigDesc& model_desc,
     ov::AnyMap& properties) {
@@ -1088,6 +1086,23 @@ EncodedResults StaticLLMPipeline::generate(
     metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
     metrics.evaluate_statistics(start_time);
     return results;
+}
+
+std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties) {
+    ov::AnyMap main_properties = properties;
+    ov::genai::ModelConfigDesc model_descr;
+
+    auto pop_property = [](ov::AnyMap& orig_propertis, const std::string& key, auto& value) {
+        if (orig_propertis.find(key) != orig_propertis.end()) {
+            value = orig_propertis.at(key).as<std::decay_t<decltype(value)>>();
+            orig_propertis.erase(key);
+        }
+    };
+    pop_property(main_properties, "name_or_path", model_descr.name_or_path);
+    pop_property(main_properties, "type", model_descr.type);
+    pop_property(main_properties, "num_key_value_heads", model_descr.num_key_value_heads);
+    
+    return {main_properties, model_descr};
 }
 
 }  // namespace genai

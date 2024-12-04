@@ -232,6 +232,7 @@ def model_tokenizers_path_tmp_path(tmpdir_factory):
     # There was no easy way to add tokens to IR in tests, so we remove them
     # and set tokens in configs and to check if they are read and validated correctly.
     import openvino as ov
+    
     # copy openvino converted model and tokenizers
     for pattern in ['*.xml', '*.bin']:
         for src_file in path.glob(pattern):
@@ -246,7 +247,6 @@ def model_tokenizers_path_tmp_path(tmpdir_factory):
                     ov_model.set_rt_info("pad_token_id", "")
                     ov_model.set_rt_info("eos_token_id", "")
                     ov_model.set_rt_info("chat_template", "")
-                    breakpoint()
                     ov.save_model(ov_model, str(temp_path / src_file.name))
                     
             if src_file in ['openvino_tokenizer.bin', 'openvino_detokenizer.bin']:

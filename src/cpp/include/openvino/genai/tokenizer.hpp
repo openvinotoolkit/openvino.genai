@@ -32,7 +32,7 @@ public:
      * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
      * @param properties Properties passed to ov::Core::compile_model
      */
-    Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
+    explicit Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
 
     /**
      * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights

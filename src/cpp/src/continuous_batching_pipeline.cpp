@@ -29,7 +29,6 @@ extract_draft_model_from_config(ov::AnyMap& config) {
 }
 
 
-// TODO: Check whether this ctor is necessary.
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
