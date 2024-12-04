@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1395,6 +1395,48 @@ class UNet2DConditionModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
+class VLMDecodedResults:
+    """
+    
+        Structure to store resulting batched text outputs and scores for each batch.
+        The first num_return_sequences elements correspond to the first batch element.
+    
+        Parameters:
+        texts:      vector of resulting sequences.
+        scores:     scores for each sequence.
+        metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+    """
+    def __init__(self) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def perf_metrics(self) -> VLMPerfMetrics:
+        ...
+    @property
+    def scores(self) -> list[float]:
+        ...
+    @property
+    def texts(self) -> list[str]:
+        ...
+class VLMPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
+        :type get_prepare_embeddings_duration: MeanStdPair
+    
+        :param vlm_raw_metrics: VLM specific raw metrics
+        :type VLMRawPerfMetrics:
+    """
+    def __init__(self) -> None:
+        ...
+    def get_prepare_embeddings_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
+        ...
 class VLMPipeline:
     """
     This class is used for generation with VLMs
@@ -1410,7 +1452,7 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1430,10 +1472,10 @@ class VLMPipeline:
             :type : Dict
         
             :return: return results in decoded form
-            :rtype: DecodedResults
+            :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1453,10 +1495,10 @@ class VLMPipeline:
             :type : Dict
         
             :return: return results in decoded form
-            :rtype: DecodedResults
+            :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1472,7 +1514,7 @@ class VLMPipeline:
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
         
             :return: return results in decoded form
-            :rtype: DecodedResults
+            :rtype: VLMDecodedResults
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -1483,6 +1525,19 @@ class VLMPipeline:
     def set_generation_config(self, new_config: GenerationConfig) -> None:
         ...
     def start_chat(self, system_message: str = '') -> None:
+        ...
+class VLMRawPerfMetrics:
+    """
+    
+        Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
+    
+        :param prepare_embeddings_durations: Durations of embeddings preparation.
+        :type prepare_embeddings_durations: List[MicroSeconds]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def prepare_embeddings_durations(self) -> list[float]:
         ...
 class WhisperDecodedResultChunk:
     """
@@ -1620,7 +1675,7 @@ class WhisperPerfMetrics(PerfMetrics):
     
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
-        :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+        :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
         :type get_features_extraction_duration: MeanStdPair
     
         :param whisper_raw_metrics: Whisper specific raw metrics
