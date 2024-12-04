@@ -12,10 +12,7 @@ import os
 import pandas as pd
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
-from optimum.exporters.tasks import TasksManager
-from optimum.intel import OVPipelineForText2Image
-from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
-from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
+from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM, OVPipelineForText2Image
 from PIL import Image
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel, AutoModelForVision2Seq
 import openvino as ov
@@ -25,15 +22,6 @@ from whowhatbench import EVALUATOR_REGISTRY
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = (
-    TasksManager._SUPPORTED_MODEL_TYPE["llama"]
-)
-NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
-    num_layers="num_hidden_layers",
-    num_attention_heads="num_attention_heads",
-)
-
 
 class GenAIModelWrapper:
     """
