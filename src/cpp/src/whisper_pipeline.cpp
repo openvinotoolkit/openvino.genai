@@ -53,7 +53,7 @@ public:
                                 const ov::AnyMap& properties)
         : WhisperPipelineImplBase{models_path} {
         ov::Core core = utils::singleton_core();
-        auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+        auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(properties);
         core.set_property(core_properties);
 
         m_models.encoder =
