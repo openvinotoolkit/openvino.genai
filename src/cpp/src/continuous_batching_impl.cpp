@@ -22,7 +22,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     
     ov::Core core;
-    auto [core_properties, compile_properties] = utils::split_core_complile_config(properties);
+
+    auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
     core.set_property(core_properties);
 
     DeviceConfig device_config(core, scheduler_config, device, compile_properties);
@@ -55,7 +56,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     }
 
     SchedulerConfig updated_config = scheduler_config;
-    // update KV number in scheduler config
+    // update KV blocks number in scheduler config
     if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
         updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
     }
@@ -164,24 +165,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
         timer.end();
-
-        ov::InferRequest infer_request = m_model_runner->get_infer_request();
-        ov::CompiledModel compiled_model = infer_request.get_compiled_model();
-        const bool is_profiling_enabled = compiled_model.get_property(ov::enable_profiling);
-
-        // collect detailed statistic
-        if (is_profiling_enabled) {
-            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
-            for (const ov::ProfilingInfo& info : profiling_info) {
-                double current_time = info.real_time.count();
-                if (info.node_type == "PagedAttentionExtension") {
-                    m_perf.m_paged_attention_time_ms += current_time;
-                } else if (info.node_type == "FullyConnected") {
-                    m_perf.m_matmul_time_ms += current_time;
-                }
-                m_perf.m_infer_total_ms += current_time;
-            }
-        }
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP

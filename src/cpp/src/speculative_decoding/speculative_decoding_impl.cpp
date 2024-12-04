@@ -26,7 +26,7 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
                                                                              const ov::genai::ModelDesc& draft_model_desc) {
     ov::Core core;
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(main_model_desc.properties);
+    auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(main_model_desc.properties);
     core.set_property(core_properties);
 
     auto main_model = main_model_desc.model;

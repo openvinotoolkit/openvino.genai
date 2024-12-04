@@ -75,7 +75,7 @@ public:
         const ov::genai::GenerationConfig& generation_config
     ) : LLMPipelineImplBase(tokenizer, generation_config) {
         ov::Core core;
-        auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_complile_config(config);
+        auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
         utils::slice_matmul_statefull_model(model);
 
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
@@ -699,7 +699,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::GenerationConfig& generation_config
 ){
     auto [properties, model_descr] = ov::genai::split_model_descr(config);
-    auto [core_properties, plugin_config] = ov::genai::utils::split_core_complile_config(properties);
+    auto [core_properties, plugin_config] = ov::genai::utils::split_core_compile_config(properties);
 
     auto start_time = std::chrono::steady_clock::now();
     if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end()) {

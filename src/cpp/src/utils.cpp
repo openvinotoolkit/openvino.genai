@@ -205,7 +205,7 @@ ProcessorConfig from_any_map(
  * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
  * Move this options to `core.set_property` config
  */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties) {
+std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
     const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
     ov::AnyMap core_properties;
     ov::AnyMap compile_properties{properties};
@@ -237,7 +237,7 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
 };
 
 std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-    auto [core_properties, compile_properties] = split_core_complile_config(properties);
+    auto [core_properties, compile_properties] = split_core_compile_config(properties);
     ov::Core core;
     core.set_property(core_properties);
     std::filesystem::path openvino_model_name = "openvino_model.xml";
