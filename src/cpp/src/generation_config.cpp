@@ -49,6 +49,9 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // note that logprobs is not present in HF GenerationConfig
     read_json_param(data, "logprobs", logprobs);
 
+    // append EOS to stop_token_ids
+    set_eos_token_id(eos_token_id);
+
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
         if (field_type == nlohmann::json::value_t::string && data["early_stopping"] == "never") {
