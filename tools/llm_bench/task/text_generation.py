@@ -10,9 +10,11 @@ import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 import numpy as np
 import hashlib
+import threading
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.output_csv
 from transformers import set_seed
+from llm_bench_utils.ov_utils import GenaiChunkStreamer, OptimumChunkStreamer
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
@@ -24,7 +26,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
-                        prompt_index, bench_hook, model_precision, proc_id, mem_consumption):
+                        prompt_index, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -53,25 +55,48 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         mem_consumption.start_collect_memory_consumption()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
-    if args['infer_count'] is not None and args['end_token_stopping'] is False:
-        model.generation_config.eos_token_id = None
-        model.config.eos_token_id = None
-        result = model.generate(
-            **input_data,
-            max_new_tokens=int(max_gen_tokens),
-            num_beams=args['num_beams'],
-            use_cache=True,
-            eos_token_id=None,
-            do_sample=False
-        )
+    if streaming:
+        if args['infer_count'] is not None and args['end_token_stopping'] is False:
+            model.generation_config.eos_token_id = None
+            model.config.eos_token_id = None
+            result = model.generate(
+                **input_data,
+                max_new_tokens=int(max_gen_tokens),
+                num_beams=args['num_beams'],
+                use_cache=True,
+                eos_token_id=None,
+                do_sample=False,
+                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len)
+            )
+        else:
+            result = model.generate(
+                **input_data,
+                max_new_tokens=int(max_gen_tokens),
+                num_beams=args['num_beams'],
+                use_cache=True,
+                do_sample=False,
+                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len)
+            )
     else:
-        result = model.generate(
-            **input_data,
-            max_new_tokens=int(max_gen_tokens),
-            num_beams=args['num_beams'],
-            use_cache=True,
-            do_sample=False
-        )
+        if args['infer_count'] is not None and args['end_token_stopping'] is False:
+            model.generation_config.eos_token_id = None
+            model.config.eos_token_id = None
+            result = model.generate(
+                **input_data,
+                max_new_tokens=int(max_gen_tokens),
+                num_beams=args['num_beams'],
+                use_cache=True,
+                eos_token_id=None,
+                do_sample=False
+            )
+        else:
+            result = model.generate(
+                **input_data,
+                max_new_tokens=int(max_gen_tokens),
+                num_beams=args['num_beams'],
+                use_cache=True,
+                do_sample=False
+            )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -172,7 +197,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 
 def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index,
-                              streamer, model_precision, proc_id, mem_consumption):
+                              streamer, tokens_len, streaming, model_precision, proc_id, mem_consumption):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -208,7 +233,18 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
         log.info(config_info)
     start = time.perf_counter()
-    generation_result = model.generate(input_text_list, gen_config)
+    if streaming:
+        text_print_streamer = GenaiChunkStreamer(model.get_tokenizer(), tokens_len)
+        def token_printer():
+            # Getting next elements from iterable will be blocked until a new token is available.
+            for word in text_print_streamer:
+                print(word, end='', flush=True)
+        printer_thread = threading.Thread(target=token_printer, daemon=True)
+        printer_thread.start()
+        generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], do_sample=False, streamer=text_print_streamer)
+        printer_thread.join()
+    else:
+        generation_result = model.generate(input_text_list, gen_config)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
@@ -298,9 +334,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
-
 def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
-                                          prompt_index, streamer, model_precision, proc_id, mem_consumption):
+                                          prompt_index, streamer, tokens_len, streaming, model_precision, proc_id, mem_consumption):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -422,7 +457,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     streamer.reset()
 
 
-def run_text_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+def run_text_generation_benchmark(model_path, framework, device, tokens_len, streaming, args, num_iters, mem_consumption):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -461,7 +496,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
                     log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
-                            p_idx, bench_hook, model_precision, proc_id, mem_consumption)
+                            p_idx, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
