@@ -86,6 +86,8 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, std::vector<int64_t> add_to_front);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

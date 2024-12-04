@@ -9,12 +9,11 @@
 #include <regex>
 #include <vector>
 
+#include "utils.hpp"
+#include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
-#include "debug_utils.hpp"
-
-#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -51,7 +50,7 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 }
 
 
-std::pair<EncodedResults, int32_t> get_lm_encoded_results(
+EncodedResults get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
     const ov::Tensor& attention_mask,
@@ -59,14 +58,8 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
-    std::optional<EmbeddingsModel> m_embedding,
-    std::optional<int32_t> selected_beam_idx
+    std::optional<EmbeddingsModel> m_embedding
 ) {
-    std::vector<GenerationHandle> generations;
-    for (SequenceGroup::Ptr sequence_group : sequence_groups) {
-        generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
-    }
-
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
 
@@ -88,10 +81,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
     auto beam_data = beam_idx.data<int32_t>();
-    if (selected_beam_idx.has_value())
-        beam_data[0] = *selected_beam_idx;
-    else
-        std::fill_n(beam_data, batch_size, 0);
+    std::fill_n(beam_data, batch_size, 0);
     m_llm.set_tensor("beam_idx", beam_idx);
 
     const auto infer_start = std::chrono::steady_clock::now();
@@ -161,7 +151,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
 
-                // for different sequences iteration of beams started from 0, but we collect it to one input_ids#
+                // for different sequences iteration of beams started from 0, but we collect it to one input_ids
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
             }
         }
@@ -176,13 +166,12 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
 
         if (m_embedding.has_value()) {
             const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids);
-
-            m_llm.get_tensor("inputs_embeds").set_shape(embed_prompt_tensor.get_shape());
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
         } else {
-            m_llm.get_tensor("input_ids").set_shape(new_input_ids.get_shape());
             m_llm.set_tensor("input_ids", new_input_ids);
         }
+
+        m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
 
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
@@ -190,8 +179,13 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
             update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
         }
 
-        m_llm.get_tensor("beam_idx").set_shape({ total_num_tokens });
-        m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+        if (streamer_ptr) {
+            // stream data from first sequence
+            int64_t out_token = sequence_groups.at(0).get()->operator[](0)->get_generated_ids().back();
+            if (streamer_ptr->put(out_token)) {
+                break;
+            }
+        }
 
         const auto infer_start = std::chrono::steady_clock::now();
         m_llm.infer();
@@ -201,14 +195,6 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
-
-        if (streamer_ptr) {
-            // stream data from first sequence
-            int64_t out_token = sequence_groups.at(0).get()->operator[](0)->get_generated_ids().back();
-            if (streamer_ptr->put(out_token)) {
-                break;
-            }
-        }
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
 
@@ -223,26 +209,20 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         streamer_ptr->put(out_token);
         streamer_ptr->end();
     }
-    
-    size_t next_selected_beam = 0;
-    for (size_t i = 0; i < sequence_groups.size(); i++) {
-        auto request = sequence_groups[i];
-        auto generation_outputs = generations[i]->read_all();
 
-        std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
-            return r1.score > r2.score;
-        });
+    for (auto& sequence_group : sequence_groups) {
+        // sequences is sorted by cumulative_log_prob with length_penalty
+        auto outputs = sequence_group->get_finished_sequences();
 
-        auto num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, generation_outputs.size());
-        for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-            const auto& generation_output = generation_outputs[generation_output_idx];
-            results.tokens.push_back(std::move(generation_output.generated_ids));
-            results.scores.push_back(generation_output.score);
+        auto num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, outputs.size());
+        for (size_t output_idx = 0; output_idx < num_outputs; ++output_idx) {
+            const auto& output = outputs[output_idx];
+            results.tokens.push_back(output->get_generated_ids());
+            results.scores.push_back(output->get_cumulative_score_with_length_penalty(sequence_group->get_sampling_parameters()));
         }
-        // next_selected_beam = sampler.last_selected_beam(request);
     }
 
-    return {results, next_selected_beam};
+    return results;
 }
 
 }  // namespace genai
