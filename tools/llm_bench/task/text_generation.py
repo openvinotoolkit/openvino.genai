@@ -235,13 +235,18 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     start = time.perf_counter()
     if streaming:
         text_print_streamer = GenaiChunkStreamer(model.get_tokenizer(), tokens_len)
+
         def token_printer():
             # Getting next elements from iterable will be blocked until a new token is available.
             for word in text_print_streamer:
                 print(word, end='', flush=True)
         printer_thread = threading.Thread(target=token_printer, daemon=True)
         printer_thread.start()
-        generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], do_sample=False, streamer=text_print_streamer)
+        generation_result = model.generate(
+            input_text_list,
+            gen_config,
+            streamer=text_print_streamer
+        )
         printer_thread.join()
     else:
         generation_result = model.generate(input_text_list, gen_config)

@@ -14,6 +14,10 @@ from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES, IMAGE_GEN_CLS
 import openvino.runtime.opset13 as opset
 from transformers import pipeline
+import openvino_genai as ov_genai
+import queue
+from transformers.generation.streamers import BaseStreamer
+from transformers import AutoConfig, AutoTokenizer
 
 
 def generate_simplified(self, *args, **kwargs):
@@ -526,8 +530,7 @@ def is_genai_available(log_msg=False):
             return False
     return True
 
-import openvino_genai as ov_genai
-import queue
+
 class GenaiChunkStreamer(ov_genai.StreamerBase):
     """
     A custom streamer class for handling token streaming and detokenization with buffering.
@@ -539,7 +542,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
         print_len (int): The length of the printed text to manage incremental decoding.
     """
 
-    def __init__(self, tokenizer, tokens_len = 1):
+    def __init__(self, tokenizer, tokens_len=1):
         """
         Initializes the IterableStreamer with the given tokenizer.
         
@@ -643,8 +646,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
             self.print_len = 0
         self.put_word(None)
 
-from transformers.generation.streamers import BaseStreamer
-from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer, TextIteratorStreamer
+
 class OptimumChunkStreamer(BaseStreamer):
     """
     Simple text streamer that prints the token(s) to stdout as soon as entire words are formed.
@@ -670,7 +672,8 @@ class OptimumChunkStreamer(BaseStreamer):
         An increasing sequence: one, two, three, four, five, six, seven, eight, nine, ten, eleven,
         ```
     """
-    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False, tokens_len = 1, **decode_kwargs):
+    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False,
+                 tokens_len: int = 1, **decode_kwargs):
         self.tokenizer = tokenizer
         self.skip_prompt = skip_prompt
         self.decode_kwargs = decode_kwargs
@@ -679,6 +682,7 @@ class OptimumChunkStreamer(BaseStreamer):
         self.print_len = 0
         self.next_tokens_are_prompt = True
         self.tokens_len = tokens_len
+
     def put(self, value):
         """
         Receives tokens, decodes them, and prints them to stdout as soon as they form entire words.
@@ -693,37 +697,44 @@ class OptimumChunkStreamer(BaseStreamer):
         # Add the new token to the cache and decodes the entire thing.
         self.token_cache.extend(value.tolist())
         if len(self.token_cache) % self.tokens_len == 0:
-            text = self.tokenizer.decode(self.token_cache, **self.decode_kwargs)
+            text = self.tokenizer.decode(
+                self.token_cache, **self.decode_kwargs
+            )
             # After the symbol for a new line, we flush the cache.
             if text.endswith("\n"):
-                printable_text = text[self.print_len :]
+                printable_text = text[self.print_len:]
                 self.token_cache = []
                 self.print_len = 0
             # If the last token is a CJK character, we print the characters.
             elif len(text) > 0 and self._is_chinese_char(ord(text[-1])):
-                printable_text = text[self.print_len :]
+                printable_text = text[self.print_len:]
                 self.print_len += len(printable_text)
             # Otherwise, prints until the last space char (simple heuristic to avoid printing incomplete words,
             # which may change with the subsequent token -- there are probably smarter ways to do this!)
             else:
-                printable_text = text[self.print_len : text.rfind(" ") + 1]
+                printable_text = text[self.print_len: text.rfind(" ") + 1]
                 self.print_len += len(printable_text)
             self.on_finalized_text(printable_text)
+
     def end(self):
         """Flushes any remaining cache and prints a newline to stdout."""
         # Flush the cache, if it exists
         if len(self.token_cache) > 0:
-            text = self.tokenizer.decode(self.token_cache, **self.decode_kwargs)
-            printable_text = text[self.print_len :]
+            text = self.tokenizer.decode(
+                self.token_cache, **self.decode_kwargs
+            )
+            printable_text = text[self.print_len:]
             self.token_cache = []
             self.print_len = 0
         else:
             printable_text = ""
         self.next_tokens_are_prompt = True
         self.on_finalized_text(printable_text, stream_end=True)
+
     def on_finalized_text(self, text: str, stream_end: bool = False):
         """Prints the new text to stdout. If the stream is ending, also prints a newline."""
         print(text, flush=True, end="" if not stream_end else None)
+
     def _is_chinese_char(self, cp):
         """Checks whether CP is the codepoint of a CJK character."""
         # This defines a "chinese character" as anything in the CJK Unicode block:

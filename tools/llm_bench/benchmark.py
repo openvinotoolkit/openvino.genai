@@ -172,7 +172,12 @@ CASE_TO_BENCH = {
 
 def main():
     logging_kwargs = {"encoding": "utf-8"} if sys.version_info[1] > 8 else {}
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, **logging_kwargs)
+    log.basicConfig(
+        format='[ %(levelname)s ] %(message)s',
+        level=os.environ.get("LOGLEVEL", log.INFO),
+        stream=sys.stdout,
+        **logging_kwargs
+    )
     args = get_argprser()
 
     if args.tokens_len is not None and not args.streaming:
@@ -180,10 +185,10 @@ def main():
         exit(1)
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
-        exit(1)        
-    
-    model_path, framework, model_args, model_name = llm_bench_utils.model_utils.analyze_args(args)
-
+        exit(1)
+    model_path, framework, model_args, model_name = (
+        llm_bench_utils.model_utils.analyze_args(args)
+    )
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args['torch_compile_backend']:
         ov_torch_backend_device = str(args.device)
