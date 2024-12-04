@@ -138,14 +138,14 @@ void init_perf_metrics(py::module_& m) {
             return timestamp_to_ms(rw, &RawPerfMetrics::m_new_token_times);
         })
         .def_property_readonly("token_infer_durations", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::m_token_infer_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_token_infer_durations);
         })
         .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
             return pyutils::get_ms(rw, &RawPerfMetrics::m_durations);
         })
         .def_property_readonly("inference_durations", [](const RawPerfMetrics &rw) {
-            return get_ms(rw, &RawPerfMetrics::m_inference_durations);
+            return pyutils::get_ms(rw, &RawPerfMetrics::m_inference_durations);
         });
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
