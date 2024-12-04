@@ -112,7 +112,7 @@ class VisualTextEvaluator(TextEvaluator):
         def default_gen_answer(
             model, prompt, image, processor, tokenizer, max_new_tokens, crop_question
         ):
-            
+
             from optimum.intel.openvino.modeling_visual_language import \
                 MODEL_TYPE_TO_CLS_MAPPING
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
