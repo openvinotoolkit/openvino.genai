@@ -1102,22 +1102,5 @@ EncodedResults StaticLLMPipeline::generate(
     return results;
 }
 
-std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties) {
-    ov::AnyMap main_properties = properties;
-    ov::genai::ModelConfigDesc model_descr;
-
-    auto pop_property = [](ov::AnyMap& orig_propertis, const std::string& key, auto& value) {
-        if (orig_propertis.find(key) != orig_propertis.end()) {
-            value = orig_propertis.at(key).as<std::decay_t<decltype(value)>>();
-            orig_propertis.erase(key);
-        }
-    };
-    pop_property(main_properties, "name_or_path", model_descr.name_or_path);
-    pop_property(main_properties, "type", model_descr.type);
-    pop_property(main_properties, "num_key_value_heads", model_descr.num_key_value_heads);
-    
-    return {main_properties, model_descr};
-}
-
 }  // namespace genai
 }  // namespace ov

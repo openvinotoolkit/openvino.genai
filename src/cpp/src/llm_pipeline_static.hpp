@@ -85,13 +85,5 @@ private:
     ChatHistory m_history;
 };
 
-/* 
-* NPU reads some properties from the config file, but when LLMPipeline is initialized
-* from the model_str and weights_tensor, there are not files. 
-* In the later case ModelDesc is stored in properties.
-* This function pops ModelDescr from the the properties and returns a pair of updated properties and ModelDescr.
-*/
-std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties);
-
 }  // namespace genai
 }  // namespace ov

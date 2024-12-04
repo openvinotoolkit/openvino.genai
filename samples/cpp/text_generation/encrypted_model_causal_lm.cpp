@@ -5,7 +5,7 @@
 #include <fstream>
 
 std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, const std::string& weights_path) {
-        std::ifstream model_file(model_path);
+    std::ifstream model_file(model_path);
     std::ifstream weights_file(weights_path, std::ios::binary);
     if (!model_file.is_open() || !weights_file.is_open()) {
         throw std::runtime_error("Cannot open model or weights file");
@@ -42,15 +42,7 @@ int main(int argc, char* argv[]) try {
     auto [model_str, model_weights] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
     
-    // NPU reads some properties from the config file, but when LLMPipeline is initialized 
-    // from the model_str and weights_tensor, there not such folder. Therefore, we need to
-    // pass these properties manually.
-    // This is necessary only for NPU, for other plugins can be ommited.
-    ov::AnyMap model_descr_properties = {{"name_or_path", "meta-llama/Llama-2-7b-chat-hf"}, 
-                                         {"type", "llama"}, 
-                                         {"num_key_value_heads", 32}};
-
-    ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device, model_descr_properties);
+    ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device);
 
     std::string result = pipe.generate(prompt, ov::genai::max_new_tokens(100));
     std::cout << result << std::endl;
