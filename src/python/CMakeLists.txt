@@ -105,7 +105,10 @@ else()
     message(FATAL_ERROR "Internal error: failed to parse pybind11-stubgen version from from '${pyproject_toml}'")
 endif()
 
-if(OpenVINODeveloperPackage_FOUND)
+if(CMAKE_CROSSCOMPILING)
+    # we cannot check OpenVINO during cross-compile
+    set(pybind11_stubgen_AVAILABLE OFF)
+elseif(OpenVINODeveloperPackage_FOUND)
     ov_check_pip_package(REQUIREMENT ${pybind11_stubgen_dep}
                          RESULT_VAR pybind11_stubgen_AVAILABLE
                          WARNING_MESSAGE "Please, install ${pybind11_stubgen_dep} if you plan to develop Python OpenVINO GenAI API"
@@ -127,23 +130,6 @@ elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
         set(openvino_pythonpath "$ENV{INTEL_OPENVINO_DIR}/python")
     elseif(LINUX AND NOT OpenVINO_DIR STREQUAL OpenVINO_DIR_PY)
         # here we imply that OpenVINO_DIR_PY points to manylinux, while OpenVINO_DIR point to Ubuntu binaries
-        set(pybind11_stubgen_AVAILABLE OFF)
-    endif()
-endif()
-
-# but we also need to check whether OpenVINO is installed
-if(CMAKE_CROSSCOMPILING)
-    # we cannot check OpenVINO during cross-compile
-    set(pybind11_stubgen_AVAILABLE OFF)
-else()
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "import openvino"
-        RESULT_VARIABLE EXIT_CODE
-        OUTPUT_VARIABLE OUTPUT_TEXT
-        ERROR_VARIABLE ERROR_TEXT)
-
-    # OpenVINO is not available because of import error
-    if(NOT EXIT_CODE EQUAL 0)
         set(pybind11_stubgen_AVAILABLE OFF)
     endif()
 endif()
