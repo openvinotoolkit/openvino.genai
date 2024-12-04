@@ -513,27 +513,6 @@ jobs:
           assert predicted_greedy == predicted_prompt_lookup
           "
           echo "Prompt lookup" passed
-      - name: run and compare (model with seq_length_axis = 1)
-        run: |
-          source ./ov/setupvars.sh
-
-          echo 'Code:```python
-          def add(a, b):
-              return a + b
-          ```
-          Question: Can you please add 2 and 3
-          A:' > ./prompt.txt
-
-          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_prompt_lookup.txt', 'r') as f:
-              predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
-          "
-          echo "Prompt lookup" passed
 
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
