@@ -228,7 +228,9 @@ def model_tokenizers_path_tmp_path(tmpdir_factory):
     model_id, path, _, _, _ = read_model(get_models_list()[0])
     temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
 
-    # Need to remove RT info from IR so that it will load from configs
+    # If tokens were not found in IR, it fallback to reading from config.
+    # There was no easy way to add tokens to IR in tests, so we remove them
+    # and set tokens in configs and to check if they are read and validated correctly.
     import openvino as ov
     # copy openvino converted model and tokenizers
     for pattern in ['*.xml', '*.bin']:
@@ -240,13 +242,12 @@ def model_tokenizers_path_tmp_path(tmpdir_factory):
                 if src_file.exists():
                     # Load the XML content
                     ov_model = core.read_model(src_file)
-                    # Add rt_info about chat_template
+                    # Add empty rt_info so that tokens will be read from config instead of IR
                     ov_model.set_rt_info("pad_token_id", "")
                     ov_model.set_rt_info("eos_token_id", "")
                     ov_model.set_rt_info("chat_template", "")
                     breakpoint()
                     ov.save_model(ov_model, str(temp_path / src_file.name))
-                    print("AAAAAAAAAAAAAAAAA", ov_model.get_rt_info("pad_token_id"))
                     
             if src_file in ['openvino_tokenizer.bin', 'openvino_detokenizer.bin']:
                 continue

@@ -69,7 +69,7 @@ jobs:
           PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && samples/python/greedy_causal_lm/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
+          && samples/python/text_generation/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
         env:
           PYTHONPATH: "./build"
 
@@ -249,7 +249,7 @@ jobs:
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
-          && .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
+          && .\build\samples\cpp\text_generation\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
       - run: |
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
@@ -266,13 +266,13 @@ jobs:
           set PATH=.\build\openvino_genai\;%PATH%
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+          && python samples\python\text_generation\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
+          && python samples\python\text_generation\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores

@@ -509,7 +509,7 @@ def test_load_special_tokens_str_2(model_tmp_path):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.skip(reason="rtinfo is not modified in tests for unknown reasons")
+@pytest.mark.skip(reason="CVS-158682 - RTInfo is not modified in tests for unknown reasons")
 def test_load_special_tokens_3_(model_tokenizers_path_tmp_path):
     # special_tokens_map is not available 
     # but tokenize_config.json exists
@@ -606,6 +606,8 @@ def test_load_special_tokens_4(model_tmp_path):
 
 invalid_configs = [
     dict(num_beam_groups=3, num_beams=15, do_sample=True),
+    # TODO: CVS-158682 eos_token_id is still read from tiny-random-phi3 and we cannot modify RTInfo in tests
+    # dict(do_sample=True),  # no eos_token_id no max_new_tokens, no max_len 
     dict(eos_token_id=42, ignore_eos=True),  # no max_new_tokens, no max_len with ignore_eos
     dict(repetition_penalty=-1.0, eos_token_id=42, max_new_tokens=20), # invalid penalty
     dict(temperature=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid temp

@@ -59,16 +59,16 @@ constexpr char bos_token_key_name[] = "bos_token";
 constexpr char eos_token_key_name[] = "eos_token";
 constexpr char pad_token_key_name[] = "pad_token";
 
-static ov::Core get_core_singleton() {
-    static ov::Core core;
-    static bool is_extension_added = false;
+ov::Core core_with_extension() {
+    ov::Core core;
+    const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+    OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
+    core.add_extension(ov_tokenizer_path);
+    return core;
+}
 
-    if (!is_extension_added) {
-        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-        OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
-        core.add_extension(ov_tokenizer_path);
-        is_extension_added = true;
-    }
+ov::Core get_core_singleton() {
+    static ov::Core core = core_with_extension();
     return core;
 }
 
