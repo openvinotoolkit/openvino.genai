@@ -36,9 +36,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const ov::AnyMap& tokenizer_properties) {
     auto properties_without_draft_model = properties;
     auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
-    if (properties_without_draft_model.count(ov::genai::enable_prompt_lookup.name())) {
-        properties_without_draft_model.erase(ov::genai::enable_prompt_lookup.name());
-        m_impl = std::make_shared<PromptLookupImpl>(models_path, scheduler_config, device, properties_without_draft_model, tokenizer_properties);
+    if (properties_without_draft_model.count(utils::PROMPT_LOOKUP_ARG_NAME)) {
+        size_t max_ngram_size = properties_without_draft_model.at(utils::PROMPT_LOOKUP_ARG_NAME).as<size_t>();
+        properties_without_draft_model.erase(utils::PROMPT_LOOKUP_ARG_NAME);
+        m_impl = std::make_shared<PromptLookupImpl>(models_path, scheduler_config, device, properties_without_draft_model, max_ngram_size, tokenizer_properties);
     } else if (draft_model.models_path.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, properties, tokenizer_properties);
     } else {
@@ -54,9 +55,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const ov::AnyMap& properties) {
     auto properties_without_draft_model = properties;
     auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
-    if (properties_without_draft_model.count(ov::genai::enable_prompt_lookup.name())) {
-        properties_without_draft_model.erase(ov::genai::enable_prompt_lookup.name());
-        m_impl = std::make_shared<PromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties_without_draft_model);
+    if (properties_without_draft_model.count(utils::PROMPT_LOOKUP_ARG_NAME)) {
+        size_t max_ngram_size = properties_without_draft_model.at(utils::PROMPT_LOOKUP_ARG_NAME).as<size_t>();
+        properties_without_draft_model.erase(utils::PROMPT_LOOKUP_ARG_NAME);
+        m_impl = std::make_shared<PromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties_without_draft_model, max_ngram_size);
     } else if (draft_model.models_path.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, tokenizer, scheduler_config, device, properties);
     } else {

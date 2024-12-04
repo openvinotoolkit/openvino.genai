@@ -304,11 +304,11 @@ inline std::pair<std::string, Any> draft_model(
 static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 /**
-* @brief enable_prompt_lookup property serves to activate prompt_lookup decoding.
+* @brief enable_prompt_lookup property serves to activate prompt lookup decoding.
 * Set `true` to activate this mode.
 * And create LLMPipeline instance with this config.
 */
-static constexpr ov::Property<bool> enable_prompt_lookup{"enable_prompt_lookup"};
+OPENVINO_GENAI_EXPORTS std::pair<std::string, size_t> prompt_lookup(size_t max_ngram_size = 3);
 
 }  // namespace genai
 }  // namespace ov

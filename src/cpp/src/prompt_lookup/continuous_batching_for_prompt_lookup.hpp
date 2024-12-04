@@ -12,31 +12,39 @@ class ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl : public
 public:
     ContinuousBatchingForPromptLookupImpl() = default;
 
-    ContinuousBatchingForPromptLookupImpl(const std::filesystem::path& models_path,
-                           const Tokenizer& tokenizer,
-                           const SchedulerConfig& scheduler_config,
-                           const std::string& device,
-                           const ov::AnyMap& properties) :
+    ContinuousBatchingForPromptLookupImpl(
+        const std::filesystem::path& models_path,
+        const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        size_t max_ngram_size) :
     ContinuousBatchingImpl{ models_path,
                             tokenizer,
                             scheduler_config,
                             device,
                             properties,
-                            true } {};
+                            true } {
+        m_max_ngram_size = max_ngram_size;
+    };
 
-    ContinuousBatchingForPromptLookupImpl(const std::filesystem::path& models_path,
-                           const SchedulerConfig& scheduler_config,
-                           const std::string& device,
-                           const ov::AnyMap& properties,
-                           const ov::AnyMap& tokenizer_properties) :
+    ContinuousBatchingForPromptLookupImpl(
+        const std::filesystem::path& models_path,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        size_t max_ngram_size,
+        const ov::AnyMap& tokenizer_properties = {}) :
     ContinuousBatchingImpl{ models_path,
                             Tokenizer(models_path, tokenizer_properties),
                             scheduler_config,
                             device,
                             properties,
-                            true } {};
+                            true } {
+        m_max_ngram_size = max_ngram_size;
+    };
                             
-    void fill_candidates();
+    void generate_candidates();
 
     // { generated_len, validation_len }
     using SequenceLen = std::pair<uint64_t, uint64_t>;

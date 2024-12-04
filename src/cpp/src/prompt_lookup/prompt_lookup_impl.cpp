@@ -27,9 +27,9 @@ bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
 }
 
 void ContinuousBatchingPipeline::PromptLookupImpl::step() {
-    ManualTimer candidates_timer("prompt_lookup_decoding: fill_candidates()");
+    ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
     candidates_timer.start();
-    m_pipeline->fill_candidates();
+    m_pipeline->generate_candidates();
     candidates_timer.end();
     m_sd_metrics.draft_duration += candidates_timer.get_duration();
     auto generated_len_before = m_pipeline->get_generated_request_len();

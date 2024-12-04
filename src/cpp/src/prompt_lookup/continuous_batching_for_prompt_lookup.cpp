@@ -54,7 +54,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     return std::vector<int64_t>{};
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::fill_candidates() {
+void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates() {
     for (auto& request : m_requests) {
         const auto prompt = request->get_prompt_ids();
         size_t max_validation_len = 0;

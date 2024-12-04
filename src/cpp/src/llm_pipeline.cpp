@@ -393,6 +393,10 @@ std::pair<std::string, Any> draft_model(
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(models_path, device, plugin_config, scheduler_config) };
 }
 
+std::pair<std::string, size_t> prompt_lookup(size_t max_ngram_size) {
+    return { utils::PROMPT_LOOKUP_ARG_NAME, max_ngram_size };
+}
+
 }  // namespace genai
 }  // namespace ov
 
