@@ -8,7 +8,7 @@ import torch
 seed = 42
 generator = torch.Generator(device='cpu').manual_seed(seed)
 
-pipe = OVPipelineForInpainting.from_pretrained("/home/devuser/ilavreno/models/runwayml-stable-diffusion-inpainting")
+pipe = OVPipelineForInpainting.from_pretrained("/home/devuser/ilavreno/models/stabilityai-stable-diffusion-xl-base-1.0")
 # pipe = StableDiffusionImg2ImgPipeline.from_pretrained("dreamlike-art-dreamlike-anime-1.0")
 
 prompt = "Face of a yellow cat, high resolution, sitting on a park bench"
@@ -20,7 +20,9 @@ H, W = image.size[1], image.size[0]
 H = H // 2
 W = W // 2
 
-images = pipe(prompt, image=image, mask_image=mask_image,
+images = pipe(prompt,
+              image=image,
+              mask_image=mask_image,
               generator=generator,
             #   width=W,
             #   height=H,

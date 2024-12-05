@@ -24,7 +24,7 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
         class_name == "StableDiffusionInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
-        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "StableDiffusion3Pipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
@@ -40,7 +40,7 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
         class_name == "StableDiffusionInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline") {
-        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else if (class_name == "StableDiffusion3Pipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
