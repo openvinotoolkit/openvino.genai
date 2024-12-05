@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig, AutoProcessor
+from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -11,9 +11,16 @@ import time
 import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
-from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
+from llm_bench_utils.config_class import (
+    OV_MODEL_CLASSES_MAPPING,
+    TOKENIZE_CLASSES_MAPPING,
+    DEFAULT_MODEL_CLASSES,
+)
 import openvino.runtime.opset13 as opset
 from transformers import pipeline
+import openvino_genai as ov_genai
+import queue
+from transformers.generation.streamers import BaseStreamer
 
 
 def generate_simplified(self, *args, **kwargs):
@@ -477,3 +484,223 @@ def is_genai_available(log_msg=False):
             log.warning(ex)
             return False
     return True
+
+
+class GenaiChunkStreamer(ov_genai.StreamerBase):
+    """
+    A custom streamer class for handling token streaming and detokenization with buffering.
+    Attributes:
+        tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
+        tokens_cache (list): A buffer to accumulate tokens for detokenization.
+        text_queue (Queue): A synchronized queue for storing decoded text chunks.
+        print_len (int): The length of the printed text to manage incremental decoding.
+    """
+
+    def __init__(self, tokenizer, tokens_len=1):
+        """
+        Initializes the IterableStreamer with the given tokenizer.
+        Args:
+            tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+        """
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.tokens_cache = []
+        self.text_queue = queue.Queue()
+        self.print_len = 0
+        self.tokens_len = tokens_len
+
+    def __iter__(self):
+        """
+        Returns the iterator object itself.
+        """
+        return self
+
+    def __next__(self):
+        """
+        Returns the next value from the text queue.
+        Returns:
+            str: The next decoded text chunk.
+        Raises:
+            StopIteration: If there are no more elements in the queue.
+        """
+        value = self.text_queue.get()  # get() will be blocked until a token is available.
+        if value is None:
+            raise StopIteration
+        return value
+
+    def get_stop_flag(self):
+        """
+        Checks whether the generation process should be stopped.
+        Returns:
+            bool: Always returns False in this implementation.
+        """
+        return False
+
+    def put_word(self, word: str):
+        """
+        Puts a word into the text queue.
+        Args:
+            word (str): The word to put into the queue.
+        """
+        self.text_queue.put(word)
+
+    def put(self, token_id: int) -> bool:
+        """
+        Processes a token and manages the decoding buffer. Adds decoded text to the queue.
+        Args:
+            token_id (int): The token_id to process.
+        Returns:
+            bool: True if generation should be stopped, False otherwise.
+        """
+        self.tokens_cache.append(token_id)
+        if len(self.tokens_cache) % self.tokens_len == 0:
+            text = self.tokenizer.decode(self.tokens_cache)
+
+            word = ''
+            if len(text) > self.print_len and '\n' == text[-1]:
+                # Flush the cache after the new line symbol.
+                word = text[self.print_len:]
+                self.tokens_cache = []
+                self.print_len = 0
+            elif len(text) >= 3 and text[-3:] == chr(65533):
+                # Don't print incomplete text.
+                pass
+            elif len(text) > self.print_len:
+                # It is possible to have a shorter text after adding new token.
+                # Print to output only if text lengh is increaesed.
+                word = text[self.print_len:]
+                self.print_len = len(text)
+            self.put_word(word)
+
+            if self.get_stop_flag():
+                # When generation is stopped from streamer then end is not called, need to call it here manually.
+                self.end()
+                return True  # True means stop  generation
+            else:
+                return False  # False means continue generation
+        else:
+            return False
+
+    def end(self):
+        """
+        Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
+        """
+        text = self.tokenizer.decode(self.tokens_cache)
+        if len(text) > self.print_len:
+            word = text[self.print_len:]
+            self.put_word(word)
+            self.tokens_cache = []
+            self.print_len = 0
+        self.put_word(None)
+
+
+class OptimumChunkStreamer(BaseStreamer):
+    """
+    Simple text streamer that prints the token(s) to stdout as soon as entire words are formed.
+    <Tip warning={true}>
+    The API for the streamer classes is still under development and may change in the future.
+    </Tip>
+    Parameters:
+        tokenizer (`AutoTokenizer`):
+            The tokenized used to decode the tokens.
+        skip_prompt (`bool`, *optional*, defaults to `False`):
+            Whether to skip the prompt to `.generate()` or not. Useful e.g. for chatbots.
+        decode_kwargs (`dict`, *optional*):
+            Additional keyword arguments to pass to the tokenizer's `decode` method.
+    Examples:
+        ```python
+        >>> from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
+        >>> tok = AutoTokenizer.from_pretrained("openai-community/gpt2")
+        >>> model = AutoModelForCausalLM.from_pretrained("openai-community/gpt2")
+        >>> inputs = tok(["An increasing sequence: one,"], return_tensors="pt")
+        >>> streamer = TextStreamer(tok)
+        >>> # Despite returning the usual output, the streamer will also print the generated text to stdout.
+        >>> _ = model.generate(**inputs, streamer=streamer, max_new_tokens=20)
+        An increasing sequence: one, two, three, four, five, six, seven, eight, nine, ten, eleven,
+        ```
+    """
+    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False,
+                 tokens_len: int = 1, **decode_kwargs):
+        self.tokenizer = tokenizer
+        self.skip_prompt = skip_prompt
+        self.decode_kwargs = decode_kwargs
+        # variables used in the streaming process
+        self.token_cache = []
+        self.print_len = 0
+        self.next_tokens_are_prompt = True
+        self.tokens_len = tokens_len
+
+    def put(self, value):
+        """
+        Receives tokens, decodes them, and prints them to stdout as soon as they form entire words.
+        """
+        if len(value.shape) > 1 and value.shape[0] > 1:
+            raise ValueError("TextStreamer only supports batch size 1")
+        elif len(value.shape) > 1:
+            value = value[0]
+        if self.skip_prompt and self.next_tokens_are_prompt:
+            self.next_tokens_are_prompt = False
+            return
+        # Add the new token to the cache and decodes the entire thing.
+        self.token_cache.extend(value.tolist())
+        if len(self.token_cache) % self.tokens_len == 0:
+            text = self.tokenizer.decode(
+                self.token_cache, **self.decode_kwargs
+            )
+            # After the symbol for a new line, we flush the cache.
+            if text.endswith("\n"):
+                printable_text = text[self.print_len:]
+                self.token_cache = []
+                self.print_len = 0
+            # If the last token is a CJK character, we print the characters.
+            elif len(text) > 0 and self._is_chinese_char(ord(text[-1])):
+                printable_text = text[self.print_len:]
+                self.print_len += len(printable_text)
+            # Otherwise, prints until the last space char (simple heuristic to avoid printing incomplete words,
+            # which may change with the subsequent token -- there are probably smarter ways to do this!)
+            else:
+                printable_text = text[self.print_len: text.rfind(" ") + 1]
+                self.print_len += len(printable_text)
+            self.on_finalized_text(printable_text)
+
+    def end(self):
+        """Flushes any remaining cache and prints a newline to stdout."""
+        # Flush the cache, if it exists
+        if len(self.token_cache) > 0:
+            text = self.tokenizer.decode(
+                self.token_cache, **self.decode_kwargs
+            )
+            printable_text = text[self.print_len:]
+            self.token_cache = []
+            self.print_len = 0
+        else:
+            printable_text = ""
+        self.next_tokens_are_prompt = True
+        self.on_finalized_text(printable_text, stream_end=True)
+
+    def on_finalized_text(self, text: str, stream_end: bool = False):
+        """Prints the new text to stdout. If the stream is ending, also prints a newline."""
+        print(text, flush=True, end="" if not stream_end else None)
+
+    def _is_chinese_char(self, cp):
+        """Checks whether CP is the codepoint of a CJK character."""
+        # This defines a "chinese character" as anything in the CJK Unicode block:
+        #   https://en.wikipedia.org/wiki/CJK_Unified_Ideographs_(Unicode_block)
+        #
+        # Note that the CJK Unicode block is NOT all Japanese and Korean characters,
+        # despite its name. The modern Korean Hangul alphabet is a different block,
+        # as is Japanese Hiragana and Katakana. Those alphabets are used to write
+        # space-separated words, so they are not treated specially and handled
+        # like the all of the other languages.
+        if (
+            (cp >= 0x4E00 and cp <= 0x9FFF)
+            or (cp >= 0x3400 and cp <= 0x4DBF)  #
+            or (cp >= 0x20000 and cp <= 0x2A6DF)  #
+            or (cp >= 0x2A700 and cp <= 0x2B73F)  #
+            or (cp >= 0x2B740 and cp <= 0x2B81F)  #
+            or (cp >= 0x2B820 and cp <= 0x2CEAF)  #
+            or (cp >= 0xF900 and cp <= 0xFAFF)
+            or (cp >= 0x2F800 and cp <= 0x2FA1F)  #
+        ):  #
+            return True
+        return False
