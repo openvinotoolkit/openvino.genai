@@ -252,12 +252,11 @@ public:
     
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
-        std::string prompt_2_str =
-            generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
+        std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
         m_clip_text_encoder->infer(positive_prompt, {}, false);
         ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
-        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
 
         pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
@@ -265,7 +264,7 @@ public:
         // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
         ov::Shape text_ids_shape = {prompt_embeds.get_shape()[1], 3};
         ov::Tensor text_ids(ov::element::f32, text_ids_shape);
-        std::fill_n(text_ids.data<float>(), text_ids_shape[0] * text_ids_shape[1], 0.0f);
+        std::fill_n(text_ids.data<float>(), text_ids.get_size(), 0.0f);
 
         const size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();

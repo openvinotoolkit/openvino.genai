@@ -100,9 +100,10 @@ Text2ImagePipeline Text2ImagePipeline::stable_diffusion_3(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModelWithProjection& clip_text_model_1,
     const CLIPTextModelWithProjection& clip_text_model_2,
+    const T5EncoderModel& t5_encoder_model,
     const SD3Transformer2DModel& transformer,
     const AutoencoderKL& vae){
-    auto impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model_1, clip_text_model_2, transformer, vae);
+    auto impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::TEXT_2_IMAGE, clip_text_model_1, clip_text_model_2, t5_encoder_model, transformer, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
