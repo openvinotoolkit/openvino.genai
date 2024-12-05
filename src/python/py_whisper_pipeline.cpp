@@ -147,7 +147,7 @@ auto raw_perf_metrics_docstring = R"(
 auto perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+    :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
     :type get_features_extraction_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
@@ -323,7 +323,7 @@ void init_whisper_pipeline(py::module_& m) {
             "openvino.properties map",
             R"(
             WhisperPipeline class constructor.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
         )")
 

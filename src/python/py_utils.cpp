@@ -84,6 +84,11 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "num_inference_steps",
         "max_sequence_length"
     };
+    // These properties should be casted to ov::AnyMap, instead of std::map. 
+    std::set<std::string> any_map_properties = {
+        "GENERATE_CONFIG",
+        "PREFILL_CONFIG",
+    };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
     if (py::isinstance<py::str>(py_obj)) {
@@ -150,7 +155,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
 
-    } else if (py::isinstance<py::dict>(py_obj)) {
+    } else if (py::isinstance<py::dict>(py_obj) && any_map_properties.find(property_name) == any_map_properties.end()) {
         auto _dict = py_obj.cast<py::dict>();
         enum class PY_TYPE : int { UNKNOWN = 0, STR, INT};
         PY_TYPE detected_key_type = PY_TYPE::UNKNOWN;

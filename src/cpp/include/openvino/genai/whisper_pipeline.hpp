@@ -40,7 +40,7 @@ struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
 };
 
 struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
-    /** @brief Mean and standart deviation of Features Extraction Duration in milliseconds */
+    /** @brief Mean and standard deviation of Features Extraction Duration in milliseconds */
     MeanStdPair features_extraction_duration;
 
     MeanStdPair get_features_extraction_duration();

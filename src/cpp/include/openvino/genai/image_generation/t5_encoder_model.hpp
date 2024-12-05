@@ -26,12 +26,31 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    T5EncoderModel(const std::string& model,
+                   const Tensor& weights,
+                   const Tokenizer& tokenizer);
+
+    T5EncoderModel(const std::string&model,
+                   const Tensor& weights,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     T5EncoderModel(const std::filesystem::path& root_dir,
-                  const std::string& device,
-                  Properties&&... properties)
+                   const std::string& device,
+                   Properties&&... properties)
         : T5EncoderModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    T5EncoderModel(const std::string& model,
+                   const Tensor& weights,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   Properties&&... properties)
+        : T5EncoderModel(model, weights, tokenizer, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     T5EncoderModel(const T5EncoderModel&);
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -19,7 +19,7 @@ class Adapter:
     def __init__(self, path: os.PathLike) -> None:
         """
                     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
-                    path (str): Path to adapter file in safetensors format.
+                    path (os.PathLike): Path to adapter file in safetensors format.
         """
 class AdapterConfig:
     """
@@ -162,20 +162,20 @@ class AutoencoderKL:
     def __init__(self, vae_decoder_path: os.PathLike) -> None:
         """
                     AutoencoderKL class initialized only with decoder model.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
     def __init__(self, vae_encoder_path: os.PathLike, vae_decoder_path: os.PathLike) -> None:
         """
                     AutoencoderKL class initialized with both encoder and decoder models.
-                    vae_encoder_path (str): VAE encoder directory.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
         """
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with decoder model.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -183,8 +183,8 @@ class AutoencoderKL:
     def __init__(self, vae_encoder_path: os.PathLike, vae_decoder_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with both encoder and decoder models.
-                    vae_encoder_path (str): VAE encoder directory.
-                    vae_decoder_path (str): VAE decoder directory.
+                    vae_encoder_path (os.PathLike): VAE encoder directory.
+                    vae_decoder_path (os.PathLike): VAE decoder directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -228,13 +228,13 @@ class CLIPTextModel:
     def __init__(self, root_dir: os.PathLike) -> None:
         """
                     CLIPTextModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
         """
                     CLIPTextModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -277,13 +277,13 @@ class CLIPTextModelWithProjection:
     def __init__(self, root_dir: os.PathLike) -> None:
         """
                     CLIPTextModelWithProjection class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
         """
                     CLIPTextModelWithProjection class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -918,7 +918,7 @@ class LLMPipeline:
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
         """
                     LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
-                    models_path (str): Path to the model file.
+                    models_path (os.PathLike): Path to the model file.
                     tokenizer (openvino_genai.Tokenizer): tokenizer object.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
@@ -928,7 +928,7 @@ class LLMPipeline:
     def __init__(self, models_path: os.PathLike, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
         """
                     LLMPipeline class constructor.
-                    models_path (str): Path to the model file.
+                    models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
                     kwargs: Device properties.
@@ -1359,13 +1359,13 @@ class Text2ImagePipeline:
     def __init__(self, models_path: os.PathLike) -> None:
         """
                     Text2ImagePipeline class constructor.
-                    models_path (str): Path to the folder with exported model files.
+                    models_path (os.PathLike): Path to the folder with exported model files.
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     Text2ImagePipeline class constructor.
-                    models_path (str): Path with exported model files.
+                    models_path (os.PathLike): Path with exported model files.
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Text2ImagePipeline properties
         """
@@ -1431,17 +1431,17 @@ class Tokenizer:
         Embeds input prompts with special tags for a chat scenario.
         """
     @typing.overload
-    def decode(self, tokens: list[int]) -> str:
+    def decode(self, tokens: list[int], skip_special_tokens: bool = True) -> str:
         """
         Decode a sequence into a string prompt.
         """
     @typing.overload
-    def decode(self, tokens: openvino._pyopenvino.Tensor) -> list[str]:
+    def decode(self, tokens: openvino._pyopenvino.Tensor, skip_special_tokens: bool = True) -> list[str]:
         """
         Decode tensor into a list of string prompts.
         """
     @typing.overload
-    def decode(self, tokens: list[list[int]]) -> list[str]:
+    def decode(self, tokens: list[list[int]], skip_special_tokens: bool = True) -> list[str]:
         """
         Decode a batch of tokens into a list of string prompt.
         """
@@ -1488,13 +1488,13 @@ class UNet2DConditionModel:
     def __init__(self, root_dir: os.PathLike) -> None:
         """
                     UNet2DConditionModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
         """
                     UNet2DConditionModel class
-                    root_dir (str): Model root directory.
+                    root_dir (os.PathLike): Model root directory.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
@@ -1523,6 +1523,48 @@ class UNet2DConditionModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
+class VLMDecodedResults:
+    """
+    
+        Structure to store resulting batched text outputs and scores for each batch.
+        The first num_return_sequences elements correspond to the first batch element.
+    
+        Parameters:
+        texts:      vector of resulting sequences.
+        scores:     scores for each sequence.
+        metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+    """
+    def __init__(self) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def perf_metrics(self) -> VLMPerfMetrics:
+        ...
+    @property
+    def scores(self) -> list[float]:
+        ...
+    @property
+    def texts(self) -> list[str]:
+        ...
+class VLMPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
+        :type get_prepare_embeddings_duration: MeanStdPair
+    
+        :param vlm_raw_metrics: VLM specific raw metrics
+        :type VLMRawPerfMetrics:
+    """
+    def __init__(self) -> None:
+        ...
+    def get_prepare_embeddings_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
+        ...
 class VLMPipeline:
     """
     This class is used for generation with VLMs
@@ -1531,14 +1573,14 @@ class VLMPipeline:
         """
         device on which inference will be done
                     VLMPipeline class constructor.
-                    models_path (str): Path to the folder with exported model files.
+                    models_path (os.PathLike): Path to the folder with exported model files.
                     device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
                     kwargs: Device properties
         """
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1558,10 +1600,10 @@ class VLMPipeline:
             :type : Dict
         
             :return: return results in decoded form
-            :rtype: DecodedResults
+            :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1581,10 +1623,10 @@ class VLMPipeline:
             :type : Dict
         
             :return: return results in decoded form
-            :rtype: DecodedResults
+            :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, **kwargs) -> DecodedResults:
+    def generate(self, prompt: str, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1600,7 +1642,7 @@ class VLMPipeline:
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
         
             :return: return results in decoded form
-            :rtype: DecodedResults
+            :rtype: VLMDecodedResults
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -1611,6 +1653,19 @@ class VLMPipeline:
     def set_generation_config(self, new_config: GenerationConfig) -> None:
         ...
     def start_chat(self, system_message: str = '') -> None:
+        ...
+class VLMRawPerfMetrics:
+    """
+    
+        Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
+    
+        :param prepare_embeddings_durations: Durations of embeddings preparation.
+        :type prepare_embeddings_durations: List[MicroSeconds]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def prepare_embeddings_durations(self) -> list[float]:
         ...
 class WhisperDecodedResultChunk:
     """
@@ -1748,7 +1803,7 @@ class WhisperPerfMetrics(PerfMetrics):
     
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
-        :param get_features_extraction_duration: Returns mean and standart deviation of features extraction duration in milliseconds
+        :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
         :type get_features_extraction_duration: MeanStdPair
     
         :param whisper_raw_metrics: Whisper specific raw metrics
@@ -1768,7 +1823,7 @@ class WhisperPipeline:
     def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
         """
                     WhisperPipeline class constructor.
-                    models_path (str): Path to the model file.
+                    models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
     def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:

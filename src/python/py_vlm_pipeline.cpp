@@ -11,6 +11,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
 
@@ -37,7 +38,7 @@ auto vlm_generate_docstring = R"(
     :type : Dict
 
     :return: return results in decoded form
-    :rtype: DecodedResults
+    :rtype: VLMDecodedResults
 )";
 
 auto vlm_generate_kwargs_docstring = R"(
@@ -55,7 +56,34 @@ auto vlm_generate_kwargs_docstring = R"(
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
 
     :return: return results in decoded form
-    :rtype: DecodedResults
+    :rtype: VLMDecodedResults
+)";
+
+auto raw_perf_metrics_docstring = R"(
+    Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
+
+    :param prepare_embeddings_durations: Durations of embeddings preparation.
+    :type prepare_embeddings_durations: List[MicroSeconds]
+)";
+
+auto perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
+    :type get_prepare_embeddings_duration: MeanStdPair
+
+    :param vlm_raw_metrics: VLM specific raw metrics
+    :type VLMRawPerfMetrics:
+)";
+
+auto decoded_results_docstring = R"(
+    Structure to store resulting batched text outputs and scores for each batch.
+    The first num_return_sequences elements correspond to the first batch element.
+
+    Parameters:
+    texts:      vector of resulting sequences.
+    scores:     scores for each sequence.
+    metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
 )";
 
 py::object call_vlm_generate(
@@ -73,6 +101,35 @@ py::object call_vlm_generate(
 }
 
 void init_vlm_pipeline(py::module_& m) {
+    py::class_<ov::genai::VLMRawPerfMetrics>(m, "VLMRawPerfMetrics", raw_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_property_readonly("prepare_embeddings_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
+            return pyutils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations);
+        });
+
+    py::class_<ov::genai::VLMPerfMetrics, ov::genai::PerfMetrics>(m, "VLMPerfMetrics", perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_prepare_embeddings_duration", &ov::genai::VLMPerfMetrics::get_prepare_embeddings_duration)
+        .def_readonly("vlm_raw_metrics", &ov::genai::VLMPerfMetrics::vlm_raw_metrics);
+
+    py::class_<ov::genai::VLMDecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)
+        .def(py::init<>())
+        .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
+        .def_readonly("scores", &ov::genai::VLMDecodedResults::scores)
+        .def_readonly("perf_metrics", &ov::genai::VLMDecodedResults::perf_metrics)
+        .def("__str__", [](const ov::genai::VLMDecodedResults &dr) -> py::str {
+            auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
+            py::str res;
+            if (valid_utf8_strings.size() == 1)
+                return valid_utf8_strings[0];
+
+            for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
+                res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
+            }
+            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") + valid_utf8_strings[valid_utf8_strings.size() - 1];
+            return res;
+        });
+
     py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
         .def(py::init([](
             const std::filesystem::path& models_path,
@@ -86,7 +143,7 @@ void init_vlm_pipeline(py::module_& m) {
         py::arg("device"), "device on which inference will be done"
         R"(
             VLMPipeline class constructor.
-            models_path (str): Path to the folder with exported model files.
+            models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             kwargs: Device properties
         )")
@@ -105,7 +162,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) -> py::typing::Union<ov::genai::DecodedResults> {
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 return call_vlm_generate(pipe, prompt, images, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
@@ -122,7 +179,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) -> py::typing::Union<ov::genai::DecodedResults> {
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 return call_vlm_generate(pipe, prompt, {images}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
@@ -136,7 +193,7 @@ void init_vlm_pipeline(py::module_& m) {
             [](ov::genai::VLMPipeline& pipe,
                const std::string& prompt,
                const py::kwargs& kwargs
-            )  -> py::typing::Union<ov::genai::DecodedResults> {
+            )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 return py::cast(pipe.generate(prompt, pyutils::kwargs_to_any_map(kwargs)));
             },
             py::arg("prompt"), "Input string",

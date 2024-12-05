@@ -33,12 +33,39 @@ public:
                                 const std::string& device,
                                 const ov::AnyMap& properties = {});
 
+    CLIPTextModelWithProjection(const std::string& model,
+                                const Tensor& weights,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer);
+
+    CLIPTextModelWithProjection(const std::string& model,
+                                const Tensor& weights,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer,
+                                const std::string& device,
+                                const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     CLIPTextModelWithProjection(const std::filesystem::path& root_dir,
                                 const std::string& device,
                                 Properties&&... properties)
         : CLIPTextModelWithProjection(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModelWithProjection(const std::string& model,
+                                const Tensor& weights,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer,
+                                const std::string& device,
+                                Properties&&... properties)
+        : CLIPTextModelWithProjection(model,
+                                      weights,
+                                      config,
+                                      clip_tokenizer,
+                                      device,
+                                      ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     CLIPTextModelWithProjection(const CLIPTextModelWithProjection&);
 

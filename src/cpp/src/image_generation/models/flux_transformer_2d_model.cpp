@@ -37,6 +37,25 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root
     compile(device, properties);
 }
 
+FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
+                                               const Tensor& weights,
+                                               const Config& config,
+                                               const size_t vae_scale_factor) :
+    m_config(config), m_vae_scale_factor(vae_scale_factor) {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+}
+
+FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
+                                               const Tensor& weights,
+                                               const Config& config,
+                                               const size_t vae_scale_factor,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties) :
+    FluxTransformer2DModel(model, weights, config, vae_scale_factor) {
+    compile(device, properties);
+}
+
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
 
 const FluxTransformer2DModel::Config& FluxTransformer2DModel::get_config() const {
@@ -44,9 +63,9 @@ const FluxTransformer2DModel::Config& FluxTransformer2DModel::get_config() const
 }
 
 FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
-                                                      int height,
-                                                      int width,
-                                                      int tokenizer_model_max_length) {
+                                                        int height,
+                                                        int width,
+                                                        int tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     // hidden_states=latent_model_input,
