@@ -194,14 +194,9 @@ public:
             std::copy(time_ids.begin(), time_ids.end(), add_time_ids_data + time_ids.size());
         }
 
-        std::string prompt_2_str =
-            generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
-        std::string negative_prompt_1_str = generation_config.negative_prompt != std::nullopt
-                                                ? *generation_config.negative_prompt
-                                                : std::string{};
-        std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt
-                                                ? *generation_config.negative_prompt_2
-                                                : negative_prompt_1_str;
+        std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
+        std::string negative_prompt_1_str = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt ? *generation_config.negative_prompt_2 : negative_prompt_1_str;
 
         // see https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L423-L427
         bool force_zeros_for_empty_prompt = generation_config.negative_prompt == std::nullopt && m_force_zeros_for_empty_prompt;
@@ -220,26 +215,7 @@ public:
             ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
             ov::Tensor encoder_hidden_states_2 = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
 
-            ov::Shape ehs_1_shape = encoder_hidden_states_1.get_shape();
-            ov::Shape ehs_2_shape = encoder_hidden_states_2.get_shape();
-
-            OPENVINO_ASSERT(ehs_1_shape[0] == ehs_2_shape[0] && ehs_1_shape[1] == ehs_2_shape[1],
-                            "Tensors for concatenation must have the same dimensions");
-
-            // concatenate hidden_states from two encoders
-            ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0], ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
-            encoder_hidden_states.set_shape(encoder_hidden_states_shape);
-
-            const float* ehs_1_data = encoder_hidden_states_1.data<const float>();
-            const float* ehs_2_data = encoder_hidden_states_2.data<const float>();
-            float* encoder_hidden_states_data = encoder_hidden_states.data<float>();
-
-            for (size_t i = 0; i < ehs_1_shape[0] * ehs_1_shape[1]; ++i,
-                encoder_hidden_states_data += encoder_hidden_states_shape[2],
-                ehs_1_data += ehs_1_shape[2], ehs_2_data += ehs_2_shape[2]) {
-                std::memcpy(encoder_hidden_states_data                 , ehs_1_data, ehs_1_shape[2] * sizeof(float));
-                std::memcpy(encoder_hidden_states_data + ehs_1_shape[2], ehs_2_data, ehs_2_shape[2] * sizeof(float));
-            }
+            encoder_hidden_states = numpy_utils::concat(encoder_hidden_states_1, encoder_hidden_states_2, -1);
         } else {
             ov::Tensor add_text_embeds_positive = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, false);
             m_clip_text_encoder->infer(prompt_2_str, negative_prompt_2_str, false);
