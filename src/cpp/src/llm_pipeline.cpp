@@ -268,7 +268,6 @@ public:
             size_t block_size = 1;
             bool enable_prefix_caching = false;
 
-            config.stop_token_ids.insert(config.eos_token_id);
             for (size_t request_id = 0; request_id < batch_size; request_id++) {
                 SequenceGroup::Ptr sequence_group;
                 if (is_chat_conversation && !m_is_cache_empty) {
