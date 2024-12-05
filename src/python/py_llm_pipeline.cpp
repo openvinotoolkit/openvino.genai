@@ -122,7 +122,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
@@ -151,7 +151,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
             kwargs: Device properties.

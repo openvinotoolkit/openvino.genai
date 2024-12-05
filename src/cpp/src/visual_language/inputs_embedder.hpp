@@ -14,6 +14,7 @@
 #include "visual_language/embedding_model.hpp"
 
 namespace ov::genai {
+struct VLMPerfMetrics;
 
 class InputsEmbedder {
 public:
@@ -23,7 +24,7 @@ public:
                    const ov::AnyMap device_config);
 
     // compute input embedding for prompt and multiple images
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images);
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel get_embedding_model() const;
