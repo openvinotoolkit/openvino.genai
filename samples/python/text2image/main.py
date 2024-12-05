@@ -52,8 +52,8 @@ def main():
         args.prompt,
         initial_image,
         mask_image,
-        width=W,
-        height=H,
+        # width=W,
+        # height=H,
         strength=0.8,
         generator=Generator(42)
     )

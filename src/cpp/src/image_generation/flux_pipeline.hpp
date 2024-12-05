@@ -151,7 +151,7 @@ public:
         if (transformer == "FluxTransformer2DModel") {
             m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer");
         } else {
-            OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config
@@ -203,7 +203,7 @@ public:
         if (transformer == "FluxTransformer2DModel") {
             m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, properties);
         } else {
-            OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config

@@ -235,7 +235,7 @@ public:
         if (!latent.get_shape().empty()) {
             m_scheduler->add_noise(latent, noise, latent_timestep);
         } else {
-            latent.set_shape(noise.get_shape());
+            latent.set_shape(latent_shape);
 
             // if pure noise then scale the initial latents by the  Scheduler's init sigma
             const float * noise_data = noise.data<const float>();

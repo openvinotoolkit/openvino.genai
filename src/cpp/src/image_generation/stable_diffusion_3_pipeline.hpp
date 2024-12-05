@@ -10,6 +10,7 @@
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
+#include "openvino/genai/image_generation/t5_encoder_model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 
 #include "utils.hpp"
@@ -84,14 +85,14 @@ public:
         if (text_encoder_3 == "T5EncoderModel") {
             m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3");
         } else {
-            m_t5_text_encoder = nullptr;
+            OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
         }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
             m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer");
         } else {
-            OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
@@ -144,13 +145,15 @@ public:
         const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
         if (text_encoder_3 == "T5EncoderModel") {
             m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
+        } else {
+            OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
         }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
             m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer", device, properties);
         } else {
-            OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
@@ -339,7 +342,7 @@ public:
             // negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
             ov::Tensor neg_prompt_embeds = numpy_utils::concat(pad_embeds, negative_t5_prompt_embed, -2);
             // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1)
-            ov::Tensor neg_pooled_prompt_embeds = numpy_utils::concat(pooled_prompt_embed, pooled_prompt_2_embed, -1);
+            ov::Tensor neg_pooled_prompt_embeds = numpy_utils::concat(negative_pooled_prompt_embed, negative_pooled_prompt_2_embed, -1);
 
             // 3. Fill in transformer inputs: concat positive and negative prompt_embeds
             prompt_embeds_inp = numpy_utils::concat(neg_prompt_embeds, prompt_embeds, 0);
@@ -368,6 +371,7 @@ public:
             OPENVINO_THROW("StableDiffusion3 image to image is not implemented");
         } else {
             noise = generation_config.generator->randn_tensor(latent_shape);
+            latent.set_shape(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
             const float * noise_data = noise.data<const float>();

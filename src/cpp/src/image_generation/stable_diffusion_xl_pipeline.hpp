@@ -371,7 +371,7 @@ public:
         if (image_latent) {
             m_scheduler->add_noise(latent, noise, latent_timestep);
         } else {
-            latent.set_shape(noise.get_shape());
+            latent.set_shape(latent_shape);
 
             // latents are multiplied by 'init_noise_sigma'
             const float * noise_data = noise.data<const float>();

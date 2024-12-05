@@ -18,6 +18,7 @@
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/t5_encoder_model.hpp"
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 
 namespace ov {
@@ -70,6 +71,7 @@ public:
         const std::shared_ptr<Scheduler>& scheduler,
         const CLIPTextModelWithProjection& clip_text_model_1,
         const CLIPTextModelWithProjection& clip_text_model_2,
+        const T5EncoderModel& t5_encoder_model,
         const SD3Transformer2DModel& transformer,
         const AutoencoderKL& vae);
 
