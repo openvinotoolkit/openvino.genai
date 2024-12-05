@@ -1,4 +1,3 @@
---extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 transformers>=4.35.2
 sentence-transformers>=2.2.2
 openvino
