@@ -399,7 +399,7 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less than 512");
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
 
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxPipeline");
