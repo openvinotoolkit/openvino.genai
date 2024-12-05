@@ -155,8 +155,8 @@ def get_argprser():
         help='Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
     )
     parser.add_argument('--set_torch_thread', default=0, type=num_infer_count_type, help='Set the number of Torch thread. ')
-    parser.add_argument('-tl', '--tokens_len', type=int, required=False, help='The length of tokens print each time in streaming mode.')
-    parser.add_argument("--streaming", action="store_true", help="Set whether to use streaming mode.")
+    parser.add_argument('-tl', '--tokens_len', type=int, required=False, help='The length of tokens print each time in streaming mode, chunk streaming.')
+    parser.add_argument('--streaming', action='store_true', help='Set whether to use streaming mode, only applicable to LLM.')
 
     return parser.parse_args()
 
@@ -223,8 +223,14 @@ def main():
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
     try:
-        iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
-            model_path, framework, args.device, args.tokens_len, args.streaming, model_args, args.num_iters, mem_consumption)
+        if model_args['use_case'] in ['text_gen', 'code_gen']:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
+                model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
+                args.num_iters, mem_consumption)
+        else:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
+                model_path, framework, args.device, model_args, args.num_iters,
+                mem_consumption)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
