@@ -291,62 +291,27 @@ public:
         }
 
         // concatenate hidden_states from two encoders
-        ov::Shape pr_emb_shape = prompt_embed.get_shape();
-        ov::Shape pr_emb_2_shape = prompt_2_embed.get_shape();
-
-        ov::Shape clip_prompt_embeds_shape = {pr_emb_shape[0], pr_emb_shape[1], pr_emb_shape[2] + pr_emb_2_shape[2]};
-        ov::Tensor clip_prompt_embeds(prompt_embed.get_element_type(), clip_prompt_embeds_shape);
-
-        const float* pr_emb_1_data = prompt_embed.data<const float>();
-        const float* pr_emb_2_data = prompt_2_embed.data<const float>();
-        float* clip_prompt_embeds_data = clip_prompt_embeds.data<float>();
-
-        numpy_utils::concat_3d_by_rows(pr_emb_1_data, pr_emb_2_data, clip_prompt_embeds_data, pr_emb_shape, pr_emb_2_shape);
+        ov::Tensor clip_prompt_embeds = numpy_utils::concat(prompt_embed, prompt_2_embed, -1);
+        ov::Shape clip_prompt_embeds_shape = clip_prompt_embeds.get_shape();
 
         // TODO: text_encoder_3
         ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                            m_clip_text_encoder_1->get_config().max_position_embeddings,
                                            transformer_config.joint_attention_dim};
-
-        std::vector<float> t5_prompt_embed(ov::shape_size(t5_prompt_embed_shape), 0.0f);
+        ov::Tensor t5_prompt_embed(ov::element::f32, t5_prompt_embed_shape);
+        std::fill_n(t5_prompt_embed.data<float>(), t5_prompt_embed.get_size(), 0.0f);
 
         // padding for clip_prompt_embeds
-        ov::Shape pad_embeds_shape = {clip_prompt_embeds_shape[0],
-                                      clip_prompt_embeds_shape[1],
-                                      t5_prompt_embed_shape[2]};
+        ov::Shape pad_embeds_shape = {clip_prompt_embeds_shape[0], clip_prompt_embeds_shape[1], t5_prompt_embed_shape[2]};
+        ov::Tensor pad_embeds(ov::element::f32, pad_embeds_shape);
+        std::fill_n(pad_embeds.data<float>(), pad_embeds.get_size(), 0.0f);
 
-        std::vector<float> pad_embeds(ov::shape_size(pad_embeds_shape), 0.0f);
-        padding_right(clip_prompt_embeds_data, pad_embeds.data(), clip_prompt_embeds_shape, pad_embeds_shape);
+        padding_right(clip_prompt_embeds.data<const float>(), pad_embeds.data<float>(), clip_prompt_embeds_shape, pad_embeds_shape);
 
         // prompt_embeds = torch.cat([pad_embeds, t5_prompt_embed], dim=-2)
-        ov::Shape prompt_embeds_shape = {pad_embeds_shape[0],
-                                         pad_embeds_shape[1] + t5_prompt_embed_shape[1],
-                                         pad_embeds_shape[2]};
-        ov::Tensor prompt_embeds(ov::element::f32, prompt_embeds_shape);
-        float* prompt_embeds_data = prompt_embeds.data<float>();
-        numpy_utils::concat_3d_by_cols(pad_embeds.data(),
-                          t5_prompt_embed.data(),
-                          prompt_embeds_data,
-                          pad_embeds_shape,
-                          t5_prompt_embed_shape);
-
+        ov::Tensor prompt_embeds = numpy_utils::concat(pad_embeds, t5_prompt_embed, -2);
         // pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1)
-        ov::Shape p_pr_emb_shape = pooled_prompt_embed.get_shape();
-        ov::Shape p_pr_emb_2_shape = pooled_prompt_2_embed.get_shape();
-
-        const float* pooled_prompt_embed_data = pooled_prompt_embed.data<float>();
-        const float* pooled_prompt_2_embed_data = pooled_prompt_2_embed.data<float>();
-
-        ov::Shape pooled_prompt_embeds_shape = {p_pr_emb_shape[0], p_pr_emb_shape[1] + p_pr_emb_2_shape[1]};
-        ov::Tensor pooled_prompt_embeds(ov::element::f32, pooled_prompt_embeds_shape);
-        float* pooled_prompt_embeds_data = pooled_prompt_embeds.data<float>();
-
-        numpy_utils::concat_2d_by_rows(pooled_prompt_embed_data,
-                                       pooled_prompt_2_embed_data,
-                                       pooled_prompt_embeds_data,
-                                       p_pr_emb_shape,
-                                       p_pr_emb_2_shape);
-        // From steps above we'll use prompt_embeds and pooled_prompt_embeds tensors
+        ov::Tensor pooled_prompt_embeds = numpy_utils::concat(pooled_prompt_embed, pooled_prompt_2_embed, -1);
 
         if (do_classifier_free_guidance(generation_config.guidance_scale)) {
             // 2. Encode negative prompt:
@@ -356,8 +321,7 @@ public:
             ov::Tensor negative_pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 0);
             ov::Tensor negative_prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 0);
 
-            ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed,
-                negative_prompt_2_embed;
+            ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed, negative_prompt_2_embed;
             if (generation_config.num_images_per_prompt == 1) {
                 negative_pooled_prompt_embed = negative_pooled_prompt_embed_out;
                 negative_prompt_embed = negative_prompt_embed_out;
@@ -371,98 +335,22 @@ public:
             }
 
             // concatenate hidden_states from two encoders
-            ov::Shape n_pr_emb_1_shape = negative_prompt_embed.get_shape();
-            ov::Shape n_pr_emb_2_shape = negative_prompt_2_embed.get_shape();
+            ov::Tensor neg_clip_prompt_embeds = numpy_utils::concat(negative_prompt_embed, negative_prompt_2_embed, -1);
 
-            ov::Shape neg_clip_prompt_embeds_shape = {n_pr_emb_1_shape[0],
-                                                      n_pr_emb_1_shape[1],
-                                                      n_pr_emb_1_shape[2] + n_pr_emb_2_shape[2]};
-            ov::Tensor neg_clip_prompt_embeds(prompt_embed.get_element_type(), neg_clip_prompt_embeds_shape);
-
-            const float* neg_pr_emb_1_data = negative_prompt_embed.data<const float>();
-            const float* neg_pr_emb_2_data = negative_prompt_2_embed.data<const float>();
-            float* neg_clip_prompt_embeds_data = neg_clip_prompt_embeds.data<float>();
-
-            numpy_utils::concat_3d_by_rows(neg_pr_emb_1_data,
-                                           neg_pr_emb_2_data,
-                                           neg_clip_prompt_embeds_data,
-                                           n_pr_emb_1_shape,
-                                           n_pr_emb_2_shape);
-
-            std::vector<float> t5_neg_prompt_embed(
-                t5_prompt_embed_shape[0] * t5_prompt_embed_shape[1] * t5_prompt_embed_shape[2],
-                0.0f);
+            // TODO: replace with actual T5 embeddings once they are supported by SD3
+            ov::Tensor t5_neg_prompt_embed = t5_prompt_embed;
 
             // padding for neg_clip_prompt_embeds
-            ov::Shape neg_pad_embeds_shape = {neg_clip_prompt_embeds_shape[0],
-                                              neg_clip_prompt_embeds_shape[1],
-                                              t5_prompt_embed_shape[2]};
-
-            std::vector<float> neg_pad_embeds(
-                neg_pad_embeds_shape[0] * neg_pad_embeds_shape[1] * neg_pad_embeds_shape[2],
-                0.0f);
-
-            padding_right(neg_clip_prompt_embeds_data,
-                          neg_pad_embeds.data(),
-                          neg_clip_prompt_embeds_shape,
-                          neg_pad_embeds_shape);
+            padding_right(neg_clip_prompt_embeds.data<const float>(), pad_embeds.data<float>(), clip_prompt_embeds_shape, pad_embeds_shape);
 
             // negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
-            ov::Shape neg_prompt_embeds_shape = {neg_pad_embeds_shape[0],
-                                                 neg_pad_embeds_shape[1] + t5_prompt_embed_shape[1],
-                                                 neg_pad_embeds_shape[2]};
-            ov::Tensor neg_prompt_embeds(ov::element::f32, neg_prompt_embeds_shape);
-            float* neg_prompt_embeds_data = neg_prompt_embeds.data<float>();
-
-            numpy_utils::concat_3d_by_cols(neg_pad_embeds.data(),
-                                           t5_neg_prompt_embed.data(),
-                                           neg_prompt_embeds_data,
-                                           neg_pad_embeds_shape,
-                                           t5_prompt_embed_shape);
-
-            // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed],
-            // dim=-1)
-            ov::Shape neg_pooled_pr_emb_shape = negative_pooled_prompt_embed.get_shape();
-            ov::Shape neg_pooled_pr_2_emb_shape = negative_pooled_prompt_2_embed.get_shape();
-
-            const float* neg_pooled_pr_emb_data = negative_pooled_prompt_embed.data<float>();
-            const float* neg_pooled_pr_2_emb_data = negative_pooled_prompt_2_embed.data<float>();
-
-            ov::Shape neg_pooled_prompt_embeds_shape = {neg_pooled_pr_emb_shape[0],
-                                                        neg_pooled_pr_emb_shape[1] + neg_pooled_pr_2_emb_shape[1]};
-            ov::Tensor neg_pooled_prompt_embeds(ov::element::f32, neg_pooled_prompt_embeds_shape);
-            float* neg_pooled_prompt_embeds_data = neg_pooled_prompt_embeds.data<float>();
-
-            numpy_utils::concat_2d_by_rows(neg_pooled_pr_emb_data,
-                                           neg_pooled_pr_2_emb_data,
-                                           neg_pooled_prompt_embeds_data,
-                                           neg_pooled_pr_emb_shape,
-                                           neg_pooled_pr_2_emb_shape);
-            // From steps above we'll use neg_prompt_embeds and neg_pooled_prompt_embeds tensors
+            ov::Tensor neg_prompt_embeds = numpy_utils::concat(pad_embeds, t5_neg_prompt_embed, -2);
+            // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1)
+            ov::Tensor neg_pooled_prompt_embeds = numpy_utils::concat(pooled_prompt_embed, pooled_prompt_2_embed, -1);
 
             // Fill in transformer inputs: concat positive and negative prompt_embeds
-            ov::Shape prompt_embeds_inp_shape = {prompt_embeds_shape[0] + neg_prompt_embeds_shape[0],
-                                                 prompt_embeds_shape[1],
-                                                 prompt_embeds_shape[2]};
-            prompt_embeds_inp = ov::Tensor(ov::element::f32, prompt_embeds_inp_shape);
-            float* prompt_embeds_inp_data = prompt_embeds_inp.data<float>();
-            numpy_utils::concat_3d_by_channels(neg_prompt_embeds_data,
-                                               prompt_embeds_data,
-                                               prompt_embeds_inp_data,
-                                               neg_prompt_embeds_shape,
-                                               prompt_embeds_shape);
-
-            ov::Shape pooled_prompt_embeds_inp_shape = {
-                neg_pooled_prompt_embeds_shape[0] + pooled_prompt_embeds_shape[0],
-                pooled_prompt_embeds_shape[1]};
-
-            pooled_prompt_embeds_inp = ov::Tensor(ov::element::f32, pooled_prompt_embeds_inp_shape);
-            float* pooled_prompt_embeds_input_data = pooled_prompt_embeds_inp.data<float>();
-            numpy_utils::concat_2d_by_channels(neg_pooled_prompt_embeds_data,
-                                               pooled_prompt_embeds_data,
-                                               pooled_prompt_embeds_input_data,
-                                               neg_pooled_prompt_embeds_shape,
-                                               pooled_prompt_embeds_shape);
+            prompt_embeds_inp = numpy_utils::concat(neg_prompt_embeds, prompt_embeds, 0);
+            pooled_prompt_embeds_inp = numpy_utils::concat(neg_pooled_prompt_embeds, pooled_prompt_embeds, 0);
         } else {
             // Fill in transformer inputs
             prompt_embeds_inp = prompt_embeds;
