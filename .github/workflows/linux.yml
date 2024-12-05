@@ -469,8 +469,8 @@ jobs:
         run: python -m pytest -vv ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and py"
         working-directory: ${{ env.INSTALL_DIR }}/samples/python
       
-      - name: C++ Tests Prerequisites
-        run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
+      # - name: C++ Tests Prerequisites
+      #   run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
         
       - name: Test C++ Samples
         run: |
