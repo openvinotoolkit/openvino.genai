@@ -44,7 +44,7 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
-        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -104,7 +104,7 @@ jobs:
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
         pip install git+https://github.com/huggingface/optimum.git
         GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
-        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
+        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --force-reinstall
         python -m pytest -v tools/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
@@ -117,7 +117,7 @@ jobs:
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r tools/llm_bench/requirements.txt
           python -m pip uninstall --yes openvino
-          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python tools/llm_bench/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
       - name: WWB Tests
@@ -126,5 +126,5 @@ jobs:
           pip install git+https://github.com/huggingface/optimum.git
           GIT_CLONE_PROTECTION_ACTIVE=false pip install tools/who_what_benchmark/
           pip install pytest
-          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --force-reinstall
           python -m pytest -v tools/who_what_benchmark/tests
