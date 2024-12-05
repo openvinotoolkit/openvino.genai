@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig, AutoProcessor
+from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -11,13 +11,17 @@ import time
 import json
 import types
 from llm_bench_utils.hook_common import get_bench_hook
-from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES, IMAGE_GEN_CLS
+from llm_bench_utils.config_class import (
+    OV_MODEL_CLASSES_MAPPING,
+    TOKENIZE_CLASSES_MAPPING,
+    DEFAULT_MODEL_CLASSES,
+    IMAGE_GEN_CLS
+)
 import openvino.runtime.opset13 as opset
 from transformers import pipeline
 import openvino_genai as ov_genai
 import queue
 from transformers.generation.streamers import BaseStreamer
-from transformers import AutoConfig, AutoTokenizer
 
 
 def generate_simplified(self, *args, **kwargs):
@@ -534,7 +538,7 @@ def is_genai_available(log_msg=False):
 class GenaiChunkStreamer(ov_genai.StreamerBase):
     """
     A custom streamer class for handling token streaming and detokenization with buffering.
-    
+
     Attributes:
         tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
         tokens_cache (list): A buffer to accumulate tokens for detokenization.
@@ -545,7 +549,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
     def __init__(self, tokenizer, tokens_len=1):
         """
         Initializes the IterableStreamer with the given tokenizer.
-        
+
         Args:
             tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
         """
@@ -565,10 +569,10 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
     def __next__(self):
         """
         Returns the next value from the text queue.
-        
+
         Returns:
             str: The next decoded text chunk.
-        
+
         Raises:
             StopIteration: If there are no more elements in the queue.
         """
@@ -580,7 +584,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
     def get_stop_flag(self):
         """
         Checks whether the generation process should be stopped.
-        
+
         Returns:
             bool: Always returns False in this implementation.
         """
@@ -589,7 +593,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
     def put_word(self, word: str):
         """
         Puts a word into the text queue.
-        
+
         Args:
             word (str): The word to put into the queue.
         """
@@ -598,13 +602,13 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
     def put(self, token_id: int) -> bool:
         """
         Processes a token and manages the decoding buffer. Adds decoded text to the queue.
-        
+
         Args:
             token_id (int): The token_id to process.
-        
+
         Returns:
             bool: True if generation should be stopped, False otherwise.
-        """        
+        """
         self.tokens_cache.append(token_id)
         if len(self.tokens_cache) % self.tokens_len == 0:
             text = self.tokenizer.decode(self.tokens_cache)
@@ -612,7 +616,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
             word = ''
             if len(text) > self.print_len and '\n' == text[-1]:
                 # Flush the cache after the new line symbol.
-                word = text[self.print_len:]            
+                word = text[self.print_len:]
                 self.tokens_cache = []
                 self.print_len = 0
             elif len(text) >= 3 and text[-3:] == chr(65533):
@@ -623,7 +627,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
                 # Print to output only if text lengh is increaesed.
                 word = text[self.print_len:]
                 self.print_len = len(text)
-            self.put_word(word)        
+            self.put_word(word)
 
             if self.get_stop_flag():
                 # When generation is stopped from streamer then end is not called, need to call it here manually.
