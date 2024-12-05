@@ -433,6 +433,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
+      TEMP_DIR: ${{ github.workspace }}/tmp
         
     steps:
       - name: Clone openvino.genai
@@ -468,9 +469,6 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: python -m pytest -vv ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and py"
         working-directory: ${{ env.INSTALL_DIR }}/samples/python
-      
-      # - name: C++ Tests Prerequisites
-      #   run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
         
       - name: Test C++ Samples
         run: |

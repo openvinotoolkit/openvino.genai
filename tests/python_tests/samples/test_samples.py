@@ -13,7 +13,7 @@ MODELS = {
     "WhisperTiny": "openai/whisper-tiny",
 }
 
-TEMP_DIR = tempfile.mkdtemp()
+TEMP_DIR = os.environ.get("TEMP_DIR", tempfile.mkdtemp())
 MODELS_DIR = os.path.join(TEMP_DIR, "test_models")
 TEST_DATA = os.path.join(TEMP_DIR, "test_data")
 TEST_FILE_URL = "https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav"
@@ -22,12 +22,17 @@ SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.getcwd())
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown():
+def setup_and_teardown(request):
     """Fixture to set up and tear down the temporary directories."""
+    print(f"Creating directories: {MODELS_DIR} and {TEST_DATA}")
     os.makedirs(MODELS_DIR, exist_ok=True)
     os.makedirs(TEST_DATA, exist_ok=True)
     yield
-    shutil.rmtree(TEMP_DIR)
+    if not os.environ.get("TEMP_DIR"):
+        print(f"Removing temporary directory: {TEMP_DIR}")
+        shutil.rmtree(TEMP_DIR)
+    else:
+        print(f"Skipping cleanup of temporary directory: {TEMP_DIR}")
 
 @pytest.fixture(scope="session")
 def convert_model(request):
