@@ -303,7 +303,9 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 ## Debug
 <details>
-### Using Debug Log
+
+## Using Debug Log
+
 There are six levels of logs, which can be called explicitly or set via the ``OPENVINO_LOG_LEVEL`` environment variable:
 
 0 - ``ov::log::Level::NO``
@@ -316,11 +318,15 @@ There are six levels of logs, which can be called explicitly or set via the ``OP
 When setting the environment variable OPENVINO_LOG_LEVEL > ov::log::Level::WARNING, the properties of the compiled model can be printed.
 
 For example:
+
 Linux
 export OPENVINO_LOG_LEVEL=3
+
 Windows
 set OPENVINO_LOG_LEVEL=3
+
 the properties of the compiled model are printed as follows:
+
 ```sh
     NETWORK_NAME: Model0
     OPTIMAL_NUMBER_OF_INFER_REQUESTS: 1
