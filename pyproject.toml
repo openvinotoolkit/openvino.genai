@@ -1,6 +1,6 @@
 [project]
 name = "openvino-genai"
-version = "2024.5.0.0"
+version = "2024.6.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
 requires-python = ">=3.9"
 readme = { file = "src/README.md", content-type="text/markdown" }
@@ -30,7 +30,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino_tokenizers~=2024.5.0.0.dev"
+    "openvino_tokenizers~=2024.6.0.0.dev"
 ]
 
 [tool.py-build-cmake.module]
@@ -53,7 +53,7 @@ options = {"BUILD_TOKENIZERS" = "OFF"}
 requires = [
     "py-build-cmake==0.3.1",
     "pybind11-stubgen==2.5.1",
-    "openvino~=2024.5.0.0.dev",
+    "openvino~=2024.6.0.0.dev",
     "cmake~=3.23.0"
 ]
 build-backend = "py_build_cmake.build"

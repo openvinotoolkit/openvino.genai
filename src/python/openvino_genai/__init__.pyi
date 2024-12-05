@@ -35,4 +35,4 @@ from openvino_genai.py_openvino_genai import draft_model
 import os as os
 from . import py_openvino_genai
 __all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedResults', 'GenerationConfig', 'GenerationResult', 'Generator', 'LLMPipeline', 'PerfMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperGenerationConfig', 'WhisperPipeline', 'draft_model', 'openvino', 'os', 'py_openvino_genai']
-__version__: str = '2024.5.0.0'
+__version__: str = '2024.6.0.0'
