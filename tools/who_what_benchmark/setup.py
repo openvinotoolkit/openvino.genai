@@ -2,9 +2,14 @@ import os
 import sys
 from setuptools import find_packages, setup
 
+dependency_links = []
+required = []
 with open("requirements.txt") as f:
-    required = f.read().splitlines()
-
+    for line in f.read().splitlines():
+        if line.startswith("--extra-index-url"):
+            dependency_links.append(line.split(" ")[1])
+        else:
+            required.append(line)
 
 is_installing_editable = "develop" in sys.argv
 is_building_release = not is_installing_editable and "--release" in sys.argv
@@ -42,4 +47,5 @@ setup(
     packages=find_packages(),
     install_requires=required,
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
+    dependency_links=dependency_links,
 )
