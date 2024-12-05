@@ -527,10 +527,6 @@ private:
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
 
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
-        OPENVINO_ASSERT(
-            generation_config.prompt_3 == std::nullopt || generation_config.negative_prompt_3 == std::nullopt,
-            "T5Encoder is not currently supported, 'prompt_3' and 'negative_prompt_3' can't be used. Please, add "
-            "support.");
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt == std::nullopt,
                         "Negative prompt is not used when guidance scale < 1.0");
         OPENVINO_ASSERT(is_classifier_free_guidance || generation_config.negative_prompt_2 == std::nullopt,
