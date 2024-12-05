@@ -63,7 +63,7 @@ public:
     {
         ov::Core core;
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_compile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
@@ -71,7 +71,7 @@ public:
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
         } else {
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_compile_config(plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
             utils::slice_matmul_statefull_model(model);
@@ -264,7 +264,6 @@ public:
             size_t block_size = 1;
             bool enable_prefix_caching = false;
 
-            config.stop_token_ids.insert(config.eos_token_id);
             for (size_t request_id = 0; request_id < batch_size; request_id++) {
                 SequenceGroup::Ptr sequence_group;
                 if (is_chat_conversation && !m_is_cache_empty) {

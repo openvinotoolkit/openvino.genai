@@ -477,6 +477,9 @@ public:
     }
 
     void clear_waiting_sequences() {
+        if (!is_waiting())
+            return;
+
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 m_sequences[seq_id]->set_status(SequenceStatus::RUNNING);

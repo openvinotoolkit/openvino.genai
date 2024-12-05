@@ -23,7 +23,7 @@ void init_lora_adapter(py::module_& m) {
         py::arg("path"), "path",
         R"(
             Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
-            path (str): Path to adapter file in safetensors format.
+            path (os.PathLike): Path to adapter file in safetensors format.
         )")
         .def(
             "__bool__", 

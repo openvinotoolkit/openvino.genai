@@ -27,6 +27,23 @@ T5EncoderModel::T5EncoderModel(const std::filesystem::path& root_dir,
     compile(device, properties);
 }
 
+T5EncoderModel::T5EncoderModel(const std::string& model,
+                               const Tensor& weights,
+                               const Tokenizer& tokenizer) :
+    m_tokenizer(tokenizer) {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+}
+
+T5EncoderModel::T5EncoderModel(const std::string& model,
+                               const Tensor& weights,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
+                               const ov::AnyMap& properties) :
+    T5EncoderModel(model, weights, tokenizer) {
+    compile(device, properties);
+}
+
 T5EncoderModel::T5EncoderModel(const T5EncoderModel&) = default;
 
 T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length) {

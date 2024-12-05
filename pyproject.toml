@@ -3,16 +3,31 @@ name = "openvino-genai"
 version = "2025.0.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
 requires-python = ">=3.9"
-readme = {file = "src/README.md", content-type="text/markdown"}
-license = {text = "OSI Approved :: Apache Software License"}
+readme = { file = "src/README.md", content-type="text/markdown" }
+license = { "file" = "LICENSE" }
 authors = [
     { name = "OpenVINO Developers", email = "openvino@intel.com" },
 ]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Unix",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: C++",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
     "openvino_tokenizers~=2025.0.0.0.dev"
@@ -36,7 +51,7 @@ options = {"BUILD_TOKENIZERS" = "OFF"}
 
 [build-system]
 requires = [
-    "py-build-cmake@git+https://github.com/tttapa/py-build-cmake@7ab73da351c7140f06d727a8705bece4cf544cd9",
+    "py-build-cmake==0.3.2",
     "openvino~=2025.0.0.0.dev",
     "pybind11-stubgen==2.5.1",
     "cmake~=3.23.0"
