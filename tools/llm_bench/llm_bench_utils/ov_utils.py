@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig, AutoProcessor
+from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -513,6 +513,76 @@ def create_speech_2txt_model(model_path, device, **kwargs):
     )
 
     return pipe, processor, from_pretrained_time, False
+
+
+def get_vlm_processor(model_path):
+    config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+    model_type = config.model_type
+    if model_type == "llava-qwen2":    
+        processor = AutoProcessor.from_pretrained(config.mm_vision_tower, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        preprocessors = {"processor": processor, "tokenizer": tokenizer}
+    elif model_type == "internvl_chat":
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
+    else:
+        processor = AutoProcessor.from_pretrained( model_path, trust_remote_code=True)
+        preprocessors = {"processor": processor, "tokenizer": None}
+    return preprocessors
+
+def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
+    import openvino_genai
+
+    if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
+        convert_ov_tokenizer(model_path)
+
+    processor_config = get_vlm_processor(model_path)
+
+    start = time.perf_counter()
+    llm_pipe = openvino_genai.VLMPipeline(model_path, device.upper(), **ov_config)
+    end = time.perf_counter()
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+
+    return llm_pipe, processor_config, end - start, None, True
+
+def create_image_text_gen_model(model_path, device, **kwargs):
+    model_path = Path(model_path)
+    # specify the model path
+    if model_path.name.endswith('xml'):
+        model_path = model_path.parents[2]
+
+    ov_config = kwargs['config']
+
+    model_path_existed = Path(model_path).exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+    else:
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+                log.info("Selected OpenVINO GenAI for benchmarking")
+                return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
+        log.info("Selected Optimum Intel for benchmarking")
+        remote_code = False
+        try:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+            remote_code = True
+        model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
+        start = time.perf_counter()
+        ov_model = model_class.from_pretrained(
+            model_path,
+            device=device,
+            ov_config=ov_config,
+            config=model_config,
+            trust_remote_code=remote_code
+        )
+        end = time.perf_counter()
+    bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    processor_config = get_vlm_processor(model_path)
+    return ov_model, processor_config, from_pretrained_time, bench_hook, False
 
 
 def is_genai_available(log_msg=False):
