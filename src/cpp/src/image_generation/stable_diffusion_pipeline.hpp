@@ -359,29 +359,7 @@ public:
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
 
-            if (is_inpainting_model) {
-                ov::Shape final_shape_merged{latent_shape_cfg[0], unet_config.in_channels, latent_shape_cfg[2] * latent_shape_cfg[3]};
-                ov::Shape final_shape{final_shape_merged[0], final_shape_merged[1], latent_shape_cfg[2], latent_shape_cfg[3]};
-                ov::Shape latent_shape_cfg_merged{latent_shape_cfg[0], latent_shape_cfg[1], latent_shape_cfg[2] * latent_shape_cfg[3]};
-
-                ov::Tensor merged_input(ov::element::f32, final_shape);
-                {
-                    ov::Shape temp_shape = final_shape_merged;
-                    temp_shape[1] = latent_shape_cfg[1] + mask.get_shape()[1];
-                    ov::Tensor tmp(ov::element::f32, temp_shape);
-
-                    ov::Shape mask_shape = mask.get_shape();
-                    ov::Shape mask_shape_merged{mask_shape[0], mask_shape[1], mask_shape[2] * mask_shape[3]};
-
-                    numpy_utils::concat_3d_by_cols(latent_cfg.data<float>(), mask.data<float>(), tmp.data<float>(), latent_shape_cfg_merged, mask_shape_merged);
-                    numpy_utils::concat_3d_by_cols(tmp.data<float>(), masked_image_latent.data<float>(), merged_input.data<float>(), temp_shape, latent_shape_cfg_merged);
-                }
-
-                latent_model_input = merged_input;
-            } else {
-                latent_model_input = latent_cfg;
-            }
-
+            ov::Tensor latent_model_input = is_inpainting_model ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
 

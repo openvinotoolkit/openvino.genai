@@ -74,86 +74,9 @@ std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<
     return interp_res;
 }
 
-namespace {
-
-void concat_3d_axis_2(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
-    OPENVINO_ASSERT(shape_1[0] == shape_2[0] && shape_1[1] == shape_2[1], "Tensors for concatenation must have the same dimensions");
-
-    for (size_t i = 0; i < shape_1[0]; ++i) {
-        for (size_t j = 0; j < shape_1[1]; ++j) {
-            size_t offset_1 = (i * shape_1[1] + j) * shape_1[2];
-            size_t offset_2 = (i * shape_2[1] + j) * shape_2[2];
-
-            size_t step = (i * shape_1[1] + j) * (shape_1[2] + shape_2[2]);
-
-            std::memcpy(res + step, data_1 + offset_1, shape_1[2] * sizeof(float));
-            std::memcpy(res + step + shape_1[2], data_2 + offset_2, shape_2[2] * sizeof(float));
-        }
-    }
-}
-
-void concat_2d_axis_1(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 2 && shape_2.size() == 2, "Shape dimensions must be 2");
-    OPENVINO_ASSERT(shape_1[0] == shape_2[0], "Tensors for concatenation must have the same dimensions");
-
-    for (size_t i = 0; i < shape_1[0]; ++i) {
-        size_t offset_1 = i * shape_1[1];
-        size_t offset_2 = i * shape_2[1];
-
-        size_t step = i * (shape_1[1] + shape_2[1]);
-
-        std::memcpy(res + step, data_1 + offset_1, shape_1[1] * sizeof(float));
-        std::memcpy(res + step + shape_1[1],
-                    data_2 + offset_2,
-                    shape_2[1] * sizeof(float));
-    }
-}
-
-void concat_3d_axis_1(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
-    OPENVINO_ASSERT(shape_1[0] == shape_2[0] && shape_1[2] == shape_2[2], "Tensors for concatenation must have the same dimensions");
-
-    for (size_t i = 0, chunk_1 = shape_1[1] * shape_1[2], chunk_2 = shape_2[1] * shape_2[2]; i < shape_1[0]; ++i) {
-        std::memcpy(res          , data_1, chunk_1 * sizeof(float));
-        std::memcpy(res + chunk_1, data_2, chunk_2 * sizeof(float));
-
-        res += chunk_1 + chunk_2;
-        data_1 += chunk_1;
-        data_2 += chunk_2;
-    }
-}
-
-void concat_3d_axis_0(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 3 && shape_2.size() == 3, "Shape dimensions must be 3");
-    OPENVINO_ASSERT(shape_1[1] == shape_2[1] && shape_1[2] == shape_2[2], "Tensors for concatenation must have the same dimensions");
-
-    size_t size_1 = shape_1[0] * shape_1[1] * shape_1[2];
-    size_t size_2 = shape_2[0] * shape_2[1] * shape_2[2];
-
-    std::memcpy(res, data_1, size_1 * sizeof(float));
-    std::memcpy(res + size_1, data_2, size_2 * sizeof(float));
-}
-
-void concat_2d_axis_0(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2) {
-    OPENVINO_ASSERT(shape_1.size() == 2 && shape_2.size() == 2, "Shape dimensions must be 2");
-    OPENVINO_ASSERT(shape_1[1] == shape_2[1], "Tensors for concatenation must have the same dimensions");
-
-    size_t size_1 = shape_1[0] * shape_1[1];
-    size_t size_2 = shape_2[0] * shape_2[1];
-
-    std::memcpy(res, data_1, size_1 * sizeof(float));
-    std::memcpy(res + size_1, data_2, size_2 * sizeof(float));
-}
-
-} // namespace
-
 ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
     ov::Shape shape_1 = tensor_1.get_shape(), shape_2 = tensor_2.get_shape();
     size_t rank = shape_1.size();
-
-    const size_t MAX_RANK = 3;
-    OPENVINO_ASSERT(rank <= MAX_RANK, "Maximum support rank of concatenated tensors is ", MAX_RANK, ", given rank is ", rank);
 
     OPENVINO_ASSERT(rank == shape_2.size(), "Shapes for concatenated tensors must have the same rank");
     OPENVINO_ASSERT(tensor_1.get_element_type() == ov::element::f32 && tensor_2.get_element_type() == ov::element::f32,
@@ -169,18 +92,31 @@ ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
         dst_shape[d] = d == axis ? shape_1[d] + shape_2[d] : shape_1[d];
     }
 
-    typedef void (*concat_func_type) (const float*, const float*, float*, const ov::Shape, const ov::Shape);
-    concat_func_type concat_funcs [MAX_RANK][MAX_RANK] = {
-        { nullptr, nullptr, nullptr },
-        { concat_2d_axis_0, concat_2d_axis_1, nullptr },
-        { concat_3d_axis_0, concat_3d_axis_1, concat_3d_axis_2 }
-    };
+    size_t num_iterations = 1;
+    for (size_t d = 0; d < axis; ++d) {
+        num_iterations *= shape_1[d];
+    }
 
-    concat_func_type concat_func = concat_funcs[rank - 1][axis];
-    OPENVINO_ASSERT(concat_func != nullptr, "Unsupported combination of input tensors rank ", rank, " and axis ", axis);
+    size_t chunk_1 = 1, chunk_2 = 1;
+    for (size_t d = axis; d < shape_1.size(); ++d) {
+        chunk_1 *= shape_1[d];
+        chunk_2 *= shape_2[d];
+    }
 
     ov::Tensor dst_tensor(tensor_1.get_element_type(), dst_shape);
-    concat_func(tensor_1.data<const float>(), tensor_1.data<const float>(), dst_tensor.data<float>(), shape_1, shape_2);
+    float * res = dst_tensor.data<float>();
+
+    const float * data_1 = tensor_1.data<const float>();
+    const float * data_2 = tensor_2.data<const float>();
+
+    for (size_t i = 0; i < num_iterations; ++i) {
+        std::memcpy(res          , data_1, chunk_1 * sizeof(float));
+        std::memcpy(res + chunk_1, data_2, chunk_2 * sizeof(float));
+
+        res += chunk_1 + chunk_2;
+        data_1 += chunk_1;
+        data_2 += chunk_2;
+    }
 
     return dst_tensor;
 }
