@@ -144,8 +144,6 @@ public:
         const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
         if (text_encoder_3 == "T5EncoderModel") {
             m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
-        } else {
-            m_t5_text_encoder = nullptr;
         }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
@@ -177,11 +175,13 @@ public:
     StableDiffusion3Pipeline(PipelineType pipeline_type,
                              const CLIPTextModelWithProjection& clip_text_model_1,
                              const CLIPTextModelWithProjection& clip_text_model_2,
+                             const T5EncoderModel& t5_encoder_model,
                              const SD3Transformer2DModel& transformer,
                              const AutoencoderKL& vae)
         : DiffusionPipeline(pipeline_type),
           m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
           m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
+          m_t5_text_encoder(std::make_shared<T5EncoderModel>(t5_encoder_model)),
           m_vae(std::make_shared<AutoencoderKL>(vae)),
           m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {
         initialize_generation_config("StableDiffusion3Pipeline");
@@ -249,10 +249,8 @@ public:
             ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,
                                                transformer_config.joint_attention_dim};
-            std::vector<float> t5_prompt_embed(ov::shape_size(t5_prompt_embed_shape), 0.0f);
-
             text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);
-            std::copy(t5_prompt_embed.begin(), t5_prompt_embed.end(), text_encoder_3_output.data<float>());
+            std::fill_n(text_encoder_3_output.data<float>(), text_encoder_3_output.get_size(), 0.0f);
         } else {
             text_encoder_3_output = m_t5_text_encoder->infer(prompt_3_str,
                                                              negative_prompt_3_str,
@@ -554,11 +552,11 @@ private:
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;
 
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_1;
-    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2;
-    std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
-    std::shared_ptr<SD3Transformer2DModel> m_transformer;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_1 = nullptr;
+    std::shared_ptr<CLIPTextModelWithProjection> m_clip_text_encoder_2 = nullptr;
+    std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
+    std::shared_ptr<SD3Transformer2DModel> m_transformer = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
 };
 
 }  // namespace genai

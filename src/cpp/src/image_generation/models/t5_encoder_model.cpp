@@ -93,11 +93,8 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
         "infer's max_sequence_length ", max_sequence_length);
 
     if (input_ids_shape[0] == 0 || input_ids_shape[1] == 0) {
-        if (do_classifier_free_guidance) {
-            input_ids.set_shape({2, static_cast<size_t>(max_sequence_length)});
-        } else {
-            input_ids.set_shape({1, static_cast<size_t>(max_sequence_length)});
-        }
+        size_t batch_size = do_classifier_free_guidance ? 2 : 1;
+        input_ids.set_shape({batch_size, static_cast<size_t>(max_sequence_length)});
     }
 
     size_t current_batch_idx = 0;
