@@ -181,7 +181,7 @@ ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
     OPENVINO_ASSERT(concat_func != nullptr, "Unsupported combination of input tensors rank ", rank, " and axis ", axis);
 
     ov::Tensor dst_tensor(tensor_1.get_element_type(), dst_shape);
-    concat_func(tensor_1.data<const float>(), tensor_1.data<const float>(), dst_tensor.data<float>(), shape_1, shape_2);
+    concat_func(tensor_1.data<const float>(), tensor_2.data<const float>(), dst_tensor.data<float>(), shape_1, shape_2);
 
     return dst_tensor;
 }
