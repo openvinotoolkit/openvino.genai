@@ -319,8 +319,7 @@ When setting the environment variable OPENVINO_LOG_LEVEL > ov::log::Level::WARNI
 
 For example:
 
-Linux   - export OPENVINO_LOG_LEVEL=3
-
+Linux - export OPENVINO_LOG_LEVEL=3
 Windows - set OPENVINO_LOG_LEVEL=3
 
 the properties of the compiled model are printed as follows:
