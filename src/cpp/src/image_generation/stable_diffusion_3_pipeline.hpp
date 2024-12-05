@@ -17,39 +17,35 @@
 namespace {
 
 // src - input tensor with data for padding
-// res - zeros tonsor with target shape
-void padding_right(const float* src, float* res, const ov::Shape src_size, const ov::Shape res_size) {
-    OPENVINO_ASSERT(src_size[0] == res_size[0] && src_size[1] == res_size[1],
-                    "Tensors for padding_right must have the same dimensions");
+// res - tensor with target shape, remaining side will be padded with zeros
+void padding_right(ov::Tensor src, ov::Tensor res) {
+    const ov::Shape src_shape = src.get_shape(), res_shape = res.get_shape();
+    OPENVINO_ASSERT(src_shape.size() == 3 && src_shape.size() == res_shape.size(), "Rank of tensors within 'padding_right' must be 3");
+    OPENVINO_ASSERT(src_shape[0] == res_shape[0] && src_shape[1] == res_shape[1], "Tensors for padding_right must have the same dimensions");
 
-    for (size_t i = 0; i < res_size[0]; ++i) {
-        for (size_t j = 0; j < res_size[1]; ++j) {
-            size_t offset_1 = (i * res_size[1] + j) * res_size[2];
-            size_t offset_2 = (i * src_size[1] + j) * src_size[2];
+    const float* src_data = src.data<const float>();
+    float* res_data = res.data<float>();
 
-            std::memcpy(res + offset_1, src + offset_2, src_size[2] * sizeof(float));
+    for (size_t i = 0; i < res_shape[0]; ++i) {
+        for (size_t j = 0; j < res_shape[1]; ++j) {
+            size_t offset_1 = (i * res_shape[1] + j) * res_shape[2];
+            size_t offset_2 = (i * src_shape[1] + j) * src_shape[2];
+
+            std::memcpy(res_data + offset_1, src_data + offset_2, src_shape[2] * sizeof(float));
+            std::fill_n(res_data + offset_1 + src_shape[2], res_shape[2] - src_shape[2], 0.0f);
         }
     }
 }
 
-ov::Tensor split_2d_by_batch(const ov::Tensor input, size_t batch_num) {
-    ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1]});
+// returns tensor, which shares data with input tensor and pointing to a given batch slice
+ov::Tensor get_tensor_batch(const ov::Tensor input, size_t batch_id) {
+    ov::Shape target_shape = input.get_shape();
+    target_shape[0] = 1;
 
-    size_t shift = batch_num * input.get_shape()[1];
-    std::memcpy(result.data<float>(), input.data<float>() + shift, result.get_shape()[1] * sizeof(float));
+    void * target_data = input.data<float>() + batch_id * ov::shape_size(target_shape);
+    ov::Tensor target_tensor(input.get_element_type(), target_shape, target_data);
 
-    return result;
-}
-
-ov::Tensor split_3d_by_batch(const ov::Tensor input, size_t batch_num) {
-    ov::Tensor result(input.get_element_type(), {1, input.get_shape()[1], input.get_shape()[2]});
-
-    size_t shift = batch_num * input.get_shape()[1] * input.get_shape()[2];
-    std::memcpy(result.data<float>(),
-                input.data<float>() + shift,
-                result.get_shape()[1] * input.get_shape()[2] * sizeof(float));
-
-    return result;
+    return target_tensor;
 }
 
 }  // namespace
@@ -227,49 +223,35 @@ public:
         ov::Tensor prompt_embeds_inp, pooled_prompt_embeds_inp;
 
         // 1. Encode positive prompt:
-        std::string prompt_2_str =
-            generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
-        std::string prompt_3_str =
-            generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
+        std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
+        std::string prompt_3_str = generation_config.prompt_3 != std::nullopt ? *generation_config.prompt_3 : positive_prompt;
 
-        std::string negative_prompt_1_str = generation_config.negative_prompt != std::nullopt
-                                                ? *generation_config.negative_prompt
-                                                : std::string{};
-        std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt
-                                                ? *generation_config.negative_prompt_2
-                                                : negative_prompt_1_str;
-        std::string negative_prompt_3_str = generation_config.negative_prompt_3 != std::nullopt
-                                                ? *generation_config.negative_prompt_3
-                                                : negative_prompt_1_str;
+        std::string negative_prompt_1_str = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        std::string negative_prompt_2_str = generation_config.negative_prompt_2 != std::nullopt ? *generation_config.negative_prompt_2 : negative_prompt_1_str;
+        std::string negative_prompt_3_str = generation_config.negative_prompt_3 != std::nullopt ? *generation_config.negative_prompt_3 : negative_prompt_1_str;
 
         // text_encoder_1_output - stores positive and negative pooled_prompt_embeds
-        ov::Tensor text_encoder_1_output =
-            m_clip_text_encoder_1->infer(positive_prompt,
-                                         negative_prompt_1_str,
-                                         do_classifier_free_guidance(generation_config.guidance_scale));
+        ov::Tensor text_encoder_1_output = m_clip_text_encoder_1->infer(positive_prompt, negative_prompt_1_str, do_classifier_free_guidance(generation_config.guidance_scale));
 
         // text_encoder_1_hidden_state - stores positive and negative prompt_embeds
         size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
         ov::Tensor text_encoder_1_hidden_state = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
 
         // text_encoder_2_output - stores positive and negative pooled_prompt_2_embeds
-        ov::Tensor text_encoder_2_output =
-            m_clip_text_encoder_2->infer(prompt_2_str,
-                                         negative_prompt_2_str,
-                                         do_classifier_free_guidance(generation_config.guidance_scale));
+        ov::Tensor text_encoder_2_output = m_clip_text_encoder_2->infer(prompt_2_str, negative_prompt_2_str, do_classifier_free_guidance(generation_config.guidance_scale));
 
         // text_encoder_2_hidden_state - stores positive and negative prompt_2_embeds
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
         ov::Tensor text_encoder_2_hidden_state = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
-        // get positive prompt_2_embed_out
 
+        // get positive prompt_2_embed_out
         ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out;
 
         if (do_classifier_free_guidance(generation_config.guidance_scale)) {
-            pooled_prompt_embed_out = split_2d_by_batch(text_encoder_1_output, 1);
-            prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 1);
-            pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 1);
-            prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 1);
+            pooled_prompt_embed_out = get_tensor_batch(text_encoder_1_output, 1);
+            prompt_embed_out = get_tensor_batch(text_encoder_1_hidden_state, 1);
+            pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 1);
+            prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 1);
         } else {
             pooled_prompt_embed_out = text_encoder_1_output;
             prompt_embed_out = text_encoder_1_hidden_state;
@@ -304,9 +286,7 @@ public:
         // padding for clip_prompt_embeds
         ov::Shape pad_embeds_shape = {clip_prompt_embeds_shape[0], clip_prompt_embeds_shape[1], t5_prompt_embed_shape[2]};
         ov::Tensor pad_embeds(ov::element::f32, pad_embeds_shape);
-        std::fill_n(pad_embeds.data<float>(), pad_embeds.get_size(), 0.0f);
-
-        padding_right(clip_prompt_embeds.data<const float>(), pad_embeds.data<float>(), clip_prompt_embeds_shape, pad_embeds_shape);
+        padding_right(clip_prompt_embeds, pad_embeds);
 
         // prompt_embeds = torch.cat([pad_embeds, t5_prompt_embed], dim=-2)
         ov::Tensor prompt_embeds = numpy_utils::concat(pad_embeds, t5_prompt_embed, -2);
@@ -316,10 +296,10 @@ public:
         if (do_classifier_free_guidance(generation_config.guidance_scale)) {
             // 2. Encode negative prompt:
 
-            ov::Tensor negative_pooled_prompt_embed_out = split_2d_by_batch(text_encoder_1_output, 0);
-            ov::Tensor negative_prompt_embed_out = split_3d_by_batch(text_encoder_1_hidden_state, 0);
-            ov::Tensor negative_pooled_prompt_2_embed_out = split_2d_by_batch(text_encoder_2_output, 0);
-            ov::Tensor negative_prompt_2_embed_out = split_3d_by_batch(text_encoder_2_hidden_state, 0);
+            ov::Tensor negative_pooled_prompt_embed_out = get_tensor_batch(text_encoder_1_output, 0);
+            ov::Tensor negative_prompt_embed_out = get_tensor_batch(text_encoder_1_hidden_state, 0);
+            ov::Tensor negative_pooled_prompt_2_embed_out = get_tensor_batch(text_encoder_2_output, 0);
+            ov::Tensor negative_prompt_2_embed_out = get_tensor_batch(text_encoder_2_hidden_state, 0);
 
             ov::Tensor negative_pooled_prompt_embed, negative_prompt_embed, negative_pooled_prompt_2_embed, negative_prompt_2_embed;
             if (generation_config.num_images_per_prompt == 1) {
@@ -341,18 +321,18 @@ public:
             ov::Tensor t5_neg_prompt_embed = t5_prompt_embed;
 
             // padding for neg_clip_prompt_embeds
-            padding_right(neg_clip_prompt_embeds.data<const float>(), pad_embeds.data<float>(), clip_prompt_embeds_shape, pad_embeds_shape);
+            padding_right(neg_clip_prompt_embeds, pad_embeds);
 
             // negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
             ov::Tensor neg_prompt_embeds = numpy_utils::concat(pad_embeds, t5_neg_prompt_embed, -2);
             // neg_pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1)
             ov::Tensor neg_pooled_prompt_embeds = numpy_utils::concat(pooled_prompt_embed, pooled_prompt_2_embed, -1);
 
-            // Fill in transformer inputs: concat positive and negative prompt_embeds
+            // 3. Fill in transformer inputs: concat positive and negative prompt_embeds
             prompt_embeds_inp = numpy_utils::concat(neg_prompt_embeds, prompt_embeds, 0);
             pooled_prompt_embeds_inp = numpy_utils::concat(neg_pooled_prompt_embeds, pooled_prompt_embeds, 0);
         } else {
-            // Fill in transformer inputs
+            // 3. Fill in transformer inputs
             prompt_embeds_inp = prompt_embeds;
             pooled_prompt_embeds_inp = pooled_prompt_embeds;
         }
@@ -534,7 +514,7 @@ private:
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
 
-        OPENVINO_ASSERT(generation_config.max_sequence_length < 512, "T5's 'max_sequence_length' must be less than 512");
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
         OPENVINO_ASSERT(
             generation_config.prompt_3 == std::nullopt || generation_config.negative_prompt_3 == std::nullopt,
             "T5Encoder is not currently supported, 'prompt_3' and 'negative_prompt_3' can't be used. Please, add "
