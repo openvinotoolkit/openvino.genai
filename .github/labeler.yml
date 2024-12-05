@@ -57,6 +57,7 @@
 - 'src/cpp/src/whisper_pipeline.cpp'
 - 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_generate_api.py'
+- 'tests/python_tests/test_whisper_pipeline_static.py'
 
 'category: Python API':
 - 'src/python/**/*'
