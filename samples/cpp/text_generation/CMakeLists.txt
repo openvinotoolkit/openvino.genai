@@ -20,3 +20,16 @@ install(TARGETS greedy_causal_lm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+add_executable(encrypted_model_causal_lm encrypted_model_causal_lm.cpp)
+target_link_libraries(encrypted_model_causal_lm PRIVATE openvino::genai)
+set_target_properties(encrypted_model_causal_lm PROPERTIES
+    COMPILE_PDB_NAME encrypted_model_causal_lm
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+target_compile_features(encrypted_model_causal_lm PRIVATE cxx_std_11)
+
+install(TARGETS encrypted_model_causal_lm
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
