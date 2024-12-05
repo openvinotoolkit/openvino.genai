@@ -690,7 +690,7 @@ def test_unicode_pybind_decoding_3():
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
     res_str = []
-    pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
+    pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.extend(list(x)))
     assert '�' == res_str[-1]
 
 
