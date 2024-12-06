@@ -402,7 +402,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
-    name: Samples Tests (${{ matrix.test.name }}) - ${{ matrix.build-type }}
+    name: Sample ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
       fail-fast: false
       matrix:
