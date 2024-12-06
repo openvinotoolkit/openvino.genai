@@ -88,7 +88,14 @@ int main(int argc, char* argv[]) try {
 
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config, device);
+    ov::AnyMap ov_config = {};
+    if (getenv("ENABLE_BF16")) {
+        ov_config = {{"KV_CACHE_PRECISION", "u8"}, {"INFERENCE_PRECISION_HINT", "bf16"}};
+    } else {
+        printf("GenAI|InferenceWithFP32\n");
+        ov_config = {{"KV_CACHE_PRECISION", "u8"}, {"INFERENCE_PRECISION_HINT", "f32"}};
+    }
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config, device, ov_config);
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;

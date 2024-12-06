@@ -27,8 +27,8 @@ public:
         const std::string device_name = device_config.get_device();
         if (device_name.find("GPU") == std::string::npos) {// Allocate KV caches
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
-                ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape());
-                ov::Tensor value_cache(device_config.get_cache_precision(), device_config.get_value_cache_shape());
+                ov::Tensor key_cache(device_config.get_key_cache_precision(), device_config.get_key_cache_shape());
+                ov::Tensor value_cache(device_config.get_value_cache_precision(), device_config.get_value_cache_shape());
 
                 // force allocation
                 std::memset(key_cache.data(), 0, key_cache.get_byte_size());
@@ -40,9 +40,9 @@ public:
         } else {
             auto remote_context = m_core.get_default_context(device_name);
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
-                ov::Tensor key_cache = remote_context.create_tensor(device_config.get_cache_precision(),
+                ov::Tensor key_cache = remote_context.create_tensor(device_config.get_key_cache_precision(),
                                                                     device_config.get_key_cache_shape());
-                ov::Tensor value_cache = remote_context.create_tensor(device_config.get_cache_precision(),
+                ov::Tensor value_cache = remote_context.create_tensor(device_config.get_value_cache_precision(),
                                                                       device_config.get_value_cache_shape());
 
                 m_key_cache.emplace_back(key_cache);
@@ -89,11 +89,21 @@ public:
                     ov::Tensor key_src_cache_roi(m_key_cache[decoder_layer_id], key_src_start_roi, key_src_end_roi);
                     ov::Tensor key_dst_cache_roi(m_key_cache[decoder_layer_id], key_dst_start_roi, key_dst_end_roi);
 
-                    ov::Tensor value_src_cache_roi(m_value_cache[decoder_layer_id], value_src_start_roi, value_src_end_roi);
-                    ov::Tensor value_dst_cache_roi(m_value_cache[decoder_layer_id], value_dst_start_roi, value_dst_end_roi);
-
                     key_src_cache_roi.copy_to(key_dst_cache_roi);
-                    value_src_cache_roi.copy_to(value_dst_cache_roi);
+                    if (m_value_cache[decoder_layer_id].get_element_type() != ov::element::u4 && getenv("USE_OV_COPY"))  {
+                        ov::Tensor value_src_cache_roi(m_value_cache[decoder_layer_id], value_src_start_roi, value_src_end_roi);
+                        ov::Tensor value_dst_cache_roi(m_value_cache[decoder_layer_id], value_dst_start_roi, value_dst_end_roi);
+                        value_src_cache_roi.copy_to(value_dst_cache_roi);
+                    } else {
+                        auto copy_data = [&](ov::Tensor& dst, const ov::Tensor& src) {
+                            auto sub_byte_multipyer = 8 / dst.get_element_type().bitwidth();
+                            size_t stride = std::accumulate(std::next(value_shape.begin()), value_shape.end(), 1, std::multiplies<size_t>()) / sub_byte_multipyer;
+                            const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(src.data()) + value_src_start_roi[0] * stride;
+                            uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst.data()) + value_dst_start_roi[0] * stride;
+                            std::memcpy(dst_ptr, src_ptr, (value_src_end_roi[0] - value_src_start_roi[0]) * stride);
+                        };
+                        copy_data(m_value_cache[decoder_layer_id], m_value_cache[decoder_layer_id]);
+                    }
                 }
             }
         }

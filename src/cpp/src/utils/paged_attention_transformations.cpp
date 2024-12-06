@@ -63,8 +63,8 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
     device_config.set_model_params(num_kv_heads, head_size, num_layers);
 
     for (auto it_k = key_cache_params.begin(), it_v = value_cache_params.begin(); it_k != key_cache_params.end();++it_k, ++it_v) {
-        it_k->second->set_element_type(device_config.get_cache_precision());
-        it_v->second->set_element_type(device_config.get_cache_precision());
+        it_k->second->set_element_type(device_config.get_key_cache_precision());
+        it_v->second->set_element_type(device_config.get_value_cache_precision());
         // TODO: CVS-145270
         it_k->second->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_key_cache_shape()));
         it_v->second->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_value_cache_shape()));
