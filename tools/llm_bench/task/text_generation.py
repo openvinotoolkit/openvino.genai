@@ -268,7 +268,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         detokenization_end = time.perf_counter()
         tokenization_time.append((detokenization_end - detokenization_start) * 1000)
 
-
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
