@@ -11,6 +11,7 @@
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -193,7 +194,8 @@ void init_image_generation_pipelines(py::module_& m) {
             },
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));;
+        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));
+
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
         .def(py::init([](
@@ -205,7 +207,7 @@ void init_image_generation_pipelines(py::module_& m) {
         py::arg("models_path"), "folder with exported model files.",
         R"(
             Image2ImagePipeline class constructor.
-            models_path (str): Path to the folder with exported model files.
+            models_path (os.PathLike): Path to the folder with exported model files.
         )")
 
         .def(py::init([](
@@ -220,17 +222,17 @@ void init_image_generation_pipelines(py::module_& m) {
         py::arg("device"), "device on which inference will be done",
         R"(
             Image2ImagePipeline class constructor.
-            models_path (str): Path with exported model files.
+            models_path (os.PathLike): Path with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Image2ImagePipeline properties
         )")
         .def("get_generation_config", &ov::genai::Image2ImagePipeline::get_generation_config)
-        .def("set_generation_config", &ov::genai::Image2ImagePipeline::set_generation_config)
-        .def("set_scheduler", &ov::genai::Image2ImagePipeline::set_scheduler)
-        .def("reshape", &ov::genai::Image2ImagePipeline::reshape)
-        .def("stable_diffusion", &ov::genai::Image2ImagePipeline::stable_diffusion)
-        .def("latent_consistency_model", &ov::genai::Image2ImagePipeline::latent_consistency_model)
-        .def("stable_diffusion_xl", &ov::genai::Image2ImagePipeline::stable_diffusion_xl)
+        .def("set_generation_config", &ov::genai::Image2ImagePipeline::set_generation_config, py::arg("generation_config"))
+        .def("set_scheduler", &ov::genai::Image2ImagePipeline::set_scheduler, py::arg("scheduler"))
+        .def("reshape", &ov::genai::Image2ImagePipeline::reshape, py::arg("num_images_per_prompt"), py::arg("height"), py::arg("width"), py::arg("guidance_scale"))
+        .def_static("stable_diffusion", &ov::genai::Image2ImagePipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
+        .def_static("latent_consistency_model", &ov::genai::Image2ImagePipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
+        .def_static("stable_diffusion_xl", &ov::genai::Image2ImagePipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
         .def(
             "compile",
             [](ov::genai::Image2ImagePipeline& pipe,
@@ -249,40 +251,82 @@ void init_image_generation_pipelines(py::module_& m) {
             "generate",
             [](ov::genai::Image2ImagePipeline& pipe,
                 const std::string& prompt,
-                const ov::Tensor& initial_image,
-                const ov::Tensor& mask,
+                const ov::Tensor& image,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, initial_image, mask, params));
+                return py::cast(pipe.generate(prompt, image, params));
             },
             py::arg("prompt"), "Input string",
-            py::arg("initial_image"), "Initial image",
-            py::arg("mask"), "Mask image",
+            py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
+        .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"));
+
+
+    auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
+        .def(py::init([](
+            const std::filesystem::path& models_path
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::InpaintingPipeline>(models_path);
+        }),
+        py::arg("models_path"), "folder with exported model files.",
+        R"(
+            InpaintingPipeline class constructor.
+            models_path (os.PathLike): Path to the folder with exported model files.
+        )")
+
+        .def(py::init([](
+            const std::filesystem::path& models_path,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::InpaintingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("models_path"), "folder with exported model files.",
+        py::arg("device"), "device on which inference will be done",
+        R"(
+            InpaintingPipeline class constructor.
+            models_path (os.PathLike): Path with exported model files.
+            device (str): Device to run the model on (e.g., CPU, GPU).
+            kwargs: InpaintingPipeline properties
+        )")
+        .def("get_generation_config", &ov::genai::InpaintingPipeline::get_generation_config)
+        .def("set_generation_config", &ov::genai::InpaintingPipeline::set_generation_config, py::arg("generation_config"))
+        .def("set_scheduler", &ov::genai::InpaintingPipeline::set_scheduler, py::arg("scheduler"))
+        .def("reshape", &ov::genai::InpaintingPipeline::reshape, py::arg("num_images_per_prompt"), py::arg("height"), py::arg("width"), py::arg("guidance_scale"))
+        .def_static("stable_diffusion", &ov::genai::InpaintingPipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
+        .def_static("latent_consistency_model", &ov::genai::InpaintingPipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
+        .def_static("stable_diffusion_xl", &ov::genai::InpaintingPipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
+        .def(
+            "compile",
+            [](ov::genai::InpaintingPipeline& pipe,
+                const std::string& device,
+                const py::kwargs& kwargs
+            ) {
+                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+            },
+            py::arg("device"), "device on which inference will be done",
+            R"(
+                Compiles the model.
+                device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )")
         .def(
             "generate",
-            [](ov::genai::Image2ImagePipeline& pipe,
+            [](ov::genai::InpaintingPipeline& pipe,
                 const std::string& prompt,
-                const ov::Tensor& initial_image,
+                const ov::Tensor& image,
+                const ov::Tensor& mask_image,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, initial_image, params));
+                return py::cast(pipe.generate(prompt, image, mask_image, params));
             },
             py::arg("prompt"), "Input string",
-            py::arg("initial_image"), "Initial image",
+            py::arg("image"), "Initial image",
+            py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def(
-            "generate",
-            [](ov::genai::Image2ImagePipeline& pipe,
-                const std::string& prompt,
-                const py::kwargs& kwargs
-            ) {
-                ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, params));
-            },
-            py::arg("prompt"), "Input string",
-            (text2image_generate_docstring + std::string(" \n ")).c_str()
-        );
+        .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"));
 }

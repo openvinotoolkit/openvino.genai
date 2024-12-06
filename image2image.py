@@ -8,7 +8,7 @@ import torch
 seed = 42
 generator = torch.Generator(device='cpu').manual_seed(seed)
 
-pipe = OVPipelineForInpainting.from_pretrained("/home/devuser/ilavreno/models/stabilityai-stable-diffusion-xl-base-1.0")
+pipe = OVPipelineForInpainting.from_pretrained("/home/devuser/ilavreno/models/diffusers-stable-diffusion-xl-1.0-inpainting-0.1")
 # pipe = StableDiffusionImg2ImgPipeline.from_pretrained("dreamlike-art-dreamlike-anime-1.0")
 
 prompt = "Face of a yellow cat, high resolution, sitting on a park bench"
@@ -26,7 +26,7 @@ images = pipe(prompt,
               generator=generator,
             #   width=W,
             #   height=H,
-              strength=0.8
+            #   strength=0.8
               ).images
 
 images[0].save("/home/devuser/ilavreno/openvino.genai/optimum_image.bmp")

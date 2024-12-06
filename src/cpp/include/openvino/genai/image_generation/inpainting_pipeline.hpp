@@ -26,38 +26,38 @@ namespace genai {
 class DiffusionPipeline;
 
 //
-// Image to image pipeline
+// Inpainting pipeline
 //
 
-class OPENVINO_GENAI_EXPORTS Image2ImagePipeline {
+class OPENVINO_GENAI_EXPORTS InpaintingPipeline {
 public:
-    explicit Image2ImagePipeline(const std::filesystem::path& models_path);
+    explicit InpaintingPipeline(const std::filesystem::path& models_path);
 
-    Image2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
+    InpaintingPipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    Image2ImagePipeline(const std::filesystem::path& models_path,
-                        const std::string& device,
-                        Properties&&... properties)
-        : Image2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    InpaintingPipeline(const std::filesystem::path& models_path,
+                       const std::string& device,
+                       Properties&&... properties)
+        : InpaintingPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     // creates either LCM or SD pipeline from building blocks
-    static Image2ImagePipeline stable_diffusion(
+    static InpaintingPipeline stable_diffusion(
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae);
 
     // creates either LCM or SD pipeline from building blocks
-    static Image2ImagePipeline latent_consistency_model(
+    static InpaintingPipeline latent_consistency_model(
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae);
 
     // creates SDXL pipeline from building blocks
-    static Image2ImagePipeline stable_diffusion_xl(
+    static InpaintingPipeline stable_diffusion_xl(
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
         const CLIPTextModelWithProjection& clip_text_model_with_projection,
@@ -83,14 +83,15 @@ public:
     }
 
     // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
-    ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
+    ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
             const std::string& positive_prompt,
             ov::Tensor initial_image,
+            ov::Tensor mask,
             Properties&&... properties) {
-        return generate(positive_prompt, initial_image, ov::AnyMap{std::forward<Properties>(properties)...});
+        return generate(positive_prompt, initial_image, mask, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     ov::Tensor decode(const ov::Tensor latent);
@@ -98,7 +99,7 @@ public:
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
-    explicit Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
+    explicit InpaintingPipeline(const std::shared_ptr<DiffusionPipeline>& impl);
 };
 
 } // namespace genai

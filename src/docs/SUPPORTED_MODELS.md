@@ -157,16 +157,20 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 > [!NOTE]
 > Models should belong to the same family and have the same tokenizers.
 
-## Text 2 image models
+## Image generation models
 
 <table>
   <tbody style="vertical-align: top;">
     <tr>
       <th>Architecture</th>
+      <th>Text 2 image</th>
+      <th>Image 2 image</th>
       <th>Example HuggingFace Models</th>
     </tr>
     <tr>
       <td><code>Latent Consistency Model</code></td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7"><code>SimianLuo/LCM_Dreamshaper_v7</code></a></li>
@@ -175,6 +179,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     </tr>
     <tr>
       <td><code>Stable Diffusion</code></td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/botp/stable-diffusion-v1-5"><code>botp/stable-diffusion-v1-5</code></a></li>
@@ -186,6 +192,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     </tr>
     <tr>
       <td><code>Stable Diffusion XL</code></td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-0.9"><code>stabilityai/stable-diffusion-xl-base-0.9</code></a></li>
@@ -195,6 +203,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     </tr>
     <tr>
       <td><code>Stable Diffusion 3</code></td>
+      <td>Supported</td>
+      <td>Not supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
@@ -205,9 +215,45 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       </td>
       <tr>
       <td><code>Flux</code></td>
+      <td>Supported</td>
+      <td>Not supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"><code>black-forest-labs/FLUX.1-schnell</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    </tr>
+  </tbody>
+</table>
+
+## Inpainting models
+
+In addition to image generation models, `InpaintingPipeline` supports specialized inpainting models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td><code>Stable Diffusion</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-inpainting"><code>stabilityai/stable-diffusion-2-inpainting</code></a></li>
+          <li><a href="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-inpainting"><code>stable-diffusion-v1-5/stable-diffusion-inpainting</code></a></li>
+          <li><a href="https://huggingface.co/botp/stable-diffusion-v1-5-inpainting"><code>botp/stable-diffusion-v1-5-inpainting</code></a></li>
+          <li><a href="https://huggingface.co/parlance/dreamlike-diffusion-1.0-inpainting"><code>parlance/dreamlike-diffusion-1.0-inpainting</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>Stable Diffusion XL</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1"><code>diffusers/stable-diffusion-xl-1.0-inpainting-0.1</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"><code>stabilityai/stable-diffusion-xl-base-1.0</code></a></li>
         </ul>
       </td>
     </tr>
