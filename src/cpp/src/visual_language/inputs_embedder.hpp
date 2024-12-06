@@ -37,6 +37,9 @@ public:
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel get_embedding_model() const;
 
+    // returns tokenized text part of chat history
+    ov::Tensor get_tokenized_chat_history() const;
+
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
