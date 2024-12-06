@@ -269,6 +269,14 @@ public:
 
         ov::Tensor latent_image_ids = prepare_latent_image_ids(generation_config.num_images_per_prompt, height / 2, width / 2);
 
+        // add guidance tensor if input exist
+        auto input_names = m_transformer->get_config().m_model_input_names;
+        if (std::find(input_names.begin(), input_names.end(), "guidance") != input_names.end()) {
+            ov::Tensor guidance = ov::Tensor(ov::element::f32, {generation_config.num_images_per_prompt});
+            std::fill_n(guidance.data<float>(), guidance.get_size(), static_cast<float>(m_generation_config.guidance_scale));
+            m_transformer->set_hidden_states("guidance", guidance);
+        }
+
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds);
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("txt_ids", text_ids);
