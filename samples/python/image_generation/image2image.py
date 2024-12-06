@@ -5,23 +5,9 @@
 import argparse
 import openvino
 import openvino_genai
-import torch
 import numpy as np
 
 from PIL import Image
-
-class Generator(openvino_genai.Generator):
-    def __init__(self, seed):
-        openvino_genai.Generator.__init__(self)
-        self.generator = torch.Generator(device='cpu').manual_seed(seed)
-
-    def next(self):
-        return torch.randn(1, generator=self.generator, dtype=torch.float32).item()
-
-    def randn_tensor(self, shape: openvino.Shape):
-        torch_tensor = torch.randn(list(shape), generator=self.generator, dtype=torch.float32)
-        return openvino.Tensor(torch_tensor.numpy())
-
 
 def read_image(path: str) -> openvino.Tensor:
     pic = Image.open(path).convert("RGB")
@@ -40,15 +26,12 @@ def main():
 
     image = read_image(args.image)
 
-    image_tensor = pipe.generate(
-        args.prompt,
-        image,
-        strength=0.8,
-        generator=Generator(42)
+    image_tensor = pipe.generate(args.prompt, image,
+        strength=0.8 # controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
     )
 
     image = Image.fromarray(image_tensor.data[0])
-    image.save("/home/devuser/ilavreno/openvino.genai/genai_image.bmp")
+    image.save("image.bmp")
 
 
 if '__main__' == __name__:

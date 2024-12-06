@@ -44,7 +44,7 @@ void _read_tensor_step(tensor_T* data, size_t i, std::ifstream& file, size_t& pr
     if (assign)
         data[i] = value;
 
-    if ((std::isnan(value) || std::abs(value - data[i]) > 1e-6) && printed_elements < print_size || std::isnan(value)) {
+    if (std::abs(value - data[i]) > 1e-7 && printed_elements < print_size) {
         std::cout << i << ") ref = " << value << " act = " << static_cast<file_T>(data[i]) << std::endl;
         ++printed_elements;
     }
@@ -55,7 +55,7 @@ inline void read_tensor(const std::string& file_name, ov::Tensor tensor, bool as
     OPENVINO_ASSERT(file.is_open(), "Failed to open file ", file_name);
 
     std::cout << "Opening " << file_name << std::endl;
-    std::cout << "tensor shape " << tensor.get_shape() << " tensor type " << tensor.get_element_type() << std::endl;
+    std::cout << "tensor shape " << tensor.get_shape() << std::endl;
 
     for (size_t i = 0, printed_elements = 0; i < tensor.get_size(); ++i) {
         if (tensor.get_element_type() == ov::element::f32)

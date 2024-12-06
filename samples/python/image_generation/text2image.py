@@ -3,23 +3,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import openvino
-import openvino_genai
-import torch
 
+import openvino_genai
 from PIL import Image
+import numpy as np
 
 class Generator(openvino_genai.Generator):
-    def __init__(self, seed):
+    def __init__(self, seed, mu=0.0, sigma=1.0):
         openvino_genai.Generator.__init__(self)
-        self.generator = torch.Generator(device='cpu').manual_seed(seed)
+        np.random.seed(seed)
+        self.mu = mu
+        self.sigma = sigma
 
     def next(self):
-        return torch.randn(1, generator=self.generator, dtype=torch.float32).item()
-
-    def randn_tensor(self, shape: openvino.Shape):
-        torch_tensor = torch.randn(list(shape), generator=self.generator, dtype=torch.float32)
-        return openvino.Tensor(torch_tensor.numpy())
+        return np.random.normal(self.mu, self.sigma)
 
 
 def main():
@@ -33,11 +30,15 @@ def main():
 
     image_tensor = pipe.generate(
         args.prompt,
-        generator=Generator(42)
+        width=512,
+        height=512,
+        num_inference_steps=20,
+        num_images_per_prompt=1,
+        generator=Generator(42)  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
     )
 
     image = Image.fromarray(image_tensor.data[0])
-    image.save("/home/devuser/ilavreno/openvino.genai/genai_image.bmp")
+    image.save("image.bmp")
 
 
 if '__main__' == __name__:
