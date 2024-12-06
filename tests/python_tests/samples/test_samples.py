@@ -77,7 +77,8 @@ def download_test_content(request):
 # whisper_speech_recognition sample
 @pytest.mark.whisper
 @pytest.mark.py
-@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny", "extra_args": ["--trust-remote-code"]}], indirect=True, ids=lambda p: f"model={p['model_id']}")
+@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny", "extra_args": ["--trust-remote-code"]}], 
+                         indirect=True, ids=lambda p: f"model={p['model_id']}")
 @pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
 def test_python_sample_whisper_speech_recognition(convert_model, download_test_content):
     script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
@@ -86,7 +87,8 @@ def test_python_sample_whisper_speech_recognition(convert_model, download_test_c
 
 @pytest.mark.whisper
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny"}], indirect=True)
+@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny"}], 
+                         indirect=True, ids=lambda p: f"model={p['model_id']}")
 @pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
 def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_content):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')
@@ -107,7 +109,8 @@ def test_python_sample_multinomial_causal_lm(convert_model, sample_args):
 
 @pytest.mark.llm    
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [{"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}], indirect=True)
+@pytest.mark.parametrize("convert_model", [{"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}], 
+                         indirect=True, ids=lambda p: f"model={p['model_id']}")
 def test_cpp_sample_multinomial_causal_lm(convert_model):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
     exit_code = subprocess.run([cpp_sample, convert_model, "a"]).returncode
@@ -116,7 +119,8 @@ def test_cpp_sample_multinomial_causal_lm(convert_model):
 # Greedy causal LM samples
 @pytest.mark.llm
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [{"model_id": "TinyLlama-1.1B-Chat-v1.1"}], indirect=True)
+@pytest.mark.parametrize("convert_model", [{"model_id": "TinyLlama-1.1B-Chat-v1.1"}], 
+                         indirect=True, ids=lambda p: f"model={p['model_id']}")
 def test_cpp_sample_greedy_causal_lm(convert_model):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
     exit_code = subprocess.run([cpp_sample, convert_model, ""]).returncode
