@@ -28,6 +28,17 @@ constexpr size_t BATCH_SIZE = 1;
 
 } // namespace
 
+namespace ov::genai {
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+}
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
 public:
@@ -64,6 +75,11 @@ public:
                 models_dir, "config.json"
             )
         },
+        m_generation_config{
+            utils::from_config_json_if_exists<GenerationConfig>(
+                models_dir, "generation_config.json"
+            )
+        },
         m_is_chat_conversation{false} {
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
             m_vlm_config, models_dir, device, properties);
@@ -73,6 +89,41 @@ public:
 
         m_language = utils::singleton_core().compile_model(
             models_dir / "openvino_language_model.xml", device, properties
+        ).create_infer_request();
+
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
+    }
+
+    VLMPipelineImpl(
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config
+    ) :
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(
+                config_dir_path, "config.json"
+            )
+        },
+        m_generation_config{generation_config},
+        m_is_chat_conversation{false} {
+        
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(
+            m_vlm_config, models_map, tokenizer, config_dir_path, device, properties);
+
+        m_tokenizer = m_inputs_embedder->get_tokenizer();
+        m_embedding = m_inputs_embedder->get_embedding_model();
+
+        auto m_language_pair = get_model_weights_pair(models_map, "language");
+        m_language = utils::singleton_core().compile_model(
+            m_language_pair.first, m_language_pair.second, device, properties
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
@@ -256,6 +307,15 @@ VLMPipeline::VLMPipeline(
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
+
+VLMPipeline::VLMPipeline(
+    const ModelsMap& models_map,
+    const Tokenizer& tokenizer,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config)} {}
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;
 
