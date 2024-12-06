@@ -436,7 +436,7 @@ jobs:
       - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
