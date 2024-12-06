@@ -118,7 +118,7 @@ public:
         int64_t gathering_current_index = 0;
         std::vector<int64_t> gather_indice_values;
         try {
-            std::ignore = m_request.get_tensor("gather_indices");
+            std::ignore = m_request.get_tensor("sampled_tokens_indices");
             matmul_gathering_is_required = true;
         } catch (const ov::Exception&) {}
 
@@ -132,10 +132,7 @@ public:
             size_t prompt_len = sequence_group->get_prompt_len();
             size_t seq_len_after_gather = 0;
             bool echo_output = sequence_group->get_sampling_parameters().echo;
-
-            // spec: In case of multiple input tokens for current sequence (prompt_len > 1),
-            // context_len corresponds to first token within subgroup of scheduled tokens
-            size_t group_context_len = group_position_id;
+            bool sampling_is_required = sequence_group->requires_sampling();
 
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
                 Sequence::CPtr sequence = running_sequences[seq_id];
@@ -146,7 +143,7 @@ public:
                         sequence_group->get_prompt_ids()[position_id] :
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
-                    if (matmul_gathering_is_required) {
+                    if (matmul_gathering_is_required && sampling_is_required) {
                         if (group_position_id + token_id >= prompt_len - 1 || echo_output) {
                             gather_indice_values.push_back(gathering_current_index);
                             seq_len_after_gather++;
@@ -189,7 +186,7 @@ public:
         if (matmul_gathering_is_required) {
             ov::Tensor gather_indices(ov::element::i64, {gather_indice_values.size()});
             std::memcpy(gather_indices.data(), gather_indice_values.data(), gather_indice_values.size() * sizeof(int64_t));
-            m_request.set_tensor("gather_indices", gather_indices);
+            m_request.set_tensor("sampled_tokens_indices", gather_indices);
         }
 
         // print_tensor("input_ids", input_ids);
