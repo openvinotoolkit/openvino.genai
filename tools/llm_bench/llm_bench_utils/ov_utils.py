@@ -518,7 +518,7 @@ def create_speech_2txt_model(model_path, device, **kwargs):
 def get_vlm_processor(model_path):
     config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     model_type = config.model_type
-    if model_type == "llava-qwen2":    
+    if model_type == "llava-qwen2":
         processor = AutoProcessor.from_pretrained(config.mm_vision_tower, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": processor, "tokenizer": tokenizer}
@@ -526,9 +526,10 @@ def get_vlm_processor(model_path):
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
     else:
-        processor = AutoProcessor.from_pretrained( model_path, trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": processor, "tokenizer": None}
     return preprocessors
+
 
 def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
@@ -544,6 +545,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, processor_config, end - start, None, True
+
 
 def create_image_text_gen_model(model_path, device, **kwargs):
     model_path = Path(model_path)

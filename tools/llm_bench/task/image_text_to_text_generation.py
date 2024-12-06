@@ -184,8 +184,10 @@ def load_image_genai(image_path):
     image_data = np.array(pil_image.getdata()).reshape(1, pil_image.size[1], pil_image.size[0], 3).astype(np.uint8)
     return ov.Tensor(image_data)
 
-def run_image_text_generation_genai(inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index,
-                              streamer, model_precision, proc_id, mem_consumption):
+
+def run_image_text_generation_genai(
+    inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id, mem_consumption
+):
     set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
@@ -219,9 +221,7 @@ def run_image_text_generation_genai(inputs, num, model, processor, args, iter_da
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
 
-
     generation_time = end - start
-    # Only text_gen need to minus length of input_data, because generated_text may include input_text
     result_md5_list = []
     generated_text_len = perf_metrics.get_num_generated_tokens()
     if generated_text_len > max_gen_tokens:
@@ -326,8 +326,9 @@ def run_image_text_generation_benchmark(model_path, framework, device, args, num
                 if num == 0:
                     log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                gen_fn(input_text, num, model, processor, args, iter_data_list, md5_list,
-                            p_idx, bench_hook, model_precision, proc_id, mem_consumption)
+                gen_fn(
+                    input_text, num, model, processor, args, iter_data_list, md5_list,
+                    p_idx, bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
@@ -338,8 +339,9 @@ def run_image_text_generation_benchmark(model_path, framework, device, args, num
                 if num == 0:
                     log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                gen_fn(input_text, num, model, processor, args, iter_data_list, md5_list,
-                            prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
+                gen_fn(
+                    input_text, num, model, processor, args, iter_data_list, md5_list,
+                    prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
@@ -362,6 +364,3 @@ def get_image_text_prompt(args):
     else:
         vlm_file_list.append(output_data_list)
     return vlm_file_list
-
-
-
