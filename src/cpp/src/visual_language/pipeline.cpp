@@ -96,6 +96,7 @@ public:
         // If eos_token_id was not provided, take value from default m_generation_config
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
+        config.stop_token_ids.insert(config.eos_token_id);
         generation_config.validate();
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
