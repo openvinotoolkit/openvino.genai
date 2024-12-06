@@ -424,7 +424,7 @@ jobs:
       - name: Build and Install dependencies
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/export-requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/export-requirements.txt librosa==0.10.2 --find-links ${env:OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 

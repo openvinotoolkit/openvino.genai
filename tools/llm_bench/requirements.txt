@@ -2,8 +2,8 @@
 numpy
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 openvino~=2024.6.0rc1
-openvino-tokenizers~=2024.6.0rc1
-openvino_genai~=2024.6.0rc1
+openvino-tokenizers~=2024.6.0.0rc1
+openvino_genai~=2024.6.0.0rc1
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
