@@ -274,6 +274,47 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
+  cpp-greedy_causal_lm-Chatglm3-6b:
+    runs-on: ubuntu-20.04-4-cores
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
+      - name: Run C++ and Python Samples and Comparing generated output - Chatglm3-6b
+        run: |
+          . ./ov/setupvars.sh
+          echo "why sun is yellow?" > ./prompt.txt
+          echo '--------------------------------C++ Generated--------------------------------------------------'
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee cpp.txt
+          echo '-------------------------------Python Generated------------------------------------------------'
+          samples/python/greedy_causal_lm/greedy_causal_lm.py ./chatglm3-6b/ "$(<prompt.txt)"| tee py.txt
+          echo '-----------------------------------------------------------------------------------------------'
+          diff cpp.txt py.txt
+        env:
+          PYTHONPATH: "./build"
+          
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -463,6 +504,7 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+          
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -492,6 +534,7 @@ jobs:
           python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
@@ -533,6 +576,24 @@ jobs:
               predicted_prompt_lookup = f.readline()
           assert predicted_greedy == predicted_prompt_lookup
           "
+          echo "Prompt lookup" passed
+      - name: run and compare
+        run: |
+          source ./ov/setupvars.sh
+
+          echo 'Code:```python
+          def add(a, b):
+              return a + b
+          ```
+          Question: Can you please add 2 and 3
+          A:' > ./prompt.txt
+
+          echo '-------------------------------Prompt lookup Generated-----------------------------------------'
+          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_prompt_lookup.txt
+          echo '-------------------------------Greedy Generated------------------------------------------------'
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_greedy.txt
+          echo '-----------------------------------------------------------------------------------------------'
+          diff predictions_greedy.txt predictions_prompt_lookup.txt
           echo "Prompt lookup" passed
 
   cpp-Phi-1_5:
@@ -987,8 +1048,8 @@ jobs:
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
     needs: [cpp-multinomial-greedy_causal_lm-ubuntu, cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
-            cpp-greedy_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
-            cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
+            cpp-greedy_causal_lm-Chatglm3-6b, cpp-greedy_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, 
+            cpp-beam_search_causal_lm-Phi-2, cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
             cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
             visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
