@@ -670,8 +670,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
         env:
