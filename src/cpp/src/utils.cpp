@@ -8,6 +8,7 @@
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
+#include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/slice.hpp"
@@ -231,6 +232,7 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
     return {new_input_ids, new_attention_mask};
 }
 
+namespace {
 std::shared_ptr<ov::Node> find_llm_matmul(const std::shared_ptr<ov::Model>& model) {
     auto last_node = model->output(0).get_node()->input_value(0).get_node_shared_ptr();
     std::shared_ptr<ov::Node> matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(last_node);
@@ -254,8 +256,9 @@ std::shared_ptr<ov::Node> find_llm_matmul(const std::shared_ptr<ov::Model>& mode
     }
     return matmul;
 }
+} // namespace
 
-void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
+void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
     auto matmul = find_llm_matmul(model);
     if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
         auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
@@ -264,6 +267,19 @@ void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
         auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         auto slice = std::make_shared<ov::op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
         matmul->input(0).replace_source_output(slice);
+    }
+}
+
+void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
+    auto matmul =  ov::genai::utils::find_llm_matmul(model);
+    if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
+        auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+        indices->set_friendly_name("sampled_tokens_indices");
+        indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+        auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
+        matmul->input(0).replace_source_output(gather);
+        model->add_parameters({indices});
     }
 }
 
@@ -406,7 +422,6 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 }
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

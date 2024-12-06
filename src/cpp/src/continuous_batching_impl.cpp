@@ -445,7 +445,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
-    size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
+    size_t vocab_size = logits_shape[2];
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         // requests not scheduled, in decoding phase or not echoing are not processed
@@ -455,8 +455,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
 
         size_t num_running_sequences = sequence_group->num_running_seqs();
         OPENVINO_ASSERT(num_running_sequences == 1);
-        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens();
-        size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+        size_t actual_seq_len = sequence_group->get_seq_len_to_sample();
 
         const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
 
@@ -499,7 +498,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
 
             sequence_group->append_prompt_log_prob(token_logit - max_value - log_sum);
         }
-        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+        currently_processed_tokens += actual_seq_len * num_running_sequences;
         // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
         if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
             sequence_group->notify_handle_echo_only();

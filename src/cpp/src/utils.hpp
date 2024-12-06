@@ -99,9 +99,9 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
-std::shared_ptr<ov::Node> find_llm_matmul(const std::shared_ptr<ov::Model>& model);
+void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
-void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model);
+void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 
