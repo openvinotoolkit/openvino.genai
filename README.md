@@ -112,7 +112,7 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format fp16 MiniCPM-V-2_6
 
 #(Recommended) Same as above but with compression: language model is compressed to int4, other model components are compressed to int8
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 MiniCPM-V-2_6
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 --group-size 16 MiniCPM-V-2_6
 ```
 
 ### Run generation using VLMPipeline API in Python
