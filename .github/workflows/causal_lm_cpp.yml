@@ -697,7 +697,7 @@ jobs:
               chat_history.append(gen_prompt(prompt))
               chat_prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
               tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
-              answer = model.generate(**tokenized, max_length=1000, do_sample=False)
+              answer = model.generate(**tokenized, max_new_tokens=100, do_sample=False)
               answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
               chat_history.append(gen_answer(answer_str))
               output.write(answer_str)
