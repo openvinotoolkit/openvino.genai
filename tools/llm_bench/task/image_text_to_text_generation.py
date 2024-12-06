@@ -26,8 +26,9 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
-def run_image_text_generation_optimum(inputs, num, model, processor, args, iter_data_list, md5_list,
-                        prompt_index, bench_hook, model_precision, proc_id, mem_consumption):
+def run_image_text_generation_optimum(
+    inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, bench_hook, model_precision, proc_id, mem_consumption
+):
     set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
@@ -38,7 +39,7 @@ def run_image_text_generation_optimum(inputs, num, model, processor, args, iter_
         if "media" in input_data:
             images.append(load_image(input_data["media"]))
         prompts.append(input_data["prompt"])
-    
+
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)

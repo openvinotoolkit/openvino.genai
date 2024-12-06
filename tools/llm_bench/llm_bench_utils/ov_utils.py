@@ -15,6 +15,8 @@ from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLAS
 import openvino.runtime.opset13 as opset
 from transformers import pipeline
 
+GENAI_SUPPORTED_VLM = ["llava", "llava-next", "internvl-chat", "minicpmv"]
+
 
 def generate_simplified(self, *args, **kwargs):
     if len(args):
@@ -560,16 +562,21 @@ def create_image_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-                log.info("Selected OpenVINO GenAI for benchmarking")
-                return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
-        log.info("Selected Optimum Intel for benchmarking")
         remote_code = False
         try:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+            if model_config.model_type.replace("_", "-") in GENAI_SUPPORTED_VLM:
+                log.info("Selected OpenVINO GenAI for benchmarking")
+                return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
+            else:
+                log.warning(
+                f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                "Benchmark will be switched to Optimum Intel pipeline realization")
+        log.info("Selected Optimum Intel for benchmarking")
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
