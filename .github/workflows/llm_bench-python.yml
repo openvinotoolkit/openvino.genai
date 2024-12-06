@@ -101,11 +101,9 @@ jobs:
         python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-tiny --media multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/3283_1447_000000.flac -d cpu -n 1
     - name: WWB Tests
       run: |
-        GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
         pip install git+https://github.com/huggingface/optimum-intel.git
-        GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
-        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
-        python -m pytest -v tools/who_what_benchmark/tests
+        GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+        python -m pytest -v ${{ env.WWB_PATH }}/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
@@ -122,9 +120,7 @@ jobs:
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
       - name: WWB Tests
         run: |
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r tools/who_what_benchmark/requirements.txt
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install tools/who_what_benchmark/
           pip install pytest
-          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
-          python -m pytest -v tools/who_what_benchmark/tests
+          pip install git+https://github.com/huggingface/optimum-intel.git
+          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pytest -v ${{ env.WWB_PATH }}/tests

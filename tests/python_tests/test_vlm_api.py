@@ -101,19 +101,18 @@ def test_perf_metrics(cache):
 
     assert perf_metrics is not None
 
-    assert perf_metrics.get_load_time() > 0
-    assert perf_metrics.get_num_generated_tokens() > 0
-    assert perf_metrics.get_num_input_tokens() > 0
-    assert perf_metrics.get_ttft().mean > 0
-    assert perf_metrics.get_tpot().mean > 0
-    assert perf_metrics.get_ipot().mean > 0
-    assert perf_metrics.get_throughput().mean > 0
-    assert perf_metrics.get_inference_duration().mean > 0
-    assert perf_metrics.get_generate_duration().mean > 0
-    assert perf_metrics.get_tokenization_duration().mean > 0
-    assert perf_metrics.get_detokenization_duration().mean > 0
-    assert perf_metrics.get_detokenization_duration().mean > 0
-    assert perf_metrics.get_prepare_embeddings_duration().mean > 0
+    assert 0 < perf_metrics.get_load_time() < 2000
+    assert 0 < perf_metrics.get_num_generated_tokens() < 100
+    assert 0 < perf_metrics.get_num_input_tokens() < 100
+    assert 0 < perf_metrics.get_ttft().mean < 1000
+    assert 0 < perf_metrics.get_tpot().mean < 100
+    assert 0 < perf_metrics.get_ipot().mean < 100
+    assert 0 < perf_metrics.get_throughput().mean < 1000
+    assert 0 < perf_metrics.get_inference_duration().mean < 1000
+    assert 0 < perf_metrics.get_generate_duration().mean < 1000
+    assert 0 < perf_metrics.get_tokenization_duration().mean < 100
+    assert 0 < perf_metrics.get_detokenization_duration().mean < 10
+    assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < 100
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
