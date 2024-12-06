@@ -315,7 +315,12 @@ VLMPipeline::VLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config
-) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config)} {}
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;
 
