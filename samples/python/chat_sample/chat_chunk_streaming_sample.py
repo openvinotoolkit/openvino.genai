@@ -126,7 +126,9 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
+    parser.add_argument("-m", "--model_dir", required=True, help="model_id or directory for loading")
+    parser.add_argument('-tl', '--tokens_len', type=int, required=True, help='The length of tokens print each time in streaming mode, chunk streaming.')
+
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -134,7 +136,7 @@ def main():
 
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 100
-    tokens_len = 10  # chunk size
+    tokens_len = args.tokens_len  # chunk size
 
     text_print_streamer = GenaiChunkStreamer(pipe.get_tokenizer(), tokens_len)
 
