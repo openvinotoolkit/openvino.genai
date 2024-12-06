@@ -246,7 +246,7 @@ public:
         m_clip_text_encoder->infer(positive_prompt, "", false);
         ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
 
-        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
 
         ov::Tensor pooled_prompt_embeds, prompt_embeds;
         if (generation_config.num_images_per_prompt == 1) {
@@ -399,7 +399,7 @@ private:
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less than 512");
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
 
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxPipeline");
@@ -407,10 +407,10 @@ private:
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by FluxPipeline");
     }
 
-    std::shared_ptr<FluxTransformer2DModel> m_transformer;
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     ImageGenerationConfig m_custom_generation_config;
 };
 

@@ -165,6 +165,7 @@ public:
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
+        decoded.perf_metrics.num_input_tokens = prompt_ids.get_size();
         decoded.perf_metrics.load_time = m_load_time_ms;
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
