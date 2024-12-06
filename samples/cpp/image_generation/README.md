@@ -116,7 +116,7 @@ Also, `strength` parameter linearly affects a number of inferenece steps, becaus
 
 To run the sample:
 
-`./image2mage ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' initial_image.bmp`
+`./image2mage ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' small_city.bmp`
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `Image2ImagePipeline`.
 

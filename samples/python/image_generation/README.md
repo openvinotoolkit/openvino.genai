@@ -108,7 +108,7 @@ Also, `strength` parameter linearly affects a number of inferenece steps, becaus
 
 Let's the sample:
 
-`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' initial_image.bmp`
+`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' small_city.bmp`
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `Image2ImagePipeline`.
 
