@@ -156,7 +156,7 @@ def create_image_gen_model(model_path, device, **kwargs):
         backend = kwargs['torch_compile_backend']
         compiled_model = run_torch_compile(pipe, backend)
         pipe = compiled_model
-    return pipe, from_pretrain_time, False
+    return pipe, from_pretrain_time, False, None
 
 
 def create_ldm_super_resolution_model(model_path, device, **kwargs):
