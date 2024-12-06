@@ -529,6 +529,7 @@ class GenerationConfig:
     min_new_tokens: int
     no_repeat_ngram_size: int
     num_assistant_tokens: int
+    max_ngram_size: int
     num_beam_groups: int
     num_beams: int
     num_return_sequences: int
@@ -553,7 +554,9 @@ class GenerationConfig:
         ...
     def is_greedy_decoding(self) -> bool:
         ...
-    def is_speculative_decoding(self) -> bool:
+    def is_assisting_generation(self) -> bool:
+        ...
+    def is_prompt_lookup(self) -> bool:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
