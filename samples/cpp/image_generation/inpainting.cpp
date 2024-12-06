@@ -7,9 +7,9 @@
 #include "imwrite.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' <IMAGE> <MASK_IMAGE>");
+    OPENVINO_ASSERT(argc == 5, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' <IMAGE> <MASK_IMAGE>");
 
-    const std::string models_path = argv[1], prompt = argv[2], image_path = argv[3], mask_image_path = argv[3];
+    const std::string models_path = argv[1], prompt = argv[2], image_path = argv[3], mask_image_path = argv[4];
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::Tensor image = utils::load_image(image_path);
