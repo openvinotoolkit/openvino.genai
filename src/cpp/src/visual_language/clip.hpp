@@ -7,6 +7,8 @@
 #include <cstring>
 #include <vector>
 
+#include <openvino/runtime/tensor.hpp>
+
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
     float image_std[3] = {1.0f, 1.0f, 1.0f};
@@ -43,3 +45,27 @@ std::vector<clip_image_u8> get_image_patches(
 );
 
 std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
+
+/**
+ * @brief Converts an OpenVINO image tensor (1HWC) to a clip_image_u8 structure.
+ *
+ * @param image_tensor An OpenVINO tensor (1HWC) containing the image data.
+ * @return A clip_image_u8 structure containing the image data.
+ */
+clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor);
+
+/**
+ * @brief Converts a clip_image_u8 structure to an OpenVINO image tensor (1HWC).
+ *
+ * @param image A clip_image_u8 structure containing the image data.
+ * @return An OpenVINO tensor containing the image data (1HWC).
+ */
+ov::Tensor clip_image_u8_to_tensor(const clip_image_u8& image);
+
+/**
+ * @brief Converts a clip_image_f32 structure to an OpenVINO image tensor (1CHW).
+ *
+ * @param image A clip_image_f32 structure containing the image data.
+ * @return An OpenVINO tensor containing the image data (1CHW).
+ */
+ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image);

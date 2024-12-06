@@ -6,6 +6,36 @@
 #include "clip.hpp"
 #include <cmath>
 
+#include "image_resize.hpp"
+
+clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
+    clip_image_u8 image{
+        int(image_tensor.get_shape().at(2)),
+        int(image_tensor.get_shape().at(1)),
+        {image_tensor.data<uint8_t>(), image_tensor.data<uint8_t>() + image_tensor.get_size()}
+    };
+    return image;
+}
+
+ov::Tensor clip_image_u8_to_tensor(const clip_image_u8& image) {
+    ov::Tensor image_tensor{
+        ov::element::u8,
+        {1, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx), 3}
+    };
+
+    std::memcpy(image_tensor.data<uint8_t>(), image.buf.data(), image.buf.size());
+    return image_tensor;
+}
+
+ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
+    ov::Tensor image_tensor{
+        ov::element::f32,
+        {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}
+    };
+    std::memcpy(image_tensor.data<float>(), image.buf.data(), image.buf.size() * sizeof(float));
+    return image_tensor;
+}
+
 // Linear interpolation between two points
 static float clip_lerp(float s, float e, float t) {
     return s + (e - s) * t;
@@ -52,6 +82,12 @@ NUM clip(NUM x, NUM lower, NUM upper) {
 }
 
 void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_width, int target_height) {
+    ov::Tensor image_tensor = clip_image_u8_to_tensor(img);
+    ov::Tensor resized = resize_image(image_tensor, target_height, target_width);
+    dst = tensor_to_clip_image_u8(resized);
+}
+
+void bicubic_resize_2(const clip_image_u8 &img, clip_image_u8 &dst, int target_width, int target_height) {
     const int nx = img.nx;
     const int ny = img.ny;
 
