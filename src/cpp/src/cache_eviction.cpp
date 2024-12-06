@@ -301,9 +301,18 @@ namespace ov::genai {
         }
     }
 
-    std::vector<CacheRotationCalculator::BlockRotationData> CacheRotationCalculator::get_rotation_coefficients(
+    const std::vector<std::vector<double>>& CacheRotationCalculator::get_sin_lut() const {
+        return m_rope_sin_lut;
+    }
+
+    const std::vector<std::vector<double>>& CacheRotationCalculator::get_cos_lut() const {
+        return m_rope_cos_lut;
+    }
+
+    std::vector<CacheRotationCalculator::BlockRotationData> CacheRotationCalculator::get_rotation_data(
         const std::set<size_t>& evicted_block_logical_indices,
-        size_t num_logical_blocks_before_eviction) {
+        size_t num_logical_blocks_before_eviction,
+        bool deltas_only) {
         OPENVINO_ASSERT(num_logical_blocks_before_eviction * m_block_size < m_rope_sin_lut.size(),
                         "num_logical_blocks_before_eviction may not correspond to less tokens than max_context_length");
 
@@ -331,13 +340,17 @@ namespace ov::genai {
                 if (current_rotation_delta_in_blocks != 0) {
                     BlockRotationData block_rotation_data;
                     block_rotation_data.logical_block_idx = logical_block_idx - current_rotation_delta_in_blocks;
-                    block_rotation_data.cosines.reserve(m_block_size);
-                    block_rotation_data.sines.reserve(m_block_size);
-                    for (size_t i = 0; i < m_block_size; i++) {
-                        block_rotation_data.cosines.push_back(
-                            m_rope_cos_lut[current_rotation_delta_in_blocks * m_block_size]);
-                        block_rotation_data.sines.push_back(
-                            m_rope_sin_lut[current_rotation_delta_in_blocks * m_block_size]);
+                    block_rotation_data.rotation_delta = current_rotation_delta_in_blocks * m_block_size;
+
+                    if (!deltas_only) {
+                        block_rotation_data.cosines.reserve(m_block_size);
+                        block_rotation_data.sines.reserve(m_block_size);
+                        for (size_t i = 0; i < m_block_size; i++) {
+                            block_rotation_data.cosines.push_back(
+                                m_rope_cos_lut[current_rotation_delta_in_blocks * m_block_size]);
+                            block_rotation_data.sines.push_back(
+                                m_rope_sin_lut[current_rotation_delta_in_blocks * m_block_size]);
+                        }
                     }
 
                     retval.push_back(block_rotation_data);

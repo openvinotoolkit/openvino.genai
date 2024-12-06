@@ -33,8 +33,10 @@ class ModelRunner {
     size_t m_num_decoder_layers, m_block_size;
     bool m_collect_attention_scores;
     bool m_is_use_per_layer_cache_control;
-    std::vector<ov::Tensor> m_cache_rotation_coefficients;
+
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
+    std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
+    ov::Tensor m_cache_rotation_trig_lut;
 
 public:
     /**
@@ -76,12 +78,16 @@ public:
         return m_last_attention_scores;
     }
 
-    void set_cache_rotation_data(std::vector<ov::Tensor>&& cache_rotation_coefficients_for_each_layer,
-                                 const std::vector<std::map<size_t, std::vector<size_t>>>&&
-                                     rotated_logical_block_indices_per_sequence_for_each_layer) {
-        m_cache_rotation_coefficients = std::move(cache_rotation_coefficients_for_each_layer);
+    void set_cache_rotation_trig_lut(ov::Tensor&& rotation_trig_lut) {
+        m_cache_rotation_trig_lut = std::move(rotation_trig_lut);
+    }
+
+    void set_cache_rotation_data(std::vector<std::map<size_t, std::vector<size_t>>>&&
+                                     rotated_logical_block_indices_per_sequence_for_each_layer,
+                                 std::vector<ov::Tensor>&& rotation_deltas_for_each_layer) {
         m_rotated_block_logical_indices_per_sequence_for_each_layer =
             std::move(rotated_logical_block_indices_per_sequence_for_each_layer);
+        m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
     }
 
     /**
@@ -184,8 +190,9 @@ public:
 
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
 
-        if (!m_cache_rotation_coefficients.empty()) {
+        if (!m_cache_rotation_deltas_for_each_layer.empty()) {
             _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
+            m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
         }
 
         m_request.set_tensor("block_indices_begins", block_indices_begins);
@@ -210,8 +217,6 @@ public:
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
-
-        m_cache_rotation_coefficients.clear();
 
         // return logits
         return m_request.get_tensor("logits");
@@ -307,11 +312,6 @@ private:
 
     void _set_cache_rotation_coefficients(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                           const Scheduler::Output& scheduler_output) {
-        for (size_t i = 0; i < m_num_decoder_layers; i++) {
-            auto tensor_name = std::string("rotation_coefficients.") + std::to_string(i);
-            m_request.set_tensor(tensor_name, m_cache_rotation_coefficients[i]);
-        }
-
         std::vector<std::string> rotation_indices_tensor_names(m_num_decoder_layers);
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             auto tensor_name = std::string("rotated_block_indices.") + std::to_string(i);
@@ -322,6 +322,11 @@ private:
             }
             auto rotated_block_indices_tensor = m_request.get_tensor(tensor_name);
             rotated_block_indices_tensor.set_shape({num_indices});
+        }
+
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
+            auto tensor_name = std::string("rotation_deltas.") + std::to_string(i);
+            m_request.set_tensor(tensor_name, m_cache_rotation_deltas_for_each_layer[i]);
         }
 
 
