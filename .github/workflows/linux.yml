@@ -264,8 +264,15 @@ jobs:
       - name: Extract Artifacts
         run: pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
-                    
-      - name: Build Samples - ${{ matrix.build-type }}
+        
+      - name: Build Samples (Release)
+        if: ${{ 'Release' == matrix.build-type }}
+        run: |
+          chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
+          ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
+  
+      - name: Build Samples (${{ matrix.build-type }})
+        if: ${{ 'Release' != matrix.build-type }}
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.OV_INSTALL_DIR }}/samples/cpp/ -B ${{ env.BUILD_DIR }}
