@@ -126,8 +126,12 @@ bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
-bool GenerationConfig::is_speculative_decoding() const {
+bool GenerationConfig::is_assisting_generation() const {
     return (assistant_confidence_threshold > 0 || num_assistant_tokens > 0);
+}
+
+bool GenerationConfig::is_prompt_lookup() const {
+    return (max_ngram_size > 0 && num_assistant_tokens > 0);
 }
 
 void GenerationConfig::validate() const {
@@ -173,10 +177,11 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "frequence_penalty penalty must be a [-2; +2]");
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
     }
-    if (is_speculative_decoding()) {
+    if (is_assisting_generation()) {
         if (assistant_confidence_threshold != 0.f) {
             OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
         } else {
+            OPENVINO_ASSERT(!is_prompt_lookup(), "Parameters `assistant_confidence_threshold` cannot be used while Prompt Lookup decoding");
             OPENVINO_ASSERT(num_assistant_tokens > 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
         };
     }

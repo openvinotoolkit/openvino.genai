@@ -11,6 +11,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
+#include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "timer.hpp"
 #include "utils.hpp"
 #include "debug_utils.hpp"
@@ -28,6 +29,16 @@ extract_draft_model_from_config(ov::AnyMap& config) {
     return draft_model;
 }
 
+inline bool
+extract_prompt_lookup_from_config(ov::AnyMap& config) {
+    bool res = false;
+    if (config.find(ov::genai::prompt_lookup.name()) != config.end()) {
+        res = config.at(ov::genai::prompt_lookup.name()).as<bool>();
+        config.erase(ov::genai::prompt_lookup.name());
+    }
+    return res;
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
@@ -35,7 +46,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const ov::AnyMap& tokenizer_properties) {
     auto properties_without_draft_model = properties;
     auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
-    if (draft_model.models_path.empty()) {
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    if (is_prompt_lookup_enabled) {
+        OPENVINO_ASSERT(draft_model.models_path.empty(), "Speculative decoding and prompt lookup decoding are mutually excluded");
+        m_impl = std::make_shared<PromptLookupImpl>(models_path, scheduler_config, device, properties_without_draft_model, tokenizer_properties);
+    } else if (draft_model.models_path.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, properties, tokenizer_properties);
     } else {
         m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, properties_without_draft_model, draft_model, tokenizer_properties);
@@ -50,7 +65,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const ov::AnyMap& properties) {
     auto properties_without_draft_model = properties;
     auto draft_model = extract_draft_model_from_config(properties_without_draft_model);
-    if (draft_model.models_path.empty()) {
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    if (is_prompt_lookup_enabled) {
+        OPENVINO_ASSERT(draft_model.models_path.empty(), "Speculative decoding and prompt lookup decoding are mutually excluded");
+        m_impl = std::make_shared<PromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties_without_draft_model);
+    } else if (draft_model.models_path.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, tokenizer, scheduler_config, device, properties);
     } else {
         m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, properties_without_draft_model, draft_model);
