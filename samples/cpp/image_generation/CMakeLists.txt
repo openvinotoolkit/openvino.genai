@@ -13,12 +13,9 @@ file(DOWNLOAD https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef
 
 # create main sample executable
 
-add_executable(text2image
-    ${CMAKE_CURRENT_SOURCE_DIR}/text2image.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/load_image.cpp)
+add_executable(text2image text2image.cpp imwrite.cpp)
 
-target_include_directories(text2image PRIVATE ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(text2image PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(text2image PRIVATE openvino::genai)
 
 set_target_properties(text2image PROPERTIES
@@ -33,11 +30,9 @@ install(TARGETS text2image
 
 # create LoRA sample executable
 
-add_executable(lora_text2image
-    ${CMAKE_CURRENT_SOURCE_DIR}/lora_text2image.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
+add_executable(lora_text2image lora_text2image.cpp imwrite.cpp)
 
-target_include_directories(lora_text2image PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(lora_text2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(lora_text2image PRIVATE openvino::genai)
 
 set_target_properties(lora_text2image PROPERTIES
@@ -53,10 +48,10 @@ install(TARGETS lora_text2image
 # create heterogeneous_stable_diffusion sample executable
 
 add_executable(heterogeneous_stable_diffusion
-    ${CMAKE_CURRENT_SOURCE_DIR}/heterogeneous_stable_diffusion.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
+    heterogeneous_stable_diffusion.cpp
+    imwrite.cpp)
 
-target_include_directories(heterogeneous_stable_diffusion PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(heterogeneous_stable_diffusion PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(heterogeneous_stable_diffusion PRIVATE openvino::genai)
 
 set_target_properties(heterogeneous_stable_diffusion PROPERTIES
@@ -71,12 +66,9 @@ install(TARGETS heterogeneous_stable_diffusion
 
 # create image2image sample executable
 
-add_executable(image2image
-    ${CMAKE_CURRENT_SOURCE_DIR}/image2image.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/load_image.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
+add_executable(image2image image2image.cpp load_image.cpp imwrite.cpp)
 
-target_include_directories(image2image PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(image2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(image2image PRIVATE openvino::genai)
 
 set_target_properties(image2image PROPERTIES
@@ -91,20 +83,17 @@ install(TARGETS image2image
         
 # create LoRA sample executable
 
-add_executable(inpainting
-    ${CMAKE_CURRENT_SOURCE_DIR}/inpainting.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/load_image.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
+add_executable(inpainting inpainting.cpp load_image.cpp imwrite.cpp)
 
-target_include_directories(inpainting PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(inpainting PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(inpainting PRIVATE openvino::genai)
 
 set_target_properties(inpainting PROPERTIES
-COMPILE_PDB_NAME inpainting
-# Ensure out of box LC_RPATH on macOS with SIP
-INSTALL_RPATH_USE_LINK_PATH ON)
+    COMPILE_PDB_NAME inpainting
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS inpainting
-    RUNTIME DESTINATION samples_bin/
-    COMPONENT samples_bin
-    EXCLUDE_FROM_ALL)
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
