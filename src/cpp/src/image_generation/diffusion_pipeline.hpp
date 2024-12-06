@@ -84,6 +84,8 @@ public:
 
     virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;
 
+    virtual void set_lora_adapters(std::optional<AdapterConfig> adapters) = 0;
+
     virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties) = 0;
 
     virtual ov::Tensor decode(const ov::Tensor latent) = 0;

@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include <memory>
 
 #include "openvino/core/model.hpp"

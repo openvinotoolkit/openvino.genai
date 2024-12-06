@@ -40,7 +40,7 @@ def main():
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
-    pipe = openvino_genai.Image2ImagePipeline(args.model_dir, device)
+    pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
 
     initial_image = read_image(args.image)
     _, H, W, _ = list(initial_image.shape)
@@ -50,11 +50,11 @@ def main():
 
     image_tensor = pipe.generate(
         args.prompt,
-        initial_image,
-        mask_image,
+        # initial_image,
+        # mask_image,
         # width=W,
         # height=H,
-        strength=0.8,
+        # strength=0.8,
         generator=Generator(42)
     )
 

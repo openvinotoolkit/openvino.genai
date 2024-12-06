@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include <cassert>
 #include <ctime>
 
@@ -300,6 +302,10 @@ public:
         }
 
         return std::make_tuple(latent, proccesed_image, image_latent, noise);
+    }
+
+    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+        OPENVINO_THROW("LORA adapters are not implemented for FLUX pipeline yet");
     }
 
     ov::Tensor generate(const std::string& positive_prompt,

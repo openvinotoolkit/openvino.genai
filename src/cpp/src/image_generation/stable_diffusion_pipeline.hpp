@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include <ctime>
 #include <cassert>
 #include <filesystem>
@@ -285,6 +287,11 @@ public:
         return std::make_tuple(mask, masked_image_latent);
     }
 
+    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+        m_clip_text_encoder->set_adapters(adapters);
+        m_unet->set_adapters(adapters);
+    }
+
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
@@ -320,8 +327,7 @@ public:
             compute_dim(generation_config.width, initial_image, 2 /* assume NHWC */);
         check_inputs(generation_config, initial_image);
 
-        m_clip_text_encoder->set_adapters(generation_config.adapters);
-        m_unet->set_adapters(generation_config.adapters);
+        set_lora_adapters(generation_config.adapters);
 
         if (generation_config.generator == nullptr) {
             uint32_t seed = time(NULL);
@@ -408,7 +414,7 @@ public:
         return m_vae->decode(latent);
     }
 
-private:
+protected:
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& unet_config = m_unet->get_config();
