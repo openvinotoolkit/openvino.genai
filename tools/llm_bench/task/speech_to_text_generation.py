@@ -57,7 +57,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
-        tm_infer_list = []
+        tm_infer_list = None
         result_text = result_text.texts[0]
     else:
         start = time.perf_counter()
@@ -71,8 +71,9 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tm_infer_list = whisper_hook.get_time_infer_list()
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
-    log.debug('latency of all infers:')
-    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+    if tm_infer_list is not None:
+        log.debug('latency of all infers:')
+        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
     generation_time = end - start
     out_data = processor.tokenizer(result_text, return_tensors='pt')
     out_tokens = out_data['input_ids'] if 'input_ids' in out_data else out_data
