@@ -1,0 +1,6 @@
+*.xml
+*.bin
+models/
+images/
+*.bmp
+*.ini
