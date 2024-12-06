@@ -103,7 +103,7 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
     // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
-    merge_vae_image_pre_processing();
+    // merge_vae_image_pre_processing();
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
@@ -191,7 +191,7 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     const size_t vae_scale_factor = get_vae_scale_factor();
 
     OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by ",
             vae_scale_factor);
 
     if (m_encoder_model) {

@@ -9,7 +9,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
 
     const std::string models_path = argv[1], prompt = argv[2];
-    const std::string device = "CPU";  // GPU, NPU can be used as well
+    const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
     ov::Tensor image = pipe.generate(prompt,
