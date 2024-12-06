@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -20,6 +21,13 @@ class InputsEmbedder {
 public:
     InputsEmbedder(const VLMConfig& vlm_config,
                    const std::filesystem::path& model_dir,
+                   const std::string& device,
+                   const ov::AnyMap device_config);
+
+    InputsEmbedder(const VLMConfig& vlm_config,
+                   const ModelsMap& models_map,
+                   const Tokenizer& tokenizer,
+                   const std::filesystem::path& config_dir_path,
                    const std::string& device,
                    const ov::AnyMap device_config);
 
