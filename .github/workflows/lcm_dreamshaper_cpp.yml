@@ -86,7 +86,7 @@ jobs:
         run: |
           source openvino_lcm_cpp/bin/activate
           source ./ov/setupvars.sh
-          ${{ env.build_dir }}/samples/cpp/image_generation/image2image ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" image.png
+          ${{ env.build_dir }}/samples/cpp/image_generation/image2image ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
@@ -94,7 +94,7 @@ jobs:
         run: |
           source openvino_lcm_cpp/bin/activate
           source ./ov/setupvars.sh
-          python ./samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" image.png mask_image.png
+          python ./samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
