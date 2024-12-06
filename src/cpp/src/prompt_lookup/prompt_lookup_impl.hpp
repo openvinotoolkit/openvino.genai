@@ -21,9 +21,8 @@ public:
         const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
-        const ov::AnyMap& properties,
-        size_t max_ngram_size) {
-        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties, max_ngram_size);
+        const ov::AnyMap& properties) {
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties);
         m_tokenizer = tokenizer;
     };
 
@@ -32,10 +31,9 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& properties,
-        size_t max_ngram_size,
         const ov::AnyMap& tokenizer_properties = {}) {
         m_tokenizer = Tokenizer(models_path, tokenizer_properties);
-        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, m_tokenizer, scheduler_config, device, properties, max_ngram_size);
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, m_tokenizer, scheduler_config, device, properties);
     };
 
     GenerationHandle add_request(uint64_t request_id,

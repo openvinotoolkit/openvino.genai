@@ -17,14 +17,14 @@ ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_generated
     return result;
 }
 
-TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens) {
+TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size) {
     if (num_pred_tokens == 0) {
         return std::vector<int64_t>{};
     }
 
     const size_t input_length = input_ids.size();
 
-    for (int32_t ngram_size = m_max_ngram_size; ngram_size > 0; ngram_size--) {
+    for (int32_t ngram_size = max_ngram_size; ngram_size > 0; ngram_size--) {
         // extract last ngram_size tokens as search ngram
         std::vector<int64_t> ngram = std::vector<int64_t>{input_ids.cend() - ngram_size, input_ids.cend()};
 
@@ -64,13 +64,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             full_input_ids.insert(full_input_ids.end(), generated_tokens.begin(), generated_tokens.end());
 
             size_t min_num_assistant_tokens = 0;
+            const auto sampling_params = request->get_sampling_parameters();
             {
                 const auto generated_len = running_sequence->get_generated_len();
-                const auto sampling_params = request->get_sampling_parameters();
-                const auto left_generated_len = sampling_params.max_new_tokens - generated_len - 1;
+                const auto left_generated_len = std::min(sampling_params.max_new_tokens, sampling_params.max_length) - generated_len - 1;
                 min_num_assistant_tokens = std::min(sampling_params.num_assistant_tokens, left_generated_len);
             }
-            TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens);
+            TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
 
             if (!candidates.empty()) {
                 for (const auto& candidate : candidates) {

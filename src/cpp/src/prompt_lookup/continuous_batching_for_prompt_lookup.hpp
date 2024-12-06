@@ -17,32 +17,26 @@ public:
         const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
-        const ov::AnyMap& properties,
-        size_t max_ngram_size) :
+        const ov::AnyMap& properties) :
     ContinuousBatchingImpl{ models_path,
                             tokenizer,
                             scheduler_config,
                             device,
                             properties,
-                            true } {
-        m_max_ngram_size = max_ngram_size;
-    };
+                            true } {};
 
     ContinuousBatchingForPromptLookupImpl(
         const std::filesystem::path& models_path,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& properties,
-        size_t max_ngram_size,
         const ov::AnyMap& tokenizer_properties = {}) :
     ContinuousBatchingImpl{ models_path,
                             Tokenizer(models_path, tokenizer_properties),
                             scheduler_config,
                             device,
                             properties,
-                            true } {
-        m_max_ngram_size = max_ngram_size;
-    };
+                            true } {};
                             
     void generate_candidates();
 
@@ -51,8 +45,6 @@ public:
     std::map<uint64_t, SequenceLen> get_generated_request_len();
 
 protected:
-    TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens);
-
-    size_t m_max_ngram_size = 3;
+    TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
 };
 }

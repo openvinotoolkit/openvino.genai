@@ -308,7 +308,7 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 * Set `true` to activate this mode.
 * And create LLMPipeline instance with this config.
 */
-OPENVINO_GENAI_EXPORTS std::pair<std::string, size_t> prompt_lookup(size_t max_ngram_size = 3);
+static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 }  // namespace genai
 }  // namespace ov

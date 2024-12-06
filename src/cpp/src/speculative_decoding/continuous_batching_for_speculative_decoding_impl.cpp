@@ -141,7 +141,7 @@ init_request(
     LogitProcessor& logit_processor,
     bool is_update_logit_processor,
     bool is_init_all_sequences_in_request = false) {
-    OPENVINO_ASSERT(request->get_sampling_parameters().is_speculative_decoding(),
+    OPENVINO_ASSERT(request->get_sampling_parameters().is_assisting_generation(),
                     "Speculative decoding should have initialized options `assistant_confidence_threshold` xor `num_assistant_tokens` in `GenerationConfig`.");
     if (candidates.begin()->second.token_ids.empty() && !is_init_all_sequences_in_request) {
         return 0;
@@ -296,7 +296,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
         to_generate = false;
         for (auto& request : m_requests) {
             const auto& sampling_params = request->get_sampling_parameters();
-            if (!sampling_params.is_speculative_decoding()) {
+            if (!sampling_params.is_assisting_generation()) {
                 // generate only one token in case of non speculative decoding
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {

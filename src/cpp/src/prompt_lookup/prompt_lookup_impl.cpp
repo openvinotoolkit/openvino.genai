@@ -12,6 +12,7 @@ GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
                                                           ov::genai::GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
     return m_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
@@ -19,6 +20,7 @@ GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const std::string& prompt,
                                                           ov::genai::GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
     return m_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
@@ -92,7 +94,8 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
+        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
         main_generations.push_back(m_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
     }
 

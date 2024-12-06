@@ -12,21 +12,19 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
-    // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
+    // Define candidates number for candidate generation
     config.num_assistant_tokens = 5;
+    // Define max_ngram_size
+    config.max_ngram_size = 3;
 
     std::string model_path = argv[1];
     std::string prompt = argv[2];
     
-    // User can run main and draft model on different devices.
-    // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
     std::string device = "CPU";
 
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.cache_size = 5;
 
-    // Different devices require different block sizes, so different scheduler configs need to be set.
     ov::genai::LLMPipeline pipe(
         model_path,
         device,
