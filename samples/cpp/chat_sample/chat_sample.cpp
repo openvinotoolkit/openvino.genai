@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";  // GPU, NPU can be used as well
     ov::genai::LLMPipeline pipe(models_path, device);
     
-    ov::genai::GenerationConfig config;
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 100;
     std::function<bool(std::string)> streamer = [](std::string word) { 
         std::cout << word << std::flush;
