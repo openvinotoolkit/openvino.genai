@@ -114,7 +114,7 @@ jobs:
           python-version: "3.10"
       - name: Test stateful
         run: |
-          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r tools/llm_bench/requirements.txt -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release git+https://github.com/huggingface/optimum.git install tools/who_what_benchmark/ pytest -r tools/who_what_benchmark/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r tools/llm_bench/requirements.txt -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release git+https://github.com/huggingface/optimum.git tools/who_what_benchmark/ pytest -r tools/who_what_benchmark/requirements.txt
           python tools/llm_bench/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
       - name: WWB Tests
