@@ -123,6 +123,7 @@ Such models can be converted in the same way as regular ones via `optimum-cli`:
 Let's also download input data:
 
 `wget -O image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png`
+
 `wget -O mask.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png`
 
 And run the sample:

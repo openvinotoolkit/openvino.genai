@@ -253,7 +253,6 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
       <td>
         <ul>
           <li><a href="https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1"><code>diffusers/stable-diffusion-xl-1.0-inpainting-0.1</code></a></li>
-          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"><code>stabilityai/stable-diffusion-xl-base-1.0</code></a></li>
         </ul>
       </td>
     </tr>

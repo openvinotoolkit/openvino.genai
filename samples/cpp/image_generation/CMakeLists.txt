@@ -73,6 +73,7 @@ install(TARGETS heterogeneous_stable_diffusion
 
 add_executable(image2image
     ${CMAKE_CURRENT_SOURCE_DIR}/image2image.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/load_image.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
 
 target_include_directories(image2image PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -91,8 +92,9 @@ install(TARGETS image2image
 # create LoRA sample executable
 
 add_executable(inpainting
-${CMAKE_CURRENT_SOURCE_DIR}/inpainting.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/inpainting.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/load_image.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/imwrite.cpp)
 
 target_include_directories(inpainting PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(inpainting PRIVATE openvino::genai)

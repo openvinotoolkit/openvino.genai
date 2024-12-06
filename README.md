@@ -268,9 +268,9 @@ int main(int argc, char* argv[]) {
    ov::Tensor image = utils::load_image(image_path);
 
    ov::genai::Image2ImagePipeline pipe(models_path, device);
-   ov::Tensor image = pipe.generate(prompt, image, ov::genai::strength(0.8f));
+   ov::Tensor generated_image = pipe.generate(prompt, image, ov::genai::strength(0.8f));
 
-   imwrite("image.bmp", image, true);
+   imwrite("image.bmp", generated_image, true);
 }
 ```
 
@@ -319,10 +319,10 @@ int main(int argc, char* argv[]) {
    ov::Tensor image = utils::load_image(argv[3]);
    ov::Tensor mask_image = utils::load_image(argv[4]);
 
-   ov::genai::Image2ImagePipeline pipe(models_path, device);
-   ov::Tensor image = pipe.generate(prompt, image, mask_image);
+   ov::genai::InpaintingPipeline pipe(models_path, device);
+   ov::Tensor generated_image = pipe.generate(prompt, image, mask_image);
 
-   imwrite("image.bmp", image, true);
+   imwrite("image.bmp", generated_image, true);
 }
 ```
 

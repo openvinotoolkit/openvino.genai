@@ -15,11 +15,11 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor image = utils::load_image(image_path);
     ov::Tensor mask_image = utils::load_image(mask_image_path);
 
-    ov::genai::Image2ImagePipeline pipe(models_path, device);
-    ov::Tensor image = pipe.generate(prompt, image, mask_image);
+    ov::genai::InpaintingPipeline pipe(models_path, device);
+    ov::Tensor generated_image = pipe.generate(prompt, image, mask_image);
 
     // writes `num_images_per_prompt` images by pattern name
-    imwrite("image_%d.bmp", image, true);
+    imwrite("image_%d.bmp", generated_image, true);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {

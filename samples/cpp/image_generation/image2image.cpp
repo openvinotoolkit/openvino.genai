@@ -15,12 +15,12 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor image = utils::load_image(image_path);
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
-    ov::Tensor image = pipe.generate(prompt, image
+    ov::Tensor generated_image = pipe.generate(prompt, image,
         // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
         ov::genai::strength(0.8f));
 
     // writes `num_images_per_prompt` images by pattern name
-    imwrite("image_%d.bmp", image, true);
+    imwrite("image_%d.bmp", generated_image, true);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
