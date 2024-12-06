@@ -39,7 +39,9 @@ def setup_and_teardown(request):
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
-    model_id, *extra_args = request.param
+    params = request.param
+    model_id = params.get("model_id")
+    extra_args = params.get("extra_args", [])
     model_name = MODELS[model_id]
     model_path = os.path.join(MODELS_DIR, model_name)
     # Convert the model if not already converted
@@ -72,52 +74,50 @@ def download_test_content(request):
         print(f"Test content already exists at {file_path}")
     return file_path
 
-@pytest.mark.llm
-@pytest.mark.py
-@pytest.mark.parametrize("convert_model", [("TinyLlama-1.1B-Chat-v1.1", "--trust-remote-code")], indirect=True)
-def test_python_sample_multinomial_causal_lm(convert_model):
-    script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
-    exit_code = subprocess.run(["python", script, convert_model, "0"]).returncode
-    assert exit_code == 0, f"Script execution failed for model {convert_model}"
-
-@pytest.mark.py
+# whisper_speech_recognition sample
 @pytest.mark.whisper
-@pytest.mark.parametrize("convert_model", [("WhisperTiny", "--trust-remote-code")], indirect=True)
+@pytest.mark.py
+@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny", "extra_args": ["--trust-remote-code"]}], indirect=True, ids=lambda p: f"model={p['model_id']}")
 @pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
 def test_python_sample_whisper_speech_recognition(convert_model, download_test_content):
     script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
-    exit_code = subprocess.run(["python", script, convert_model, download_test_content]).returncode
-    assert exit_code == 0, f"Script execution failed for model {convert_model}"
+    result = subprocess.run(["python", script, convert_model, download_test_content], check=True)
+    assert result.returncode == 0, f"Script execution failed for model {convert_model}"
 
-@pytest.mark.cpp
-@pytest.mark.llm
-@pytest.mark.parametrize("convert_model", [("TinyLlama-1.1B-Chat-v1.1",)], indirect=True)
-def test_cpp_sample_greedy_causal_lm(convert_model):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
-    exit_code = subprocess.run([cpp_sample, convert_model, ""]).returncode
-    assert exit_code == 0, "C++ sample execution failed"
-
-@pytest.mark.cpp
 @pytest.mark.whisper
-@pytest.mark.parametrize("convert_model", [("WhisperTiny",)], indirect=True)
+@pytest.mark.cpp
+@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny"}], indirect=True)
 @pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
 def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_content):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')
     exit_code = subprocess.run([cpp_sample, convert_model, download_test_content]).returncode
     assert exit_code == 0, "C++ sample execution failed"
-    
+
+# multinomial_causal_lm sample
+@pytest.mark.llm
 @pytest.mark.py
-@pytest.mark.llm
-@pytest.mark.parametrize("convert_model", [("open_llama_3b_v2", "--trust-remote-code', '--weight-format fp16")], indirect=True)
-def test_python_sample_multinomial_causal_lm(convert_model):
+@pytest.mark.parametrize("convert_model, sample_args", [
+    ({"model_id": "TinyLlama-1.1B-Chat-v1.1", "extra_args": ["--trust-remote-code"]}, "0"),
+    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "b")
+], indirect=["convert_model"])
+def test_python_sample_multinomial_causal_lm(convert_model, sample_args):
     script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
-    exit_code = subprocess.run(["python", script, convert_model, 'b']).returncode
-    assert exit_code == 0, f"Script execution failed for model {convert_model}"
-    
+    exit_code = subprocess.run(["python", script, convert_model, sample_args]).returncode
+    assert exit_code == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
+
+@pytest.mark.llm    
 @pytest.mark.cpp
-@pytest.mark.llm
-@pytest.mark.parametrize("convert_model", [("open_llama_3b_v2","--trust-remote-code", "--weight-format fp16")], indirect=True)
+@pytest.mark.parametrize("convert_model", [{"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}], indirect=True)
 def test_cpp_sample_multinomial_causal_lm(convert_model):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
     exit_code = subprocess.run([cpp_sample, convert_model, "a"]).returncode
+    assert exit_code == 0, "C++ sample execution failed"
+
+# Greedy causal LM samples
+@pytest.mark.llm
+@pytest.mark.cpp
+@pytest.mark.parametrize("convert_model", [{"model_id": "TinyLlama-1.1B-Chat-v1.1"}], indirect=True)
+def test_cpp_sample_greedy_causal_lm(convert_model):
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
+    exit_code = subprocess.run([cpp_sample, convert_model, ""]).returncode
     assert exit_code == 0, "C++ sample execution failed"
