@@ -119,9 +119,11 @@ def test_cpp_sample_multinomial_causal_lm(convert_model):
 # Greedy causal LM samples
 @pytest.mark.llm
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [{"model_id": "TinyLlama-1.1B-Chat-v1.1"}], 
-                         indirect=True, ids=lambda p: f"model={p['model_id']}")
-def test_cpp_sample_greedy_causal_lm(convert_model):
+@pytest.mark.parametrize("convert_model, sample_args", [
+    ({"model_id": "TinyLlama-1.1B-Chat-v1.1"}, ""),
+    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "return 0")
+], indirect=["convert_model"])
+def test_cpp_sample_greedy_causal_lm(convert_model, sample_args):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
-    exit_code = subprocess.run([cpp_sample, convert_model, ""], check=True).returncode
+    exit_code = subprocess.run([cpp_sample, convert_model, sample_args], check=True).returncode
     assert exit_code == 0, "C++ sample execution failed"
