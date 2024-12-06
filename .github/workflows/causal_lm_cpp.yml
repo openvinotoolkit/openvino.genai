@@ -593,14 +593,7 @@ jobs:
           echo '-------------------------------Greedy Generated------------------------------------------------'
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "$(<prompt.txt)"| tee predictions_greedy.txt
           echo '-----------------------------------------------------------------------------------------------'
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_prompt_lookup.txt', 'r') as f:
-              predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
-          print('Passes')
-          "
+          diff predictions_greedy.txt predictions_prompt_lookup.txt
           echo "Prompt lookup" passed
 
   cpp-Phi-1_5:
