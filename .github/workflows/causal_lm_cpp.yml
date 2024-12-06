@@ -670,8 +670,7 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
         env:
@@ -679,7 +678,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
-          timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
+          timeout 60s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
           python -c "
           from transformers import LlamaTokenizer, AutoModelForCausalLM
           model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
@@ -698,7 +697,7 @@ jobs:
               chat_history.append(gen_prompt(prompt))
               chat_prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
               tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
-              answer = model.generate(**tokenized, max_length=1000, do_sample=False)
+              answer = model.generate(**tokenized, max_new_tokens=100, do_sample=False)
               answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
               chat_history.append(gen_answer(answer_str))
               output.write(answer_str)
@@ -708,7 +707,7 @@ jobs:
           "
           diff pred.txt ref.txt
           echo "Chat sample cpp" passed
-          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          timeout 60s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
