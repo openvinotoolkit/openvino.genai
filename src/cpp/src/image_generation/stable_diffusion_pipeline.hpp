@@ -377,9 +377,9 @@ private:
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;
 
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<UNet2DConditionModel> m_unet;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<UNet2DConditionModel> m_unet = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
 };
 
 }  // namespace genai
