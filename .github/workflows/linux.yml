@@ -285,7 +285,7 @@ jobs:
           if-no-files-found: 'error'
           
   genai_tests_archive:
-    name: Python Tests (archive - ${{ matrix.build-type }}) - ${{ matrix.test.name }}
+    name: Test ${{ matrix.test.name }} (archive/${{ matrix.build-type }})
     needs: [ openvino_download, genai_build_cmake ]
     strategy:
       fail-fast: false
@@ -346,7 +346,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
-    name: Python Tests (wheel) - ${{ matrix.test.name }}
+    name: Test ${{ matrix.test.name }} (wheel/Release)
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
       fail-fast: false
