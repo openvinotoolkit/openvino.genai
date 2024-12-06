@@ -224,7 +224,7 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -288,7 +288,7 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -353,20 +353,16 @@ jobs:
       - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/export-requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
-      - name: Install samples
-        run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
+      - name: Install GenAI to OpenVINO package
+        run: cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
 
       - name: Build samples (Release)
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
-        run: |
-          ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+        run: ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
 
       - name: Build samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}
