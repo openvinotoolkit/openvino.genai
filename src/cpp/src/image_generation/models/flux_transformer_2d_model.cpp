@@ -8,6 +8,14 @@
 #include "json_utils.hpp"
 #include "utils.hpp"
 
+namespace {
+    void get_input_names(std::vector<std::string>& input_names, const std::vector<ov::Output<const ov::Node>>& inputs_info) {
+        for (const auto& port : inputs_info) {
+            input_names.push_back(port.get_any_name());
+        }
+    }
+}
+
 namespace ov {
 namespace genai {
 
@@ -21,6 +29,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
     using utils::read_json_param;
 
     read_json_param(data, "in_channels", in_channels);
+    read_json_param(data, "guidance_embeds", guidance_embeds);
     file.close();
 }
 
@@ -95,6 +104,8 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
             name_to_shape[input_name] = {height * width / 4, name_to_shape[input_name][1]};
         } else if (input_name == "txt_ids") {
             name_to_shape[input_name] = {tokenizer_model_max_length, name_to_shape[input_name][1]};
+        } else if (input_name == "guidance") {
+            name_to_shape[input_name] = {batch_size};
         }
     }
 
@@ -106,6 +117,7 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
 FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
+    get_input_names(m_config.m_model_input_names, compiled_model.inputs());
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
