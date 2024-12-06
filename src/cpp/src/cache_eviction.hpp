@@ -158,8 +158,12 @@ public:
         bool operator==(const BlockRotationData& rhs) const {
             return (logical_block_idx == rhs.logical_block_idx) && (sines == rhs.sines) && (cosines == rhs.cosines);
         }
-        size_t logical_block_idx;             /** Logical index of the block AFTER eviction to which the sine and cosine
-                                                 coefficients should be applied */
+        size_t logical_block_idx;             /** Logical index of the block AFTER eviction to which the rotation
+                                                 should be applied */
+        size_t rotation_delta;                /** Delta, in token positions, that should be applied to block contents
+                                                via rotation **/
+
+        // Fields below are currently only used for testing purposes
         RotationCoefficientsPerToken sines;   /** The sine coefficients to be applied to this block's contents for
                                                  rotation, in order of the block's elements */
         RotationCoefficientsPerToken cosines; /** The cosine coefficients to be applied to this block's contents for
@@ -173,11 +177,13 @@ public:
      * determined to be necessary to evict.
      * @param num_logical_blocks_before_eviction Number of logical blocks that the evicted-from sequence occupied before
      * the eviction step.
+     * @param deltas_only If true, the sines and cosines fields in each returned BlockRotationData will be left empty.
      * @return A vector of per-block rotation data, including the indices of blocks after eviction that should be
      * rotated, and the pre-computed trigonometric coefficients necessary for rotation.
      */
-    std::vector<BlockRotationData> get_rotation_coefficients(const std::set<size_t>& evicted_block_logical_indices,
-                                                             size_t num_logical_blocks_before_eviction);
+    std::vector<BlockRotationData> get_rotation_data(const std::set<size_t>& evicted_block_logical_indices,
+                                                             size_t num_logical_blocks_before_eviction,
+                                                             bool deltas_only = true);
 
     /**
      * @return The size of the embedding dimension that this CacheRotationCalculator was initialized with.
@@ -185,6 +191,9 @@ public:
     size_t get_head_size() const {
         return m_head_size;
     }
+
+    const std::vector<std::vector<double>>& get_sin_lut() const;
+    const std::vector<std::vector<double>>& get_cos_lut() const;
 
 private:
     size_t m_block_size;

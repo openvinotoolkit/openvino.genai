@@ -484,7 +484,7 @@ TEST_P(CacheRotationCalculatorInvalidInputParameterizedTest, ThrowsForInvalidEvi
                                                    init_params.max_context_length,
                                                    init_params.kv_head_size,
                                                    init_params.rope_theta);
-    EXPECT_THROW(calc.get_rotation_coefficients(test_struct.evicted_block_logical_indices,
+    EXPECT_THROW(calc.get_rotation_data(test_struct.evicted_block_logical_indices,
                                                 test_struct.num_logical_blocks_before_eviction),
                  ov::Exception);
 }
@@ -535,8 +535,9 @@ TEST_P(CacheRotationCalculatorNumCoefficientsParameterizedTest, GivesCorrectNumb
                                                    init_params.kv_head_size,
                                                    init_params.rope_theta);
 
-    const auto rotation_multipliers = calc.get_rotation_coefficients(test_struct.evicted_block_logical_indices,
-                                                                     test_struct.num_logical_blocks_before_eviction);
+    const auto rotation_multipliers = calc.get_rotation_data(test_struct.evicted_block_logical_indices,
+                                                             test_struct.num_logical_blocks_before_eviction,
+                                                             /* deltas_only = */ false);
 
     ASSERT_EQ(rotation_multipliers.size(), test_struct.expected_num_rotated_blocks);
     for (const auto& block_rotation_data : rotation_multipliers) {
@@ -571,7 +572,7 @@ const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATI
                 4,
                 // pre-eviction block 3 rotated left by 2 blocks, coefficients are cos(4) and -sin(4) due to theta == 1.0
                 {
-                        {1,
+                        {1, 4,
                                 {
                                         {0.75680249, 0.75680249},  // block token 0
                                         {0.75680249, 0.75680249}   // block token 1
@@ -591,7 +592,7 @@ const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATI
                 4,
                 // coefficients are [cos(4 / 1),  -sin(4 / 1)], [cos(4 / sqrt(2)), -sin(4 / sqrt(2))] now
                 {
-                        {1,
+                        {1, 4,
                                 {
                                         {0.75680249, -0.30807174},  // block token 0
                                         {0.75680249, -0.30807174}   // block token 1
@@ -611,7 +612,7 @@ const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATI
                 // delta of 2 tokens for both blocks
                 // coefficients are [cos(2 / 1),  -sin(2 / 1)], [cos(2 / sqrt(2)), -sin(2 / sqrt(2))]
                 {
-                        {0,
+                        {0, 2,
                                 {
                                         {-0.90929742, -0.98776594},  // block token 0
                                         {-0.90929742, -0.98776594}   // block token 1
@@ -621,7 +622,7 @@ const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATI
                                         {-0.41614683, 0.15594369}   // block token 1
                                 },
                         },
-                        {1,
+                        {1, 2,
                                 {
                                         {-0.90929742, -0.98776594},  // block token 0
                                         {-0.90929742, -0.98776594}   // block token 1
@@ -643,7 +644,7 @@ const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATI
                 // and 4 tokens for second remaining block
                 // coefficients are [cos(4 / 1),  -sin(4 / 1)], [cos(4 / sqrt(2)), -sin(4 / sqrt(2))]
                 {
-                        {0,
+                        {0, 2,
                                 {
                                         {-0.90929742, -0.98776594},  // block token 0
                                         {-0.90929742, -0.98776594}   // block token 1
@@ -653,7 +654,7 @@ const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATI
                                         {-0.41614683, 0.15594369}   // block token 1
                                 },
                         },
-                        {1,
+                        {1, 4,
                                 {
                                         {0.75680249, -0.30807174},  // block token 0
                                         {0.75680249, -0.30807174}   // block token 1
@@ -704,8 +705,9 @@ TEST_P(CacheRotationCalculatorRefCoefficientsParameterizedTest, CalculatedCoeffi
                                                    init_params.kv_head_size,
                                                    init_params.rope_theta);
 
-    const auto rotation_multipliers = calc.get_rotation_coefficients(test_struct.evicted_block_logical_indices,
-                                                                     test_struct.num_logical_blocks_before_eviction);
+    const auto rotation_multipliers = calc.get_rotation_data(test_struct.evicted_block_logical_indices,
+                                                             test_struct.num_logical_blocks_before_eviction,
+                                                             /* deltas_only = */ false);
 
     compare_rotation_data(rotation_multipliers, test_struct.expected_rotation_data);
 }
@@ -768,7 +770,8 @@ TEST_P(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreS
     }
 
     auto calc = ov::genai::CacheRotationCalculator(ref_block_size, ref_max_context_length, ref_head_size);
-    auto test_data = calc.get_rotation_coefficients(ref_evicted_logical_block_indices, num_blocks_before_eviction);
+    auto test_data = calc.get_rotation_data(ref_evicted_logical_block_indices, num_blocks_before_eviction,
+                                            /* deltas_only = */ false);
     compare_rotation_data(test_data, ref_data, 1e-2);  // the dump values were originally calculated in FP16 precision
 }
 

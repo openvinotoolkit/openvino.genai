@@ -32,16 +32,14 @@ protected:
 
     size_t m_num_decoder_layers = 0;
 
-    // Pre-allocated per-layer storages for the per-token cache re-rotation coefficients used in cache eviction case
-    std::vector<ov::Tensor> m_rotation_coefficient_stores;
+    // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
+    std::vector<ov::Tensor> m_rotation_deltas_stores;
 
     std::map<size_t, std::vector<std::set<size_t>>> m_previous_evicted_block_logical_indices_per_sequence;
     std::map<size_t, size_t> m_previous_num_blocks_before_eviction_per_sequence;
 
-    // Per-layer ROI tensors, reusing storage from the pre-allocated tensors above, that actually represent the
-    // re-rotation coefficients to be sent to the proper model inputs at the *next* pipeline step.
-    std::vector<ov::Tensor> m_current_step_rotation_coefficients;
     std::vector<std::map<size_t, std::vector<size_t>>> m_current_step_rotated_block_indices_per_sequence;
+    std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 

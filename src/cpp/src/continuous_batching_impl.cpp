@@ -86,20 +86,38 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true);
-        m_rotation_coefficient_stores.reserve(m_num_decoder_layers);
-        ov::Shape rotation_coefficient_store_shape{device_config.get_head_size() *
-                                                   (m_scheduler->get_block_size() * scheduler_config.num_kv_blocks)};
+        m_rotation_deltas_stores.reserve(m_num_decoder_layers);
+        ov::Shape rotation_deltas_store_shape{m_scheduler->get_block_size() * scheduler_config.num_kv_blocks};
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
-            ov::Tensor store(ov::element::f32, rotation_coefficient_store_shape);
+            ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
             std::memset(store.data(), 0, store.get_byte_size());
-            m_rotation_coefficient_stores.push_back(store);
+            m_rotation_deltas_stores.push_back(store);
         }
+
+        // TODO (vshampor): LUT size equal to max cache size in tokens
+        //  is overkill - find a way to pass the max sequence length defined by pipeline instead
+        size_t max_sequence_length = m_scheduler->get_block_size() * scheduler_config.num_kv_blocks;
+        size_t embedding_size = device_config.get_head_size();
         m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
             m_scheduler->get_block_size(),
-            // TODO (vshampor): LUT size equal to max cache size in tokens
-            //  is overkill - find a way to pass the max sequence length instead
-            m_scheduler->get_block_size() * scheduler_config.num_kv_blocks,
-            device_config.get_head_size());
+            max_sequence_length,
+            embedding_size);
+        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_length, device_config.get_head_size()});
+        float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
+        std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
+
+        const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
+        const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
+
+
+        for (size_t pos_idx = 0; pos_idx < cos_lut.size(); pos_idx++) {
+            for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
+                rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
+                rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
+            }
+        }
+
+        m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
     } else {
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), m_num_decoder_layers);
@@ -180,8 +198,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         if (sched_config.use_cache_eviction) {
             _compute_cache_rotation_data(m_requests, scheduler_output);
-            m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotation_coefficients),
-                                                    std::move(m_current_step_rotated_block_indices_per_sequence));
+            m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
+                                                    std::move(m_current_step_rotation_deltas));
         }
 
         timer.end();
@@ -437,11 +455,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
         }
     }
 
-    size_t head_size = m_cache_rotation_calculator->get_head_size();
     // necessary since we move from these members during previous steps
-    m_current_step_rotation_coefficients.clear();
     m_current_step_rotated_block_indices_per_sequence.clear();
     m_current_step_rotated_block_indices_per_sequence.resize(m_num_decoder_layers);
+    m_current_step_rotation_deltas.clear();
 
     std::vector<size_t> num_blocks_to_rotate_for_each_layer(m_num_decoder_layers, 0);
 
@@ -450,7 +467,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
         size_t seq_id = seq_id_and_evicted_blocks.first;
         // Skip sequences that, in the meanwhile before previous step's forward execution and now,
         // have left the cache (e.g. finished or were preempted)
-        if (live_sequences.find(seq_id) == live_sequences.end()) {
+        if (live_seq_ids_to_num_occupied_blocks.find(seq_id) == live_seq_ids_to_num_occupied_blocks.end()) {
             continue;
         }
 
@@ -462,32 +479,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
             }
             size_t num_blocks_before_eviction = m_previous_num_blocks_before_eviction_per_sequence[seq_id];
             auto rotation_multipliers =
-                m_cache_rotation_calculator->get_rotation_coefficients(logical_blocks_to_evict[layer_idx],
+                m_cache_rotation_calculator->get_rotation_data(logical_blocks_to_evict[layer_idx],
                                                                        num_blocks_before_eviction);
             for (size_t i = 0; i < rotation_multipliers.size(); i++) {
                 const auto& block_rotation_data = rotation_multipliers[i];
-                const auto& rotation_multipliers_cos = block_rotation_data.cosines;
-                const auto& rotation_multipliers_sin = block_rotation_data.sines;
-                OPENVINO_ASSERT(rotation_multipliers_cos.size() == rotation_multipliers_sin.size());
-                OPENVINO_ASSERT(rotation_multipliers_cos.size() == m_scheduler->get_block_size());
 
                 m_current_step_rotated_block_indices_per_sequence[layer_idx][seq_id].push_back(
                     block_rotation_data.logical_block_idx);
 
-                // Fill the store tensor with rotation coefficient data - cos and sin coefficients are each contiguous,
-                // cos goes first
                 size_t block_offset =
-                    num_blocks_to_rotate_for_each_layer[layer_idx] * m_scheduler->get_block_size() * head_size;
-                auto rotation_multipliers_tensor_data =
-                    m_rotation_coefficient_stores[layer_idx].data<float>() + block_offset;
-                for (size_t tok_idx = 0; tok_idx < rotation_multipliers_cos.size(); tok_idx++) {
-                    size_t position_offset = head_size * tok_idx;
-                    for (size_t embedding_pair_idx = 0; embedding_pair_idx < head_size / 2; embedding_pair_idx++) {
-                        rotation_multipliers_tensor_data[position_offset + embedding_pair_idx] =
-                            rotation_multipliers_cos[tok_idx][embedding_pair_idx];
-                        rotation_multipliers_tensor_data[position_offset + embedding_pair_idx + head_size / 2] =
-                            rotation_multipliers_sin[tok_idx][embedding_pair_idx];
-                    }
+                    num_blocks_to_rotate_for_each_layer[layer_idx] * m_scheduler->get_block_size();
+                auto rotation_deltas_tensor_data =
+                    m_rotation_deltas_stores[layer_idx].data<int32_t>() + block_offset;
+                for (size_t tok_idx = 0; tok_idx < m_scheduler->get_block_size(); tok_idx++) {
+                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta;
                 }
                 num_blocks_to_rotate_for_each_layer[layer_idx] += 1;
             }
@@ -495,10 +500,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
     }
     // Select the previously filled rotation coefficients from the store tensor
     for (size_t i = 0; i < m_num_decoder_layers; i++) {
-        m_current_step_rotation_coefficients.emplace_back(
-            m_rotation_coefficient_stores[i],
+        m_current_step_rotation_deltas.emplace_back(
+            m_rotation_deltas_stores[i],
             ov::Coordinate{0},
-            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i] * m_scheduler->get_block_size() * head_size});
+            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i] * m_scheduler->get_block_size()});
     }
 }
 
