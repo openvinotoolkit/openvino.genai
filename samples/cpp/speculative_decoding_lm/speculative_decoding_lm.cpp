@@ -10,14 +10,6 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT>'");
     }
 
-    ov::genai::GenerationConfig config;
-    config.max_new_tokens = 100;
-    // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
-    // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
-    config.num_assistant_tokens = 5;
-    // add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
-    // config.assistant_confidence_threshold = 0.4
-
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
     std::string prompt = argv[3];
@@ -35,6 +27,15 @@ int main(int argc, char* argv[]) try {
         main_device,
         ov::genai::draft_model(draft_model_path, draft_device),
         ov::genai::scheduler_config(scheduler_config));
+
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    config.do_sample = false;
+    config.max_new_tokens = 100;
+    // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
+    // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
+    config.num_assistant_tokens = 5;
+    // add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
+    // config.assistant_confidence_threshold = 0.4
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
