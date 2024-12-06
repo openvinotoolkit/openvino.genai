@@ -66,8 +66,8 @@ jobs:
         run: |
           source openvino_lcm_cpp/bin/activate
           optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --task stable-diffusion --weight-format fp16 models/lcm_dreamshaper_v7/FP16
-          wget -o image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png
-          wget -o mask_image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png
+          wget -O ./image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png
+          wget -O ./mask_image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png
 
       - name: Run heterogeneous_stable_diffusion
         run: |
@@ -84,19 +84,13 @@ jobs:
 
       - name: Run image2image
         run: |
-          source openvino_lcm_cpp/bin/activate
           source ./ov/setupvars.sh
           ${{ env.build_dir }}/samples/cpp/image_generation/image2image ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png
-        env:
-          PYTHONPATH: ${{ env.build_dir }}
 
       - name: Run inpainting
         run: |
-          source openvino_lcm_cpp/bin/activate
           source ./ov/setupvars.sh
-          python ./samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
-        env:
-          PYTHONPATH: ${{ env.build_dir }}
+          ${{ env.build_dir }}/samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
 
   lcm_dreamshaper_v7_cpp-windows:
     runs-on: windows-2019
