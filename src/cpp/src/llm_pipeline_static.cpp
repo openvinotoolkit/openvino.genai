@@ -417,6 +417,16 @@ ModelDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
     return desc;
 }
 
+std::string model_desc_to_string(const ModelDesc& model_desc) {
+    std::map<std::string, std::string> model_desc_map;
+    model_desc_map["type"] = model_desc.type;
+    model_desc_map["name_or_path"] = model_desc.name_or_path;
+    model_desc_map["num_key_value_heads"] = std::to_string(model_desc.num_key_value_heads);
+    std::stringstream result;
+    ov::util::Write<std::map<std::string,std::string>>()(result, model_desc_map);
+    return result.str();
+}
+
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
                        const uint32_t kvcache_size,
@@ -591,6 +601,12 @@ std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& 
     return std::nullopt;
 }
 
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
     ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
     start_shape[dim] = start_pos;
@@ -641,6 +657,211 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 
 namespace ov {
 namespace genai {
+
+SMStaticLLMPipeline::SMStaticLLMPipeline(
+    const std::filesystem::path& models_path,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
+    const ov::AnyMap& config
+) : LLMPipelineImplBase(tokenizer,
+                        utils::from_config_json_if_exists(models_path)) {
+    ov::Core core;
+    auto model = core.read_model((models_path / "openvino_model.xml").string());
+
+    ov::AnyMap properties = config;
+
+    const uint32_t kMaxPromptLen = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+    std::string generate_hint = pop_or_default<std::string>(properties, "GENERATE_HINT", "FAST_COMPILE");
+    ModelDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+
+    update_config(properties, {"NPU_USE_NPUW", "YES"});
+    update_config(properties, {"NPUW_LLM", "YES"});
+    update_config(properties, {"NPUW_LLM_MODEL_DESC", model_desc_to_string(model_desc)});
+    update_config(properties, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
+    update_config(properties, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
+    update_config(properties, {"NPUW_LLM_GENERATE_HINT", generate_hint});
+
+    // FIXME: Support CACHE_DIR in future
+    drop_cache_dir(properties);
+    
+    auto compiled = core.compile_model(model, "NPU", properties);
+
+    m_request  = compiled.create_infer_request();
+}
+
+DecodedResults SMStaticLLMPipeline::generate(
+    StringInputs inputs,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    std::string prompt;
+    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+        if (input_vector->size() > 1u) {
+            OPENVINO_THROW("Currently only batch size=1 is supported");
+        }
+        OPENVINO_ASSERT(!input_vector->empty());
+        prompt = std::move(input_vector->front());
+    } else {
+        OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
+        prompt = std::get<std::string>(inputs);
+    }
+
+    ov::genai::TokenizedInputs tokenized_input;
+    // FIXME: Support chat conversation.
+    tokenized_input = m_tokenizer.encode(prompt);
+    auto encode_stop_time =  std::chrono::steady_clock::now();
+    auto encoded_results = generate(tokenized_input, config, streamer);
+
+    auto decode_start_time =  std::chrono::steady_clock::now();
+    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    auto decode_stop_time =  std::chrono::steady_clock::now();
+
+    // generate_durations
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.m_evaluated = false;
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
+    return decoded_results;
+}
+
+EncodedResults SMStaticLLMPipeline::generate(
+    const EncodedInputs& inputs,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    ov::Tensor input_ids;
+    ov::Tensor attention_mask;
+
+    if (auto data = std::get_if<ov::Tensor>(&inputs)) {
+        input_ids = *data;
+        attention_mask = ov::genai::utils::init_attention_mask(input_ids);
+    } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
+        input_ids = data->input_ids;
+        attention_mask = data->attention_mask;
+    }
+
+    if (input_ids.get_shape().at(0) > 1u) {
+        OPENVINO_THROW("Currently only batch size=1 is supported");
+    }
+
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (config.eos_token_id == -1)
+        config.set_eos_token_id(m_generation_config.eos_token_id);
+    config.validate();
+
+    std::shared_ptr<StreamerBase> streamer_ptr;
+    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
+        streamer_ptr = nullptr;
+    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+        streamer_ptr = *streamer_obj;
+    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+    }
+
+    if (!config.is_greedy_decoding()) {
+        OPENVINO_THROW("Currently only greedy decoding is supported");
+    }
+
+    ov::Shape prompts_shape = input_ids.get_shape();
+    const size_t batch_size = prompts_shape[0];
+    ov::genai::EncodedResults results;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    // NB: Only batch=1 is supported now
+    results.scores.resize(1u);
+    results.scores[0] = 0u;
+    results.tokens.resize(1u);
+
+    // TODO: Check if there is enough space in KV-cache to process input prompt
+    auto prompt_len = input_ids.get_size();
+
+    ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
+    utils::initialize_position_ids(position_ids, attention_mask);
+
+    m_request.set_tensor("input_ids", input_ids);
+    m_request.set_tensor("attention_mask", attention_mask);
+    m_request.set_tensor("position_ids", position_ids);
+
+    m_request.infer();
+
+    int64_t last_token = utils::argmax(m_request.get_tensor("logits"), 0);
+
+    results.tokens[0].push_back(last_token);
+    if (streamer_ptr && streamer_ptr->put(last_token)) {
+        return results;
+    }
+
+    int64_t input_ids_data = -1;
+    int64_t position_ids_data = prompt_len - 1;
+    std::vector<int64_t> attention_mask_data(prompt_len - 1, 1);
+    const size_t max_tokens = config.get_max_new_tokens(prompt_len);
+    for (int i = 0; i < max_tokens - 1; ++i) {
+        input_ids_data = last_token;
+        ++position_ids_data;
+        attention_mask_data.push_back(1);
+
+        m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&input_ids_data));
+        m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&position_ids_data));
+        m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, (void*)&attention_mask_data[0]));
+
+        m_request.infer();
+
+        last_token = utils::argmax(m_request.get_tensor("logits"), 0);
+        results.tokens[0].push_back(last_token);
+
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
+        if (streamer_ptr && streamer_ptr->put(last_token)) {
+            break;
+        }
+
+        if (last_token == config.eos_token_id && !config.ignore_eos) {
+            break;
+        }
+
+        // TODO: How to check that KV-Cache is full?
+    }
+}
+
+void SMStaticLLMPipeline::start_chat(const std::string& system_message) {
+    // FIXME: Implement later.
+    return;
+}
+
+void SMStaticLLMPipeline::finish_chat() {
+    // FIXME: Implement later.
+    return;
+}
+
+std::unique_ptr<LLMPipelineImplBase>
+StaticLLMPipelineFactory::create(const std::filesystem::path& models_path,
+                                 const ov::genai::Tokenizer& tokenizer,
+                                 const std::string& device,
+                                 const ov::AnyMap& config) {
+    auto properties = config;
+    const auto use_sm_pipeline = pop_or_default(properties, "USE_SM_PIPELINE", false);
+    if (use_sm_pipeline) {
+        return std::make_unique<SMStaticLLMPipeline>(models_path, tokenizer, device, properties);
+    }
+    return std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
+}
+
+std::unique_ptr<LLMPipelineImplBase>
+StaticLLMPipelineFactory::create(const std::filesystem::path& models_path,
+                                 const std::string& device,
+                                 const ov::AnyMap& config) {
+    return create(models_path, Tokenizer(models_path), device, config);
+}
 
 StaticLLMPipeline::StaticLLMPipeline(
     const std::filesystem::path& models_path,
@@ -701,7 +922,6 @@ void StaticLLMPipeline::setupAndCompileModels(
     */
 
     ov::Core core;
-
     // NB: Get information about NPU if available
     auto npudesc = extract_npu_descriptor(core);
     // (1) Read the template model - this will be kvcache model
