@@ -574,8 +574,10 @@ def create_image_text_gen_model(model_path, device, **kwargs):
                 return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
             else:
                 log.warning(
-                f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
-                "Benchmark will be switched to Optimum Intel pipeline realization")
+                    f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                    "Benchmark will be switched to Optimum Intel pipeline realization"
+                )
+
         log.info("Selected Optimum Intel for benchmarking")
         model_class = OV_MODEL_CLASSES_MAPPING.get(DEFAULT_MODEL_CLASSES[kwargs['use_case']])
         start = time.perf_counter()
