@@ -24,18 +24,6 @@ Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
-## Using encrypted models
-
-LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
-The following code snippet demonstrates how to load the model from the memory buffer:
-
-```cpp
-auto [model_str, weights_tensor] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
-ov::genai::Tokenizer tokenizer(models_path);
-ov::genai::LLMPipeline pipe(model_str, weights_tensor, tokenizer, device);
-```
-For the sake of brevity the code above does not include Tokenizer decryption. For more details look to encrypted_model_causal_lm sample.
-
 ### Troubleshooting
 
 #### Unicode characters encoding error on Windows

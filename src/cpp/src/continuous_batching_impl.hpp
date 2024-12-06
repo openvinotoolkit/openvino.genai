@@ -53,12 +53,22 @@ protected:
 
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
 public:
-    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
+    ContinuousBatchingImpl(const std::filesystem::path& models_path,
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
+                           const ov::AnyMap& properties);
+
+    ContinuousBatchingImpl(const std::filesystem::path& models_path,
+                           const SchedulerConfig& scheduler_config,
+                           const std::string& device,
                            const ov::AnyMap& properties,
-                           const ov::genai::GenerationConfig& generation_config);
+                           const ov::AnyMap& tokenizer_properties)
+    : ContinuousBatchingImpl{ models_path,
+                              Tokenizer(models_path, tokenizer_properties),
+                              scheduler_config,
+                              device,
+                              properties } {}
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

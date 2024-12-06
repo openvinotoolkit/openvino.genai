@@ -11,27 +11,19 @@
 namespace ov::genai {
 
 struct ModelDesc {
+    std::filesystem::path models_path;
     std::string device;
     ov::genai::SchedulerConfig scheduler_config;
     ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
 
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
+    ModelDesc(const std::filesystem::path& models_path,
               const std::string& device = {},
               const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
+              const ov::genai::SchedulerConfig& scheduler_config = {}) :
+        models_path(models_path),
         device(device),
         properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
+        scheduler_config(scheduler_config) {}
 };
 
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::ImplInterface {
@@ -43,7 +35,12 @@ protected:
     std::map<uint64_t, GenerationHandle> m_draft_generations;
     
 public:
-    SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+    SpeculativeDecodingImpl(const std::filesystem::path& main_models_path,
+                            const SchedulerConfig& scheduler_config,
+                            const std::string& device,
+                            const ov::AnyMap& properties,
+                            const ov::genai::ModelDesc draft_model_desc,
+                            const ov::AnyMap& tokenizer_properties = {});
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

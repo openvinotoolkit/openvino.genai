@@ -314,7 +314,7 @@ std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_
 }
 
 template <typename T>
-std::optional<T> get_option(const ov::AnyMap& config, const std::string& option_name) {
+std::optional<T> get_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
         return std::make_optional(it->second.as<T>());
     }
@@ -396,12 +396,18 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
     return axes;
 }
 
-ov::genai::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
+struct ModelDesc {
+    std::string type;
+    std::string name_or_path;
+    int num_key_value_heads;
+};
+
+ModelDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
     std::ifstream file(filepath);
     OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
     nlohmann::json config_data = nlohmann::json::parse(file);
 
-    ov::genai::ModelConfigDesc desc;
+    ModelDesc desc;
     desc.type = config_data["model_type"].get<std::string>();
     // NB: In case _name_or_path field isn't presented in config.json
     if (config_data.contains("_name_or_path")) {
@@ -651,9 +657,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     */
     const auto use_blobs = pop_or_default(properties, "USE_BLOBS", false);
     if (!use_blobs) {
-        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
-        auto model = genai::utils::singleton_core().read_model((models_path / "openvino_model.xml").string());
-        setupAndCompileModels(model, device, model_desc, properties);
+        setupAndCompileModels(models_path, device, properties);
     } else {
         setupAndImportModels(models_path, device, properties);
     }
@@ -673,39 +677,9 @@ StaticLLMPipeline::StaticLLMPipeline(
 ) : StaticLLMPipeline(models_path, Tokenizer(models_path), device, properties) {
 }
 
-StaticLLMPipeline::StaticLLMPipeline(
-    const std::shared_ptr<ov::Model>& model,
-    const ModelConfigDesc& model_desc,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config
-) : LLMPipelineImplBase(tokenizer, generation_config) {
-    
-    bool use_blobs = false;
-    auto anyopt = get_option<bool>(properties, "USE_BLOBS");
-    if (anyopt.has_value()) {
-        use_blobs = *anyopt;
-    }
-    // Using model_str and weights_tesnor with blobs is meaningless.
-    OPENVINO_ASSERT(!use_blobs, "blobs cannot be used with model string and weights tensor");
-
-    auto properties_ = properties;
-    setupAndCompileModels(model, device, model_desc, properties_);
-
-    // Initialize tensors
-    prepare_for_new_conversation();
-
-    // If eos_token_id was not provided, take value
-    if (m_generation_config.eos_token_id == -1) {
-        m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-    }
-}
-
 void StaticLLMPipeline::setupAndCompileModels(
-    const std::shared_ptr<ov::Model>& model,
+    const std::filesystem::path& models_path,
     const std::string& device,
-    const ModelConfigDesc& model_desc,
     ov::AnyMap& properties) {
     /* Initialization assumes multiple steps if user passes "USE_BLOBS=NO":
         1) Read the template model - this will be kvcache model
@@ -724,7 +698,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     // NB: Get information about NPU if available
     auto npudesc = extract_npu_descriptor(core);
     // (1) Read the template model - this will be kvcache model
-    auto kvcache_model = model;
+    auto kvcache_model = core.read_model((models_path / "openvino_model.xml").string());
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(kvcache_model);
     // (3) Align u4 ZP constants
@@ -735,7 +709,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     // (5) Reshape both models to static shape
     const uint32_t kMaxPromptLen = align_to(pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u), 64u);
     const uint32_t kMinResponseLen = align_to(pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u), 64u);
-
+    ModelDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
     KVAxesPosition axes = get_kv_axes(model_desc.type);
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len, false};
     reshape_to_static(prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);

@@ -221,29 +221,6 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& pr
     return {core_properties, compile_properties};
 };
 
-/**
- * scheduler_config is a separate config for continuous batching pipeline. 
- * This routine splits scheduler_config from plugin_config.
- */
-std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    }
-    return {plugin_config, scheduler_config};
-};
-
-std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-    auto [core_properties, compile_properties] = split_core_compile_config(properties);
-    ov::Core core;
-    core.set_property(core_properties);
-    std::filesystem::path openvino_model_name = "openvino_model.xml";
-    return core.read_model((models_path / openvino_model_name).string());
-}
-
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
     auto subtrahend_size = subtrahend.input_ids.get_size();
@@ -284,23 +261,6 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
         matmul->input(0).replace_source_output(slice);
     }
 }
-
-template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
-    if (!model)
-        return;
-    if (model->get_rt_info().count(name) == 0)
-        return;
-    auto str_value = model->get_rt_info().at(name).as<std::string>();
-    if constexpr (std::is_same<T, int64_t>::value) {
-        value = std::stoll(str_value);
-    } else if constexpr (std::is_same<T, std::string>::value) {
-        value = str_value;
-    }
-}
-
-template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
-template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
 
 ov::Core singleton_core() {
     static ov::Core core;
