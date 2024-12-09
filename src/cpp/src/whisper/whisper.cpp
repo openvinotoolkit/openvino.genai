@@ -153,8 +153,9 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 }
 
 int64_t detect_language(ov::Tensor& encoder_hidden_state,
-                        ov::InferRequest decoder,
-                        const ov::genai::WhisperGenerationConfig& config) {
+                        ov::InferRequest& decoder,
+                        const ov::genai::WhisperGenerationConfig& config,
+                        ov::genai::RawPerfMetrics& raw_metrics) {
     std::vector<int64_t> input_ids{config.decoder_start_token_id};
 
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
@@ -162,7 +163,10 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
     decoder.set_tensor("input_ids", input_ids_tensor);
 
+    const auto infer_start = std::chrono::steady_clock::now();
     decoder.infer();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     auto output_tensor = decoder.get_tensor("logits");
 
@@ -174,7 +178,8 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
 std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
                                       ov::InferRequest decoder,
                                       const ov::genai::WhisperGenerationConfig& config,
-                                      const bool return_timestamps) {
+                                      const bool return_timestamps,
+                                      ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
         if (return_timestamps) {
             return std::vector<int64_t>{config.decoder_start_token_id};
@@ -190,7 +195,7 @@ std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
             language_token_id = config.lang_to_id.at(language);
         }
     } else {
-        language_token_id = detect_language(encoder_hidden_state, decoder, config);
+        language_token_id = detect_language(encoder_hidden_state, decoder, config, raw_metrics);
     }
 
     int64_t task_token_id = config.transcribe_token_id;
@@ -259,6 +264,25 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     return {false, output_tokens};
 }
 
+template <typename T>
+void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
+    OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
+    std::vector<T> result{value.begin(), value.begin() + offset};
+    for (auto [start, end] : ranges) {
+        result.insert(result.end(), value.begin() + offset + start, value.begin() + offset + end);
+    }
+
+    value = result;
+}
+
+void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
+                                size_t offset,
+                                std::vector<std::pair<size_t, size_t>>& ranges) {
+    filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
+    filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
+    filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
+}
+
 }  // namespace
 
 namespace ov {
@@ -270,12 +294,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        ov::genai::WhisperInitializedModels& models,
                                        WhisperFeatureExtractor& feature_extractor,
                                        const std::shared_ptr<ChunkStreamerBase> streamer) {
-    auto input_features = feature_extractor.extract(raw_speech);
-
-    const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
-    // long-form audio processing requires timestamps to be enabled
-    const bool return_timestamps = config.return_timestamps || !is_shortform;
-
     size_t max_new_tokens = config.get_max_new_tokens();
 
     WhisperGenerateResult result;
@@ -285,6 +303,15 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     raw_metrics.m_batch_sizes.reserve(max_new_tokens);
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
     raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+
+    const auto infer_start = std::chrono::steady_clock::now();
+    auto input_features = feature_extractor.extract(raw_speech);
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+    result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
+
+    const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
+    // long-form audio processing requires timestamps to be enabled
+    const bool return_timestamps = config.return_timestamps || !is_shortform;
 
     std::vector<int64_t> init_ids;
     std::vector<int64_t>& output_tokens = result.output_tokens;
@@ -309,7 +336,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         // prepare init_ids just once for whole input
         if (init_ids.empty()) {
-            init_ids = prepare_init_ids(hidden_state_tensor, models.decoder, config, return_timestamps);
+            init_ids = prepare_init_ids(hidden_state_tensor, models.decoder, config, return_timestamps, raw_metrics);
         }
 
         auto [cancelled, chunk_output_tokens] = full_decode(hidden_state_tensor,
@@ -328,6 +355,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                                   config,
                                                                   feature_extractor.nb_max_frames,
                                                                   time_precision);
+
+            filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 

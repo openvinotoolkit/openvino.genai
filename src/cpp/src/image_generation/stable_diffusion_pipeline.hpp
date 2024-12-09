@@ -138,8 +138,41 @@ public:
         m_vae->compile(device, properties);
     }
 
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+        const auto& unet_config = m_unet->get_config();
+        const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+
+        std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
+            batch_size_multiplier > 1);
+
+        // replicate encoder hidden state to UNet model
+        if (generation_config.num_images_per_prompt == 1) {
+            // reuse output of text encoder directly w/o extra memory copy
+            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states);
+        } else {
+            ov::Shape enc_shape = encoder_hidden_states.get_shape();
+            enc_shape[0] *= generation_config.num_images_per_prompt;
+
+            ov::Tensor encoder_hidden_states_repeated(encoder_hidden_states.get_element_type(), enc_shape);
+            for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
+                numpy_utils::batch_copy(encoder_hidden_states, encoder_hidden_states_repeated, 0, n);
+                if (batch_size_multiplier > 1) {
+                    numpy_utils::batch_copy(encoder_hidden_states, encoder_hidden_states_repeated,
+                        1, generation_config.num_images_per_prompt + n);
+                }
+            }
+
+            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states_repeated);
+        }
+
+        if (unet_config.time_cond_proj_dim >= 0) { // LCM
+            ov::Tensor timestep_cond = get_guidance_scale_embedding(generation_config.guidance_scale - 1.0f, unet_config.time_cond_proj_dim);
+            m_unet->set_hidden_states("timestep_cond", timestep_cond);
+        }
+    }
+
     ov::Tensor prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
-        using namespace numpy_utils;
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -152,7 +185,7 @@ public:
             if (generation_config.num_images_per_prompt > 1) {
                 ov::Tensor batched_latent(ov::element::f32, latent_shape);
                 for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                    batch_copy(latent, batched_latent, 0, n);
+                    numpy_utils::batch_copy(latent, batched_latent, 0, n);
                 }
                 latent = batched_latent;
             }
@@ -202,37 +235,11 @@ public:
             generation_config.generator = std::make_shared<CppStdGenerator>(seed);
         }
 
-        std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
-        ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
-            batch_size_multiplier > 1);
-
-        // replicate encoder hidden state to UNet model
-        if (generation_config.num_images_per_prompt == 1) {
-            // reuse output of text encoder directly w/o extra memory copy
-            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states);
-        } else {
-            ov::Shape enc_shape = encoder_hidden_states.get_shape();
-            enc_shape[0] *= generation_config.num_images_per_prompt;
-
-            ov::Tensor encoder_hidden_states_repeated(encoder_hidden_states.get_element_type(), enc_shape);
-            for (size_t n = 0; n < generation_config.num_images_per_prompt; ++n) {
-                batch_copy(encoder_hidden_states, encoder_hidden_states_repeated, 0, n);
-                if (batch_size_multiplier > 1) {
-                    batch_copy(encoder_hidden_states, encoder_hidden_states_repeated,
-                        1, generation_config.num_images_per_prompt + n);
-                }
-            }
-
-            m_unet->set_hidden_states("encoder_hidden_states", encoder_hidden_states_repeated);
-        }
-
-        if (unet_config.time_cond_proj_dim >= 0) { // LCM
-            ov::Tensor timestep_cond = get_guidance_scale_embedding(generation_config.guidance_scale - 1.0f, unet_config.time_cond_proj_dim);
-            m_unet->set_hidden_states("timestep_cond", timestep_cond);
-        }
-
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
+
+        // compute text encoders and set hidden states
+        compute_hidden_states(positive_prompt, generation_config);
 
         // preparate initial latents
         ov::Tensor latent = prepare_latents(initial_image, generation_config);
@@ -242,12 +249,20 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
+        // use callback if defined
+        std::function<bool(size_t, ov::Tensor&)> callback;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        bool do_callback = callback_iter != properties.end();
+        if (do_callback) {
+            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
+        }
+
         ov::Tensor denoised, noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
-            batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
+            numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
+                numpy_utils::batch_copy(latent, latent_cfg, 0, generation_config.num_images_per_prompt, generation_config.num_images_per_prompt);
             }
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
@@ -280,9 +295,19 @@ public:
             // check whether scheduler returns "denoised" image, which should be passed to VAE decoder
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
+
+            if (do_callback) {
+                if (callback(inference_step, denoised)) {
+                    return ov::Tensor(ov::element::u8, {});
+                }
+            }
         }
 
-        return m_vae->decode(denoised);
+        return decode(denoised);
+    }
+
+    ov::Tensor decode(const ov::Tensor latent) override {
+        return m_vae->decode(latent);
     }
 
 private:
@@ -352,9 +377,9 @@ private:
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;
 
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<UNet2DConditionModel> m_unet;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<UNet2DConditionModel> m_unet = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
 };
 
 }  // namespace genai

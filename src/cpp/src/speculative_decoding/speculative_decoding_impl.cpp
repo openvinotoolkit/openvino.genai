@@ -31,7 +31,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const ov::genai::ModelDesc draft_model_desc,
     const ov::AnyMap& tokenizer_properties) {
     ov::Core core;
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(main_properties);
+    auto [core_properties, compile_properties] = utils::split_core_compile_config(main_properties);
     core.set_property(core_properties);
 
     std::filesystem::path openvino_model_name = "openvino_model.xml",
@@ -97,8 +97,11 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  ov::genai::GenerationConfig sampling_params) {
+    m_sd_metrics.set_generated_len(request_id, sampling_params.max_new_tokens);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, sampling_params)});
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
@@ -106,8 +109,11 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  ov::genai::GenerationConfig sampling_params) {
+    m_sd_metrics.set_generated_len(request_id, sampling_params.max_new_tokens);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, sampling_params)});
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
@@ -131,7 +137,7 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
-    m_draft_pipeline->pull_awaiting_requests();
+    m_draft_pipeline->pull_awaiting_requests(true);
     m_main_pipeline->pull_awaiting_requests();
 
     // generate candidates by draft model
@@ -208,6 +214,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        m_sd_metrics.set_generated_len(request_id, sampling_params[request_id].max_new_tokens);
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
 

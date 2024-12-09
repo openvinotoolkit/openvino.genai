@@ -1,5 +1,4 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
---pre
 openvino_genai~=2025.0.0.0.dev
-librosa==0.10.2  # For Whisper
-pillow==11.0.0  # Image processing
+librosa==0.10.2.post1  # For Whisper
+pillow==11.0.0  # Image processing for VLMs

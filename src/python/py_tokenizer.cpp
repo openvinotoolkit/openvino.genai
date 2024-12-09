@@ -30,9 +30,18 @@ void init_tokenizer(py::module_& m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
            if it's located in a different path than the main model.)")
 
-        .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties) {
+        .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, pyutils::properties_to_any_map(properties));
+            auto kwargs_properties = pyutils::kwargs_to_any_map(kwargs);
+            if (properties.size()) {
+                PyErr_WarnEx(PyExc_DeprecationWarning, 
+                         "'properties' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                         1);
+                auto map_properties = pyutils::properties_to_any_map(properties);
+                kwargs_properties.insert(map_properties.begin(), map_properties.end());
+            }
+
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, kwargs_properties);
         }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
 
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
@@ -54,27 +63,33 @@ void init_tokenizer(py::module_& m) {
 
         .def(
             "decode",
-            [](Tokenizer& tok, std::vector<int64_t>& tokens) -> py::str {
-                return pyutils::handle_utf8(tok.decode(tokens));
+            [](Tokenizer& tok, std::vector<int64_t>& tokens, bool skip_special_tokens) -> py::str {
+                ov::AnyMap detokenization_params;
+                detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"),
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a sequence into a string prompt.)"
         )
 
         .def(
             "decode",
-            [](Tokenizer& tok, ov::Tensor& tokens) -> py::typing::List<py::str> {
-                return pyutils::handle_utf8(tok.decode(tokens));
+            [](Tokenizer& tok, ov::Tensor& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
+                ov::AnyMap detokenization_params;
+                detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"),
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode tensor into a list of string prompts.)")
 
         .def(
             "decode",
-            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::typing::List<py::str> {
-                return pyutils::handle_utf8(tok.decode(tokens));
+            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
+                ov::AnyMap detokenization_params;
+                detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
-            py::arg("tokens"),
+            py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,

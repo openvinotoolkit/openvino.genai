@@ -18,8 +18,8 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.9'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241105_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17289-7cf2bbb8391/w_openvino_toolkit_windows_2025.0.0.dev20241105_x86_64.zip
+  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241205_x86_64.tgz
+  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/w_openvino_toolkit_windows_2025.0.0.dev20241205_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 jobs:
@@ -59,7 +59,7 @@ jobs:
       - name: Install python dependencies
         run: |
           source openvino_lcm_cpp/bin/activate
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
 
       - name: Download and convert models and tokenizer
@@ -119,7 +119,7 @@ jobs:
       - name: Install python dependencies
         run: |
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
 
       - name: Download and convert models and tokenizer
