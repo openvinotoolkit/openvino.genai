@@ -45,6 +45,7 @@ public:
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     size_t m_to_remove_from_hist = 0;
     size_t m_kv_cache_seq_length_axis = 2;
+    Sampler m_sampler;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -96,6 +97,9 @@ public:
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+
+        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     StatefulLLMPipeline(
@@ -358,9 +362,12 @@ public:
                 requests.push_back(sequence_group);
             }
 
-            Sampler sampler = Sampler(m_tokenizer);
+            if (m_sampler.get_seed() != config.rng_seed) {
+                m_sampler.set_seed(config.rng_seed);
+            }
+
             std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr,
-                                                                                  sampler, requests, position_ids, std::nullopt, m_selected_beam);
+                                                                                  m_sampler, requests, position_ids, std::nullopt, m_selected_beam);
         }
 
         if (is_chat_conversation) {

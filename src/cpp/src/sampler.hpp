@@ -55,6 +55,7 @@ class Sampler {
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
     std::mt19937 rng_engine;
+    size_t seed = rng_engine.default_seed;
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
 
@@ -65,7 +66,11 @@ public:
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
-    void set_seed(size_t seed) { rng_engine.seed(seed); }
+    void set_seed(size_t new_seed) {
+        rng_engine.seed(new_seed);
+        seed = new_seed;
+    }
+    size_t get_seed() { return seed; }
 
     void clear_request_info(uint64_t request_id);
 
