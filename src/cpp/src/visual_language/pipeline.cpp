@@ -153,16 +153,19 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        Sampler sampler = Sampler(m_tokenizer);
-
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
         bool enable_prefix_caching = false;
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
-        ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
-        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
+
+        auto chat_history = m_inputs_embedder->get_tokenized_chat_history();
+        size_t chat_history_size = std::max(chat_history.get_shape().at(1), history_size + inputs_embeds_size);
+        ov::Tensor prompt_ids(ov::element::i64, { chat_history_size });
+        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 1);
+        auto chat_history_data = chat_history.data<int64_t>();
+        std::copy(chat_history_data, chat_history_data + chat_history.get_size(), prompt_ids.data<int64_t>());
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
         sequence_group->set_sequence_group_ptr(sequence_group);
@@ -190,6 +193,8 @@ public:
 
         ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds.get_shape()[1] }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
+
+        Sampler sampler = Sampler(m_tokenizer);
 
         ov::genai::EncodedResults encoded_result;
         int32_t m_selected_beam = 0;
