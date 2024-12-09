@@ -19,11 +19,16 @@ public:
     VLMPerfMetrics perf_metrics;
 };
 
+/// @brief A map of models for VLMPipeline constructor. 
+/// Key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+/// and value is a pair of model IR as string and weights as tensor.
+using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
+
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
-    /// @brief Construct a pipeline form a folder containing tokenizer
+    /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs.
     /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled
@@ -35,7 +40,25 @@ public:
         const ov::AnyMap& properties = {}
     );
 
-    /// @brief Construct a pipeline form a folder containing tokenizer
+    /// @brief Construct a pipeline from a map of models and their weights.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+    /// and value is a pair of model IR as string and weights as tensor.
+    /// @param tokenizer A tokenizer.
+    /// @param config_dir_path A path to directory containing config.json.
+    /// @param device Inference device. A tokenizer is always compiled
+    /// for CPU.
+    /// @param properties A config to pass to ov::Core::compile_model().
+    /// @param generation_config Optional generation configuration for the pipeline.
+    VLMPipeline(
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {},
+        const ov::genai::GenerationConfig& generation_config = {}
+    );
+
+    /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs. Accepts arbitrary list of optional properties.
     /// @param models_path A folder to read tokenizer and model IRs.
     /// @param device Inference device. A tokenizer is always compiled
@@ -47,6 +70,23 @@ public:
         const std::string& device,
         Properties&&... properties)
         : VLMPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    /// @brief Construct a pipeline from a map of models and their weights.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
+    /// and value is a pair of model IR as string and weights as tensor.
+    /// @param tokenizer A tokenizer.
+    /// @param config_dir_path A path to directory containing config.json.
+    /// @param device Inference device. A tokenizer is always compiled
+    /// for CPU.
+    /// @param properties A config to pass to ov::Core::compile_model().
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    VLMPipeline(
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        Properties&&... properties)
+        : VLMPipeline(models_map, tokenizer, config_dir_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /// @brief Default destructor.
     ~VLMPipeline();
