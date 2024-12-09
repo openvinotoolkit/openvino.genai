@@ -78,7 +78,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 120
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
