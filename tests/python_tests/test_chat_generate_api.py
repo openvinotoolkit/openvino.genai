@@ -219,7 +219,6 @@ def test_add_special_tokens(add_special_tokens, prompt):
     assert np.all(res_genai == res_hf)
 
 @pytest.mark.precommit
-@pytest.mark.xfail(reason="Need to turn them back on when openvino_tokenizers will be updated.")
 @pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("skip_special_tokens", [True, False])
