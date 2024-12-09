@@ -21,6 +21,21 @@ env:
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241205_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/w_openvino_toolkit_windows_2025.0.0.dev20241205_x86_64.zip
 jobs:
+  check_formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for incorrect line endings
+        run: |
+          git grep -n '[^ -~]' -- ':(exclude)README.md'
+      - name: Check for CRLF line endings
+        run: |
+          if git grep -Iq $'\r' .; then
+            echo "Files with CRLF line endings found."
+            exit 1
+          fi
+      - name: Verify no unexpected files
+        run: |
+          git diff --name-only --diff-filter=A
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:
