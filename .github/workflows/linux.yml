@@ -30,7 +30,7 @@ env:
 
 jobs:
   openvino_download:
-    name: Download Prebuilt OpenVINO
+    name: Download OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
@@ -78,7 +78,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 120
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -155,7 +155,7 @@ jobs:
   genai_build_wheel:
     name: Build Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 60
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -235,7 +235,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cmake ]
-    timeout-minutes: 120
+    timeout-minutes: 10
     defaults:
       run:
         shell: bash
