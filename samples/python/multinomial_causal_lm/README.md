@@ -19,10 +19,7 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
-#### Simple streaming
-`python multinomial_causal_lm.py -m TinyLlama-1.1B-Chat-v1.0 -p "Why is the Sun yellow?" -tl 1`
-#### Chunk streaming
-`python3 multinomial_causal_lm.py -m TinyLlama-1.1B-Chat-v1.0 -p "Why is the Sun yellow?" -tl 10`
+`python multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
 
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
@@ -34,6 +31,8 @@ See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#
 This Python example demonstrates custom detokenization with bufferization. The streamer receives integer tokens corresponding to each word or subword, one by one. If tokens are decoded individually, the resulting text misses necessary spaces because of detokenize(tokenize(" a")) == "a".
 
 To address this, the detokenizer needs a larger context. We accumulate tokens in a tokens_cache buffer and decode multiple tokens together, adding the text to the streaming queue only when a complete decoded chunk is ready. We run a separate thread to print all new elements arriving in this queue from the generation pipeline. Each generated chunk of text is put into a synchronized queue, ensuring that all put and get operations are thread-safe and blocked until they can proceed.
+
+At the same time, in order to optimize the performance in streaming mode, we provide the Chuck Streaming. Chunk streaming has significant benefits to very small LLM for streaming generate token rate improvement. It does decoding once after several token generation. We can use the tokens_len parameter to control the number of tokens in the token_cache before decoding.
 
 ### Troubleshooting
 
