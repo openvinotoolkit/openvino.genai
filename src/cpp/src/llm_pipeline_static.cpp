@@ -465,6 +465,34 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
+/**
+ * @brief Calculates the step size for a given tensor shape and dimension.
+ *
+ * The step size represents the number of elements that need to be skipped 
+ * in the tensor to move from one slice of the specified dimension to the next.
+ */
+int get_step_for(ov::Shape shape, int dim) {
+    int step_size = 1;
+    for (int i = dim + 1; i < shape.size(); ++i) {
+        step_size *= shape[i];
+    }
+    return step_size;
+}
+
+/**
+ * @brief Calculates the span size when doing memcpy for a given tensor shape and dimension.
+ *
+ * The span size indicates where a memory copy should be made
+ * in the tensor to move from one slice of the specified dimension to the next.
+ */
+int get_span_for(ov::Shape shape, int dim) {
+    int span_size = 1;
+    for (int i = 0; i < dim; ++i) {
+        span_size *= shape[i];
+    }
+    return span_size;
+}
+
 struct NPUDesc {
     std::string arch;
     int64_t max_tiles;
@@ -607,33 +635,37 @@ void set_npuw_cache_dir(ov::AnyMap& config) {
     }
 }
 
-void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
-    const auto src_shape = src.get_shape();
+uint8_t* calculate_address(void* base_addr, size_t offset, size_t element_size) {
+    uint8_t* byte_addr = static_cast<uint8_t*>(base_addr);
+    uint8_t* final_addr = byte_addr + offset * element_size;
 
-    OPENVINO_ASSERT(src_shape.size() == 4u);
-    OPENVINO_ASSERT(src_shape == dst.get_shape());
-    OPENVINO_ASSERT(src.get_byte_size() == dst.get_byte_size());
+    return final_addr;
+}
+
+void copy_columns_by_row_chunks(ov::Tensor& src, ov::Tensor& dst,size_t src_token_num, size_t dst_token_num, size_t num_stored_tokens, size_t kv_dim) {
+    const auto src_shape = src.get_shape();
+    const auto dst_shape = dst.get_shape();
 
     const auto src_strides = src.get_strides();
     const auto dst_strides = dst.get_strides();
     const auto elem_size   = src.get_byte_size() / src.get_size();
 
-    const auto C = src_shape[1];
-    const auto H = src_shape[2];
-    const auto W = src_shape[3];
+    auto src_dim_step = get_step_for(src_shape, kv_dim);
+    auto src_dim_offset = src_dim_step * src_token_num;
+    auto src_full_dim_size = src_dim_step * src_shape[kv_dim] * elem_size;
+    uint8_t* src_ptr = calculate_address(src.data(), src_dim_offset, elem_size);
 
-    const auto IS_H = src_strides[2];
-    const auto OS_H = dst_strides[2];
+    auto dst_dim_step = get_step_for(dst_shape, kv_dim);
+    auto dst_dim_offset = dst_dim_step * dst_token_num;
+    auto dst_full_dim_size = dst_dim_step * dst_shape[kv_dim] * elem_size;
+    uint8_t* dst_ptr = calculate_address(dst.data(), dst_dim_offset, elem_size);
 
-    const size_t chunk_byte_size = W * elem_size;
-
-    const auto* src_p  = static_cast<uint8_t*>(src.data());
-          auto* dst_p  = static_cast<uint8_t*>(dst.data());
-
-    for (size_t i = 0; i < C*H; ++i) {
-        const size_t src_offset = i * IS_H;
-        const size_t dst_offset = i * OS_H;
-        std::copy_n(src_p + src_offset, chunk_byte_size, dst_p + dst_offset);
+    auto span_size = get_span_for(dst_shape, kv_dim);
+    size_t chunk_byte_size = src_dim_step * elem_size * num_stored_tokens;
+    for(int i = 0; i < span_size; i++) {
+        size_t dst_offset = i * dst_full_dim_size;
+        size_t src_offset = i * src_full_dim_size;
+        memcpy(dst_ptr + dst_offset, src_ptr + src_offset, chunk_byte_size);
     }
 }
 
@@ -996,31 +1028,20 @@ EncodedResults StaticLLMPipeline::generate(
     const auto kStartOutputKVCacheLayers = 1u;
     // NB: Copy KV-cache tensors from prefill model to kvcache model
     const auto& kvcache_compiled = m_kvcache_request.get_compiled_model();
-
     ov::parallel_for(kvcache_compiled.outputs().size() - 1, [&](size_t i) {
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
-        const auto  input_name = std::regex_replace(output_name, std::regex("present"), "past_key_values");
+        const auto input_name = std::regex_replace(output_name, std::regex("present"), "past_key_values");
 
         const auto kv_dim = (output_name.find("value") != std::string::npos &&
             m_kvcache_desc.v_tensors_transposed) ? 3u : m_kvcache_desc.seq_len;
 
         auto prefill_out_tensor = m_prefill_request.get_tensor(output_name);
-        auto prefill_out_slice = make_tensor_slice(
-            prefill_out_tensor, kv_dim, m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.max_prompt_size
-        );
-
         auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
         fill_tensor<ov::float16>(kvcache_in_tensor, 0);
 
-        auto kvcache_in_slice = make_tensor_slice(
-            kvcache_in_tensor, kv_dim, 0u, m_kvcache_desc.num_stored_tokens
-        );
-
-        if (kv_dim == 3u) {
-            copy_columns_by_row_chunks(prefill_out_slice, kvcache_in_slice);
-        } else {
-            prefill_out_slice.copy_to(kvcache_in_slice);
-        }
+        copy_columns_by_row_chunks(prefill_out_tensor, kvcache_in_tensor,
+                                    m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens, 0,
+                                    m_kvcache_desc.num_stored_tokens, kv_dim);
     });
 
     auto* input_ids_data = m_kvcache_request.get_tensor("input_ids").data<int64_t>();
@@ -1066,11 +1087,10 @@ EncodedResults StaticLLMPipeline::generate(
             const auto kv_dim = (output_name.find("value") != std::string::npos &&
                 m_kvcache_desc.v_tensors_transposed) ? 3u : m_kvcache_desc.seq_len;
 
+            auto kvcache_out_tensor = m_kvcache_request.get_tensor(output_name);
             auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
-            auto kvcache_in_slice = make_tensor_slice(
-                kvcache_in_tensor, kv_dim, m_kvcache_desc.num_stored_tokens - 1, m_kvcache_desc.num_stored_tokens
-            );
-            m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
+
+            copy_columns_by_row_chunks(kvcache_out_tensor, kvcache_in_tensor, 0, m_kvcache_desc.num_stored_tokens - 1, 1, kv_dim);
         }
     }
     auto stop_time = std::chrono::steady_clock::now();
