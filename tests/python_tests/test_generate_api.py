@@ -853,7 +853,7 @@ def test_stop_token_ids():
     res = pipe.generate(
         ov.Tensor([(1,)]),
         max_new_tokens=3,
-        stop_token_ids={-1, 9935},
+        stop_token_ids={-1, 9935, pipe.get_tokenizer().get_eos_token_id()},
         include_stop_str_in_output=False
     )
     assert 2 == len(res.tokens[0])
