@@ -30,7 +30,7 @@ env:
 
 jobs:
   openvino_download:
-    name: Download Prebuilt OpenVINO
+    name: Download OpenVINO
     outputs:
       status: ${{ steps.openvino_download.outcome }}
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
