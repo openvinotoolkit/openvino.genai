@@ -113,7 +113,7 @@ if(OpenVINODeveloperPackage_FOUND)
 elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
     # in case of wheel build, pybind11-stubgen is always available via pyproject.toml's build-system
     # except Win32 where we have issues with pybind11_stubgen executable which cannot import its own module
-    set(pybind11_stubgen_AVAILABLE ON)
+    set(pybind11_stubgen_AVAILABLE OFF)
 
     # by default, wheel build is performed with build-isolation, which means that some variables like PYTHONPATH
     # are not available. But if user called setupvars.sh, then OpenVINO dir is available, while PYTHONPATH - no.
