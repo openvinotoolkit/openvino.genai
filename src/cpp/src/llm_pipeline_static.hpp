@@ -10,6 +10,45 @@
 namespace ov {
 namespace genai {
 
+struct StaticLLMPipelineFactory {
+    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
+                                                       const ov::genai::Tokenizer& tokenizer,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& config);
+
+    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& config);
+};
+
+class SMStaticLLMPipeline : public LLMPipelineImplBase {
+public:
+    SMStaticLLMPipeline(
+        const std::filesystem::path& path,
+        const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
+        const ov::AnyMap& config
+    );
+
+    DecodedResults generate(
+        StringInputs inputs,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override;
+
+    EncodedResults generate(
+        const EncodedInputs& inputs,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override;
+
+    void start_chat(const std::string& system_message) override;
+    void finish_chat() override;
+
+private:
+    ov::InferRequest m_request;
+};
+
 class StaticLLMPipeline final : public LLMPipelineImplBase {
 public:
     StaticLLMPipeline(
