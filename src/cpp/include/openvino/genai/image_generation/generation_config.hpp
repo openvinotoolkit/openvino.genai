@@ -60,7 +60,7 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     // the following value used by t5_encoder_model (Flux, SD3 pipelines)
     int max_sequence_length = -1;
 
-    // used by some image to image pipelines to balance between noise and initial image
+    // used by image to image and inpainting pipelines to balance between noise and initial image
     // higher 'stregth' value means more noise is added to initial latent image
     // for text to image pipeline it must be set to 1.0f
     float strength = 1.0f;
@@ -95,6 +95,13 @@ static constexpr ov::Property<int64_t> height{"height"};
 static constexpr ov::Property<int64_t> width{"width"};
 static constexpr ov::Property<size_t> num_inference_steps{"num_inference_steps"};
 
+/**
+ * Indicates extent to transform the reference `image`. Must be between 0 and 1. `image` is used as a
+ * starting point and more noise is added the higher the `strength`. The number of denoising steps depends
+ * on the amount of noise initially added. When `strength` is 1, added noise is maximum and the denoising
+ * process runs for the full number of iterations specified in `num_inference_steps`. A value of 1
+ * essentially ignores `image`.
+ */
 static constexpr ov::Property<float> strength{"strength"};
 
 static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"};

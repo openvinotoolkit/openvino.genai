@@ -144,7 +144,7 @@ void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& pr
 }
 
 ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
-    return m_impl->generate(positive_prompt, {}, properties);
+    return m_impl->generate(positive_prompt, {}, {}, properties);
 }
 
 ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {

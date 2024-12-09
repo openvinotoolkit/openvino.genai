@@ -591,7 +591,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-20.04-4-cores
+    runs-on: ubuntu-20.04-8-cores
     defaults:
       run:
         shell: bash

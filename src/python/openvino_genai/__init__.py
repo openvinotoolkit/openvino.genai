@@ -66,6 +66,8 @@ from .py_openvino_genai import (
     UNet2DConditionModel,
     AutoencoderKL,
     Text2ImagePipeline,
+    Image2ImagePipeline,
+    InpaintingPipeline,
     Scheduler,
     ImageGenerationConfig,
     Generator,
