@@ -8,14 +8,6 @@
 #include "json_utils.hpp"
 #include "utils.hpp"
 
-namespace {
-    void get_input_names(std::vector<std::string>& input_names, const std::vector<ov::Output<const ov::Node>>& inputs_info) {
-        for (const auto& port : inputs_info) {
-            input_names.push_back(port.get_any_name());
-        }
-    }
-}
-
 namespace ov {
 namespace genai {
 
@@ -117,7 +109,6 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
 FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
-    get_input_names(m_config.m_model_input_names, compiled_model.inputs());
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
