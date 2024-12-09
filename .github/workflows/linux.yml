@@ -264,8 +264,15 @@ jobs:
       - name: Extract Artifacts
         run: pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.OV_INSTALL_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
-                    
-      - name: Build Samples - ${{ matrix.build-type }}
+        
+      - name: Build Samples (Release)
+        if: ${{ 'Release' == matrix.build-type }}
+        run: |
+          chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
+          ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
+  
+      - name: Build Samples (${{ matrix.build-type }})
+        if: ${{ 'Release' != matrix.build-type }}
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.OV_INSTALL_DIR }}/samples/cpp/ -B ${{ env.BUILD_DIR }}
@@ -285,7 +292,7 @@ jobs:
           if-no-files-found: 'error'
           
   genai_tests_archive:
-    name: Python Tests (archive - ${{ matrix.build-type }}) - ${{ matrix.test.name }}
+    name: Test ${{ matrix.test.name }} (archive/${{ matrix.build-type }})
     needs: [ openvino_download, genai_build_cmake ]
     strategy:
       fail-fast: false
@@ -346,7 +353,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_tests_wheel:
-    name: Python Tests (wheel) - ${{ matrix.test.name }}
+    name: Test ${{ matrix.test.name }} (wheel/Release)
     needs: [ openvino_download, genai_build_wheel ]
     strategy:
       fail-fast: false
@@ -402,19 +409,11 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
-    name: Sample ${{ matrix.test.name }} (${{ matrix.build-type }})
+    name: Samples Tests - ${{ matrix.build-type }}
     strategy:
       fail-fast: false
       matrix:
         build-type: [Release]
-        test:
-          - name: 'LLM'
-            marker: 'llm'
-            cmd: 'tests/python_tests/samples/test_samples.py'
-          - name: 'Whisper'
-            marker: 'whisper'
-            cmd: 'tests/python_tests/samples/test_samples.py'
-            
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
     timeout-minutes: 45
     defaults:
@@ -433,7 +432,6 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
-      TEMP_DIR: ${{ github.workspace }}/tmp
         
     steps:
       - name: Clone openvino.genai
@@ -462,19 +460,42 @@ jobs:
         working-directory: ${{ env.INSTALL_DIR }}
      
       - name: Install Samples Requirements
-        run: python -m pip install -r ./samples/requirements.txt -r ./tests/python_tests/requirements.txt
+        run: python -m pip install -r ./samples/requirements.txt
         working-directory: ${{ env.SRC_DIR }}
+     
+      - name: Tests Prerequisites
+        run: |
+          mkdir -p ${{ env.MODELS_DIR }}
+          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 ${{ env.MODELS_DIR }}/TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny ${{ env.MODELS_DIR }}/whisper-tiny
+          wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav -O ${{ env.MODELS_DIR }}/how_are_you_doing_today.wav
         
-      - name: Test Python Samples
+      - name: Test Python Sample (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        run: python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and py"
-        working-directory: ${{ env.INSTALL_DIR }}/samples/python
+        timeout-minutes: 1
+        run: ${{ env.INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        working-directory: ${{ env.MODELS_DIR }}
+
+      - name: Test Python Sample (whisper_speech_recognition)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        timeout-minutes: 1
+        run: ${{ env.INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        working-directory: ${{ env.MODELS_DIR }}
+      
+      - name: C++ Tests Prerequisites
+        run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
         
-      - name: Test C++ Samples
+      - name: Test C++ Sample (greedy_causal_lm)
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and cpp"
-        working-directory: ${{ env.INSTALL_DIR }}/samples_bin
+          ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+        working-directory: ${{ env.MODELS_DIR }}
+
+      - name: Test C++ Sample (whisper_speech_recognition)
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+           ${{ env.INSTALL_SECONDARY_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+        working-directory: ${{ env.MODELS_DIR }}
 
   Overall_Status:
     name: ci/gha_overall_status_linux
