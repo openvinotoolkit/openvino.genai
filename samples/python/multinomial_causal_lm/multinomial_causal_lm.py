@@ -183,9 +183,9 @@ class GenaiChunkStreamer(IterableStreamer):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model_dir", required=True, help="model_id or directory for loading")
-    parser.add_argument("-p", "--prompt", required=True, help="prompt")
-    parser.add_argument('-tl', '--tokens_len', type=int, required=True, help='The length of tokens print each time in streaming mode, chunk streaming.')
+    parser.add_argument('model_dir')
+    parser.add_argument('prompt')
+    parser.add_argument('-tl', '--tokens_len', type=int, default=1, required=False, help='The length of tokens print each time in streaming mode, chunk streaming.')
 
     args = parser.parse_args()
 
