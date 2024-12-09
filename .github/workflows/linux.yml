@@ -258,19 +258,9 @@ jobs:
           if-no-files-found: 'error'
         
   genai_tests_wheel:
-    name: Python Tests (wheel/Release)
+    name: Python Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
-    # strategy:
-    #   fail-fast: false
-    #   matrix:
-    #     test:
-    #       - name: 'VLM'
-    #         cmd: 'tests/python_tests/test_vlm_api.py'
-    #       - name: 'Chat'
-    #         cmd: 'tests/python_tests/test_chat_generate_api.py -k "not Qwen2-0.5B-Instruct"'
-    #       - name: 'Whisper'
-    #         cmd: 'tests/python_tests/test_whisper_generate_api.py -k "not distil-whisper"'
-    timeout-minutes: 60
+    timeout-minutes: 75
     defaults:
       run:
         shell: bash
