@@ -202,9 +202,10 @@ jobs:
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
-        working-directory: ${{ env.OV_INSTALL_DIR }}      
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+              
       - name: Install Wheels
-        uses: ./.github/actions/install_wheel
+        uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
