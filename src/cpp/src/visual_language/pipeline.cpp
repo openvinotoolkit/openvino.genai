@@ -61,6 +61,8 @@ public:
     bool m_is_chat_conversation;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    // Component for applying sampling to lm outputs
+    Sampler sampler;
 
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -94,6 +96,8 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        sampler = Sampler(m_tokenizer);
     }
 
     VLMPipelineImpl(
@@ -129,6 +133,8 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        sampler = Sampler(m_tokenizer);
     }
 
     DecodedResults generate(
@@ -148,8 +154,6 @@ public:
         if (to_remove_from_hist > 0) {
             ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist);
         }
-
-        Sampler sampler = Sampler(m_tokenizer);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
