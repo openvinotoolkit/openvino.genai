@@ -59,8 +59,7 @@ jobs:
       - name: Install python dependencies
         run: |
           source openvino_sd_cpp/bin/activate
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install -r ./samples/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
       - name: Download and convert models and tokenizer
         run: |
@@ -146,8 +145,7 @@ jobs:
       - name: Install python dependencies
         run: |
           . "./openvino_sd_cpp/Scripts/Activate.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install -r ./samples/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
       - name: Download and convert models and tokenizer
         run: |
