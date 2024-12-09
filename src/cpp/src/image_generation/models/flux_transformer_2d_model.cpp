@@ -21,6 +21,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
     using utils::read_json_param;
 
     read_json_param(data, "in_channels", in_channels);
+    read_json_param(data, "guidance_embeds", guidance_embeds);
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir)
@@ -94,6 +95,8 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
             name_to_shape[input_name] = {height * width / 4, name_to_shape[input_name][1]};
         } else if (input_name == "txt_ids") {
             name_to_shape[input_name] = {tokenizer_model_max_length, name_to_shape[input_name][1]};
+        } else if (input_name == "guidance") {
+            name_to_shape[input_name] = {batch_size};
         }
     }
 
