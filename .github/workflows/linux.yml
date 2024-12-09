@@ -312,7 +312,6 @@ jobs:
     
       - name: Test - ${{ matrix.test.name }}
         run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -vv ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
         
