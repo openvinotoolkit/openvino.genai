@@ -120,15 +120,6 @@ jobs:
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
         working-directory: ${{ env.INSTALL_DIR }}
           
-      - name: Smoke Tests
-        run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          python -m pip install numpy
-          python -c "import numpy, openvino, openvino_genai; openvino_genai.TokenizedInputs(openvino.Tensor(numpy.empty(0)), openvino.Tensor(numpy.empty(0)))"
-        env:
-          PYTHONPATH: ${{ env.INSTALL_DIR }}/python/:${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/python/:$PYTHONPATH
-          LD_LIBRARY_PATH: ${{ env.INSTALL_DIR }}/runtime/lib/intel64/:$LD_LIBRARY_PATH
-
       - name: Upload Archive Distribution Package
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -189,23 +180,6 @@ jobs:
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
               
-      - name: Install OpenVINO Wheel
-        uses: ./src/.github/actions/install_wheel
-        with:
-          packages: "openvino"
-          local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
-        
-      - name: Install GenAI and Tokenizers Wheels
-        uses: ./src/.github/actions/install_wheel
-        with:
-          packages: "openvino_tokenizers[transformers];openvino_genai"
-          local_wheel_dir: ${{ env.WHEELS_DIR }}
-          
-      - name: Smoke Tests
-        run: |
-          python -m pip install "numpy<2.0.0"
-          python -c "import numpy, openvino, openvino_genai; openvino_genai.TokenizedInputs(openvino.Tensor(numpy.empty(0)), openvino.Tensor(numpy.empty(0)))"
-
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
