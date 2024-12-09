@@ -16,10 +16,8 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 ## Run:
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
-#### Simple streaming
+
 `python chat_sample.py TinyLlama-1.1B-Chat-v1.0`
-#### Chunk streaming
-`python3 chat_chunk_streaming_sample.py -m TinyLlama-1.1B-Chat-v1.0 -tl 10`
 
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.

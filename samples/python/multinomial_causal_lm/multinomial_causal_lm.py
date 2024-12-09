@@ -120,23 +120,95 @@ class IterableStreamer(openvino_genai.StreamerBase):
         self.put_word(None)
 
 
+class GenaiChunkStreamer(IterableStreamer):
+    """
+    A custom streamer class for handling token streaming and detokenization with buffering.
+
+    Attributes:
+        tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
+        tokens_cache (list): A buffer to accumulate tokens for detokenization.
+        text_queue (Queue): A synchronized queue for storing decoded text chunks.
+        print_len (int): The length of the printed text to manage incremental decoding.
+    """
+
+    def __init__(self, tokenizer, tokens_len=1):
+        """
+        Initializes the IterableStreamer with the given tokenizer.
+
+        Args:
+            tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+        """
+        super().__init__(tokenizer)
+        self.tokenizer = tokenizer
+        self.tokens_cache = []
+        self.text_queue = queue.Queue()
+        self.print_len = 0
+        self.tokens_len = tokens_len
+
+    def put(self, token_id: int) -> bool:
+        """
+        Processes a token and manages the decoding buffer. Adds decoded text to the queue.
+
+        Args:
+            token_id (int): The token_id to process.
+
+        Returns:
+            bool: True if generation should be stopped, False otherwise.
+        """
+        self.tokens_cache.append(token_id)
+        if len(self.tokens_cache) % self.tokens_len == 0:
+            text = self.tokenizer.decode(self.tokens_cache)
+
+            word = ''
+            if len(text) > self.print_len and '\n' == text[-1]:
+                # Flush the cache after the new line symbol.
+                word = text[self.print_len:]
+                self.tokens_cache = []
+                self.print_len = 0
+            elif len(text) >= 3 and text[-3:] == chr(65533):
+                # Don't print incomplete text.
+                pass
+            elif len(text) > self.print_len:
+                # It is possible to have a shorter text after adding new token.
+                # Print to output only if text lengh is increaesed.
+                word = text[self.print_len:]
+                self.print_len = len(text)
+            self.put_word(word)
+
+            if self.get_stop_flag():
+                # When generation is stopped from streamer then end is not called, need to call it here manually.
+                self.end()
+                return True  # True means stop  generation
+            else:
+                return False  # False means continue generation
+        else:
+            return False
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
+    parser.add_argument("-m", "--model_dir", required=True, help="model_id or directory for loading")
+    parser.add_argument("-p", "--prompt", required=True, help="prompt")
+    parser.add_argument('-tl', '--tokens_len', type=int, required=True, help='The length of tokens print each time in streaming mode, chunk streaming.')
+
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
+    tokens_len = args.tokens_len  # chunk size
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
-    
-    text_print_streamer = IterableStreamer(pipe.get_tokenizer())
+
+    text_print_streamer = GenaiChunkStreamer(
+            pipe.get_tokenizer(),
+            tokens_len
+        )
+
     def token_printer():
         # Getting next elements from iterable will be blocked until a new token is available.
         for word in text_print_streamer:
             print(word, end='', flush=True)
     printer_thread = threading.Thread(target=token_printer, daemon=True)
     printer_thread.start()
-    
+
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
     config.do_sample = True
@@ -147,6 +219,7 @@ def main():
     # every time a new token is generated and put into the streamer queue.
     pipe.generate(args.prompt, config, text_print_streamer)
     printer_thread.join()
+
 
 if '__main__' == __name__:
     main()
