@@ -61,6 +61,8 @@ public:
     bool m_is_chat_conversation;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    // Component for applying sampling to lm outputs
+    Sampler m_sampler;
 
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -94,6 +96,8 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        m_sampler = Sampler(m_tokenizer);
     }
 
     VLMPipelineImpl(
@@ -129,6 +133,9 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     DecodedResults generate(
@@ -148,8 +155,6 @@ public:
         if (to_remove_from_hist > 0) {
             ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist);
         }
-
-        Sampler sampler = Sampler(m_tokenizer);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
@@ -190,9 +195,13 @@ public:
         ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
 
+        if (m_sampler.get_seed() != generation_config.rng_seed) {
+            m_sampler.set_seed(generation_config.rng_seed);
+        }
+
         ov::genai::EncodedResults encoded_result;
         int32_t m_selected_beam = 0;
-        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
+        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
                                                                                       position_ids, m_embedding, std::nullopt);
 
         DecodedResults decoded;
@@ -207,6 +216,7 @@ public:
         } else {
             m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_sampler.clear_request_info(0);
         }
 
         m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
@@ -259,6 +269,8 @@ public:
         m_language.reset_state();
         // clear all chat history
         m_inputs_embedder->finish_chat();
+        // clear sampler requests info
+        m_sampler.clear_request_info(0);
     }
 
     Tokenizer get_tokenizer() const {
