@@ -96,10 +96,6 @@ public:
     ) override {
         auto start_time = std::chrono::steady_clock::now();
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-        // If eos_token_id was not provided, take value from default m_generation_config
-        if (config.eos_token_id == -1)
-            config.set_eos_token_id(m_generation_config.eos_token_id);
-        config.validate();
         TokenizedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
@@ -200,7 +196,6 @@ public:
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
             config.set_eos_token_id(m_generation_config.eos_token_id);
-        config.stop_token_ids.insert(config.eos_token_id);
         config.validate();
 
         // Stateful pipeline does not provide logprobs for prompt tokens
