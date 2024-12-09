@@ -72,7 +72,10 @@ auto text2image_generate_docstring = R"(
 
 void init_clip_text_model(py::module_& m);
 void init_clip_text_model_with_projection(py::module_& m);
+void init_t5_encoder_model(py::module_& m);
 void init_unet2d_condition_model(py::module_& m);
+void init_sd3_transformer_2d_model(py::module_& m);
+void init_flux_transformer_2d_model(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
@@ -92,7 +95,10 @@ void init_image_generation_pipelines(py::module_& m) {
     // init image generation models
     init_clip_text_model(m);
     init_clip_text_model_with_projection(m);
+    init_t5_encoder_model(m);
     init_unet2d_condition_model(m);
+    init_sd3_transformer_2d_model(m);
+    init_flux_transformer_2d_model(m);
     init_autoencoder_kl(m);
 
     auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
