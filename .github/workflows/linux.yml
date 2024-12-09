@@ -26,7 +26,6 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
-  OV_SAMPLES_NAME: ov_samples.tar.gz
 
 jobs:
   openvino_download:
@@ -116,16 +115,10 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc)
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_SAMPLES_DIR }} --component samples_bin
       
       - name: Pack Artifacts
-        run: |
-          pushd ${{ env.INSTALL_DIR }}
-            tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
-          popd
-          pushd ${{ env.INSTALL_SAMPLES_DIR }}
-            tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_SAMPLES_NAME }}
-          popd
+        run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
+        working-directory: ${{ env.INSTALL_DIR }}
           
       - name: Smoke Tests
         run: |
@@ -142,14 +135,6 @@ jobs:
         with:
           name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
-          if-no-files-found: 'error'
-          
-      - name: Upload Samples Build Package
-        if: ${{ always() }}
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: genai_samples_${{ matrix.build-type }}
-          path: ${{ env.BUILD_DIR }}/${{ env.GENAI_SAMPLES_NAME }}
           if-no-files-found: 'error'
 
   genai_build_wheel:
@@ -281,14 +266,14 @@ jobs:
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --component samples_bin --prefix ${{ env.INSTALL_DIR }}
         
       - name: Pack Artifacts
-        run: tar -cvf - * | pigz > ${{ env.INSTALL_DIR }}/${{ env.OV_SAMPLES_NAME }}
+        run: tar -cvf - * | pigz > ${{ env.INSTALL_DIR }}/${{ env.GENAI_SAMPLES_NAME }}
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Upload Samples Build Package
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: ov_samples_${{ matrix.build-type }}
+          name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
           
@@ -429,7 +414,6 @@ jobs:
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
-      INSTALL_SECONDARY_DIR: ${{ github.workspace }}/ov_extra
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
@@ -444,7 +428,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},ov_samples_${{ matrix.build-type }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
       
@@ -452,8 +436,6 @@ jobs:
         run: |
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
-          mkdir -p ${{ env.INSTALL_SECONDARY_DIR }}
-          pigz -dc ${{ env.OV_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_SECONDARY_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
         
       - name: Install GenAI Wheels
@@ -495,7 +477,7 @@ jobs:
       - name: Test C++ Sample (whisper_speech_recognition)
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-           ${{ env.INSTALL_SECONDARY_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+          ${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
 
   Overall_Status:
