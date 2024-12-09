@@ -43,6 +43,7 @@ public:
     std::string m_templated_chat_history = {};
     std::vector<int64_t> m_tokenized_chat_history;
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
+    Sampler sampler;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -89,6 +90,8 @@ public:
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+
+        sampler = Sampler(m_tokenizer);
     }
 
     StatefulLLMPipeline(
@@ -111,6 +114,11 @@ public:
 
         auto start_time = std::chrono::steady_clock::now();
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (config.eos_token_id == -1)
+            config.set_eos_token_id(m_generation_config.eos_token_id);
+        config.validate();
+
         TokenizedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
@@ -141,9 +149,6 @@ public:
                 // and find the difference as a prompt, so let's check it out and use the whole history in this case
                 if (!m_tokenized_chat_history.empty()) {
                     auto stop_tokens = config.stop_token_ids;
-                    // config could be reset by user and stop_tokens could be empty
-                    // but model/tokenizer still will rely to eos token, so let's add it
-                    stop_tokens.insert(m_tokenizer.get_eos_token_id());
                     size_t last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
                     m_trust_encoded_history = last_same_hist_token == SIZE_MAX;
                 }
@@ -343,9 +348,8 @@ public:
                 requests.push_back(sequence_group);
             }
 
-            Sampler sampler = Sampler(m_tokenizer);
             std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_tokens, concatenated_attention_mask, streamer_ptr,
-                                                                                sampler, requests, position_ids, std::nullopt, m_selected_beam);
+                                                                                  sampler, requests, position_ids, std::nullopt, m_selected_beam);
         }
 
         if (is_chat_conversation) {
