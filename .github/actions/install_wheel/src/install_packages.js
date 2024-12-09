@@ -30,8 +30,8 @@ async function installPackages(packages, localWheelDir) {
         }
       );
     } else {
-      console.log(`Installing from PyPI: ${pkg}`);
-      await execAsync(`pip install "${pkg}"`, { stdio: 'inherit' });
+      core.setFailed(`Package ${pkg} not found locally.`);
+      return;
     }
   }
 }
