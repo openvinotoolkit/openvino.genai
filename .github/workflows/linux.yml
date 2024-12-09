@@ -202,15 +202,9 @@ jobs:
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-        
+        working-directory: ${{ env.OV_INSTALL_DIR }}      
       - name: Install Wheels
-        run: python -m pip install ${{ env.WHEELS_DIR }}/openvino_genai*.whl ${{ env.WHEELS_DIR }}/openvino_tokenizers*.whl openvino-tokenizers[transformers] --force-reinstall
-        env:
-          PIP_FIND_LINKS: ${{ env.OV_INSTALL_DIR }}/wheels
-        
-      - name: Install Wheels
-        uses: ./.github/actions/install-wheel
+        uses: ./.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
