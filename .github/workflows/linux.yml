@@ -260,7 +260,7 @@ jobs:
   genai_tests_wheel:
     name: Python Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
-    timeout-minutes: 75
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
