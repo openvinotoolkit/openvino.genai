@@ -26,6 +26,8 @@ def print_metrics(
         output_str += 'Tokenization Time: {:.2f}ms, '.format(tokenization_time[0])
         if len(tokenization_time) > 1:
             output_str += 'Detokenization Time: {:.2f}ms, '.format(tokenization_time[1])
+    if iter_data['mm_embeddings_preparation_time'] != '':
+        output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data['generation_time'] != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
     if iter_data['latency'] != '':
