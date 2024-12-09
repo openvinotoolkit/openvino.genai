@@ -139,10 +139,6 @@ class GenaiChunkStreamer(IterableStreamer):
             tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
         """
         super().__init__(tokenizer)
-        self.tokenizer = tokenizer
-        self.tokens_cache = []
-        self.text_queue = queue.Queue()
-        self.print_len = 0
         self.tokens_len = tokens_len
 
     def put(self, token_id: int) -> bool:
