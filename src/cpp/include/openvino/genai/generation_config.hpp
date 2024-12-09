@@ -36,7 +36,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
  * @param eos_token_id token_id of <eos> (end of sentence)
- * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
+ * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. 
  *
  * @param stop_strings A set of strings that will cause pipeline to stop generating further tokens.
  * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
