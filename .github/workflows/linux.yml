@@ -189,11 +189,17 @@ jobs:
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
               
-      - name: Install Wheels
+      - name: Install OpenVINO Wheel
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
+          packages: "openvino"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
+        
+      - name: Install GenAI and Tokenizers Wheels
+        uses: ./src/.github/actions/install_wheel
+        with:
+          packages: "openvino_tokenizers[transformers];openvino_genai"
+          local_wheel_dir: ${{ env.WHEELS_DIR }}
           
       - name: Smoke Tests
         run: |
