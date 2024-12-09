@@ -229,7 +229,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cmake ]
-    timeout-minutes: 120
+    timeout-minutes: 10
     defaults:
       run:
         shell: bash
