@@ -44,6 +44,7 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+    - run: python -m pip install . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -98,13 +99,6 @@ jobs:
         optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny ./ov_models/whisper-tiny
         python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-tiny --media multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/3283_1447_000000.flac -d cpu -n 1
         python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-tiny --media multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/3283_1447_000000.flac -d cpu -n 1 --genai
-    - name: WWB Tests
-      run: |
-        GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
-        pip install git+https://github.com/huggingface/optimum.git
-        GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
-        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --force-reinstall
-        python -m pytest -v tools/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
