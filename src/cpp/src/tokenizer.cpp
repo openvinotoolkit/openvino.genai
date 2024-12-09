@@ -239,9 +239,13 @@ public:
 
         m_chat_template = patch_chat_template(m_chat_template);
         if (m_detokenizer) {
-            m_pad_token = decode(std::vector{m_pad_token_id});
-            m_bos_token = decode(std::vector{m_bos_token_id});
-            m_eos_token = decode(std::vector{m_eos_token_id});
+            // Unset/-1 token causes exception in SentencePiece detokenization.
+            if (m_pad_token_id != -1)
+                m_pad_token = decode(std::vector{m_pad_token_id});
+            if (m_bos_token_id != -1)
+                m_bos_token = decode(std::vector{m_bos_token_id});
+            if (m_eos_token_id != -1)
+                m_eos_token = decode(std::vector{m_eos_token_id});
         }
     }
 
