@@ -196,6 +196,7 @@ public:
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     FluxPipeline(PipelineType pipeline_type,
@@ -232,12 +233,13 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
+        update_adapters_from_properties(properties, m_generation_config.adapters);
         m_clip_text_encoder->compile(device, properties);
         m_t5_text_encoder->compile(device, properties);
         m_vae->compile(device, properties);
         m_transformer->compile(device, properties);
     }
-    
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
         std::string prompt_2_str =
@@ -322,6 +324,9 @@ public:
             m_custom_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
 
         check_inputs(m_custom_generation_config, initial_image);
+
+        m_clip_text_encoder->set_adapters(m_custom_generation_config.adapters);
+        m_transformer->set_adapters(m_custom_generation_config.adapters);
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 

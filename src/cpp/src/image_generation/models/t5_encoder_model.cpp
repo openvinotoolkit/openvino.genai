@@ -8,6 +8,7 @@
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -62,7 +63,11 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
-    compiled_model = core.compile_model(m_model, device, properties);
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compiled_model = core.compile_model(m_model, device, *filtered_properties);
+    } else {
+        compiled_model = core.compile_model(m_model, device, properties);
+    }
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
