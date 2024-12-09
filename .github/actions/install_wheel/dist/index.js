@@ -35773,12 +35773,14 @@ async function installPackages(packages, localWheelDir) {
     if (localWheels[packageName]) {
       const wheelPath = localWheels[packageName];
       console.log(`Installing local wheel: ${wheelPath}`);
-      await execAsync(
+      const { stdout, stderr } = await execAsync(
         `pip install "${wheelPath}${pkg.slice(packageName.length)}"`,
         {
           stdio: 'inherit'
         }
       );
+      console.log('stdout:', stdout);
+      console.error('stderr:', stderr);
     } else {
       core.setFailed(`Package ${pkg} not found locally.`);
       return;
