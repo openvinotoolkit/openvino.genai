@@ -720,10 +720,9 @@ jobs:
       - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
           source ./ov/setupvars.sh
-          TRANSFORMERS_VERBOSITY=debug optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
+          optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           mkdir images
-      - run: tree tiny-random-minicpmv-2_6
       - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
           set -o pipefail
