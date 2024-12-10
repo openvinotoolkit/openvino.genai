@@ -262,9 +262,17 @@ jobs:
           if-no-files-found: 'error'
         
   genai_tests_wheel:
-    name: Python Tests (wheel)
+    name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: 'Whisper'
+            cmd: 'tests/python_tests/test_whisper_generate_api.py'
+          - name: 'not Wisper'
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_generate_api.py'
     defaults:
       run:
         shell: bash
@@ -302,7 +310,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
     
       - name: Tests
-        run: python -m pytest -n auto -v ./tests/python_tests
+        run: python -m pytest -n auto -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
