@@ -78,13 +78,20 @@ ProcessorConfig from_any_map(
     const ProcessorConfig& initial
 );
 
+
 std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties);
+std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties);
+
+std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
+
+template <typename T>
+void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
 
 }  // namespace utils
 }  // namespace genai

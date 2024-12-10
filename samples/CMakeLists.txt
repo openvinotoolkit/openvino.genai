@@ -5,7 +5,7 @@
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/benchmark_genai)
 add_subdirectory(cpp/chat_sample)
-add_subdirectory(cpp/greedy_causal_lm)
+add_subdirectory(cpp/text_generation)
 add_subdirectory(cpp/lora_greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
@@ -25,7 +25,7 @@ install(DIRECTORY
             cpp/beam_search_causal_lm
             cpp/benchmark_genai
             cpp/chat_sample
-            cpp/greedy_causal_lm
+            cpp/text_generation
             cpp/lora_greedy_causal_lm
             cpp/multinomial_causal_lm
             # Don't install prompt_lookup_decoding_lm because it doesn't use openvino_genai library and is not verified yet.
@@ -39,7 +39,7 @@ install(DIRECTORY
             python/beam_search_causal_lm
             python/benchmark_genai
             python/chat_sample
-            python/greedy_causal_lm
+            python/text_generation
             python/multinomial_causal_lm
             python/speculative_decoding_lm
             python/text2image
