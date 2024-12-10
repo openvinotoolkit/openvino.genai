@@ -72,6 +72,7 @@ public:
         const std::shared_ptr<Scheduler>& scheduler,
         const CLIPTextModelWithProjection& clip_text_model_1,
         const CLIPTextModelWithProjection& clip_text_model_2,
+        const T5EncoderModel& t5_encoder_model,
         const SD3Transformer2DModel& transformer,
         const AutoencoderKL& vae);
 
