@@ -246,7 +246,7 @@ public:
         m_clip_text_encoder->infer(positive_prompt, "", false);
         ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
 
-        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
 
         ov::Tensor pooled_prompt_embeds, prompt_embeds;
         if (generation_config.num_images_per_prompt == 1) {
@@ -268,6 +268,12 @@ public:
         size_t width = generation_config.width / vae_scale_factor;
 
         ov::Tensor latent_image_ids = prepare_latent_image_ids(generation_config.num_images_per_prompt, height / 2, width / 2);
+
+        if (m_transformer->get_config().guidance_embeds) {
+            ov::Tensor guidance = ov::Tensor(ov::element::f32, {generation_config.num_images_per_prompt});
+            std::fill_n(guidance.data<float>(), guidance.get_size(), static_cast<float>(generation_config.guidance_scale));
+            m_transformer->set_hidden_states("guidance", guidance);
+        }
 
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds);
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
@@ -407,10 +413,10 @@ private:
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by FluxPipeline");
     }
 
-    std::shared_ptr<FluxTransformer2DModel> m_transformer;
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     ImageGenerationConfig m_custom_generation_config;
 };
 
