@@ -46,11 +46,8 @@ void rescale_zero_terminal_snr(std::vector<float>& betas);
 // np.interp(...) implementation
 std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp);
 
-void concat_3d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
-void concat_3d_by_cols(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
-void concat_3d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
-void concat_2d_by_rows(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
-void concat_2d_by_channels(const float* data_1, const float* data_2, float* res, const ov::Shape shape_1, const ov::Shape shape_2);
+// concats two tensors by a given dimension
+ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis);
 
 void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1);
 ov::Tensor repeat(const ov::Tensor input, const size_t num_images_per_prompt);

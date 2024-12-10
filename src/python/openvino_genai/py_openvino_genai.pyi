@@ -483,10 +483,10 @@ class GenerationConfig:
         max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
         ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
         eos_token_id:  token_id of <eos> (end of sentence)
-        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-        stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+        stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
         include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-        stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+        stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -756,10 +756,10 @@ class LLMPipeline:
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
-            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-            stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-            stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -837,10 +837,10 @@ class LLMPipeline:
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
-            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-            stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-            stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -1012,32 +1012,32 @@ class RawPerfMetrics:
     
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
-        :param generate_durations: Durations for each generate call in microseconds.
-        :type generate_durations: List[MicroSeconds]
+        :param generate_durations: Durations for each generate call in milliseconds.
+        :type generate_durations: List[float]
     
-        :param tokenization_durations: Durations for the tokenization process in microseconds.
-        :type tokenization_durations: List[MicroSeconds]
+        :param tokenization_durations: Durations for the tokenization process in milliseconds.
+        :type tokenization_durations: List[float]
     
-        :param detokenization_durations: Durations for the detokenization process in microseconds.
-        :type detokenization_durations: List[MicroSeconds]
+        :param detokenization_durations: Durations for the detokenization process in milliseconds.
+        :type detokenization_durations: List[float]
     
-        :param m_times_to_first_token: Times to the first token for each call in microseconds.
-        :type m_times_to_first_token: List[MicroSeconds]
+        :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+        :type m_times_to_first_token: List[float]
     
         :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
-        :type m_new_token_times: List[MilliSeconds]
+        :type m_new_token_times: List[double]
+    
+        :param token_infer_durations : Inference time for each token in milliseconds.
+        :type batch_sizes: List[float]
     
         :param m_batch_sizes: Batch sizes for each generate call.
         :type m_batch_sizes: List[int]
     
-        :param m_durations: Total durations for each generate call in microseconds.
-        :type m_durations: List[MicroSeconds]
+        :param m_durations: Total durations for each generate call in milliseconds.
+        :type m_durations: List[float]
     
-        :param num_generated_tokens: Total number of tokens generated.
-        :type num_generated_tokens: int
-    
-        :param num_input_tokens: Total number of tokens in the input prompt.
-        :type num_input_tokens: int
+        :param inference_durations : Total inference duration for each generate call in milliseconds.
+        :type batch_sizes: List[float]
     """
     def __init__(self) -> None:
         ...
@@ -1046,6 +1046,9 @@ class RawPerfMetrics:
         ...
     @property
     def generate_durations(self) -> list[float]:
+        ...
+    @property
+    def inference_durations(self) -> list[float]:
         ...
     @property
     def m_batch_sizes(self) -> list[int]:
@@ -1058,6 +1061,9 @@ class RawPerfMetrics:
         ...
     @property
     def m_times_to_first_token(self) -> list[float]:
+        ...
+    @property
+    def token_infer_durations(self) -> list[float]:
         ...
     @property
     def tokenization_durations(self) -> list[float]:

@@ -19,6 +19,8 @@ constexpr size_t BATCH_SIZE = 1;
 
 namespace ov::genai {
 
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
+
 class InputsEmbedder::IInputsEmbedder {
 protected:
     // VLM config
@@ -89,9 +91,34 @@ protected:
         const std::string& device,
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, utils::singleton_core()),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
         m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
         m_tokenizer{model_dir.string(), device_config} { }
+    
+    IInputsEmbedder(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        m_vlm_config{vlm_config},
+        m_vision_encoder(
+            get_model_weights_pair(models_map, "vision_embeddings").first,
+            get_model_weights_pair(models_map, "vision_embeddings").second,
+            config_dir_path,
+            m_vlm_config.model_type,
+            device,
+            device_config
+        ),
+        m_embedding(
+            get_model_weights_pair(models_map, "text_embeddings").first,
+            get_model_weights_pair(models_map, "text_embeddings").second,
+            m_vlm_config.scale_emb,
+            device,
+            device_config
+        ),
+        m_tokenizer(tokenizer) { }
 
     ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
         ov::Tensor encoded_input_ids;
@@ -205,6 +232,24 @@ public:
 
         m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
     }
+
+    InputsEmbedderMiniCPM(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+            m_resampler = utils::singleton_core().compile_model(
+                get_model_weights_pair(models_map, "resampler").first,
+                get_model_weights_pair(models_map, "resampler").second,
+                device,
+                device_config
+            ).create_infer_request();
+
+            m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
+        }
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string images_prompt;
@@ -495,6 +540,15 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
 
+    InputsEmbedderLLaVA(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
@@ -599,6 +653,15 @@ public:
         const std::string& device,
         const ov::AnyMap device_config) :
         InputsEmbedderLLaVA(vlm_config, model_dir, device, device_config) { }
+
+    InputsEmbedderLLaVANext(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        InputsEmbedderLLaVA(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
@@ -917,6 +980,15 @@ public:
         const std::string& device,
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+
+    InputsEmbedderInternVLChat(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_start_token = m_vlm_config.image_start_token;
@@ -1240,7 +1312,7 @@ public:
         IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
         m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()} {}
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string images_prompt;
         std::vector<EncodedImage> embeds;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
@@ -1365,6 +1437,25 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
         m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::PHI3_V) {
         m_impl = std::make_shared<InputsEmbedderPhi3V>(vlm_config, model_dir, device, device_config);
+    } else {
+        OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
+    }
+}
+
+InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
+                               const ModelsMap& models_map,
+                               const Tokenizer& tokenizer,
+                               const std::filesystem::path& config_dir_path,
+                               const std::string& device,
+                               const ov::AnyMap device_config) {
+    if (vlm_config.model_type == VLMModelType::MINICPM) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LLAVA) {
+        m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
+        m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
