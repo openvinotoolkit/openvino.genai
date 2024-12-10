@@ -11,16 +11,16 @@ import datasets
 from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import json
+import os
 import time
 import typing
 import numpy as np
-
 
 @functools.lru_cache(1)
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = WhisperProcessor.from_pretrained(model_id, cache_dir = os.getenv('WISPER_MODELS_CACHE_DIR', ''), trust_remote_code=True)
 
     if (path / "openvino_encoder_model.xml").exists():
         opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
