@@ -35756,7 +35756,7 @@ const util = __nccwpck_require__(9023);
 
 const execAsync = util.promisify(exec);
 
-async function installPackages(packages, localWheelDir) {
+async function installPackages(packages, localWheelDir, requirementsFiles) {
   // Resolve local wheels
   const localWheels = {};
   if (localWheelDir) {
@@ -35780,11 +35780,15 @@ async function installPackages(packages, localWheelDir) {
     }
   }
 
-  // Install all wheels in one command
-  if (wheelPaths.length > 0) {
-    console.log(`Installing local wheels: ${wheelPaths.join(' ')}`);
+  // Collect requirements files
+  const requirementsArgs = requirementsFiles.map(reqFile => `-r ${reqFile}`);
+
+  // Install all wheels and requirements in one command
+  const installArgs = [...wheelPaths, ...requirementsArgs];
+  if (installArgs.length > 0) {
+    console.log(`Installing packages: ${installArgs.join(' ')}`);
     const { stdout, stderr } = await execAsync(
-      `pip install ${wheelPaths.join(' ')}`,
+      `pip install ${installArgs.join(' ')}`,
       {
         stdio: 'inherit'
       }
@@ -35798,8 +35802,10 @@ async function run() {
   try {
     const packagesInput = core.getInput('packages');
     const localWheelDir = core.getInput('local_wheel_dir') || null;
+    const requirementsInput = core.getInput('requirements_files') || '';
     const packages = packagesInput.split(';');
-    await installPackages(packages, localWheelDir);
+    const requirementsFiles = requirementsInput.split(';').filter(Boolean);
+    await installPackages(packages, localWheelDir, requirementsFiles);
   } catch (error) {
     core.setFailed(error.message);
   }
