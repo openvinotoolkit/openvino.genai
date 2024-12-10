@@ -332,13 +332,11 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     size_t d3_all_pixel = pixel_values.get_shape().at(3);
     float* pixel_value_data = pixel_values.data<float>();
     
-    //image chw to 1*c*kernel*hw/kernel*kernel and padding zero
-    const clip_image_f32& resized_preprocessed = preprocessed.at(0).at(0);
+    //image chw to 1*c*kernel*hw/kernel and padding zero
+    clip_image_f32& resized_preprocessed = preprocessed.at(0).at(0);
     size_t img_h = resized_preprocessed.ny;
     size_t img_w = resized_preprocessed.nx;
-    ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}};
-    float* clip_data = clip_img.data<float>();
-    std::copy(resized_preprocessed.buf.begin(), resized_preprocessed.buf.end(), clip_data);
+    ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}, resized_preprocessed.buf.data()};
     ov::Tensor clip_pixel_values = preprocess_for_encoder(clip_img, patch_size);
 
     float* clip_value_data = clip_pixel_values.data<float>();
@@ -356,13 +354,10 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
         for (size_t row = 1; row < preprocessed.size(); ++row) {
             size_t n_slices = preprocessed.at(row).size();
             for (size_t col = 0; col < n_slices; ++col) {
-                const clip_image_f32& elem = preprocessed.at(row).at(col);
+                clip_image_f32& elem = preprocessed.at(row).at(col);
                 img_h = elem.ny;
                 img_w = elem.nx;
-                ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}};
-                clip_data = clip_img.data<float>();
-                std::copy(elem.buf.begin(), elem.buf.end(), clip_data);
-
+                ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}, elem.buf.data()};
                 ov::Tensor clip_pixel_values = preprocess_for_encoder(clip_img, patch_size);
                 
                 d3_clip_pixel = clip_pixel_values.get_shape().at(3);
