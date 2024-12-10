@@ -30,7 +30,7 @@ def main():
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
-    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
+    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
     config.num_assistant_tokens = 5
     # Define max_ngram_size
     config.max_ngram_size = 3
