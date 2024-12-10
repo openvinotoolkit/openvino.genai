@@ -192,6 +192,19 @@ public:
         initialize_generation_config("StableDiffusion3Pipeline");
     }
 
+    StableDiffusion3Pipeline(PipelineType pipeline_type,
+                             const CLIPTextModelWithProjection& clip_text_model_1,
+                             const CLIPTextModelWithProjection& clip_text_model_2,
+                             const SD3Transformer2DModel& transformer,
+                             const AutoencoderKL& vae)
+        : DiffusionPipeline(pipeline_type),
+          m_clip_text_encoder_1(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_1)),
+          m_clip_text_encoder_2(std::make_shared<CLIPTextModelWithProjection>(clip_text_model_2)),
+          m_vae(std::make_shared<AutoencoderKL>(vae)),
+          m_transformer(std::make_shared<SD3Transformer2DModel>(transformer)) {
+        initialize_generation_config("StableDiffusion3Pipeline");
+    }
+
     void reshape(const int num_images_per_prompt,
                  const int height,
                  const int width,
@@ -202,7 +215,9 @@ public:
             do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
         m_clip_text_encoder_1->reshape(batch_size_multiplier);
         m_clip_text_encoder_2->reshape(batch_size_multiplier);
-        m_t5_text_encoder->reshape(batch_size_multiplier, m_generation_config.max_sequence_length);
+        if (m_t5_text_encoder) {
+            m_t5_text_encoder->reshape(batch_size_multiplier, m_generation_config.max_sequence_length);
+        }
         m_transformer->reshape(num_images_per_prompt * batch_size_multiplier,
                                height,
                                width,
@@ -215,7 +230,9 @@ public:
 
         m_clip_text_encoder_1->compile(device, properties);
         m_clip_text_encoder_2->compile(device, properties);
-        m_t5_text_encoder->compile(device, properties);
+        if (m_t5_text_encoder) {
+            m_t5_text_encoder->compile(device, properties);
+        }
         m_transformer->compile(device, properties);
         m_vae->compile(device, properties);
     }
@@ -250,17 +267,17 @@ public:
         ov::Tensor text_encoder_2_hidden_state = m_clip_text_encoder_2->get_output_tensor(idx_hidden_state_2);
 
         ov::Tensor text_encoder_3_output;
-        if (m_t5_text_encoder == nullptr) {
+        if (m_t5_text_encoder) {
+            text_encoder_3_output = m_t5_text_encoder->infer(prompt_3_str,
+                                                             negative_prompt_3_str,
+                                                             do_classifier_free_guidance(generation_config.guidance_scale),
+                                                             m_generation_config.max_sequence_length);
+        } else {
             ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,
                                                transformer_config.joint_attention_dim};
             text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);
             std::fill_n(text_encoder_3_output.data<float>(), text_encoder_3_output.get_size(), 0.0f);
-        } else {
-            text_encoder_3_output = m_t5_text_encoder->infer(prompt_3_str,
-                                                             negative_prompt_3_str,
-                                                             do_classifier_free_guidance(generation_config.guidance_scale),
-                                                             m_generation_config.max_sequence_length);
         }
 
         ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out, t5_prompt_embed_out;
