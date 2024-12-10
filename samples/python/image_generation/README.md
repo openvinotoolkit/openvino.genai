@@ -41,7 +41,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting`
 
-   ![](./image.bmp)
+   ![](./text2image.bmp)
 
 ### Run with callback
 
@@ -106,9 +106,17 @@ The sample will create a stable diffusion pipeline such that the text encoder is
 The `image2mage.py` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
 Also, `strength` parameter linearly affects a number of inferenece steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it. 
 
-Let's the sample:
+To run the sample, download initial image first:
+
+`wget https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png`
+
+And then run the sample:
 
 `python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' small_city.bmp`
+
+The resuling image is:
+
+   ![](./../../cpp/image_generation/imageimage.bmp)
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `Image2ImagePipeline`.
 
