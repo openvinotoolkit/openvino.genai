@@ -526,10 +526,10 @@ class GenerationConfig:
     logprobs: int
     max_length: int
     max_new_tokens: int
+    max_ngram_size: int
     min_new_tokens: int
     no_repeat_ngram_size: int
     num_assistant_tokens: int
-    max_ngram_size: int
     num_beam_groups: int
     num_beams: int
     num_return_sequences: int
@@ -550,11 +550,11 @@ class GenerationConfig:
     @typing.overload
     def __init__(self, **kwargs) -> None:
         ...
+    def is_assisting_generation(self) -> bool:
+        ...
     def is_beam_search(self) -> bool:
         ...
     def is_greedy_decoding(self) -> bool:
-        ...
-    def is_assisting_generation(self) -> bool:
         ...
     def is_prompt_lookup(self) -> bool:
         ...
@@ -1804,19 +1804,9 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-class draft_model:
+def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
-    This class is used to enable Speculative Decoding
+    device on which inference will be performed
     """
-    def __init__(self, models_path: os.PathLike, device: str = '', **kwargs) -> None:
-        """
-        device on which inference will be performed
-        """
-class prompt_lookup:
-    """
-    This class is used to enable Prompt Lookup Decoding
-    """
-    def __init__(self, is_enable_prompt_lookup: bool) -> None:
-        """
-        enable or disable prompt lookup decoding
-        """
+def prompt_lookup(arg0: bool) -> openvino._pyopenvino.OVAny:
+    ...
