@@ -300,6 +300,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 </details>
 
+
 ## Additional materials
 
 - [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
