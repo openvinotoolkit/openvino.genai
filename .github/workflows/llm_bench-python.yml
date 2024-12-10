@@ -4,16 +4,13 @@
 name: llm_bench Python Test
 
 on:
-  push:
-    branches: [ "master" ]
-    paths:
-      - tools/llm_bench/**
-      - tools/who_what_benchmark/**
+  workflow_dispatch:
   pull_request:
-    paths:
-      - tools/llm_bench/**
-      - tools/who_what_benchmark/**
-      - .github/workflows/llm_bench-python.yml
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -107,11 +104,9 @@ jobs:
 
     - name: WWB Tests
       run: |
-        GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
         pip install git+https://github.com/huggingface/optimum-intel.git
-        GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
-        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
-        python -m pytest -v tools/who_what_benchmark/tests
+        GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+        python -m pytest -v ${{ env.WWB_PATH }}/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
@@ -128,9 +123,7 @@ jobs:
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
       - name: WWB Tests
         run: |
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r tools/who_what_benchmark/requirements.txt
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install tools/who_what_benchmark/
           pip install pytest
-          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
-          python -m pytest -v tools/who_what_benchmark/tests
+          pip install git+https://github.com/huggingface/optimum-intel.git
+          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pytest -v ${{ env.WWB_PATH }}/tests
