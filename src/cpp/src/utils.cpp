@@ -336,7 +336,10 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end) {
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
 
-        auto new_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+        auto trimmed_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+
+        ov::Tensor new_tensor(old_tensor.get_element_type(), shape);
+        trimmed_tensor.copy_to(new_tensor);
 
         state.set_state(new_tensor);
     }
