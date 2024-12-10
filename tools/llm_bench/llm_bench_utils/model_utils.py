@@ -121,6 +121,9 @@ def analyze_args(args):
 
     model_framework = args.framework
     model_path = Path(args.model)
+    if model_args["torch_compile_backend"]:
+        log.info("Setting Framework to PyTorch Since torch_compile_backend is provided.")
+        model_framework = 'pt'
     if not model_path.exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     if model_framework in ('ov', 'pt'):
