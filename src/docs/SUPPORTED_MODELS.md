@@ -220,6 +220,9 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>
         <ul>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"><code>black-forest-labs/FLUX.1-schnell</code></a></li>
+          <li><a href="https://huggingface.co/Freepik/flux.1-lite-8B-alpha"><code>Freepik/flux.1-lite-8B-alpha</code></a></li>
+          <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-dev"><code>black-forest-labs/FLUX.1-dev</code></a></li>
+          <li><a href="https://huggingface.co/shuttleai/shuttle-3-diffusion"><code>shuttleai/shuttle-3-diffusion</code></a></li>
         </ul>
       </td>
     </tr>
