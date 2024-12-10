@@ -5,6 +5,7 @@
 
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -77,7 +78,6 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
     apply_paged_attention_transformations(model, per_layer_cache_control);
     set_kv_cache_type_and_shape(model, device_config);
 }
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -42,6 +42,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
 
     utils::apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
     utils::apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
+    utils::apply_gather_before_matmul_transformation(main_model);
+    utils::apply_gather_before_matmul_transformation(draft_model);
 
     std::string draft_device = draft_model_desc.device.empty() ? main_device : draft_model_desc.device;
 
