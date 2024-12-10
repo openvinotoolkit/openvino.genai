@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import openvino_genai
+import queue
+import threading
+
+def streamer(subword): 
+        print(subword, end='', flush=True) 
+        # Return flag corresponds whether generation should be stopped. 
+        # False means continue generation. 
+        return False
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir')
+    parser.add_argument('prompt')
+    args = parser.parse_args()
+
+    device = 'CPU'
+    scheduler_config = openvino_genai.SchedulerConfig()
+    # cache params
+    scheduler_config.cache_size = 2
+
+    prompt_lookup = openvino_genai.prompt_lookup(True)
+
+    pipe = openvino_genai.LLMPipeline(args.model_dir, device, scheduler_config=scheduler_config, prompt_lookup=prompt_lookup)
+    
+    config = openvino_genai.GenerationConfig()
+    config.max_new_tokens = 100
+    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
+    config.num_assistant_tokens = 5
+    # Define max_ngram_size
+    config.max_ngram_size = 3
+
+    # Since the streamer is set, the results will be printed 
+    # every time a new token is generated and put into the streamer queue.
+    pipe.generate(args.prompt, config, streamer)
+
+if '__main__' == __name__:
+    main()

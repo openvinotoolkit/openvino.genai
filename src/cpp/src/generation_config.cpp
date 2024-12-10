@@ -180,8 +180,8 @@ void GenerationConfig::validate() const {
     if (is_assisting_generation()) {
         if (assistant_confidence_threshold != 0.f) {
             OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
-        } else {
             OPENVINO_ASSERT(!is_prompt_lookup(), "Parameters `assistant_confidence_threshold` cannot be used while Prompt Lookup decoding");
+        } else {
             OPENVINO_ASSERT(num_assistant_tokens > 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
         };
     }

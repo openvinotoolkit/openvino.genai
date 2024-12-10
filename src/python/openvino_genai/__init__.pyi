@@ -36,7 +36,8 @@ from openvino_genai.py_openvino_genai import WhisperPerfMetrics
 from openvino_genai.py_openvino_genai import WhisperPipeline
 from openvino_genai.py_openvino_genai import WhisperRawPerfMetrics
 from openvino_genai.py_openvino_genai import draft_model
+from openvino_genai.py_openvino_genai import prompt_lookup
 import os as os
 from . import py_openvino_genai
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedResults', 'GenerationConfig', 'GenerationResult', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'PerfMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'openvino', 'os', 'py_openvino_genai']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedResults', 'GenerationConfig', 'GenerationResult', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'PerfMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'prompt_lookup', 'openvino', 'os', 'py_openvino_genai']
 __version__: str = '2025.0.0.0'

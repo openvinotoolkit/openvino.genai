@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'prompt_lookup']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1805,4 +1805,12 @@ class draft_model:
     def __init__(self, models_path: os.PathLike, device: str = '', **kwargs) -> None:
         """
         device on which inference will be performed
+        """
+class prompt_lookup:
+    """
+    This class is used to enable Prompt Lookup Decoding
+    """
+    def __init__(self, is_enable_prompt_lookup: bool) -> None:
+        """
+        enable or disable prompt lookup decoding
         """

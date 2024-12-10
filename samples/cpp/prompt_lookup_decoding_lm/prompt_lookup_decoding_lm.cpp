@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::LLMPipeline pipe(
         model_path,
         device,
-        ov::genai::prompt_lookup(),
+        ov::genai::prompt_lookup(true),
         ov::genai::scheduler_config(scheduler_config));
 
     auto streamer = [](std::string subword) {
