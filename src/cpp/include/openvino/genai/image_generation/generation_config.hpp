@@ -220,7 +220,7 @@ static constexpr ov::Property<int> max_sequence_length{"max_sequence_length"};
  * - Current inference step
  * - Tensor representing current latent. Such latent can be converted to human-readable representation via image generation pipeline 'decode()' method
  */
-static constexpr ov::Property<std::function<bool(size_t, size_t, ov::Tensor&)>> callback{"callback"};
+static constexpr ov::Property<std::function<bool(size_t, ov::Tensor&)>> callback{"callback"};
 
 /**
  * Function to pass 'ImageGenerationConfig' as property to 'generate()' call.
