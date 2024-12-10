@@ -35767,24 +35767,30 @@ async function installPackages(packages, localWheelDir) {
     }
   }
 
-  // Install packages
+  // Collect wheel paths
+  const wheelPaths = [];
   for (const pkg of packages) {
     const packageName = pkg.split('[')[0];
     if (localWheels[packageName]) {
       const wheelPath = localWheels[packageName];
-      console.log(`Installing local wheel: ${wheelPath}`);
-      const { stdout, stderr } = await execAsync(
-        `pip install "${wheelPath}${pkg.slice(packageName.length)}"`,
-        {
-          stdio: 'inherit'
-        }
-      );
-      console.log('stdout:', stdout);
-      console.error('stderr:', stderr);
+      wheelPaths.push(`"${wheelPath}${pkg.slice(packageName.length)}"`);
     } else {
       core.setFailed(`Package ${pkg} not found locally.`);
       return;
     }
+  }
+
+  // Install all wheels in one command
+  if (wheelPaths.length > 0) {
+    console.log(`Installing local wheels: ${wheelPaths.join(' ')}`);
+    const { stdout, stderr } = await execAsync(
+      `pip install ${wheelPaths.join(' ')}`,
+      {
+        stdio: 'inherit'
+      }
+    );
+    console.log('stdout:', stdout);
+    console.error('stderr:', stderr);
   }
 }
 
