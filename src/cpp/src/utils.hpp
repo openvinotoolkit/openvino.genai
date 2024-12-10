@@ -90,6 +90,9 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 
+template <typename T>
+void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

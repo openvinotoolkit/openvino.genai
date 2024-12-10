@@ -97,8 +97,7 @@ class IterableStreamer(openvino_genai.StreamerBase):
         elif len(text) > self.print_len + delay_n_chars:
             # It is possible to have a shorter text after adding new token.
             # Print to output only if text length is increaesed.
-            # Also, in some cases adding the next token can shorten the text, 
-            # e.g. when apostrophe removing regex had worked after adding new tokens.
+            # E.g. when apostrophe removing regex had worked after adding new tokens.
             # Several last characters are delayed before flushed to output.
             word = text[self.print_len:-delay_n_chars]
             self.print_len = len(text) - delay_n_chars
