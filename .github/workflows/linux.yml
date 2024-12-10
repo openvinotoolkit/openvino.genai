@@ -287,6 +287,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      WISPER_MODELS_CACHE_DIR: ${{ github.workspace }}/models
         
     steps:
       - name: Clone openvino.genai
