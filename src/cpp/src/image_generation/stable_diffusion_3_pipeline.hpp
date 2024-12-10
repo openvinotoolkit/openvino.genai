@@ -144,11 +144,14 @@ public:
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
 
-        const std::string text_encoder_3 = data["text_encoder_3"][1].get<std::string>();
-        if (text_encoder_3 == "T5EncoderModel") {
-            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
-        } else {
-            OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
+        const auto text_encoder_3_json = data["text_encoder_3"][1];
+        if (!text_encoder_3_json.is_null()) {
+            const std::string text_encoder_3 = text_encoder_3_json.get<std::string>();
+            if (text_encoder_3 == "T5EncoderModel") {
+                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
+            } else {
+                OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
+            }
         }
 
         const std::string transformer = data["transformer"][1].get<std::string>();
