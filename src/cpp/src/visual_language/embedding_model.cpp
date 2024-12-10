@@ -29,6 +29,20 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
     m_request = compiled_model.create_infer_request();
 }
 
+EmbeddingsModel::EmbeddingsModel(const std::string& model,
+                                 const ov::Tensor& weights,
+                                 const float scale_emb,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    ov::Core core = utils::singleton_core();
+    std::shared_ptr<ov::Model> m_model = core.read_model(model, weights);
+    // apply embedding postprocessing step by merging them into the model
+    merge_postprocess(m_model, scale_emb);
+
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    m_request = compiled_model.create_infer_request();
+}
+
 ov::Tensor EmbeddingsModel::infer(ov::Tensor input_idx) {
     OPENVINO_ASSERT(m_request, "Text embeddings decoder model must be compiled first. Cannot infer non-compiled model");
 
