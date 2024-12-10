@@ -266,7 +266,7 @@ ov::Core singleton_core() {
     return core;
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model, ov::Core& core) {
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model) {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);
@@ -293,6 +293,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, ov::Core
             }
         }
 
+        ov::Core core;
         std::vector<std::string> exeTargets;
         exeTargets = compiled_Model.get_property(ov::execution_devices);
         std::cout << "EXECUTION_DEVICES:" << std::endl;

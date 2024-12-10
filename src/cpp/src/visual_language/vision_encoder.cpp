@@ -612,10 +612,11 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     model_type(model_type) {
-        m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
-        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
-            model_dir, "preprocessor_config.json"
-        );
+    auto compiled_model =
+        core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config);
+    ov::genai::utils::print_compiled_model_properties(compiled_model);
+    m_vision_encoder = compiled_model.create_infer_request();
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
 }
 
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfig& config) {

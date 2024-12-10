@@ -86,7 +86,7 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model, ov::Core& core);
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model);
 
 }  // namespace utils
 }  // namespace genai

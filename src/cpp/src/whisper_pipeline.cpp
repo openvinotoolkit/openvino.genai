@@ -62,10 +62,10 @@ public:
         m_models.decoder =
             core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
                 .create_infer_request();
-        ov::CompiledModel compiled_Model =
+        ov::CompiledModel compiled_model =
             core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties);
-        m_models.decoder_with_past = compiled_Model.create_infer_request();
-        ov::genai::utils::print_compiled_model_properties(compiled_Model, core);
+        m_models.decoder_with_past = compiled_model.create_infer_request();
+        ov::genai::utils::print_compiled_model_properties(compiled_model);
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {

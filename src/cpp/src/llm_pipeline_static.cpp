@@ -751,12 +751,15 @@ void StaticLLMPipeline::setupAndCompileModels(
     set_npuw_cache_dir(prefill_config);
     set_npuw_cache_dir(generate_config);
 
-    m_kvcache_request = core.compile_model(
+    auto kv_compiled_model = core.compile_model(
         kvcache_model, device, generate_config
-    ).create_infer_request();
-    m_prefill_request = core.compile_model(
-        prefill_model, device, prefill_config
-    ).create_infer_request();
+    );
+    ov::genai::utils::print_compiled_model_properties(kv_compiled_model);
+    m_kvcache_request = kv_compiled_model.create_infer_request();
+
+    auto prefill_compiled_model = core.compile_model(prefill_model, device, prefill_config);
+    m_prefill_request = prefill_compiled_model.create_infer_request();
+    ov::genai::utils::print_compiled_model_properties(prefill_compiled_model);
 }
 
 void StaticLLMPipeline::setupAndImportModels(

@@ -71,9 +71,10 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        m_language = utils::singleton_core().compile_model(
-            models_dir / "openvino_language_model.xml", device, properties
-        ).create_infer_request();
+        auto compiled_model =
+            utils::singleton_core().compile_model(models_dir / "openvino_language_model.xml", device, properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model);
+        m_language = compiled_model.create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
