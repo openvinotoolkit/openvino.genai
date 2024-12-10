@@ -137,7 +137,8 @@ def main():
     printer_thread = threading.Thread(target=token_printer, daemon=True)
     printer_thread.start()
     
-    config = openvino_genai.GenerationConfig()
+    config = pipe.get_generation_config()
+    config.do_sample = False
     config.max_new_tokens = 100
     config.do_sample = True
     config.top_p = 0.9
