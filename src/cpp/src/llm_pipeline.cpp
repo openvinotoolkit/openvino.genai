@@ -356,10 +356,8 @@ public:
             std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_tokens, concatenated_attention_mask, streamer_ptr,
                                                                                   m_sampler, requests, position_ids, std::nullopt, m_selected_beam);
 
-            if (!is_chat_conversation) {
-                for (auto& request : requests)
-                    m_sampler.clear_request_info(request->get_request_id());
-            }
+            for (auto& request : requests)
+                m_sampler.clear_request_info(request->get_request_id());
         }
 
         if (is_chat_conversation) {
@@ -405,8 +403,6 @@ public:
         m_selected_beam = std::nullopt;
         m_trust_encoded_history = true;
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
-        // only one request allowed in chat scenario
-        m_sampler.clear_request_info(0);
         if (!m_tokenized_chat_history.empty()) {
             reset_kv_state();
             m_history.clear();

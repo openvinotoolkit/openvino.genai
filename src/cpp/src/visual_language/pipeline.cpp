@@ -98,6 +98,7 @@ public:
         }
 
         m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     VLMPipelineImpl(
@@ -203,6 +204,7 @@ public:
         int32_t m_selected_beam = 0;
         std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
                                                                                       position_ids, m_embedding, std::nullopt);
+        m_sampler.clear_request_info(0);
 
         DecodedResults decoded;
         for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
@@ -216,7 +218,6 @@ public:
         } else {
             m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
-            m_sampler.clear_request_info(0);
         }
 
         m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
@@ -269,8 +270,6 @@ public:
         m_language.reset_state();
         // clear all chat history
         m_inputs_embedder->finish_chat();
-        // clear sampler requests info
-        m_sampler.clear_request_info(0);
     }
 
     Tokenizer get_tokenizer() const {
