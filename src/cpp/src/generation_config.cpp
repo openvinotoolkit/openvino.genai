@@ -131,6 +131,9 @@ bool GenerationConfig::is_speculative_decoding() const {
 }
 
 void GenerationConfig::validate() const {
+    OPENVINO_ASSERT(eos_token_id == -1 || stop_token_ids.find(eos_token_id) != stop_token_ids.end(),
+        "'stop_token_ids' must contain 'eos_token_id'. Please, call 'set_eos_token_id' with 'eos_token_id' value");
+
     OPENVINO_ASSERT(!do_sample || num_beams == 1, 
                     "Beam search with sampling is not supported yet. "
                     "Please either set do_sample=false to use beam search "
