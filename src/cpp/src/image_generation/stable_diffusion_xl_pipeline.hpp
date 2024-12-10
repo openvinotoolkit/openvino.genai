@@ -74,18 +74,18 @@ public:
         }
 
         // Temporary fix for GPU
-        ov::AnyMap updated_roperties = properties;
+        ov::AnyMap updated_properties = properties;
         if (device.find("GPU") != std::string::npos &&
-            updated_roperties.find("INFERENCE_PRECISION_HINT") == updated_roperties.end()) {
-            updated_roperties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
+            updated_properties.find("INFERENCE_PRECISION_HINT") == updated_properties.end()) {
+            updated_properties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
