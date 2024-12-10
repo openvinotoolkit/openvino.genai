@@ -39,6 +39,8 @@ protected:
     ChatHistory m_history;
     // Templated chat history
     std::string m_templated_chat_history;
+    // Tokenized chat history
+    ov::Tensor m_tokenized_chat_history = ov::Tensor(ov::element::i64, {0, 0});
     // Whether we have computed some inputs already
     bool m_is_cache_empty = true;
 
@@ -53,12 +55,17 @@ public:
         return m_tokenizer;
     }
 
+    ov::Tensor get_tokenized_chat_history() const {
+        return m_tokenized_chat_history;
+    }
+
     virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
         if (!m_is_cache_empty) {
             m_history.clear();
             m_templated_chat_history.clear();
             m_is_cache_empty = true;
+            m_tokenized_chat_history = ov::Tensor(ov::element::i64, {0, 0});
         }
         if (system_message.empty()) {
             return;
@@ -81,6 +88,7 @@ public:
 
         m_history.clear();
         m_templated_chat_history.clear();
+        m_tokenized_chat_history = ov::Tensor(ov::element::i64, {0, 0});
     }
 
 protected:
@@ -156,6 +164,7 @@ protected:
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_templated_chat_history = std::move(new_templated_chat_history);
+            m_tokenized_chat_history = new_chat_tokens;
         } else {
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
@@ -1136,6 +1145,10 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
+}
+
+ov::Tensor InputsEmbedder::get_tokenized_chat_history() const {
+    return m_impl->get_tokenized_chat_history();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
