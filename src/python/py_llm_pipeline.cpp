@@ -206,9 +206,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device") = "", "device on which inference will be performed");
 
-    m.def("prompt_lookup", [](
-            bool is_prompt_lookup_enabled
-        ) {
+    m.def("prompt_lookup", [](bool is_prompt_lookup_enabled) {
             return prompt_lookup(is_prompt_lookup_enabled).second;
         }),
         py::arg("is_prompt_lookup_enabled"), "flag to enable or disable prompt lookup decoding";
