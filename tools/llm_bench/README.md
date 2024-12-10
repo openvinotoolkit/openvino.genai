@@ -132,7 +132,7 @@ huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-
 To run the benchmarking script with `torch.compile()`, use the `--torch_compile_backend` option to specify the backend. You can choose between `pytorch` or `openvino` (default). Example:
 
 ```bash
-python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
+python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino -f pt
 ```
 
 > **Note:** To use `torch.compile()` with CUDA GPUs, you need to install the nightly version of PyTorch:
