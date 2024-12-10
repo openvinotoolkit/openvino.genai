@@ -552,7 +552,6 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
-        print("optimized_model: ", e["optimized_model"])
         for l1, l2 in zip(
             e["source_model"].splitlines(), e["optimized_model"].splitlines()
         ):
@@ -565,6 +564,7 @@ def print_text_results(evaluator):
         logger.info(
             "--------------------------------------------------------------------------------------"
         )
+        logger.info("## Prompt %d:\n%s", i + 1, e["prompt"])
         logger.info("## Reference text %d:\n%s", i + 1, ref_text)
         logger.info("## Actual text %d:\n%s", i + 1, actual_text)
         logger.info("## Diff %d: ", i + 1)
@@ -638,7 +638,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
-    if args.verbose and args.target_model is not None:
+    if args.verbose and (args.target_model or args.target_data):
         if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type:
