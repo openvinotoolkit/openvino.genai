@@ -149,7 +149,7 @@ public:
         const CLIPTextModel& clip_text_model,
         const T5EncoderModel t5_encoder_model,
         const FluxTransformer2DModel& transformer,
-        const AutoencoderKL& vae_decoder);
+        const AutoencoderKL& vae);
 
     /**
      * Returns default image generation config created internally based on model type.

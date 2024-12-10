@@ -277,7 +277,7 @@ public:
             text_encoder_3_output = m_t5_text_encoder->infer(prompt_3_str,
                                                              negative_prompt_3_str,
                                                              do_classifier_free_guidance(generation_config.guidance_scale),
-                                                             m_generation_config.max_sequence_length);
+                                                             generation_config.max_sequence_length);
         } else {
             ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,

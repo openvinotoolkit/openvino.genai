@@ -168,14 +168,14 @@ static constexpr ov::Property<size_t> num_images_per_prompt{"num_images_per_prom
 static constexpr ov::Property<float> guidance_scale{"guidance_scale"};
 
 /**
- * Specifies a height or resulting image. Typically, image height must be divisible by VAE scale factor
- * (which is 8 in most of case) which represents ratio between latent image / RGB image sizes.
+ * Specifies a height of a resulting image. Typically, image height must be divisible by VAE scale factor
+ * (which is 8 in most of cases) which represents ratio between latent image / RGB image sizes.
  */
 static constexpr ov::Property<int64_t> height{"height"};
 
 /**
- * Specifies a width or resulting image. Typically, image width must be divisible by VAE scale factor
- * (which is 8 in most of case) which represents ratio between latent image / RGB image sizes.
+ * Specifies a width of a resulting image. Typically, image width must be divisible by VAE scale factor
+ * (which is 8 in most of cases) which represents ratio between latent image / RGB image sizes.
  */
 static constexpr ov::Property<int64_t> width{"width"};
 
@@ -196,8 +196,8 @@ static constexpr ov::Property<size_t> num_inference_steps{"num_inference_steps"}
 static constexpr ov::Property<float> strength{"strength"};
 
 /**
- * Overrides default randon generator used within image generation pipelines.
- * By default, 'CppStdGenerator' generator is used, but if you are running Image generation via
+ * Overrides default random generator used within image generation pipelines.
+ * By default, 'CppStdGenerator' is used, but if you are running Image generation via
  * python code, you can additionally install 'torch' and use OpenVINO GenAI's 'TorchGenerator'
  * which ensures the generated images will look as in HuggingFace when the same sed value if used.
  */
@@ -205,11 +205,12 @@ static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"}
 
 /**
  * This parameters limits max sequence length for T5 encoder for SD3 and FLUX models.
- * Output T5 tokenizer is padded with pad tokens to 'max_sequence_length' within a pipeline.
+ * T5 tokenizer output is padded with pad tokens to 'max_sequence_length' within a pipeline.
  * So, for better performance, you can specify this parameter to lower value to speed-up
  * T5 encoder inference as well as inference of transformer denoising model.
  * For optimal performance it can be set to a number of tokens for 'prompt_3' / 'negative_prompt_3' for SD3
  * or `prompt_2` for FLUX.
+ * Note, that images generated with different values of 'max_sequence_length' are slightly different, but quite close.
  */
 static constexpr ov::Property<int> max_sequence_length{"max_sequence_length"};
 
