@@ -505,12 +505,16 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          python ./samples/python/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
+          with open('predictions_py.txt', 'r') as f:
+              predicted_prompt_lookup_py = f.readline()
           assert predicted_greedy == predicted_prompt_lookup
+          assert predicted_greedy == predicted_prompt_lookup_py
           "
           echo "Prompt lookup" passed
 

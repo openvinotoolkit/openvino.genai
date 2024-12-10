@@ -30,7 +30,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     LLMPipeline, 
     draft_model,
-    prompt_lookup,
+    prompt_lookup
 
 )
 

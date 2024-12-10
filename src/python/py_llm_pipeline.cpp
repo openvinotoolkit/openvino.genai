@@ -211,5 +211,5 @@ void init_llm_pipeline(py::module_& m) {
         ) {
             return prompt_lookup(is_prompt_lookup_enabled).second;
         }),
-        py::arg("is_prompt_lookup_enabled") = true, "flag to enable or disable prompt lookup decoding";
+        py::arg("is_prompt_lookup_enabled"), "flag to enable or disable prompt lookup decoding";
 }
