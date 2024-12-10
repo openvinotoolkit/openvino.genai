@@ -32,7 +32,7 @@ This Python example demonstrates custom detokenization with bufferization. The s
 
 To address this, the detokenizer needs a larger context. We accumulate tokens in a tokens_cache buffer and decode multiple tokens together, adding the text to the streaming queue only when a complete decoded chunk is ready. We run a separate thread to print all new elements arriving in this queue from the generation pipeline. Each generated chunk of text is put into a synchronized queue, ensuring that all put and get operations are thread-safe and blocked until they can proceed.
 
-At the same time, in order to optimize the performance in streaming mode, we provide the Chuck Streaming. Chunk streaming has significant benefits to very small LLM for streaming generate token rate improvement. It does decoding once after several token generation. We can use the tokens_len parameter to control the number of tokens in the token_cache before decoding.
+At the same time, in order to optimize the performance in streaming mode, we provide the Chuck Streaming. Chunk streaming has significant benefits to very small LLM for streaming generate token rate improvement. It does sampling once after several token generation. We can use the tokens_len parameter to control the number of tokens in the token_cache before sampling.
 
 ### Troubleshooting
 
