@@ -610,13 +610,29 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
 }
 }
 
-VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
+VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config) :
     model_type(model_type) {
-    auto compiled_model =
-        core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config);
+    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml",
+                                                                device,
+                                                                device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model);
     m_vision_encoder = compiled_model.create_infer_request();
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+}
+
+VisionEncoder::VisionEncoder(
+    const std::string& model,
+    const ov::Tensor& weights,
+    const std::filesystem::path& config_dir_path,
+    const VLMModelType model_type,
+    const std::string& device,
+    const ov::AnyMap device_config
+) :
+    model_type(model_type) {
+        m_vision_encoder = utils::singleton_core().compile_model(model, weights, device, device_config).create_infer_request();
+        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
+            config_dir_path, "preprocessor_config.json"
+        );
 }
 
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfig& config) {

@@ -42,7 +42,7 @@ optimum-cli export openvino --model <MODEL_ID> --weight-format <PRECISION> <OUTP
 optimum-cli export openvino -h # For detailed information
 ```
 
-* `--model <MODEL_ID>` : model_id for downloading from [huggngface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
 * `--weight-format <PRECISION>` : precision for model conversion. Available options: `fp32, fp16, int8, int4, mxfp4`
 * `<OUTPUT_DIR>`: output directory for saving generated OpenVINO model.
 
