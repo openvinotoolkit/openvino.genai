@@ -141,7 +141,7 @@ void FlowMatchEulerDiscreteScheduler::init_step_index() {
     m_step_index = (m_begin_index == -1) ? 0 : m_begin_index;
 }
 
-void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
+void FlowMatchEulerDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_flow_match_euler_discrete.py#L117
     OPENVINO_THROW("Not implemented");
 }

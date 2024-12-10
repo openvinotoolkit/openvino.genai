@@ -19,7 +19,9 @@ from openvino_genai.py_openvino_genai import FluxTransformer2DModel
 from openvino_genai.py_openvino_genai import GenerationConfig
 from openvino_genai.py_openvino_genai import GenerationResult
 from openvino_genai.py_openvino_genai import Generator
+from openvino_genai.py_openvino_genai import Image2ImagePipeline
 from openvino_genai.py_openvino_genai import ImageGenerationConfig
+from openvino_genai.py_openvino_genai import InpaintingPipeline
 from openvino_genai.py_openvino_genai import LLMPipeline
 from openvino_genai.py_openvino_genai import PerfMetrics
 from openvino_genai.py_openvino_genai import RawPerfMetrics
@@ -41,5 +43,5 @@ from openvino_genai.py_openvino_genai import WhisperRawPerfMetrics
 from openvino_genai.py_openvino_genai import draft_model
 import os as os
 from . import py_openvino_genai
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationResult', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'PerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'openvino', 'os', 'py_openvino_genai']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationResult', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'PerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMPipeline', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'openvino', 'os', 'py_openvino_genai']
 __version__: str = '2025.0.0.0'

@@ -69,6 +69,8 @@ from .py_openvino_genai import (
     SD3Transformer2DModel,
     AutoencoderKL,
     Text2ImagePipeline,
+    Image2ImagePipeline,
+    InpaintingPipeline,
     Scheduler,
     ImageGenerationConfig,
     Generator,
