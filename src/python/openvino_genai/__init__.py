@@ -63,7 +63,10 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
+    T5EncoderModel,
     UNet2DConditionModel,
+    FluxTransformer2DModel,
+    SD3Transformer2DModel,
     AutoencoderKL,
     Text2ImagePipeline,
     Scheduler,

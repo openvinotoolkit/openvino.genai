@@ -18,7 +18,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS FluxTransformer2DModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 64;
         bool guidance_embeds = false;
         size_t m_default_sample_size = 128;
@@ -69,7 +69,7 @@ public:
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<FluxTransformer2DModel&, Properties...> compile(const std::string& device,
-                                                                                  Properties&&... properties) {
+                                                                                   Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
