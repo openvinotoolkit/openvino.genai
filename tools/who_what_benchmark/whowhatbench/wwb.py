@@ -552,7 +552,6 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
-        print("optimized_model: ", e["optimized_model"])
         for l1, l2 in zip(
             e["source_model"].splitlines(), e["optimized_model"].splitlines()
         ):
@@ -563,12 +562,13 @@ def print_text_results(evaluator):
             diff += diff_strings(l1, l2) + "\n"
 
         logger.info(
-            "--------------------------------------------------------------------------------------"
+            "======================================================================================================="
         )
-        logger.info("## Reference text %d:\n%s", i + 1, ref_text)
-        logger.info("## Actual text %d:\n%s", i + 1, actual_text)
-        logger.info("## Diff %d: ", i + 1)
-        logger.info(diff)
+        logger.info("## Prompt %d:\n%s\n", i + 1, e["prompt"])
+        logger.info("## Metric value:%.4f\n", e[metric_of_interest])
+        logger.info("## Reference text:\n%s\n", ref_text)
+        logger.info("## Actual text:\n%s\n", actual_text)
+        logger.info("## Diff:\n%s\n", diff)
 
 
 def print_image_results(evaluator):
@@ -578,7 +578,7 @@ def print_image_results(evaluator):
         top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         logger.info(
-            "--------------------------------------------------------------------------------------"
+            "======================================================================================================="
         )
         logger.info(f"Top-{i+1} example:")
         logger.info(e)
@@ -638,7 +638,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
-    if args.verbose and args.target_model is not None:
+    if args.verbose and (args.target_model or args.target_data):
         if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type:
