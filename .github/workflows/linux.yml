@@ -179,7 +179,11 @@ jobs:
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
-              
+        
+      - name: Build WWB Wheel
+        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+            
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -351,7 +355,7 @@ jobs:
       - name: Install GenAI Wheels
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;who_what_benchmark"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
      
       - name: Install Samples Requirements
