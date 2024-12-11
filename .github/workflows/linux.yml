@@ -271,7 +271,7 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_generate_api.py -k "not distil-small.en"' # Skip failed tests distil-small.en
-          - name: 'not Wisper'
+          - name: 'LLM & VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_generate_api.py -k "not Qwen2-0.5B-Instruct"' # Skip failed tests Qwen2-0.5B-Instruct
     defaults:
       run:
