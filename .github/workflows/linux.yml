@@ -393,7 +393,7 @@ jobs:
           ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
         working-directory: ${{ env.MODELS_DIR }}
 
-      - name: Test C++ Sample (whisper_speech_recognition)
+      - name: Test whisper_speech_recognition
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           ${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
