@@ -207,6 +207,28 @@ std::shared_ptr<ov::Model> cvt_value_tensors_layout(std::shared_ptr<ov::Model> m
     return ppp.build();
 }
 
+std::shared_ptr<ov::Model> optimize_kv_layout(std::shared_ptr<ov::Model> model, bool only_output=false) {
+    ov::preprocess::PrePostProcessor ppp(model);
+
+    if (!only_output) {
+        for (auto tensor : model->inputs()) {
+            if (tensor.get_any_name().find("past_key_values") != std::string::npos) {
+                ppp.input(tensor.get_any_name()).model().set_layout(ov::Layout("BHSE"));
+                ppp.input(tensor.get_any_name()).tensor().set_layout(ov::Layout("BSHE"));
+            }
+        }
+    }
+
+    for (auto tensor : model->outputs()) {
+        if (tensor.get_any_name().find("present") != std::string::npos) {
+            ppp.output(tensor.get_any_name()).model().set_layout(ov::Layout("BHSE"));
+            ppp.output(tensor.get_any_name()).tensor().set_layout(ov::Layout("BSHE"));
+        }
+    }
+
+    return ppp.build();
+}
+
 bool optimize_value_tensors(std::shared_ptr<ov::Model> model) {
     ov::pass::GraphRewrite rewr;
     rewr.add_matcher<ScaledDotProductAttentionDecomposition>();
@@ -716,9 +738,11 @@ void StaticLLMPipeline::setupAndCompileModels(
     // (5) Reshape both models to static shape
     const uint32_t kMaxPromptLen = align_to(pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u), 64u);
     const uint32_t kMinResponseLen = align_to(pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u), 64u);
+    const bool optimize_kv_copy = pop_or_default<std::string>(properties, "OPTIMIZE_KV_COPY", "NO") == "YES";
+
     ModelDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
     KVAxesPosition axes = get_kv_axes(model_desc.type);
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len, false};
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len, false, optimize_kv_copy};
     reshape_to_static(prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (6) Apply opt layout if applicable
@@ -736,6 +760,14 @@ void StaticLLMPipeline::setupAndCompileModels(
     // (8) Convert kvcache tensors to fp16 precision
     kvcache_model = cvt_kvcache_to_fp16(kvcache_model);
     prefill_model = cvt_kvcache_to_fp16(prefill_model);
+    if (m_kvcache_desc.optimize_copy) {
+        std::cout << "[LOG_DEBUG] Optmize KV-copy is enabled" << std::endl;
+        kvcache_model = optimize_kv_layout(kvcache_model);
+        prefill_model = optimize_kv_layout(prefill_model, true);
+        m_kvcache_desc.seq_len = 1u;
+    } else {
+        std::cout << "[LOG_DEBUG] Optmize KV-copy is disabled" << std::endl;
+    }
     // (9) Compile both model
     auto prefill_config = pop_or_default(
         properties, "PREFILL_CONFIG", get_default_prefill_config(prefill_model, npudesc)
@@ -1013,7 +1045,7 @@ EncodedResults StaticLLMPipeline::generate(
         fill_tensor<ov::float16>(kvcache_in_tensor, 0);
 
         auto kvcache_in_slice = make_tensor_slice(
-            kvcache_in_tensor, kv_dim, 0u, m_kvcache_desc.num_stored_tokens
+            kvcache_in_tensor, m_kvcache_desc.seq_len, 0u, m_kvcache_desc.num_stored_tokens
         );
 
         if (kv_dim == 3u) {
@@ -1037,6 +1069,20 @@ EncodedResults StaticLLMPipeline::generate(
         position_ids_data[0] = m_kvcache_desc.num_stored_tokens;
         attention_mask_data[m_kvcache_desc.num_stored_tokens - 1] = 1u;
 
+        // NB: Write KV-cache for the new token to the correct input position for the next iteration
+        if (m_kvcache_desc.optimize_copy) {
+            const size_t kStartInputKVCacheLayers = 3u;
+            for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
+                const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
+                auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+                auto kvcache_in_slice = make_tensor_slice(
+                    kvcache_in_tensor, m_kvcache_desc.seq_len, m_kvcache_desc.num_stored_tokens, m_kvcache_desc.num_stored_tokens + 1
+                );
+                const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
+                m_kvcache_request.set_tensor(output_name, kvcache_in_slice);
+            }
+        }
+
         m_kvcache_request.infer();
         m_kvcache_desc.num_stored_tokens += 1;
 
@@ -1058,19 +1104,21 @@ EncodedResults StaticLLMPipeline::generate(
             break;
         }
 
-        // NB: Write KV-cache for the new token to the correct input position for the next iteration
-        for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
-            const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
-            std::string input_name = std::regex_replace(output_name, std::regex("present"), "past_key_values");
+        if (!m_kvcache_desc.optimize_copy) {
+            // NB: Write KV-cache for the new token to the correct input position for the next iteration
+            for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
+                const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
+                std::string input_name = std::regex_replace(output_name, std::regex("present"), "past_key_values");
 
-            const auto kv_dim = (output_name.find("value") != std::string::npos &&
-                m_kvcache_desc.v_tensors_transposed) ? 3u : m_kvcache_desc.seq_len;
+                const auto kv_dim = (output_name.find("value") != std::string::npos &&
+                    m_kvcache_desc.v_tensors_transposed) ? 3u : m_kvcache_desc.seq_len;
 
-            auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
-            auto kvcache_in_slice = make_tensor_slice(
-                kvcache_in_tensor, kv_dim, m_kvcache_desc.num_stored_tokens - 1, m_kvcache_desc.num_stored_tokens
-            );
-            m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
+                auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+                auto kvcache_in_slice = make_tensor_slice(
+                    kvcache_in_tensor, kv_dim, m_kvcache_desc.num_stored_tokens - 1, m_kvcache_desc.num_stored_tokens
+                );
+                m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
+            }
         }
     }
     auto stop_time = std::chrono::steady_clock::now();

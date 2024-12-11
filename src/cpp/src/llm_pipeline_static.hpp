@@ -59,6 +59,7 @@ private:
         uint32_t num_stored_tokens;
         uint32_t seq_len;
         bool v_tensors_transposed;
+        bool optimize_copy;
     };
 
     KVCacheDesc m_kvcache_desc;
