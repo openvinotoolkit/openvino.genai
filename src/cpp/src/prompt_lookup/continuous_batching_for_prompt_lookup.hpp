@@ -13,29 +13,19 @@ public:
     ContinuousBatchingForPromptLookupImpl() = default;
 
     ContinuousBatchingForPromptLookupImpl(
-        const std::filesystem::path& models_path,
+        const std::shared_ptr<ov::Model>& model,
         const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
-        const ov::AnyMap& properties) :
-    ContinuousBatchingImpl{ models_path,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config,
+        bool is_validation_mode_enabled = false) :
+    ContinuousBatchingImpl{ model,
                             tokenizer,
                             scheduler_config,
                             device,
                             properties,
-                            true } {};
-
-    ContinuousBatchingForPromptLookupImpl(
-        const std::filesystem::path& models_path,
-        const SchedulerConfig& scheduler_config,
-        const std::string& device,
-        const ov::AnyMap& properties,
-        const ov::AnyMap& tokenizer_properties = {}) :
-    ContinuousBatchingImpl{ models_path,
-                            Tokenizer(models_path, tokenizer_properties),
-                            scheduler_config,
-                            device,
-                            properties,
+                            generation_config,
                             true } {};
                             
     void generate_candidates();

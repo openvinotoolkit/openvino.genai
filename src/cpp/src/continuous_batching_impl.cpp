@@ -11,23 +11,22 @@ template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
-    const std::filesystem::path& models_path,
+    const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties,
-    bool is_validation_mode_enabled) {
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled
+    ) {
     m_tokenizer = tokenizer;
+    m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    m_generation_config = utils::from_config_json_if_exists(models_path);
-
+    
     ov::Core core;
 
     auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
     core.set_property(core_properties);
-
-    // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> model = core.read_model((models_path / "openvino_model.xml").string());
 
     DeviceConfig device_config(core, scheduler_config, device, compile_properties);
 

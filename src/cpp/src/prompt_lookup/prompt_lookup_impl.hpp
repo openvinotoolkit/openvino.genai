@@ -7,6 +7,7 @@
 #include "continuous_batching_impl.hpp"
 #include "continuous_batching_for_prompt_lookup.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 
@@ -16,24 +17,14 @@ protected:
     SpeculativeDecodingMetrics m_sd_metrics;
     
 public:
-    PromptLookupImpl(
-        const std::filesystem::path& models_path,
-        const Tokenizer& tokenizer,
-        const SchedulerConfig& scheduler_config,
-        const std::string& device,
-        const ov::AnyMap& properties) {
-        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, tokenizer, scheduler_config, device, properties);
+    PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
+                     const Tokenizer& tokenizer,
+                     const SchedulerConfig& scheduler_config,
+                     const std::string& device,
+                     const ov::AnyMap& properties,
+                     const ov::genai::GenerationConfig& generation_config) {
         m_tokenizer = tokenizer;
-    };
-
-    PromptLookupImpl(
-        const std::filesystem::path& models_path,
-        const SchedulerConfig& scheduler_config,
-        const std::string& device,
-        const ov::AnyMap& properties,
-        const ov::AnyMap& tokenizer_properties = {}) {
-        m_tokenizer = Tokenizer(models_path, tokenizer_properties);
-        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(models_path, m_tokenizer, scheduler_config, device, properties);
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     };
 
     GenerationHandle add_request(uint64_t request_id,

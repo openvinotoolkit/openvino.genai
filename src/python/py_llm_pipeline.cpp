@@ -201,6 +201,7 @@ void init_llm_pipeline(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return draft_model(models_path, device, pyutils::kwargs_to_any_map(kwargs)).second;
         },
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
