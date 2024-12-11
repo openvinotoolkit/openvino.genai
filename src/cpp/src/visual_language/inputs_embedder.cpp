@@ -1289,11 +1289,71 @@ ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t 
     return hd_feature_transformer.get_output_tensor();
 }
 
+// image_features_hd: (num_images, h_crop*12, w_crop*12, 4096)
+// output: (num_images, (h_crop*12) * (w_crop*12+1), 4096)
+ov::Tensor add_image_newline(const ov::Tensor& image_features_hd, const std::vector<float>& sub_GN) {
+    const ov::Shape& nhwc = image_features_hd.get_shape();  // [N, 12*h_crop, 12*w_crop, 4096]
+    const float* in = image_features_hd.data<float>();
+    ov::Tensor image_features_hd_new_line{ov::element::f32, {nhwc.at(0), nhwc.at(1) * (nhwc.at(2) + 1), nhwc.at(3)}};
+    float* out = image_features_hd_new_line.data<float>();
+    for (size_t batch_id = 0; batch_id < nhwc.at(0); ++batch_id) {
+        for (size_t row_id = 0; row_id < nhwc.at(1); ++row_id) {
+            for (size_t col_id = 0; col_id < nhwc.at(2); ++col_id) {
+                std::copy_n(
+                    in + batch_id * nhwc.at(1) * nhwc.at(2) * nhwc.at(3) + row_id * nhwc.at(2) * nhwc.at(3) + col_id * nhwc.at(3),
+                    nhwc.at(3),
+                    out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) + row_id * (nhwc.at(2) + 1) * nhwc.at(3) + col_id * nhwc.at(3)
+                );
+            }
+            std::copy(
+                sub_GN.begin(),
+                sub_GN.end(),
+                out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) + row_id * (nhwc.at(2) + 1) * nhwc.at(3) + nhwc.at(2) * nhwc.at(3)
+            );
+        }
+    }
+    // std::cout << "AAAAAAAAAAAAAAAAAAAAAa\n";
+    // std::cout << out[12*4096-1]<<'\n';
+    // std::cout << out[12*4096+1]<<'\n';
+    // std::cout << out[12*4096+4095]<<'\n';
+    // std::cout << out[12*4096+4096]<<'\n';
+    // std::cout << out[13*2*4096]<<'\n';
+    // std::cout << out[(13*2+12)*4096]<<'\n';
+    // std::cout << "BBBBBBBBBBBBBBBBB\n";
+    return image_features_hd_new_line;
+}
+
 // image_features.resized_source: (num_crops+1, 24*24, 1024)
-ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer) {
-    ov::Tensor global_image_features{ov::element::f32, {1, 24*24, 1024}, image_features.resized_source.data<float>()};
+ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer, const std::vector<float>& sub_GN) {
+    // std::cout << image_features.resized_source.data<float>()[576*1024 + 0] << '\n';
+    // std::cout << image_features.resized_source.data<float>()[576*1024 + 1] << '\n';
+    // std::cout << image_features.resized_source.data<float>()[576*1024 + 1025] << '\n';
+    // std::cout << image_features.resized_source.data<float>()[576*1024 + 4090] << '\n';
+    // std::cout << image_features.resized_source.data<float>()[576*1024 + 80000] << '\n';
+// [5,3,336,336] [5,576,1024]
+// 0.134461
+// -0.867309
+// -0.274503
+// 1.73786
+// 0.13117
+// [5,3,336,336] [5,576,1024]
+// -1.01567
+// -0.291421
+// -0.260488
+// 0.743025
+// 1.4099
+    const ov::Shape& image_features_shape = image_features.resized_source.get_shape();
+    ov::Tensor global_image_features{ov::element::f32, {1, image_features_shape.at(1), image_features_shape.at(2)}, image_features.resized_source.data<float>()};
     // global feature can be viewed as a special HD case with num_crops 1x1
     ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1, hd_feature_transformer);
+    ov::Tensor global_image_features_hd_newline = add_image_newline(global_image_features_hd, sub_GN);
+    constexpr size_t INPUT_IMAGE_SIZE = 336;
+    size_t h_crop = image_features.resized_source_size.height / INPUT_IMAGE_SIZE;
+    size_t w_crop = image_features.resized_source_size.width / INPUT_IMAGE_SIZE;
+    size_t num_crops = h_crop * w_crop;
+
+    // NOTE: real num_crops is padded
+    // (num_crops, 24*24, 1024)
     return {};
 }
 }
@@ -1317,7 +1377,7 @@ public:
         std::vector<EncodedImage> embeds;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
-            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer);
+            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN);
         }
         ov::Tensor inputs_embeds;
         //     if (m_vlm_config.use_image_id) {

@@ -658,13 +658,11 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
     if (trans) {
         src = clip_image_u8{height, width, {uint8_data, uint8_data + uint8.get_size()}};
         bilinear_resize(src, dst, new_h, new_w);
-        // std::cout << new_h << ' ' << new_w << '\n';
         return padding_336(ov::Tensor{ov::element::u8, {1, new_w, new_h, 3}, dst.buf.data()});
     }
     src = clip_image_u8{width, height, {uint8_data, uint8_data + uint8.get_size()}};
-    bilinear_resize(src, dst, new_w, new_h);
-    // std::cout << new_w << ' ' << new_h << '\n';
-    // 672, 448
+    // bilinear_resize(src, dst, new_w, new_h);
+    dst = src; // TODO: put resize back
     return padding_336(ov::Tensor{ov::element::u8, {1, new_h, new_w, 3}, dst.buf.data()});
 }
 
@@ -674,9 +672,9 @@ ov::Tensor mean_scale(const ov::Tensor& uint8, const ProcessorConfig& config) {
     float* float_data = float_normalized.data<float>();
     OPENVINO_ASSERT(0 == uint8.get_size() % 3, "RGB");
     for (size_t idx = 0; idx < uint8.get_size(); idx += 3) {
-        float_data[idx] = (float(uint_8_data[idx]) / 255.0f - config.norm_mean[0]) / config.norm_std[0];
-        float_data[idx + 1] = (float(uint_8_data[idx + 1]) / 255.0f - config.norm_mean[1]) / config.norm_std[1];
-        float_data[idx + 2] = (float(uint_8_data[idx + 2]) / 255.0f - config.norm_mean[2]) / config.norm_std[2];
+        float_data[idx] = (float(uint_8_data[idx]) / 255.0f - config.image_mean[0]) / config.image_std[0];
+        float_data[idx + 1] = (float(uint_8_data[idx + 1]) / 255.0f - config.image_mean[1]) / config.image_std[1];
+        float_data[idx + 2] = (float(uint_8_data[idx + 2]) / 255.0f - config.image_mean[2]) / config.image_std[2];
     }
     return float_normalized;
 }
@@ -922,9 +920,35 @@ EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const Proce
 EncodedImage VisionEncoder::encode_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
     // TODO: drop num_img_tokens
     const auto& [pixel_values, image_size, num_img_tokens] = phi3_v::get_pixel_values_phi3_v(image, config);
+    // std::cout << pixel_values.data<float>()[3*336*336+0] << '\n';
+    // std::cout << pixel_values.data<float>()[3*336*336+1] << '\n';
+    // std::cout << pixel_values.data<float>()[3*336*336+100] << '\n';
+// -1.79226
+// -1.74847
+// -1.14993
+// 0.645675
+// 0.660273
+// 1.09823
     m_vision_encoder.set_input_tensor(pixel_values);
     m_vision_encoder.infer();
-    // 2, 5, 3, 336, 336 2, 5, 576, 1024
-    std::cout << pixel_values.get_shape() << ' ' << m_vision_encoder.get_output_tensor().get_shape() << '\n';
+    // std::cout << pixel_values.get_shape() << ' ' << m_vision_encoder.get_output_tensor().get_shape() << '\n';
+    // ov::Tensor out = m_vision_encoder.get_output_tensor();
+    // std::cout << out.data<float>()[576*1024 + 0] << '\n';
+    // std::cout << out.data<float>()[576*1024 + 1] << '\n';
+    // std::cout << out.data<float>()[576*1024 + 1025] << '\n';
+    // std::cout << out.data<float>()[576*1024 + 4090] << '\n';
+    // std::cout << out.data<float>()[576*1024 + 80000] << '\n';
+// [5,3,336,336] [5,576,1024]
+// 0.134461
+// -0.867309
+// -0.274503
+// 1.73786
+// 0.13117
+// [5,3,336,336] [5,576,1024]
+// -1.01567
+// -0.291421
+// -0.260488
+// 0.743025
+// 1.4099
     return {m_vision_encoder.get_output_tensor(), image_size};
 }
