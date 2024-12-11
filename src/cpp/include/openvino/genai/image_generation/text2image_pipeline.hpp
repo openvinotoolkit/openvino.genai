@@ -82,7 +82,7 @@ public:
         const CLIPTextModel& clip_text_model,
         const T5EncoderModel t5_encoder_model,
         const FluxTransformer2DModel& transformer,
-        const AutoencoderKL& vae_decoder);
+        const AutoencoderKL& vae);
 
     ImageGenerationConfig get_generation_config() const;
     void set_generation_config(const ImageGenerationConfig& generation_config);
