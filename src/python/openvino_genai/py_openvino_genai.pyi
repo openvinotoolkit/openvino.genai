@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -222,7 +222,7 @@ class CLIPTextModel:
         """
         max_position_embeddings: int
         num_hidden_layers: int
-        def __init__(self, config_path: str) -> None:
+        def __init__(self, config_path: os.PathLike) -> None:
             ...
     @typing.overload
     def __init__(self, root_dir: os.PathLike) -> None:
@@ -469,6 +469,53 @@ class EncodedResults:
         ...
     @property
     def tokens(self) -> list[list[int]]:
+        ...
+class FluxTransformer2DModel:
+    """
+    FluxTransformer2DModel class.
+    """
+    class Config:
+        """
+        This class is used for storing FluxTransformer2DModel config.
+        """
+        default_sample_size: int
+        in_channels: int
+        def __init__(self, config_path: os.PathLike) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    FluxTransformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    UNet2DConditionModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: FluxTransformer2DModel) -> None:
+        """
+        FluxTransformer2DModel model
+                    FluxTransformer2DModel class
+                    model (FluxTransformer2DModel): FluxTransformer2DModel model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_config(self) -> FluxTransformer2DModel.Config:
+        ...
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> FluxTransformer2DModel:
+        ...
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class GenerationConfig:
     """
@@ -1068,6 +1115,55 @@ class RawPerfMetrics:
     @property
     def tokenization_durations(self) -> list[float]:
         ...
+class SD3Transformer2DModel:
+    """
+    SD3Transformer2DModel class.
+    """
+    class Config:
+        """
+        This class is used for storing SD3Transformer2DModel config.
+        """
+        in_channels: int
+        joint_attention_dim: int
+        patch_size: int
+        sample_size: int
+        def __init__(self, config_path: os.PathLike) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    SD3Transformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    SD3Transformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: SD3Transformer2DModel) -> None:
+        """
+        SD3Transformer2DModel model
+                    SD3Transformer2DModel class
+                    model (SD3Transformer2DModel): SD3Transformer2DModel model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_config(self) -> SD3Transformer2DModel.Config:
+        ...
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
+        ...
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+        ...
 class Scheduler:
     """
     Scheduler for image generation pipelines.
@@ -1220,15 +1316,58 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
+class T5EncoderModel:
+    """
+    T5EncoderModel class.
+    """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    T5EncoderModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    T5EncoderModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: T5EncoderModel) -> None:
+        """
+        T5EncoderModel model
+                    T5EncoderModel class
+                    model (T5EncoderModel): T5EncoderModel model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
+        ...
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: int) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: int, max_sequence_length: int) -> T5EncoderModel:
+        ...
 class Text2ImagePipeline:
     """
     This class is used for generation with text-to-image models.
     """
     @staticmethod
+    def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
         ...
     @staticmethod
     def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
+        ...
+    @staticmethod
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, t5_encoder_model: T5EncoderModel, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
         ...
     @staticmethod
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
