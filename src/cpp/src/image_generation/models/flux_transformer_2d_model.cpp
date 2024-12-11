@@ -22,7 +22,6 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
 
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "guidance_embeds", guidance_embeds);
-    file.close();
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir)
