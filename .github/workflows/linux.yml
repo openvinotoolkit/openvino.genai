@@ -53,7 +53,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: 773c21412e09457775fde9c86c85dcd00d824efb
+        revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
