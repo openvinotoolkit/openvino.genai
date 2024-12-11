@@ -483,9 +483,88 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           timeout 25s ${OV_INSTALL_DIR}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
 
+  genai_nodejs_bindings:
+    name: Produce genai nodejs binaries archive
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-20.04-16-cores
+    env:
+      DEBIAN_FRONTEND: noninteractive # to prevent apt-get from waiting user input
+      CMAKE_BUILD_TYPE: 'Release'
+      CMAKE_GENERATOR: 'Ninja Multi-Config'
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      OPENVINO_REPO: ${{ github.workspace }}/openvino
+      GENAI_REPO: ${{ github.workspace }}/openvino.genai
+      BUILD_DIR: ${{ github.workspace }}/build
+      CCACHE_DIR: ${{ github.workspace }}/ccache
+      CCACHE_MAXSIZE: 2000Mi
+
+    steps:
+      - name: Set apt
+        run: |
+          echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
+          echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
+          echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
+
+      - name: Clone OpenVINO
+        uses: actions/checkout@v4
+        with:
+          repository: 'openvinotoolkit/openvino'
+          path: ${{ env.OPENVINO_REPO }}
+          submodules: 'true'
+          ref: ${{ env.OV_BRANCH}}
+
+      - name: Install build dependencies
+        run: |
+          sudo -E ${OPENVINO_REPO}/install_build_dependencies.sh
+          sudo apt-get install ccache
+
+      - name: Clone GenAI
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.GENAI_REPO }}
+          submodules: recursive
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          # Should save cache only if run in the master branch of the base repo
+          # github.ref_name is 'ref/PR_#' in case of the PR, and 'branch_name' when executed on push
+          save-always: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-ov-and-genai-${{ matrix.build-type }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ccache-ov-and-genai-${{ matrix.build-type }}
+
+      - name: Build openvino + genai
+        run: |
+          cmake -DOPENVINO_EXTRA_MODULES=../openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
+                -DCPACK_GENERATOR=NPM -DENABLE_JS=ON -UTBB* -DENABLE_SYSTEM_TBB=OFF \
+                -DENABLE_PYTHON=OFF \
+                -DENABLE_WHEEL=OFF \
+                -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
+                -S ./openvino -B ./build
+          cmake --build ./build --target package -j
+
+      #
+      # Upload build artifacts and logs
+      #
+
+      - name: Upload genai nodejs bindings archive
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
+          if-no-files-found: 'error'
+
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper, genai_nodejs_bindings]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
