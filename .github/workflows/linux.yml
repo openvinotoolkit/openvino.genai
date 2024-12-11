@@ -372,7 +372,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny ${{ env.MODELS_DIR }}/whisper-tiny
           wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav -O ${{ env.MODELS_DIR }}/how_are_you_doing_today.wav
         
-      - name: Test Python Sample (multinomial_causal_lm)
+      - name: Test multinomial_causal_lm.py
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 1
         run: ${{ env.INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
