@@ -21,7 +21,7 @@ class Scheduler {
     BlockManager m_block_manager;
     friend class CacheStateDumper;
     std::shared_ptr<CacheManager> m_cache_manager;
-    const size_t m_kv_blocks_initial_multiplier = 1;
+    const size_t m_kv_blocks_initial_multiplier = 4;
     const float m_cache_increase_rate = 2;
     const float m_precentage_threshold_for_cache_increase = 80;
     bool m_dynamic_memory_allocation = false;
