@@ -1,15 +1,16 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from ov_genai_test_utils import get_whisper_models_list
-from test_whisper_generate_api import get_samples_from_dataset
-from transformers import WhisperProcessor, pipeline, AutoTokenizer
+from test_whisper_pipeline import get_whisper_models_list, get_samples_from_dataset
+from transformers import WhisperProcessor, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import openvino_genai as ov_genai
 import openvino_tokenizers
 import openvino
 import pytest
 
+# This test suite is designed specifically to validate the functionality 
+# and robustness of the WhisperStaticPipeline on NPUW:CPU.
 config = {"NPU_USE_NPUW" : "YES",
           "NPUW_DEVICES" : "CPU",
           "NPUW_ONLINE_PIPELINE" : "NONE"}
@@ -47,11 +48,23 @@ def load_and_save_whisper_model(params, **tokenizer_kwargs):
         opt_model.save_pretrained(path)
         processor.save_pretrained(path)
 
+def get_results_cpu_npu(model_path, audio_sample, **config_kwargs):
+    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+    expected = cpu_pipe.generate(audio_sample, **config_kwargs)
+
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
+    actual_out = npu_pipe.generate(audio_sample, **config_kwargs)
+
+    return expected, actual_out
+
 def compare_results_with_assert(expected, actual_out):
-    if expected.texts[0] != actual_out.texts[0]:
-        print(f'expected: {expected.texts[0]}\n')
-        print(f'actual_out: {actual_out.texts[0]}')
-    assert expected.texts[0] == actual_out.texts[0]
+    assert len(expected.texts) == len(actual_out.texts)
+
+    for i in range(0, len(expected.texts)):
+        if expected.texts[i] != actual_out.texts[i]:
+            print(f'expected: {expected.texts[i]}\n')
+            print(f'actual_out: {actual_out.texts[i]}')
+        assert expected.texts[i] == actual_out.texts[i]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -61,12 +74,7 @@ def test_static_whisper_generation_compare_with_cpu(model_descr, test_sample):
     model_id, model_path = model_descr
     load_and_save_whisper_model(model_descr)
 
-    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
-    expected = cpu_pipe.generate(test_sample)
-    # expected = None
-
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
-    actual_out = npu_pipe.generate(test_sample)
+    expected, actual_out = get_results_cpu_npu(model_path, test_sample)
 
     compare_results_with_assert(expected, actual_out)
 
@@ -74,20 +82,16 @@ def test_static_whisper_generation_compare_with_cpu(model_descr, test_sample):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("test_sample",
     [
-#        *get_samples_from_dataset(language="fr", length=2),  # 1/2 failed
+        *get_samples_from_dataset(language="fr", length=2),
         *get_samples_from_dataset(language="de", length=2),
-#        *get_samples_from_dataset(language="es", length=2),  # 1/2 failed
+        *get_samples_from_dataset(language="es", length=2),
     ],)
 @pytest.mark.precommit
 def test_static_whisper_autodetect(model_descr, test_sample):
     model_id, model_path = model_descr
     load_and_save_whisper_model(model_descr)
 
-    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
-    expected = cpu_pipe.generate(test_sample)
-
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
-    actual_out = npu_pipe.generate(test_sample)
+    expected, actual_out = get_results_cpu_npu(model_path, test_sample)
 
     compare_results_with_assert(expected, actual_out)
 
@@ -101,11 +105,7 @@ def test_static_whisper_language_de(model_descr, test_sample):
     model_id, model_path = model_descr
     load_and_save_whisper_model(model_descr)
 
-    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
-    expected = cpu_pipe.generate(test_sample, max_new_tokens=30, language="<|de|>")
-
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
-    actual_out = npu_pipe.generate(test_sample, max_new_tokens=30, language="<|de|>")
+    expected, actual_out = get_results_cpu_npu(model_path, test_sample, max_new_tokens=30, language="<|de|>")
 
     compare_results_with_assert(expected, actual_out)
 
@@ -119,11 +119,7 @@ def test_static_whisper_language_fr(model_descr, test_sample):
     model_id, model_path = model_descr
     load_and_save_whisper_model(model_descr)
 
-    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
-    expected = cpu_pipe.generate(test_sample, max_new_tokens=30, language="<|fr|>")
-
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
-    actual_out = npu_pipe.generate(test_sample, max_new_tokens=30, language="<|fr|>")
+    expected, actual_out = get_results_cpu_npu(model_path, test_sample, max_new_tokens=30, language="<|fr|>")
 
     compare_results_with_assert(expected, actual_out)
 
@@ -137,10 +133,18 @@ def test_static_whisper_language_ru(model_descr, test_sample):
     model_id, model_path = model_descr
     load_and_save_whisper_model(model_descr)
 
-    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU")
-    expected = cpu_pipe.generate(test_sample, max_new_tokens=30, language="<|ru|>")
+    expected, actual_out = get_results_cpu_npu(model_path, test_sample, max_new_tokens=30, language="<|ru|>")
 
-    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", **config)
-    actual_out = npu_pipe.generate(test_sample, max_new_tokens=30, language="<|ru|>")
+    compare_results_with_assert(expected, actual_out)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("test_sample", get_samples_from_dataset(language="en", length=1, long_form=True))
+@pytest.mark.precommit
+def test_static_whisper_generation_long(model_descr, test_sample):
+    model_id, model_path = model_descr
+    load_and_save_whisper_model(model_descr)
+
+    expected, actual_out = get_results_cpu_npu(model_path, test_sample)
 
     compare_results_with_assert(expected, actual_out)
