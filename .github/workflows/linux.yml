@@ -365,7 +365,7 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
      
-      - name: Tests Prerequisites
+      - name: Download & convert Models and data
         run: |
           mkdir -p ${{ env.MODELS_DIR }}
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 ${{ env.MODELS_DIR }}/TinyLlama-1.1B-Chat-v1.0
