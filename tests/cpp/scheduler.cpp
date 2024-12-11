@@ -43,7 +43,7 @@ TEST(TestScheduler, general_test) {
                                                                         
         
         // schedule 3 sequence groups that use 6 kv blocks 
-        Scheduler scheduler = Scheduler(4, scheduler_config);
+        Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         std::vector<uint64_t> ref_ids = {0, 1, 2};
@@ -144,7 +144,7 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(4, scheduler_config);
+    Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
     auto out1 = scheduler.schedule(requests);
 
     std::vector<uint64_t> ref_ids = {0, 1};
@@ -212,7 +212,7 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
 
     // schedule 2 sequence groups that use 5 kv blocks
-    Scheduler scheduler = Scheduler(4, scheduler_config);
+    Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
     auto out0 = scheduler.schedule(requests);
 
     for (auto seq: requests) {
@@ -297,7 +297,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         sequence_group->set_sequence_group_ptr(sequence_group);
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-        Scheduler scheduler = Scheduler(4, scheduler_config);
+        Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
         auto out = scheduler.schedule(requests);
         for (auto sequence: sequence_group->get_not_finished_sequences()) {
             sequence->append_token(token, 0.7);
@@ -409,7 +409,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
                                                                         
         
         // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
-        Scheduler scheduler = Scheduler(4, scheduler_config);
+        Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         for (auto seq: requests) {
@@ -503,7 +503,7 @@ TEST(TestScheduler, prefix_caching_test) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(4, scheduler_config);
+        Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -566,7 +566,7 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(4, scheduler_config);
+        Scheduler scheduler = Scheduler(4, nullptr, scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -640,7 +640,7 @@ TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         // schedule prompt
-        Scheduler scheduler = Scheduler(32, scheduler_config);
+        Scheduler scheduler = Scheduler(32, nullptr, scheduler_config);
 
         size_t chat_iterations = 2;
 
@@ -701,7 +701,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(4, scheduler_config, 1, can_use_partial_preemption);
+    Scheduler scheduler = Scheduler(4, nullptr, scheduler_config, 1, can_use_partial_preemption);
     auto out1 = scheduler.schedule(requests);
 
     for (auto req : requests)
@@ -775,7 +775,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(4, scheduler_config, 1, can_use_partial_preemption);
+    Scheduler scheduler = Scheduler(4, nullptr, scheduler_config, 1, can_use_partial_preemption);
     scheduler.schedule(requests);
     for (auto req: requests)
         req->finish_iteration();
@@ -890,7 +890,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
 
-    Scheduler scheduler = Scheduler(2, scheduler_config);
+    Scheduler scheduler = Scheduler(2, nullptr, scheduler_config);
     // prompt phase - schedules 1 block for seq 1, 5 blocks for seq 2
     auto out = scheduler.schedule(requests);
 
