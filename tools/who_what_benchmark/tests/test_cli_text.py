@@ -156,7 +156,7 @@ def test_text_verbose():
         ]
     )
     assert result.returncode == 0
-    assert "## Diff " in result.stderr
+    assert "## Diff:" in result.stderr
 
 
 def test_text_language_autodetect():
