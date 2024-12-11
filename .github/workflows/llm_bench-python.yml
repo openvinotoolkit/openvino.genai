@@ -63,6 +63,7 @@ jobs:
         python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
       env:
         GIT_LFS_SKIP_SMUDGE: 0
+        OPENVINO_LOG_LEVEL: 7
     - name: Test tiny-random-baichuan2 on Linux Optimum Intel
       run: |
         optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
