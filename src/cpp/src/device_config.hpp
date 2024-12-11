@@ -13,6 +13,8 @@ namespace ov::genai {
 class DeviceConfig {
     ov::element::Type m_key_cache_type;
     ov::element::Type m_value_cache_type;
+    size_t m_key_cache_group_size = 0;
+    size_t m_value_cache_group_size = 0;
     ov::Shape m_key_cache_shape, m_value_cache_shape;
     ov::Shape::value_type m_num_kv_heads, m_head_size, m_num_decoder_layers;
     size_t m_num_kv_blocks = 0;
@@ -55,20 +57,31 @@ public:
                     m_key_cache_type = m_value_cache_type = ov::element::f32;
                 }
             }
+            const auto key_group_size_it = plugin_config.find(ov::hint::key_cache_group_size.name());
+            if (key_group_size_it != plugin_config.end()) {
+                m_key_cache_group_size = key_group_size_it->second.as<size_t>();
+            } else {
+                m_key_cache_group_size = 0;
+            }
 
+            const auto value_group_size_it = plugin_config.find(ov::hint::value_cache_group_size.name());
+            if (value_group_size_it != plugin_config.end()) {
+                m_value_cache_group_size = key_group_size_it->second.as<size_t>();
+            } else {
+                m_value_cache_group_size = 0;
+            }
             // if user sets ov::kv_cache_precision hint
-            const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
-            if (kv_cache_precision_it != plugin_config.end()) {
-                const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
-                m_key_cache_type = m_value_cache_type = kv_cache_precision;
+            const auto key_cache_precision_it = plugin_config.find(ov::hint::key_cache_precision.name());
+            if (key_cache_precision_it != plugin_config.end()) {
+                const auto key_cache_precision = key_cache_precision_it->second.as<ov::element::Type>();
+                m_key_cache_type = key_cache_precision;
             }
-            if (getenv("ENABLE_VALUE_U4")) {
-                m_value_cache_type = ov::element::u4;
+
+            const auto value_cache_precision_it = plugin_config.find(ov::hint::value_cache_precision.name());
+            if (value_cache_precision_it != plugin_config.end()) {
+                const auto value_cache_precision = value_cache_precision_it->second.as<ov::element::Type>();
+                m_value_cache_type = value_cache_precision;
             }
-            if (getenv("ENABLE_VALUE_S4")) {
-                m_value_cache_type = ov::element::i4;
-            }
-            std::cout << "GenAI|" << "key_prec|" << m_key_cache_type << "|value|" << m_value_cache_type << std::endl;
         } else if (m_device.find("GPU") != std::string::npos) {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
             m_key_cache_type = m_value_cache_type = inference_precision == ov::element::f16 ? ov::element::f16 : ov::element::f32;
@@ -101,9 +114,14 @@ public:
         m_num_kv_heads = num_kv_heads;
         m_head_size = head_size;
         m_num_decoder_layers = num_decoder_layers;
-        size_t group_size = 64;
-        if (getenv("GROUP_SIZE"))
-            group_size = std::stoi(std::string(getenv("GROUP_SIZE")));
+        size_t group_size = m_head_size;
+        m_key_cache_group_size = m_key_cache_group_size ? m_key_cache_group_size : m_head_size;
+        m_value_cache_group_size = m_value_cache_group_size ? m_value_cache_group_size : m_head_size;
+        if (m_num_kv_blocks == 0) {
+            OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
+            size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024;
+            m_num_kv_blocks = size_in_bytes / (m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * m_key_cache_type.size());
+        }
         if (m_device == "CPU") {
             // Scale, zero point and quantized data will be stored together.
             // The layout for per token per head:
@@ -116,11 +134,10 @@ public:
                     throw std::runtime_error("head_size cannot be divided by group_size");
                 size_t group_num = m_head_size / group_size;
                 if (precision == ov::element::u8) {
-                    std::cout << "GenAI|group_size|" << group_size << "|group_num|" << group_num << std::endl;
                     head_size += sizeof(float) * 2 * group_num;
                 } else if (precision == ov::element::i4) {
                     head_size += sizeof(float) * group_num * 2;
-                } else {
+                } else if (precision == ov::element::u4) {
                     head_size += sizeof(float) * 2 * group_num * 2;                  
                 }
                 return ov::Shape{m_num_kv_blocks, m_num_kv_heads, m_block_size, head_size};
@@ -128,13 +145,6 @@ public:
             m_key_cache_shape = init_cache_shape(m_key_cache_type);
             m_value_cache_shape = init_cache_shape(m_value_cache_type);
         }
-
-        if (m_num_kv_blocks == 0) {
-            OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
-            size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024;
-            m_num_kv_blocks = size_in_bytes / (m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * m_key_cache_type.size());
-        }
-
 
         if (m_device.find("GPU") != std::string::npos) {
             // Update key shape, as the key's shape is different from the value's shape

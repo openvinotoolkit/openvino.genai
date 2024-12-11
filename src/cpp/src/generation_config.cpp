@@ -190,7 +190,7 @@ GenerationConfig beam_search() {
     beam_search_config.num_beams = 4;
     beam_search_config.num_return_sequences = 3;
     beam_search_config.num_beam_groups = 2;
-    beam_search_config.max_new_tokens = 32;
+    beam_search_config.max_new_tokens = 100;
     beam_search_config.diversity_penalty = 2.0f;
     return beam_search_config;
 }
