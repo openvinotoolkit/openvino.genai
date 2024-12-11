@@ -82,7 +82,7 @@ jobs:
       - name: Build openvino + genai
         run: |
           cmake -DOPENVINO_EXTRA_MODULES=../openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
-                -DCPACK_GENERATOR=NPM -UTBB* -DENABLE_SYSTEM_TBB=OFF \
+                -DCPACK_GENERATOR=NPM -DENABLE_JS=ON -UTBB* -DENABLE_SYSTEM_TBB=OFF \
                 -DENABLE_PYTHON=OFF \
                 -DENABLE_WHEEL=OFF \
                 -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
