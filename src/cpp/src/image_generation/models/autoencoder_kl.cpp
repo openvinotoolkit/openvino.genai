@@ -222,6 +222,7 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     }
 
     ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model);
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
     m_decoder_model.reset();

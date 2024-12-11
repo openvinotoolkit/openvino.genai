@@ -30,6 +30,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10"]
+    env:
+      OPENVINO_LOG_LEVEL: 3
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}

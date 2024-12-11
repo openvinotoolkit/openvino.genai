@@ -164,6 +164,7 @@ public:
         manager_tok.run_passes(ov_tokenizer);
         
         m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
+        ov::genai::utils::print_compiled_model_properties(m_tokenizer);
         if (ov_detokenizer) {
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
