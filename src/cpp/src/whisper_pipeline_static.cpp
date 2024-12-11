@@ -546,6 +546,25 @@ std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::M
     return model;
 }
 
+template <typename T>
+void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
+    OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
+    std::vector<T> result{value.begin(), value.begin() + offset};
+    for (auto [start, end] : ranges) {
+        result.insert(result.end(), value.begin() + offset + start, value.begin() + offset + end);
+    }
+
+    value = result;
+}
+
+void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
+                                size_t offset,
+                                std::vector<std::pair<size_t, size_t>>& ranges) {
+    filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
+    filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
+    filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
+}
+
 }  // namespace
 
 namespace ov {
@@ -610,12 +629,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
     }
 
-    auto input_features = m_feature_extractor.extract(raw_speech_input);
-
-    const bool is_shortform = input_features.n_frames <= m_feature_extractor.nb_max_frames;
-    // long-form audio processing requires timestamps to be enabled
-    const bool return_timestamps = config.return_timestamps || !is_shortform;
-
     size_t max_new_tokens = config.get_max_new_tokens();
 
     WhisperPerfMetrics perf_metrics;
@@ -625,6 +638,15 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     raw_metrics.m_batch_sizes.reserve(max_new_tokens);
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
     raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+
+    const auto extract_start = std::chrono::steady_clock::now();
+    auto input_features = m_feature_extractor.extract(raw_speech_input);
+    const auto extract_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - extract_start);
+    perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(extract_ms);
+
+    const bool is_shortform = input_features.n_frames <= m_feature_extractor.nb_max_frames;
+    // long-form audio processing requires timestamps to be enabled
+    const bool return_timestamps = config.return_timestamps || !is_shortform;
 
     std::vector<int32_t> init_ids;
     std::vector<int64_t> output_tokens;
@@ -668,6 +690,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                                   config,
                                                                   m_feature_extractor.nb_max_frames,
                                                                   time_precision);
+
+            filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 
