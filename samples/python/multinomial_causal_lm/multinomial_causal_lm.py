@@ -85,7 +85,6 @@ class IterableStreamer(openvino_genai.StreamerBase):
         text = self.tokenizer.decode(self.tokens_cache)
 
         word = ''
-        delay_n_chars = 4
         if len(text) > self.print_len and '\n' == text[-1]:
             # Flush the cache after the new line symbol.
             word = text[self.print_len:]            
@@ -94,13 +93,11 @@ class IterableStreamer(openvino_genai.StreamerBase):
         elif len(text) >= 3 and text[-3:] == chr(65533):
             # Don't print incomplete text.
             pass
-        elif len(text) > self.print_len + delay_n_chars:
+        elif len(text) > self.print_len:
             # It is possible to have a shorter text after adding new token.
             # Print to output only if text length is increaesed.
-            # E.g. when apostrophe removing regex had worked after adding new tokens.
-            # Several last characters are delayed before flushed to output.
-            word = text[self.print_len:-delay_n_chars]
-            self.print_len = len(text) - delay_n_chars
+            word = text[self.print_len:]
+            self.print_len = len(text)
         self.put_word(word)        
         
         if self.get_stop_flag():
