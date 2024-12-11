@@ -519,7 +519,9 @@ jobs:
           assert predicted_prompt_lookup == predicted_prompt_lookup_py
           "
           echo "Prompt lookup" passed
-
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
     defaults:
