@@ -264,7 +264,7 @@ jobs:
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
-    timeout-minutes: 90
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -287,7 +287,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      WISPER_MODELS_CACHE_DIR: ${{ github.workspace }}/models
+      MODELS_CACHE_DIR: ${{ github.workspace }}/models
         
     steps:
       - name: Clone openvino.genai
@@ -311,7 +311,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
     
       - name: Tests
-        run: python -m pytest -n auto -v ./${{ matrix.test.cmd }}
+        run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
