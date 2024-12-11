@@ -271,12 +271,14 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_generate_api.py'
+            runner: aks-linux-8-cores-32gb
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_generate_api.py -k "not Qwen2-0.5B-Instruct"' # Skip failed tests Qwen2-0.5B-Instruct
+            runner: aks-linux-4-cores-16gb
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: ${{ matrix.test.runner }}
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes: 
