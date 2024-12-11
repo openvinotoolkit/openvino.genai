@@ -37,7 +37,7 @@ If you want to try OpenVINO GenAI with different dependencies versions (**not** 
     git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
     cd openvino.genai
     # Install python dependencies
-    python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+    python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
     ```
 

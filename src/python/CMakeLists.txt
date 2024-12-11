@@ -114,6 +114,21 @@ elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND NOT WIN32)
     # in case of wheel build, pybind11-stubgen is always available via pyproject.toml's build-system
     # except Win32 where we have issues with pybind11_stubgen executable which cannot import its own module
     set(pybind11_stubgen_AVAILABLE ON)
+
+    # by default, wheel build is performed with build-isolation, which means that some variables like PYTHONPATH
+    # are not available. But if user called setupvars.sh, then OpenVINO dir is available, while PYTHONPATH - no.
+    # In this case, we will have mismatch on Linux when OpenVINO can point on build dir / install dir, while
+    # PYTHONPATH points out to locally installed tmp OpenVINO wheel (build against wheel).
+    # Ways to handle it:
+    # - setting PYTHONPATH to $ENV{INTEL_OPENVINO_DIR}/python if INTEL_OPENVINO_DIR is defined. It means we are building against
+    #   OpenVINO archive or installation tree
+    # - if it's not defined, we cannot do any guesses and hence, disable pybind11-stubgen usage
+    if(DEFINED ENV{INTEL_OPENVINO_DIR})
+        set(openvino_pythonpath "$ENV{INTEL_OPENVINO_DIR}/python")
+    elseif(LINUX AND NOT OpenVINO_DIR STREQUAL OpenVINO_DIR_PY)
+        # here we imply that OpenVINO_DIR_PY points to manylinux, while OpenVINO_DIR point to Ubuntu binaries
+        set(pybind11_stubgen_AVAILABLE OFF)
+    endif()
 endif()
 
 # but we also need to check whether OpenVINO is installed

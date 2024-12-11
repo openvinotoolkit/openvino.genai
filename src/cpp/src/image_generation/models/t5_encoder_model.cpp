@@ -27,6 +27,23 @@ T5EncoderModel::T5EncoderModel(const std::filesystem::path& root_dir,
     compile(device, properties);
 }
 
+T5EncoderModel::T5EncoderModel(const std::string& model,
+                               const Tensor& weights,
+                               const Tokenizer& tokenizer) :
+    m_tokenizer(tokenizer) {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+}
+
+T5EncoderModel::T5EncoderModel(const std::string& model,
+                               const Tensor& weights,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
+                               const ov::AnyMap& properties) :
+    T5EncoderModel(model, weights, tokenizer) {
+    compile(device, properties);
+}
+
 T5EncoderModel::T5EncoderModel(const T5EncoderModel&) = default;
 
 T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length) {
@@ -53,7 +70,7 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     return *this;
 }
 
-ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, int max_sequence_length) {
+ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
@@ -76,10 +93,24 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, int max_sequence
         "infer's max_sequence_length ", max_sequence_length);
 
     if (input_ids_shape[0] == 0 || input_ids_shape[1] == 0) {
-        input_ids.set_shape({1, static_cast<size_t>(max_sequence_length)});
+        size_t batch_size = do_classifier_free_guidance ? 2 : 1;
+        input_ids.set_shape({batch_size, static_cast<size_t>(max_sequence_length)});
     }
 
-    perform_tokenization(pos_prompt, input_ids);
+    size_t current_batch_idx = 0;
+    if (do_classifier_free_guidance) {
+        perform_tokenization(neg_prompt,
+                             ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                                   {current_batch_idx + 1, input_ids.get_shape()[1]}));
+        ++current_batch_idx;
+    } else {
+        // Negative prompt is ignored when --guidanceScale < 1.0
+    }
+
+    // perform_tokenization(pos_prompt, input_ids);
+    perform_tokenization(pos_prompt,
+                         ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                               {current_batch_idx + 1, input_ids.get_shape()[1]}));
 
     // text embeddings
     m_request.set_tensor("input_ids", input_ids);

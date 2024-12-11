@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include <cassert>
 #include <ctime>
 
@@ -136,7 +138,13 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
+            } else {
+                OPENVINO_ASSERT("Unsupported pipeline type");
+            }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -145,7 +153,7 @@ public:
         if (transformer == "FluxTransformer2DModel") {
             m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer");
         } else {
-            OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config
@@ -182,7 +190,13 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+            } else {
+                OPENVINO_ASSERT("Unsupported pipeline type");
+            }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -191,7 +205,7 @@ public:
         if (transformer == "FluxTransformer2DModel") {
             m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, properties);
         } else {
-            OPENVINO_THROW("Unsupported '", transformer, "'Transformer type");
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config
@@ -240,27 +254,19 @@ public:
     
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
-        std::string prompt_2_str =
-            generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
+        std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
-        m_clip_text_encoder->infer(positive_prompt, "", false);
-        ov::Tensor pooled_prompt_embeds_out = m_clip_text_encoder->get_output_tensor(1);
+        m_clip_text_encoder->infer(positive_prompt, {}, false);
+        ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
+        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
 
-        ov::Tensor prompt_embeds_out = m_t5_text_encoder->infer(prompt_2_str, generation_config.max_sequence_length);
-
-        ov::Tensor pooled_prompt_embeds, prompt_embeds;
-        if (generation_config.num_images_per_prompt == 1) {
-            pooled_prompt_embeds = pooled_prompt_embeds_out;
-            prompt_embeds = prompt_embeds_out;
-        } else {
-            pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds_out, generation_config.num_images_per_prompt);
-            prompt_embeds = numpy_utils::repeat(prompt_embeds_out, generation_config.num_images_per_prompt);
-        }
+        pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
+        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
 
         // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
         ov::Shape text_ids_shape = {prompt_embeds.get_shape()[1], 3};
         ov::Tensor text_ids(ov::element::f32, text_ids_shape);
-        std::fill_n(text_ids.data<float>(), text_ids_shape[0] * text_ids_shape[1], 0.0f);
+        std::fill_n(text_ids.data<float>(), text_ids.get_size(), 0.0f);
 
         const size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -269,14 +275,19 @@ public:
 
         ov::Tensor latent_image_ids = prepare_latent_image_ids(generation_config.num_images_per_prompt, height / 2, width / 2);
 
+        if (m_transformer->get_config().guidance_embeds) {
+            ov::Tensor guidance = ov::Tensor(ov::element::f32, {generation_config.num_images_per_prompt});
+            std::fill_n(guidance.data<float>(), guidance.get_size(), static_cast<float>(generation_config.guidance_scale));
+            m_transformer->set_hidden_states("guidance", guidance);
+        }
+
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds);
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("txt_ids", text_ids);
         m_transformer->set_hidden_states("img_ids", latent_image_ids);
     }
 
-    ov::Tensor prepare_latents(ov::Tensor initial_image,
-                               const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
@@ -287,18 +298,33 @@ public:
                                num_channels_latents,
                                height,
                                width};
+        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
 
-        ov::Tensor latents_input = generation_config.generator->randn_tensor(latent_shape);
-        ov::Tensor latents = pack_latents(latents_input, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+        if (initial_image) {
+            OPENVINO_THROW("StableDiffusion3 image to image is not implemented");
+        } else {
+            noise = generation_config.generator->randn_tensor(latent_shape);
+            latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+        }
 
-        return latents;
+        return std::make_tuple(latent, proccesed_image, image_latent, noise);
+    }
+
+    void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
+        OPENVINO_THROW("LORA adapters are not implemented for FLUX pipeline yet");
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
+                        ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
+
+        if (!initial_image) {
+            // in case of typical text to image generation, we need to ignore 'strength'
+            m_custom_generation_config.strength = 1.0f;
+        }
 
         if (!initial_image) {
             // in case of typical text to image generation, we need to ignore 'strength'
@@ -317,7 +343,8 @@ public:
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
-        ov::Tensor latents = prepare_latents(initial_image, m_custom_generation_config);
+        ov::Tensor latents, processed_image, image_latent, noise;
+        std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
 
         size_t image_seq_len = latents.get_shape()[1];
         float mu = m_scheduler->calculate_shift(image_seq_len);
@@ -378,9 +405,16 @@ private:
         m_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
         m_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
 
-        if (class_name == "FluxPipeline") {
-            m_generation_config.guidance_scale = 3.5f;
-            m_generation_config.num_inference_steps = 28;
+        if (class_name == "FluxPipeline" || class_name == "FluxImg2ImgPipeline" || class_name == "FluxInpaintPipeline" ) {
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
+                m_generation_config.guidance_scale = 3.5f;
+                m_generation_config.num_inference_steps = 28;
+                m_generation_config.strength = 1.0f;
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+                m_generation_config.guidance_scale = 3.5f;
+                m_generation_config.num_inference_steps = 28;
+                m_generation_config.strength = 1.0f;
+            }
             m_generation_config.max_sequence_length = 512;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
@@ -392,25 +426,41 @@ private:
         // const size_t vae_scale_factor = m_transformer->get_vae_scale_factor();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
-                        "Both 'width' and 'height' must be divisible by",
+                        "Both 'width' and 'height' must be divisible by ",
                         vae_scale_factor);
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
         check_image_size(generation_config.width, generation_config.height);
 
-        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less than 512");
+        OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
 
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by FluxPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by FluxPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by FluxPipeline");
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by FluxPipeline");
+
+        if ((m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) && initial_image) {
+            ov::Shape initial_image_shape = initial_image.get_shape();
+            size_t height = initial_image_shape[1], width = initial_image_shape[2];
+
+            OPENVINO_ASSERT(generation_config.height == height,
+                "Height for initial (", height, ") and generated (", generation_config.height,") images must be the same");
+            OPENVINO_ASSERT(generation_config.width == width,
+                "Width for initial (", width, ") and generated (", generation_config.width,") images must be the same");
+
+            OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
+                "'Strength' generation parameter must be withion [0, 1] range");
+        } else {
+            OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
+            OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
+        }
     }
 
-    std::shared_ptr<FluxTransformer2DModel> m_transformer;
-    std::shared_ptr<CLIPTextModel> m_clip_text_encoder;
-    std::shared_ptr<T5EncoderModel> m_t5_text_encoder;
-    std::shared_ptr<AutoencoderKL> m_vae;
+    std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
+    std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
+    std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     ImageGenerationConfig m_custom_generation_config;
 };
 

@@ -97,12 +97,17 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, 
     prefix = f'[{iter_str}][P{prompt_idx}]'
     log.info(f"{prefix} First step of unet latency: {iter_data['first_token_latency']:.2f} ms/step, "
              f"other steps of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
-    log.info(f"{prefix} Text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f} ms/step, "
-             f"unet latency: {stable_diffusion.get_unet_latency():.2f} ms/step, "
-             f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/step, "
-             f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
-             f"unet step count: {stable_diffusion.get_unet_step_count()}, "
-             f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}",)
+    has_text_encoder_time = stable_diffusion.get_text_encoder_step_count() != -1
+    log_str = (
+        f"{prefix} Text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f}" if has_text_encoder_time else f"{prefix} Text encoder latency: N/A "
+        f"unet latency: {stable_diffusion.get_unet_latency():.2f} ms/step, "
+        f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/step, ")
+    if has_text_encoder_time:
+        log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
+    log_str += (
+        f"unet step count: {stable_diffusion.get_unet_step_count()}, "
+        f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}")
+    log.info(log_str)
 
 
 def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=False, prompt_idx=-1):

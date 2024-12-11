@@ -21,7 +21,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
     using utils::read_json_param;
 
     read_json_param(data, "in_channels", in_channels);
-    file.close();
+    read_json_param(data, "guidance_embeds", guidance_embeds);
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir)
@@ -37,6 +37,25 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root
     compile(device, properties);
 }
 
+FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
+                                               const Tensor& weights,
+                                               const Config& config,
+                                               const size_t vae_scale_factor) :
+    m_config(config), m_vae_scale_factor(vae_scale_factor) {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+}
+
+FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
+                                               const Tensor& weights,
+                                               const Config& config,
+                                               const size_t vae_scale_factor,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties) :
+    FluxTransformer2DModel(model, weights, config, vae_scale_factor) {
+    compile(device, properties);
+}
+
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
 
 const FluxTransformer2DModel::Config& FluxTransformer2DModel::get_config() const {
@@ -44,9 +63,9 @@ const FluxTransformer2DModel::Config& FluxTransformer2DModel::get_config() const
 }
 
 FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
-                                                      int height,
-                                                      int width,
-                                                      int tokenizer_model_max_length) {
+                                                        int height,
+                                                        int width,
+                                                        int tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     // hidden_states=latent_model_input,
@@ -76,6 +95,8 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
             name_to_shape[input_name] = {height * width / 4, name_to_shape[input_name][1]};
         } else if (input_name == "txt_ids") {
             name_to_shape[input_name] = {tokenizer_model_max_length, name_to_shape[input_name][1]};
+        } else if (input_name == "guidance") {
+            name_to_shape[input_name] = {batch_size};
         }
     }
 
