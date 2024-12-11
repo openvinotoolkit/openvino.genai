@@ -7,9 +7,8 @@ from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline
 from optimum.intel.openvino import (
     OVModelForCausalLM,
     OVModelForSeq2SeqLM,
-    OVStableDiffusionPipeline,
-    OVLatentConsistencyModelPipeline,
-    OVStableDiffusionXLPipeline
+    OVDiffusionPipeline,
+    OVModelForSpeechSeq2Seq
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -21,19 +20,14 @@ TOKENIZE_CLASSES_MAPPING = {
     'falcon': AutoTokenizer,
 }
 
+IMAGE_GEN_CLS = OVDiffusionPipeline
+
 OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
     't5': OVModelForSeq2SeqLM,
     'blenderbot': OVModelForSeq2SeqLM,
     'falcon': OVModelForCausalLM,
     'mpt': OVMPTModel,
-    'stable-diffusion-xl': OVStableDiffusionXLPipeline,
-    'sdxl': OVStableDiffusionXLPipeline,
-    'lcm-sdxl': OVStableDiffusionXLPipeline,
-    'ssd-': OVStableDiffusionXLPipeline,
-    'lcm-ssd-': OVStableDiffusionXLPipeline,
-    'stable_diffusion': OVStableDiffusionPipeline,
-    'lcm': OVLatentConsistencyModelPipeline,
     'replit': OVMPTModel,
     'codet5': OVModelForSeq2SeqLM,
     'codegen2': OVModelForCausalLM,
@@ -41,6 +35,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm2': OVModelForCausalLM,
     'chatglm3': OVModelForCausalLM,
     'chatglm': OVChatGLMModel,
+    'whisper': OVModelForSpeechSeq2Seq,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -55,8 +50,8 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'ssd-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
-    'text2speech': ['whisper'],
+    'image_gen': ['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"],
+    'speech2text': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
     'text_gen': [

@@ -11,33 +11,72 @@ from .__version__ import __version__
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
 
+
 from .py_openvino_genai import (
-    ContinuousBatchingPipeline,
     DecodedResults,
     EncodedResults,
-    GenerationConfig,
-    GenerationResult,
+    RawPerfMetrics,
+    PerfMetrics,
+    StreamerBase,
+)
+
+# VLM pipeline
+
+from .py_openvino_genai import (
+    VLMPipeline,
+)
+
+# LLM pipeline
+from .py_openvino_genai import (
+    LLMPipeline, 
+    draft_model
+)
+
+# LoRA
+from .py_openvino_genai import (
     Adapter,
-    AdapterConfig,
+    AdapterConfig
+)
+
+# Generation config
+from .py_openvino_genai import (
+    GenerationConfig,
+    StopCriteria
+)
+
+# Tokenizers
+from .py_openvino_genai import (
+    TokenizedInputs,
+    Tokenizer
+)
+
+# Whisper
+from .py_openvino_genai import (
+    WhisperGenerationConfig,
+    WhisperPipeline,
+    ChunkStreamerBase,
+    WhisperRawPerfMetrics,
+    WhisperPerfMetrics
+)
+
+# Image generation
+from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
     UNet2DConditionModel,
     AutoencoderKL,
-    LLMPipeline, 
-    VLMPipeline,
     Text2ImagePipeline,
-    PerfMetrics,
-    RawPerfMetrics,
-    SchedulerConfig,
-    StopCriteria,
-    StreamerBase,
-    TokenizedInputs,
-    Tokenizer,
-    WhisperGenerationConfig,
-    WhisperPipeline,
-    CacheEvictionConfig,
-    AggregationMode,
+    Scheduler,
+    ImageGenerationConfig,
     Generator,
     CppStdGenerator,
-    draft_model
+)
+
+# Continuous batching
+from .py_openvino_genai import (
+    ContinuousBatchingPipeline,
+    GenerationResult,
+    SchedulerConfig,
+    CacheEvictionConfig,
+    AggregationMode,
 )

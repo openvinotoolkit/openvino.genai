@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import os
 import pandas as pd
 from tqdm import tqdm
 
@@ -88,7 +89,7 @@ def autodetect_language(model):
 
 
 @register_evaluator(
-    "text-generation", "text-generation-with-past", "text2text-generation"
+    "text"
 )
 class TextEvaluator(BaseEvaluator):
     def __init__(
@@ -97,7 +98,7 @@ class TextEvaluator(BaseEvaluator):
         tokenizer: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
-        metrics=("similarity", "divergency"),
+        metrics="similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
@@ -155,11 +156,12 @@ class TextEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
-
-    def score(self, model, gen_answer_fn=None):
-        predictions = self._generate_data(model, gen_answer_fn, self.generation_config)
+    def score(self, model_or_data, gen_answer_fn=None, **kwargs):
+        if isinstance(model_or_data, str) and os.path.exists(model_or_data):
+            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+        else:
+            predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
+        self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}

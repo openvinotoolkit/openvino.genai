@@ -20,6 +20,11 @@ using ov::genai::AggregationMode;
 using ov::genai::CacheEvictionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
+using ov::genai::EncodedGenerationResult;
+using ov::genai::GenerationHandleImpl;
+using ov::genai::GenerationOutput;
+using ov::genai::GenerationFinishReason;
+using ov::genai::GenerationStatus;
 using ov::genai::SchedulerConfig;
 using ov::genai::PipelineMetrics;
 
@@ -118,7 +123,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
         .def_property("m_generation_ids",
-            [](GenerationResult &r) -> py::list {
+            [](GenerationResult &r) -> py::typing::List<py::str> {
                 return pyutils::handle_utf8(r.m_generation_ids);
             },
             [](GenerationResult &r, std::vector<std::string> &generation_ids) {
@@ -133,27 +138,41 @@ void init_continuous_batching_pipeline(py::module_& m) {
             }
         )
         .def("get_generation_ids",
-        [](GenerationResult &r) -> py::list {
+        [](GenerationResult &r) -> py::typing::List<py::str> {
             return pyutils::handle_utf8(r.m_generation_ids);
         });
-
-    py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
+    
+    py::class_<EncodedGenerationResult>(m, "EncodedGenerationResult", generation_result_docstring)
         .def(py::init<>())
-        .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
-        .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
-        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
-        .def_readwrite("block_size", &SchedulerConfig::block_size)
-        .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
-        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
-        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
-        .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
-        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
+        .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
+        .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
+        .def_readwrite("m_scores", &EncodedGenerationResult::m_scores);
 
-    py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
-            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode}; }),
-                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"))
-            .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode);
+    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
+        .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
+        .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
+        .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
+        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
+        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
+
+    py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
+        .value("NONE", ov::genai::GenerationFinishReason::NONE)
+        .value("STOP", ov::genai::GenerationFinishReason::STOP)
+        .value("LENGTH", ov::genai::GenerationFinishReason::LENGTH);
+
+    py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
+        .def_readwrite("generated_ids", &GenerationOutput::generated_ids)
+        .def_readwrite("generated_log_probs", &GenerationOutput::generated_log_probs)
+        .def_readwrite("score", &GenerationOutput::score)
+        .def_readwrite("finish_reason", &GenerationOutput::finish_reason);
+
+    py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
+        .def("get_status", &GenerationHandleImpl::get_status)
+        .def("can_read", &GenerationHandleImpl::can_read)
+        .def("drop", &GenerationHandleImpl::drop)
+        .def("back", &GenerationHandleImpl::back)
+        .def("read", &GenerationHandleImpl::read)
+        .def("read_all", &GenerationHandleImpl::read_all);
 
     // Binding for StopCriteria
     py::enum_<AggregationMode>(m, "AggregationMode",
@@ -161,8 +180,36 @@ void init_continuous_batching_pipeline(py::module_& m) {
                                :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
                                :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
             .value("SUM", AggregationMode::SUM)
-            .value("NORM_SUM", AggregationMode::NORM_SUM)
-            .export_values();
+            .value("NORM_SUM", AggregationMode::NORM_SUM);
+
+    py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
+            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode) {
+                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode}; }),
+                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"))
+            .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
+            .def("get_start_size", &CacheEvictionConfig::get_start_size)
+            .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
+            .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
+            .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size);
+
+    py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
+        .def(py::init<>())
+        .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
+        .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
+        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
+        .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
+        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
+
+    py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
+            .def(py::init<>())
+            .def_readonly("requests", &PipelineMetrics::requests)
+            .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
+            .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
+            .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
+            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
@@ -188,8 +235,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
-        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
+        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("sampling_params"))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("sampling_params"))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def(
@@ -206,12 +253,4 @@ void init_continuous_batching_pipeline(py::module_& m) {
             py::arg("sampling_params"),
             py::arg("streamer") = std::monostate{}
         );
-
-    py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
-            .def(py::init<>())
-            .def_readonly("requests", &PipelineMetrics::requests)
-            .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
-            .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
-            .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
-            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 }

@@ -5,6 +5,9 @@
 !__init__.py
 !__main__.py
 
+# don't skip GitHub Actions files and directories
+!.github/**
+
 # developer tools
 *.idea
 .vscode
@@ -21,6 +24,7 @@ temp/
 .repo/
 CMakeLists.txt.user
 CMakeUserPresets.json
+.env
 
 *.project
 *.cproject

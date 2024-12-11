@@ -8,6 +8,36 @@
 using namespace ov::genai;
 
 namespace {
+/**
+ * @brief Converts an OpenVINO image tensor (1HWC) to a clip_image_u8 structure.
+ *
+ * @param image_tensor An OpenVINO tensor (1HWC) containing the image data.
+ * @return A clip_image_u8 structure containing the image data.
+ */
+clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
+    clip_image_u8 image{
+        int(image_tensor.get_shape().at(2)),
+        int(image_tensor.get_shape().at(1)),
+        {image_tensor.data<uint8_t>(), image_tensor.data<uint8_t>() + image_tensor.get_size()}
+    };
+    return image;
+}
+
+/**
+ * @brief Converts a clip_image_f32 structure to an OpenVINO image tensor (1CHW).
+ *
+ * @param image A clip_image_f32 structure containing the image data.
+ * @return An OpenVINO tensor containing the image data (1CHW).
+ */
+ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
+    ov::Tensor image_tensor{
+        ov::element::f32,
+        {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}
+    };
+    std::memcpy(image_tensor.data<float>(), image.buf.data(), image.buf.size() * sizeof(float));
+    return image_tensor;
+}
+
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
 }
@@ -275,11 +305,7 @@ ov::Tensor prepare_vis_position_ids(
 }
 
 EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
-    clip_image_u8 source{
-        int(img.get_shape().at(2)),
-        int(img.get_shape().at(1)),
-        {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}
-    };
+    clip_image_u8 source = tensor_to_clip_image_u8(img);
     std::vector<std::vector<clip_image_u8>> imgs = ::slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
     std::vector<std::vector<ImageSize>> sizes;
@@ -430,32 +456,13 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
 }
 
 ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig& config) {
-    // ov::Tensor to clip_image_u8
-    clip_image_u8 input_image{
-        int(image.get_shape().at(2)),
-        int(image.get_shape().at(1)),
-        {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
-    };
-
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
     clip_image_f32 preprocessed_image = preprocess_clip_image_llava(input_image, config);
-
-    // Convert clip_image_f32 to ov::Tensor
-    ov::Tensor result(
-        ov::element::f32,
-        {1, 3, size_t(preprocessed_image.ny), size_t(preprocessed_image.nx)},
-        (void*)(preprocessed_image.buf.data())
-    );
-
-    return result;
+    return clip_image_f32_to_tensor(preprocessed_image);
 }
 
 ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
-    // ov::Tensor to clip_image_u8
-    clip_image_u8 input_image{
-        int(image.get_shape().at(2)),
-        int(image.get_shape().at(1)),
-        {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
-    };
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     std::pair<int, int> size{config.size_shortest_edge, config.size_shortest_edge};
     auto patch_size = config.crop_size_height;
@@ -477,18 +484,10 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
     ov::Tensor concatenated_tensor(ov::element::f32, {num_patches, channels, height, width});
     float* tensor_data = concatenated_tensor.data<float>();
 
-    // Fill the tensor with the preprocessed patch data
+    // Fill the tensor with the preprocessed patches data (each patch layout is [C * H * W])
     for (size_t i = 0; i < num_patches; ++i) {
-        const auto& patch = processed_patches[i];
-        for (size_t c = 0; c < channels; ++c) {
-            for (size_t h = 0; h < height; ++h) {
-                for (size_t w = 0; w < width; ++w) {
-                    size_t tensor_index = i * channels * height * width + c * height * width + h * width + w;
-                    size_t patch_index = (h * width + w) * channels + c;
-                    tensor_data[tensor_index] = patch.buf[patch_index];
-                }
-            }
-        }
+        const auto& img = processed_patches[i];
+        std::copy(img.buf.begin(), img.buf.end(), tensor_data + i * channels * height * width);
     }
 
     return concatenated_tensor;
@@ -578,11 +577,7 @@ std::vector<clip_image_u8> split_image_internvl(
 }
 
 ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorConfig& config) {
-    clip_image_u8 input_image{
-        int(image.get_shape().at(2)),
-        int(image.get_shape().at(1)),
-        {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
-    };
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     const size_t image_size = config.size_shortest_edge;
 
@@ -615,11 +610,26 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
 }
 }
 
-VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
+VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config) :
     model_type(model_type) {
-        m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
-        m_processor_config = ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
+        m_vision_encoder = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
+        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
             model_dir, "preprocessor_config.json"
+        );
+}
+
+VisionEncoder::VisionEncoder(
+    const std::string& model,
+    const ov::Tensor& weights,
+    const std::filesystem::path& config_dir_path,
+    const VLMModelType model_type,
+    const std::string& device,
+    const ov::AnyMap device_config
+) :
+    model_type(model_type) {
+        m_vision_encoder = utils::singleton_core().compile_model(model, weights, device, device_config).create_infer_request();
+        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
+            config_dir_path, "preprocessor_config.json"
         );
 }
 

@@ -8,12 +8,14 @@
 #include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 
 namespace ov::genai {
+struct VLMPerfMetrics;
 
 class InputsEmbedder {
 public:
@@ -22,8 +24,15 @@ public:
                    const std::string& device,
                    const ov::AnyMap device_config);
 
+    InputsEmbedder(const VLMConfig& vlm_config,
+                   const ModelsMap& models_map,
+                   const Tokenizer& tokenizer,
+                   const std::filesystem::path& config_dir_path,
+                   const std::string& device,
+                   const ov::AnyMap device_config);
+
     // compute input embedding for prompt and multiple images
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images);
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel get_embedding_model() const;

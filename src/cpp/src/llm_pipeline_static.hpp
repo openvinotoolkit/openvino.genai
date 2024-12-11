@@ -57,12 +57,10 @@ private:
         uint32_t max_prompt_size;
         uint32_t total_size;
         uint32_t num_stored_tokens;
-        uint32_t dim;
+        uint32_t seq_len;
+        bool v_tensors_transposed;
+        bool optimize_copy;
     };
-
-    // FIXME: Ideally, we don't need to keep those
-    std::shared_ptr<ov::Model> m_kvcache_model;
-    std::shared_ptr<ov::Model> m_prefill_model;
 
     KVCacheDesc m_kvcache_desc;
     ov::InferRequest m_kvcache_request;

@@ -14,6 +14,7 @@ struct ExtractedSegments {
     std::vector<ov::genai::Segment> segments;
     size_t last_offset;
     std::vector<int64_t> non_timestamp_tokens;
+    std::vector<std::pair<size_t, size_t>> segment_ranges;
 };
 
 ExtractedSegments extract_segments(const std::vector<int64_t>& tokens,

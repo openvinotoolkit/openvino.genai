@@ -108,22 +108,43 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 ### Converting and compressing the model from Hugging Face library
 
 ```sh
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+#(Basic) download and convert to OpenVINO MiniCPM-V-2_6 model
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format fp16 MiniCPM-V-2_6
+
+#(Recommended) Same as above but with compression: language model is compressed to int4, other model components are compressed to int8
+optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 MiniCPM-V-2_6
 ```
 
 ### Run generation using VLMPipeline API in Python
 
+See [Visual Language Chat](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat) for a demo application.
+
+Run the following command to download a sample image:
+
+```sh
+curl -O "https://storage.openvinotoolkit.org/test_data/images/dog.jpg"
+```
+
 ```python
+import numpy as np
+import openvino as ov
 import openvino_genai as ov_genai
-#Will run model on CPU, GPU is a possible option
+from PIL import Image
+
+# Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
 pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
-rgb = read_image("cat.jpg")
-print(pipe.generate(prompt, image=rgb, max_new_tokens=100))
+
+image = Image.open("dog.jpg")
+image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
+image_data = ov.Tensor(image_data)  
+
+prompt = "Can you describe the image?"
+print(pipe.generate(prompt, image=image_data, max_new_tokens=100))
 ```
 
 ### Run generation using VLMPipeline in C++
 
-Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details). See [Visual Language Chat](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) for a demo application.
 
 ```cpp
 #include "load_image.hpp"
@@ -159,6 +180,9 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 ```sh
 #Download and convert to OpenVINO dreamlike-anime-1.0 model
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
+
+#You can also use INT8 hybrid quantization to further optimize the model and reduce inference latency
+optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format int8 --dataset conceptual_captions dreamlike_anime_1_0_ov/INT8
 ```
 
 ### Run generation using Text2Image API in Python
@@ -210,7 +234,7 @@ int main(int argc, char* argv[]) {
 ```
 ### Sample notebooks using this API
 
-(TBD)
+See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+Image+pipeline+and+OpenVINO+with+Generate+API)
 
 </details>
 

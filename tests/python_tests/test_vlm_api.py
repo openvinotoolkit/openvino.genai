@@ -86,3 +86,38 @@ def test_sampling(config, cache):
     image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(models_path, "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)
+
+@pytest.mark.precommit
+def test_perf_metrics(cache):
+    import numpy as np
+    models_path = get_ov_model(cache)
+
+    images = [get_image_by_link(image_links[0])]
+
+    pipe = VLMPipeline(models_path, "CPU")
+    result = pipe.generate(prompts[0], images=images, generation_config=get_greedy())
+
+    perf_metrics = result.perf_metrics
+
+    assert perf_metrics is not None
+
+    assert 0 < perf_metrics.get_load_time() < 2000
+    assert 0 < perf_metrics.get_num_generated_tokens() < 100
+    assert 0 < perf_metrics.get_num_input_tokens() < 100
+    assert 0 < perf_metrics.get_ttft().mean < 1000
+    assert 0 < perf_metrics.get_tpot().mean < 100
+    assert 0 < perf_metrics.get_ipot().mean < 100
+    assert 0 < perf_metrics.get_throughput().mean < 1000
+    assert 0 < perf_metrics.get_inference_duration().mean < 1000
+    assert 0 < perf_metrics.get_generate_duration().mean < 1000
+    assert 0 < perf_metrics.get_tokenization_duration().mean < 100
+    assert 0 < perf_metrics.get_detokenization_duration().mean < 10
+    assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < 100
+
+    # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
+    vlm_raw_metrics = perf_metrics.vlm_raw_metrics
+
+    raw_dur = np.array(vlm_raw_metrics.prepare_embeddings_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
+    assert np.allclose(mean_dur, np.mean(raw_dur))
+    assert np.allclose(std_dur, np.std(raw_dur))

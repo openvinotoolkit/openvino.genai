@@ -1,9 +1,6 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import math
-import openvino
-import openvino_tokenizers
 import openvino_genai as ov_genai
 import pytest
 from typing import Dict, Tuple
@@ -19,8 +16,8 @@ from ov_genai_test_utils import (
 
 
 configs = [
-    dict(max_new_tokens=20),
-    dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
 ]
 
 
@@ -37,7 +34,6 @@ quenstions = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_chat_compare_with_HF(model_descr, generation_config: Dict):
-    device = 'CPU'
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
@@ -53,7 +49,7 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         
-        answer = model_opt.generate(**tokenized, **generation_config, do_sample=False, repetition_penalty = None)
+        answer = model_opt.generate(**tokenized, **generation_config)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
@@ -74,7 +70,6 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
 @pytest.mark.nightly
 def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict):
     # compares with HF when history in ov_genai is save as a text
-    device = 'CPU'
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
@@ -90,7 +85,7 @@ def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict)
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         
-        answer = model_opt.generate(**tokenized, **generation_config, do_sample=False, repetition_penalty = None)
+        answer = model_opt.generate(**tokenized, **generation_config)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
         
@@ -222,3 +217,24 @@ def test_add_special_tokens(add_special_tokens, prompt):
     res_genai = genai_tokenzier.encode(prompt, add_special_tokens).input_ids.data
     res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
     assert np.all(res_genai == res_hf)
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("add_special_tokens", [True, False])
+@pytest.mark.parametrize("skip_special_tokens", [True, False])
+@pytest.mark.parametrize("prompt", prompts)
+def test_add_special_tokens(add_special_tokens, skip_special_tokens, prompt):
+    import numpy as np
+    model_descr = get_chat_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    genai_tokenizer = pipe.get_tokenizer()
+    
+    # Calling encode with add_special_tokens will set state flag.
+    res_genai = genai_tokenizer.encode(prompt, add_special_tokens).input_ids.data
+    res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
+    assert np.all(res_genai == res_hf)
+    
+    # Decode with skip_special_tokens
+    decoded_genai = genai_tokenizer.decode(res_genai, skip_special_tokens=skip_special_tokens)[0]
+    decoded_hf = hf_tokenizer.decode(res_hf[0], skip_special_tokens=skip_special_tokens)
+    assert decoded_genai == decoded_hf

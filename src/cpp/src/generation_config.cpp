@@ -46,6 +46,12 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "eos_token_id", eos_token_id);
     // note that echo is not present in HF GenerationConfig
     read_json_param(data, "echo", echo);
+    // note that logprobs is not present in HF GenerationConfig
+    read_json_param(data, "logprobs", logprobs);
+
+    // append EOS to stop_token_ids
+    if (eos_token_id != -1)
+        set_eos_token_id(eos_token_id);
 
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
@@ -95,6 +101,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
     read_anymap_param(config_map, "echo", echo);
+    read_anymap_param(config_map, "logprobs", logprobs);
     read_anymap_param(config_map, "adapters", adapters);
 }
 
@@ -124,6 +131,9 @@ bool GenerationConfig::is_speculative_decoding() const {
 }
 
 void GenerationConfig::validate() const {
+    OPENVINO_ASSERT(eos_token_id == -1 || stop_token_ids.find(eos_token_id) != stop_token_ids.end(),
+        "'stop_token_ids' must contain 'eos_token_id'. Please, call 'set_eos_token_id' with 'eos_token_id' value");
+
     OPENVINO_ASSERT(!do_sample || num_beams == 1, 
                     "Beam search with sampling is not supported yet. "
                     "Please either set do_sample=false to use beam search "
@@ -168,9 +178,9 @@ void GenerationConfig::validate() const {
     }
     if (is_speculative_decoding()) {
         if (assistant_confidence_threshold != 0.f) {
-            OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually excluded in `GenerationConfig`");
+            OPENVINO_ASSERT(num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
         } else {
-            OPENVINO_ASSERT(num_assistant_tokens > 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually excluded in `GenerationConfig`");
+            OPENVINO_ASSERT(num_assistant_tokens > 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
         };
     }
 }
@@ -204,7 +214,6 @@ GenerationConfig multinomial() {
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
 }
-
 
 }  // namespace genai
 }  // namespace ov

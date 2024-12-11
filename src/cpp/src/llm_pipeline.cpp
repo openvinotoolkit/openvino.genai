@@ -63,7 +63,7 @@ public:
     {
         ov::Core core;
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_compile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
@@ -71,7 +71,7 @@ public:
             utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
         } else {
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_compile_config(plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(models_path / "openvino_model.xml");
             utils::slice_matmul_statefull_model(model);
@@ -195,7 +195,7 @@ public:
 
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
-            config.eos_token_id = m_generation_config.eos_token_id;
+            config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
         // Stateful pipeline does not provide logprobs for prompt tokens
@@ -264,23 +264,17 @@ public:
             size_t block_size = 1;
             bool enable_prefix_caching = false;
 
-            config.stop_token_ids.insert(config.eos_token_id);
             for (size_t request_id = 0; request_id < batch_size; request_id++) {
                 SequenceGroup::Ptr sequence_group;
                 if (is_chat_conversation && !m_is_cache_empty) {
                     sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenized_chat_history.input_ids, config, block_size, enable_prefix_caching);
-                    sequence_group->update_processed_tokens_num(m_tokenized_chat_history.input_ids.get_shape().at(1) - 1);
                 } else {
                     size_t seq_len = input_ids.get_shape().at(1);
                     size_t batch_offset = request_id * seq_len;
                     const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
                     std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
-                    // in case of multi batch scenario, remove eos_token_id at start of prompt
-                    auto real_prompt_start = std::find_if(tokenized_prompt.begin(), tokenized_prompt.end(), [&config](int64_t token) { return token != config.eos_token_id; });
-                    tokenized_prompt.erase(tokenized_prompt.begin(), real_prompt_start);
 
                     sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size, enable_prefix_caching);
-                    sequence_group->update_processed_tokens_num(tokenized_prompt.size() - 1);
                 }
 
                 sequence_group->set_sequence_group_ptr(sequence_group);
@@ -433,8 +427,9 @@ public:
         tokenizer,
         scheduler_config,
         device,
-        plugin_config
-    } {}
+        plugin_config} {
+        m_generation_config = m_impl.get_config();
+    }
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
@@ -446,8 +441,9 @@ public:
         m_tokenizer,
         scheduler_config,
         device,
-        plugin_config
-    } {}
+        plugin_config} {
+        m_generation_config = m_impl.get_config();
+    }
 
     DecodedResults generate(
         StringInputs inputs,
@@ -622,7 +618,7 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     m_pimpl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
-        m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
+        m_pimpl->m_generation_config.set_eos_token_id(default_eos_token_id);
 
     m_pimpl->m_generation_config.validate();
 }

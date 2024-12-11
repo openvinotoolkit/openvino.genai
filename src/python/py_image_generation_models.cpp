@@ -31,7 +31,7 @@ void init_clip_text_model(py::module_& m) {
         py::arg("root_dir"), "Model root directory", 
         R"(
             CLIPTextModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
         )")
         .def(py::init([](
             const std::filesystem::path& root_dir,
@@ -45,7 +45,7 @@ void init_clip_text_model(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             CLIPTextModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -65,16 +65,16 @@ void init_clip_text_model(py::module_& m) {
             const std::string& config_path
         ) {
             return std::make_unique<ov::genai::CLIPTextModel::Config>(config_path);
-        }))
+        }),
+        py::arg("config_path"))
         .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModel::Config::max_position_embeddings)
-        .def_readwrite("hidden_size", &ov::genai::CLIPTextModel::Config::hidden_size)
         .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModel::Config::num_hidden_layers);
 
     clip_text_model.def("get_config", &ov::genai::CLIPTextModel::get_config);
-    clip_text_model.def("reshape", &ov::genai::CLIPTextModel::reshape);
-    clip_text_model.def("set_adapters", &ov::genai::CLIPTextModel::set_adapters);
-    clip_text_model.def("infer", &ov::genai::CLIPTextModel::infer);
-    clip_text_model.def("get_output_tensor", &ov::genai::CLIPTextModel::get_output_tensor);
+    clip_text_model.def("reshape", &ov::genai::CLIPTextModel::reshape, py::arg("batch_size"));
+    clip_text_model.def("set_adapters", &ov::genai::CLIPTextModel::set_adapters, py::arg("adapters"));
+    clip_text_model.def("infer", &ov::genai::CLIPTextModel::infer, py::arg("pos_prompt"), py::arg("neg_prompt"), py::arg("do_classifier_free_guidance"));
+    clip_text_model.def("get_output_tensor", &ov::genai::CLIPTextModel::get_output_tensor, py::arg("idx"));
     clip_text_model.def(
             "compile", 
             [](ov::genai::CLIPTextModel& self, 
@@ -101,7 +101,7 @@ void init_unet2d_condition_model(py::module_& m) {
         py::arg("root_dir"), "Model root directory", 
         R"(
             UNet2DConditionModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
         )")
         .def(py::init([](
             const std::filesystem::path& root_dir,
@@ -114,7 +114,7 @@ void init_unet2d_condition_model(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             UNet2DConditionModel class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -134,16 +134,18 @@ void init_unet2d_condition_model(py::module_& m) {
             const std::filesystem::path& config_path
         ) {
             return std::make_unique<ov::genai::UNet2DConditionModel::Config>(config_path);
-        }))
+        }),
+        py::arg("config_path"))
         .def_readwrite("in_channels", &ov::genai::UNet2DConditionModel::Config::in_channels)
         .def_readwrite("sample_size", &ov::genai::UNet2DConditionModel::Config::sample_size)
         .def_readwrite("time_cond_proj_dim", &ov::genai::UNet2DConditionModel::Config::time_cond_proj_dim);
 
     unet2d_condition_model.def("get_config", &ov::genai::UNet2DConditionModel::get_config);
-    unet2d_condition_model.def("reshape", &ov::genai::UNet2DConditionModel::reshape);
-    unet2d_condition_model.def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters);
-    unet2d_condition_model.def("infer", &ov::genai::UNet2DConditionModel::infer);
-    unet2d_condition_model.def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states);
+    unet2d_condition_model.def("reshape", &ov::genai::UNet2DConditionModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"));
+    unet2d_condition_model.def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters, py::arg("adapters"));
+    unet2d_condition_model.def("infer", &ov::genai::UNet2DConditionModel::infer, py::arg("sample"), py::arg("timestep"));
+    unet2d_condition_model.def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"));
+    unet2d_condition_model.def("do_classifier_free_guidance", &ov::genai::UNet2DConditionModel::do_classifier_free_guidance, py::arg("guidance_scale"));
     unet2d_condition_model.def(
             "compile", 
             [](ov::genai::UNet2DConditionModel& self,
@@ -170,7 +172,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_path"), "VAE decoder directory", 
         R"(
             AutoencoderKL class initialized only with decoder model.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
         )")
         .def(py::init([](
             const std::filesystem::path& vae_encoder_path,
@@ -182,8 +184,8 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_path"), "VAE decoder directory",
         R"(
             AutoencoderKL class initialized with both encoder and decoder models.
-            vae_encoder_path (str): VAE encoder directory.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
         )")
         .def(py::init([](
             const std::filesystem::path& vae_decoder_path,
@@ -196,7 +198,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             AutoencoderKL class initialized only with decoder model.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )")
@@ -213,8 +215,8 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             AutoencoderKL class initialized only with both encoder and decoder models.
-            vae_encoder_path (str): VAE encoder directory.
-            vae_decoder_path (str): VAE decoder directory.
+            vae_encoder_path (os.PathLike): VAE encoder directory.
+            vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -234,14 +236,15 @@ void init_autoencoder_kl(py::module_& m) {
             const std::filesystem::path& config_path
         ) {
             return std::make_unique<ov::genai::AutoencoderKL::Config>(config_path);
-        }))
+        }), 
+        py::arg("config_path"))
         .def_readwrite("in_channels", &ov::genai::AutoencoderKL::Config::in_channels)
         .def_readwrite("latent_channels", &ov::genai::AutoencoderKL::Config::latent_channels)
         .def_readwrite("out_channels", &ov::genai::AutoencoderKL::Config::out_channels)
         .def_readwrite("scaling_factor", &ov::genai::AutoencoderKL::Config::scaling_factor)
         .def_readwrite("block_out_channels", &ov::genai::AutoencoderKL::Config::block_out_channels);
 
-    autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape);
+    autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"));
     autoencoder_kl.def(
             "compile", 
             [](ov::genai::AutoencoderKL& self,
@@ -256,8 +259,8 @@ void init_autoencoder_kl(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )");
-    autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode);
-    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode);
+    autoencoder_kl.def("decode", &ov::genai::AutoencoderKL::decode, py::arg("latent"));
+    autoencoder_kl.def("encode", &ov::genai::AutoencoderKL::encode, py::arg("image"), py::arg("generator"));
     autoencoder_kl.def("get_config", &ov::genai::AutoencoderKL::get_config);
     autoencoder_kl.def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);
 }
@@ -273,7 +276,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
         py::arg("root_dir"), "Model root directory", 
         R"(
             CLIPTextModelWithProjection class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
         )")
         .def(py::init([](
             const std::filesystem::path& root_dir,
@@ -287,7 +290,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             CLIPTextModelWithProjection class
-            root_dir (str): Model root directory.
+            root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )") 
@@ -307,15 +310,16 @@ void init_clip_text_model_with_projection(py::module_& m) {
             const std::filesystem::path& config_path
         ) {
             return std::make_unique<ov::genai::CLIPTextModelWithProjection::Config>(config_path);
-        }))
+        }),
+        py::arg("config_path"))
         .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModelWithProjection::Config::max_position_embeddings)
-        .def_readwrite("hidden_size", &ov::genai::CLIPTextModelWithProjection::Config::hidden_size)
         .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModelWithProjection::Config::num_hidden_layers);
 
-    clip_text_model_with_projection.def("reshape", &ov::genai::CLIPTextModelWithProjection::reshape);
-    clip_text_model_with_projection.def("infer", &ov::genai::CLIPTextModelWithProjection::infer);
+    clip_text_model_with_projection.def("reshape", &ov::genai::CLIPTextModelWithProjection::reshape, py::arg("batch_size"));
+    clip_text_model_with_projection.def("infer", &ov::genai::CLIPTextModelWithProjection::infer, py::arg("pos_prompt"), py::arg("neg_prompt"), py::arg("do_classifier_free_guidance"));
     clip_text_model_with_projection.def("get_config", &ov::genai::CLIPTextModelWithProjection::get_config);
-    clip_text_model_with_projection.def("get_output_tensor", &ov::genai::CLIPTextModelWithProjection::get_config);
+    clip_text_model_with_projection.def("get_output_tensor", &ov::genai::CLIPTextModelWithProjection::get_output_tensor, py::arg("idx"));
+    clip_text_model_with_projection.def("set_adapters", &ov::genai::CLIPTextModelWithProjection::set_adapters, py::arg("adapters"));
     clip_text_model_with_projection.def(
             "compile", 
             [](ov::genai::CLIPTextModelWithProjection& self, 

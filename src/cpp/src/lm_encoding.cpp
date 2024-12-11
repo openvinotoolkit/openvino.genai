@@ -70,15 +70,9 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
 
-    const size_t prompt_len = prompts_shape[1];
-    const size_t max_new_tokens = sequence_groups.at(0)->get_sampling_parameters().get_max_new_tokens(prompt_len);
-
     // Initialize results and performance metrics.
     EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
-    raw_perf_counters.m_new_token_times.reserve(max_new_tokens);
-    raw_perf_counters.m_batch_sizes.reserve(max_new_tokens);
-    raw_perf_counters.m_token_infer_durations.reserve(max_new_tokens);
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
@@ -92,7 +86,6 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     if (position_ids.has_value())
         m_llm.set_tensor("position_ids", *position_ids);
 
-    m_llm.get_tensor("beam_idx").set_shape({ batch_size });
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
     auto beam_data = beam_idx.data<int32_t>();
     if (selected_beam_idx.has_value())
@@ -113,8 +106,11 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     auto logits = m_llm.get_tensor("logits");
 
     int64_t sequence_len = logits.get_shape().at(1);
-    for (auto& sequence_group : sequence_groups)
+    for (auto& sequence_group : sequence_groups) {
+        sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - sequence_len);
         sequence_group->schedule_tokens(sequence_len);
+
+    }
 
     std::map<size_t, size_t> beam_offets;
     for (size_t i = 0; i < sequence_groups.size(); i++)

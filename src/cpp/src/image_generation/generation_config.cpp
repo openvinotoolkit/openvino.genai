@@ -1,8 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "image_generation/stable_diffusion_pipeline.hpp"
-#include "image_generation/stable_diffusion_xl_pipeline.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
 
 #include <ctime>
 #include <cstdlib>
@@ -63,12 +62,13 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "num_inference_steps", num_inference_steps);
     read_anymap_param(properties, "strength", strength);
     read_anymap_param(properties, "adapters", adapters);
+    read_anymap_param(properties, "max_sequence_length", max_sequence_length);
 
     validate();
 }
 
 void ImageGenerationConfig::validate() const {
-    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt.empty(), "Guidance scale <= 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt");
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 2");
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 3");
 }
