@@ -387,7 +387,7 @@ jobs:
       - name: C++ Tests Prerequisites
         run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
         
-      - name: Test C++ Sample (greedy_causal_lm)
+      - name: Test greedy_causal_lm
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
