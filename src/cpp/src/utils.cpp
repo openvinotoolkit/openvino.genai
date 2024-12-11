@@ -325,10 +325,17 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         return idx;
 }
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end) {
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, std::optional<AdapterController> adapter_controller) {
+    // nothing to trim in this case
+    if (remove_from_end == 0)
+        return;
+
     // TODO: add handling for case with LoRA adapters enabled
     auto states = request.query_state();
     for (auto& state : states) {
+        if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
+            continue;
+
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
@@ -337,7 +344,10 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end) {
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
 
-        auto new_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+        auto trimmed_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+
+        ov::Tensor new_tensor(old_tensor.get_element_type(), shape);
+        trimmed_tensor.copy_to(new_tensor);
 
         state.set_state(new_tensor);
     }

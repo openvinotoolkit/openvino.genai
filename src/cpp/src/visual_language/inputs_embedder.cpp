@@ -158,8 +158,8 @@ protected:
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
             }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
-            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
+            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
@@ -173,7 +173,7 @@ protected:
             if (m_tokenized_chat_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
             } else if (last_same_hist_token != SIZE_MAX) {
-                m_to_remove_from_hist = m_tokenized_chat_history.size() - 1 - last_same_hist_token;
+                m_to_remove_from_hist = m_tokenized_chat_history.size() - last_same_hist_token;
 
                 ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
                                                    {1, new_chat_tokens.get_shape().at(1) - last_same_hist_token},

@@ -154,9 +154,7 @@ public:
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
-        if (to_remove_from_hist > 0) {
-            ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist);
-        }
+        ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, std::nullopt);
 
         Sampler sampler = Sampler(m_tokenizer);
 

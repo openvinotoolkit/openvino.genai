@@ -43,6 +43,7 @@ public:
     std::string m_templated_chat_history = {};
     std::vector<int64_t> m_tokenized_chat_history;
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
+    size_t m_to_remove_from_hist = 0;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -111,6 +112,11 @@ public:
 
         auto start_time = std::chrono::steady_clock::now();
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (config.eos_token_id == -1)
+            config.set_eos_token_id(m_generation_config.eos_token_id);
+        config.validate();
+
         TokenizedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
@@ -138,25 +144,34 @@ public:
 
                 // some symbols combinations can be encoded by the tokenizer in different ways
                 // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
-                // and find the difference as a prompt, so let's check it out and use the whole history in this case
+                // so let's check it out, find the trusted part and use it in on the next step
+                size_t last_same_hist_token = 0;
                 if (!m_tokenized_chat_history.empty()) {
-                    auto stop_tokens = config.stop_token_ids;
-                    // config could be reset by user and stop_tokens could be empty
-                    // but model/tokenizer still will rely to eos token, so let's add it
-                    stop_tokens.insert(m_tokenizer.get_eos_token_id());
-                    size_t last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
+                    std::set<int64_t> stop_tokens = config.stop_token_ids;
+                    last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
                     m_trust_encoded_history = last_same_hist_token == SIZE_MAX;
                 }
 
-                if (!m_trust_encoded_history) {
-                    reset_kv_state();
-                    m_selected_beam = std::nullopt;
-                }
-
-                if (!m_tokenized_chat_history.empty() && m_trust_encoded_history) {
-                    encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
-                } else {
+                if (m_tokenized_chat_history.empty()) {
                     encoded_input = new_chat_tokens;
+                } else if (last_same_hist_token != SIZE_MAX) {
+                    m_to_remove_from_hist = m_tokenized_chat_history.size() - last_same_hist_token;
+
+                    ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.input_ids.get_element_type(),
+                                                       {1, new_chat_tokens.input_ids.get_shape().at(1) - last_same_hist_token},
+                                                       new_chat_tokens.input_ids.data<int64_t>() + last_same_hist_token);
+
+                    ov::Tensor new_attention_mask(ov::element::i64, new_tensor.get_shape());
+                    std::fill_n(new_attention_mask.data<int64_t>(), new_tensor.get_shape()[1], 1);
+
+                    encoded_input.input_ids = ov::Tensor(new_chat_tokens.input_ids.get_element_type(),
+                                                       {1, new_chat_tokens.input_ids.get_shape().at(1) - last_same_hist_token});
+                    new_tensor.copy_to(encoded_input.input_ids);
+                    encoded_input.attention_mask = new_attention_mask;
+
+                    m_selected_beam = std::nullopt;
+                } else {
+                    encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
                 m_tokenized_chat_history.clear();
@@ -169,6 +184,7 @@ public:
                 encoded_input = m_tokenizer.encode(prompt);
             }
         }
+
         auto encode_stop_time =  std::chrono::steady_clock::now();
         auto encoded_results = generate(encoded_input, config, streamer);
 
@@ -270,29 +286,25 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-        ov::Tensor tokenized_chat_history = ov::Tensor(ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data());
+        ov::genai::utils::trim_kv_cache(m_model_runner, m_to_remove_from_hist, m_adapter_controller);
+
         size_t kv_cache_len = 0;
         ov::Tensor concatenated_attention_mask;
         if (is_chat_conversation && !m_tokenized_chat_history.empty()) {
-            if (m_trust_encoded_history) {
-                OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
-                // If history is saved in KV cache, concatenate new attention_mask with the already existing.
-                // Between subsequent runs attention_mask should not be modified.
-                auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
-                auto prompt_len = attention_mask.get_shape()[1];
-                kv_cache_len = atten_mask_history.get_shape()[1];
+            OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
+            // If history is saved in KV cache, concatenate new attention_mask with the already existing.
+            // Between subsequent runs attention_mask should not be modified.
+            auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
+            auto prompt_len = attention_mask.get_shape()[1];
+            kv_cache_len = atten_mask_history.get_shape()[1] - m_to_remove_from_hist;
 
-                ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
-                auto start_atten_hst = atten_mask_history.data<int64_t>() + kv_cache_len * (*m_selected_beam);
-                std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
-                        new_atten_mask.data<int64_t>());
-                std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
-                        new_atten_mask.data<int64_t>() + kv_cache_len);
-                concatenated_attention_mask = new_atten_mask;
-            } else {
-                attention_mask = ov::genai::utils::init_attention_mask(tokenized_chat_history);
-                concatenated_attention_mask = attention_mask;
-            }
+            ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
+            auto start_atten_hst = atten_mask_history.data<int64_t>() + kv_cache_len * (*m_selected_beam);
+            std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
+                    new_atten_mask.data<int64_t>());
+            std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
+                    new_atten_mask.data<int64_t>() + kv_cache_len);
+            concatenated_attention_mask = new_atten_mask;
         } else {
             concatenated_attention_mask = attention_mask;
         }
@@ -300,27 +312,22 @@ public:
         bool position_ids_available = (num_inputs == 4);
         std::optional<ov::Tensor> position_ids = std::nullopt;
         if (position_ids_available) {
-            if (is_chat_conversation && !m_trust_encoded_history) {
-                position_ids = ov::Tensor{ov::element::i64, tokenized_chat_history.get_shape()};
-            } else {
-                position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-            }
-           utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
+            position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
+            utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
         }
 
         if(m_adapter_controller) {
             m_adapter_controller->apply(m_model_runner, config.adapters);
         }
 
-        auto input_tokens = input_ids;
         if (is_chat_conversation && !m_trust_encoded_history) {
-            input_tokens = tokenized_chat_history;
             m_trust_encoded_history = true;
+            m_to_remove_from_hist = 0;
         }
 
         ov::genai::EncodedResults result;
         if (config.is_beam_search() && is_chat_conversation) {
-            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_tokens, concatenated_attention_mask,
+            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask,
                                                             config, position_ids, m_selected_beam);
         } else {
             std::vector<SequenceGroup::Ptr> requests;
@@ -330,6 +337,7 @@ public:
             for (size_t request_id = 0; request_id < batch_size; request_id++) {
                 SequenceGroup::Ptr sequence_group;
                 if (is_chat_conversation) {
+                    ov::Tensor tokenized_chat_history = ov::Tensor(ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data());
                     sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_chat_history, config, block_size, enable_prefix_caching);
                 } else {
                     size_t seq_len = input_ids.get_shape().at(1);
@@ -345,8 +353,8 @@ public:
             }
 
             Sampler sampler = Sampler(m_tokenizer);
-            std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_tokens, concatenated_attention_mask, streamer_ptr,
-                                                                                sampler, requests, position_ids, std::nullopt, m_selected_beam);
+            std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr,
+                                                                                  sampler, requests, position_ids, std::nullopt, m_selected_beam);
         }
 
         if (is_chat_conversation) {
@@ -371,6 +379,7 @@ public:
         is_chat_conversation = true;
         m_selected_beam = std::nullopt;
         m_trust_encoded_history = true;
+        m_to_remove_from_hist = 0;
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
         if (!m_tokenized_chat_history.empty()) {
             reset_kv_state();
@@ -391,6 +400,7 @@ public:
         is_chat_conversation = false;
         m_selected_beam = std::nullopt;
         m_trust_encoded_history = true;
+        m_to_remove_from_hist = 0;
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
         if (!m_tokenized_chat_history.empty()) {
             reset_kv_state();
