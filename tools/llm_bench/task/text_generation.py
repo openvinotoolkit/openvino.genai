@@ -391,6 +391,8 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
             config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
         log.info(config_info)
     start = time.perf_counter()
+    print("GENERATION CONFIG: ")
+    print(gen_config)
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
