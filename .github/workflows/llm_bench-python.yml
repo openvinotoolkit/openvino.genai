@@ -65,16 +65,14 @@ jobs:
         python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
       env:
         GIT_LFS_SKIP_SMUDGE: 0
-    - name: Test tiny-random-baichuan2 on Linux with Optimum Intel and GenAI
+    - name: Test tiny-random-baichuan2 on Linux Optimum Intel
       run: |
         optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
         python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1 --optimum
-        python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1
-    - name: Test tiny-stable-diffusion on Linux with Optimum Intel and GenAI
+    - name: Test tiny-stable-diffusion on Linux Optimum Intel
       run: |
         optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd/pytorch/dldt/FP16/
         python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum
-        python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1
     - name: Test dreamlike-anime on Linux with GenAI
       run: |
         optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 ov_models/dreamlike-art-dreamlike-anime-1.0/FP16
