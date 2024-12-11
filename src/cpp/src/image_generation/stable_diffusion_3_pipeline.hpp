@@ -131,12 +131,8 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        // Temporary fix for GPU
-        ov::AnyMap updated_properties = properties;
-        if (device.find("GPU") != std::string::npos &&
-            updated_properties.find("INFERENCE_PRECISION_HINT") == updated_properties.end()) {
-            updated_properties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
-        }
+        // GPU workaround
+        ov::AnyMap updated_properties = update_properties_for_gpu(properties, device);
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
@@ -241,13 +237,16 @@ public:
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
 
-        m_clip_text_encoder_1->compile(device, properties);
-        m_clip_text_encoder_2->compile(device, properties);
+        // GPU workaround
+        ov::AnyMap updated_properties = update_properties_for_gpu(properties, device);
+
+        m_clip_text_encoder_1->compile(device, updated_properties);
+        m_clip_text_encoder_2->compile(device, updated_properties);
         if (m_t5_text_encoder) {
-            m_t5_text_encoder->compile(device, properties);
+            m_t5_text_encoder->compile(device, updated_properties);
         }
         m_transformer->compile(device, properties);
-        m_vae->compile(device, properties);
+        m_vae->compile(device, updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {

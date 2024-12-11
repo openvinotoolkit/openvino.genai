@@ -23,6 +23,18 @@
 #include "debug_utils.hpp"
 #include "numpy_utils.hpp"
 
+namespace {
+    // Temporary fix for GPU
+    ov::AnyMap update_properties_for_gpu(const ov::AnyMap& properties, const std::string& device) {
+        ov::AnyMap updated_properties = properties;
+        if (device.find("GPU") != std::string::npos &&
+            updated_properties.find("INFERENCE_PRECISION_HINT") == updated_properties.end()) {
+            updated_properties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
+        }
+        return updated_properties;
+    }
+}  // namespace
+
 namespace ov {
 namespace genai {
 
