@@ -23,11 +23,12 @@ def main():
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     
-    config = ov_genai.GenerationConfig()
+    pipe = ov_genai.LLMPipeline(models_path, device)
+
+    config = pipe.get_generation_config()
+    config.do_sample = False
     config.max_new_tokens = args.max_new_tokens
 
-    pipe = ov_genai.LLMPipeline(models_path, device)
-    
     for _ in range(num_warmup):
         pipe.generate(prompt, config)
     
