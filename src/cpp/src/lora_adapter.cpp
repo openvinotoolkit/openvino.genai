@@ -570,7 +570,7 @@ NodePtr decompression_convert (NodePtr node) {
     }
     OPENVINO_ASSERT(
         std::dynamic_pointer_cast<v0::Constant>(node),
-        "Not supported decompression pattern at the weight input (presumably low-bit compression). Use f32/f16/bf16 weights only."
+        "LoRA adapter application: not supported decompression pattern at the weight input (presumably low-bit compression). Use f32/f16/bf16 weights only if MODE_FUSE is used."
     );
     return convert;
 }
@@ -793,6 +793,7 @@ public:
         NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
         replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1, transpose_in_end);
 
+        replacement->get_output_tensor(0).add_names(target.get_names());
         for (auto consumer : consumers) {
             consumer.replace_source_output(replacement->output(0));
         }
