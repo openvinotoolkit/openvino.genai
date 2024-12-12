@@ -577,7 +577,6 @@ jobs:
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-8-cores
-    runs-on: ubuntu-20.04-8-cores
     defaults:
       run:
         shell: bash
