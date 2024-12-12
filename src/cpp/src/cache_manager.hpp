@@ -26,8 +26,6 @@ public:
             m_core(core) {
         m_key_cache.reserve(m_device_config.get_num_layers());
         m_value_cache.reserve(m_device_config.get_num_layers());
-
-        //allocate_cache_if_needed(1);
     }
 
     ov::Shape set_first_dim_and_make_static(const ov::PartialShape& shape, size_t dim) {

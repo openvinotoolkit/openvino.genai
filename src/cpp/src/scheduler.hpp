@@ -66,6 +66,7 @@ public:
             size_t new_cache_size = (size_t)(m_block_manager.get_total_number_of_kv_blocks() * m_cache_increase_rate);
             m_block_manager.increase_kv_blocks_number(new_cache_size);
         }
+        OPENVINO_ASSERT(m_cache_manager != nullptr, "Cache manager needs to be set in the Scheduler constructor.");
         m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
 
         if (m_config.dynamic_split_fuse) {
