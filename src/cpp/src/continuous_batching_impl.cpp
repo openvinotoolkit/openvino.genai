@@ -94,15 +94,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
             m_rotation_deltas_stores.push_back(store);
         }
 
-        // TODO (vshampor): LUT size equal to max cache size in tokens
-        //  is overkill - find a way to pass the max sequence length defined by pipeline instead
-        size_t max_sequence_length = m_scheduler->get_block_size() * scheduler_config.num_kv_blocks;
+        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+        size_t max_sequence_cache_occupation_length = eviction_config.get_evictable_size() + eviction_config.get_recent_size() + m_scheduler->get_block_size();
         size_t embedding_size = device_config.get_head_size();
         m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
             m_scheduler->get_block_size(),
-            max_sequence_length,
+            max_sequence_cache_occupation_length,
             embedding_size);
-        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_length, device_config.get_head_size()});
+        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length, device_config.get_head_size()});
         float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
         std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
 
@@ -110,7 +109,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
         const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
 
 
-        for (size_t pos_idx = 0; pos_idx < cos_lut.size(); pos_idx++) {
+        for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length; pos_idx++) {
             for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
                 rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
                 rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
