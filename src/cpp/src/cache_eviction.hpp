@@ -149,7 +149,7 @@ public:
                             size_t kv_head_size,
                             double rope_theta = 10000.0f);
 
-    using RotationCoefficientsPerToken = std::vector<std::vector<double>>;  // dimensions: [BLOCK_SIZE, head_size / 2]
+    using RotationCoefficientsPerToken = std::vector<std::vector<float>>;  // dimensions: [BLOCK_SIZE, head_size / 2]
 
     /**
      * Basic output structure for the calculator.
@@ -192,13 +192,13 @@ public:
         return m_head_size;
     }
 
-    const std::vector<std::vector<double>>& get_sin_lut() const;
-    const std::vector<std::vector<double>>& get_cos_lut() const;
+    const std::vector<std::vector<float>>& get_sin_lut() const;
+    const std::vector<std::vector<float>>& get_cos_lut() const;
 
 private:
     size_t m_block_size;
     size_t m_head_size;
-    std::vector<std::vector<double>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
-    std::vector<std::vector<double>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
+    std::vector<std::vector<float>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
+    std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
 };
 }

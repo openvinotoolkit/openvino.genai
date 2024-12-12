@@ -301,11 +301,11 @@ namespace ov::genai {
         }
     }
 
-    const std::vector<std::vector<double>>& CacheRotationCalculator::get_sin_lut() const {
+    const std::vector<std::vector<float>>& CacheRotationCalculator::get_sin_lut() const {
         return m_rope_sin_lut;
     }
 
-    const std::vector<std::vector<double>>& CacheRotationCalculator::get_cos_lut() const {
+    const std::vector<std::vector<float>>& CacheRotationCalculator::get_cos_lut() const {
         return m_rope_cos_lut;
     }
 

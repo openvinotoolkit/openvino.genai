@@ -750,7 +750,7 @@ TEST_P(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreS
         size_t logical_block_idx_after_eviction = 0;
         input_file >> logical_block_idx_after_eviction;
         ref_data[i].logical_block_idx = logical_block_idx_after_eviction;
-        std::vector<double> coeffts(ref_head_size / 2);
+        std::vector<float> coeffts(ref_head_size / 2);
 
         for (size_t j = 0; j < ref_head_size / 2; j++) {
             input_file >> coeffts[j];
