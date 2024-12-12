@@ -115,7 +115,7 @@ public:
         block_indices_begins_data[0] = 0;
 
         bool matmul_gathering_is_required = false;
-        int64_t gathering_current_index = 0;
+        int64_t total_tokens_to_schedule = 0;
         std::vector<int64_t> gather_indice_values;
         try {
             std::ignore = m_request.get_tensor("sampled_tokens_indices");
@@ -130,25 +130,41 @@ public:
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             size_t group_position_id = sequence_group->get_num_processed_tokens();
             size_t prompt_len = sequence_group->get_prompt_len();
-            size_t seq_len_after_gather = 0;
+            size_t actual_seq_len = 0;
             bool echo_output = sequence_group->get_sampling_parameters().echo;
-            bool sampling_is_required = sequence_group->requires_sampling();
+
+            if (matmul_gathering_is_required){
+                if (sequence_group->requires_sampling() || echo_output) {
+                    size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
+                    size_t tokens_to_sample_per_group = tokens_to_sample_per_sequence * num_running_sequences;
+                    actual_seq_len = tokens_to_sample_per_group;
+
+                    size_t initial_size = gather_indice_values.size();
+                    gather_indice_values.resize(initial_size + tokens_to_sample_per_group);
+                    auto it = gather_indice_values.begin() + initial_size;
+
+                    for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id, it += tokens_to_sample_per_sequence, total_tokens_to_schedule += num_scheduled_tokens) {
+                        std::iota(it, it + tokens_to_sample_per_sequence, total_tokens_to_schedule);
+                    }
+                } else {
+                    total_tokens_to_schedule += num_scheduled_tokens * num_running_sequences;
+                    actual_seq_len = num_scheduled_tokens;
+                }
+            } else {
+                actual_seq_len = num_scheduled_tokens;
+            }
+
+            sequence_group->set_seq_len_to_sample(actual_seq_len);
+
 
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
                 Sequence::CPtr sequence = running_sequences[seq_id];
-
-                for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
+                for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id) {
                     // compute token for current sequence
                     input_ids_data[token_id] = position_id < sequence_group->get_prompt_len() ?
                         sequence_group->get_prompt_ids()[position_id] :
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
-                    if (matmul_gathering_is_required && sampling_is_required) {
-                        if (group_position_id + token_id >= prompt_len - 1 || echo_output) {
-                            gather_indice_values.push_back(gathering_current_index);
-                            seq_len_after_gather++;
-                        }
-                    }
                     position_ids_data[token_id] = position_id;
                 }
 
@@ -167,7 +183,6 @@ public:
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
             }
-            sequence_group->set_seq_len_to_sample(matmul_gathering_is_required ? std::min(seq_len_after_gather, num_scheduled_tokens) : num_scheduled_tokens);
         }
 
         // typical LLM parameters

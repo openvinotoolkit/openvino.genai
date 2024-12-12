@@ -405,11 +405,6 @@ public:
 
     void set_seq_len_to_sample(size_t len) {
         m_seq_len_to_sample = len;
-        m_sliced_matmul = true;
-    }
-
-    bool is_matmul_sliced() const {
-        return m_sliced_matmul;
     }
 
     /**
@@ -454,13 +449,14 @@ public:
 
     void schedule_tokens(size_t num_tokens) {
         m_num_scheduled_tokens = num_tokens;
+        // Unless otherwise specified, the sampler will process all scheduled tokens.
+        m_seq_len_to_sample = num_tokens;
     }
 
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
         m_num_validation_tokens = 0;
         m_seq_len_to_sample = 0;
-        m_sliced_matmul = false;
     }
 
     bool is_scheduled() const {
