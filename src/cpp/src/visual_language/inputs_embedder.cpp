@@ -10,12 +10,7 @@
 #include "openvino/opsets/opset13.hpp"
 
 #include "utils.hpp"
-
-namespace {
-
-constexpr size_t BATCH_SIZE = 1;
-
-} // namespace
+#include <regex>
 
 namespace ov::genai {
 
@@ -618,6 +613,7 @@ protected:
         }
         size_t merged_seq_length = text_embeds_seq_length + total_image_seq_length - num_image_tokens;
 
+    constexpr size_t BATCH_SIZE = 1;
         ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
         float* merged_data = merged_embeds.data<float>();
 
@@ -1311,14 +1307,6 @@ ov::Tensor add_image_newline(const ov::Tensor& image_features_hd, const std::vec
             );
         }
     }
-    // std::cout << "AAAAAAAAAAAAAAAAAAAAAa\n";
-    // std::cout << out[12*4096-1]<<'\n';
-    // std::cout << out[12*4096+1]<<'\n';
-    // std::cout << out[12*4096+4095]<<'\n';
-    // std::cout << out[12*4096+4096]<<'\n';
-    // std::cout << out[13*2*4096]<<'\n';
-    // std::cout << out[(13*2+12)*4096]<<'\n';
-    // std::cout << "BBBBBBBBBBBBBBBBB\n";
     return image_features_hd_new_line;
 }
 
@@ -1338,23 +1326,6 @@ ov::Tensor concatenate_2d(const ov::Tensor& first_1lf, const std::vector<float>&
 
 // image_features.resized_source: (num_crops+1, 24*24, 1024)
 ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer, const std::vector<float>& sub_GN, const std::vector<float>& glb_GN, ov::InferRequest& vision_projection) {
-    // std::cout << image_features.resized_source.data<float>()[576*1024 + 0] << '\n';
-    // std::cout << image_features.resized_source.data<float>()[576*1024 + 1] << '\n';
-    // std::cout << image_features.resized_source.data<float>()[576*1024 + 1025] << '\n';
-    // std::cout << image_features.resized_source.data<float>()[576*1024 + 4090] << '\n';
-    // std::cout << image_features.resized_source.data<float>()[576*1024 + 80000] << '\n';
-// [5,3,336,336] [5,576,1024]
-// 0.134461
-// -0.867309
-// -0.274503
-// 1.73786
-// 0.13117
-// [5,3,336,336] [5,576,1024]
-// -1.01567
-// -0.291421
-// -0.260488
-// 0.743025
-// 1.4099
     const ov::Shape& image_features_shape = image_features.resized_source.get_shape();
     ov::Tensor global_image_features{ov::element::f32, {1, image_features_shape.at(1), image_features_shape.at(2)}, image_features.resized_source.data<float>()};
     // global feature can be viewed as a special HD case with num_crops 1x1
@@ -1373,41 +1344,74 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
         image_features_shape.at(2)
     }, image_features.resized_source.data<float>() + image_features_shape.at(1) * image_features_shape.at(2)};
     ov::Tensor sub_image_features_hd = reshape_hd_patches_2x2merge(sub_image_features, h_crop, w_crop, hd_feature_transformer);  // [1, 24, 24, 4096]
-    // std::cout<<sub_image_features_hd.data<float>()[0]<<'\n';
-    // std::cout<<sub_image_features_hd.data<float>()[1]<<'\n';
-    // std::cout<<sub_image_features_hd.data<float>()[4096]<<'\n';
-    // std::cout<<sub_image_features_hd.data<float>()[12*13*4096]<<'\n';
-    // std::cout<<sub_image_features_hd.data<float>()[12*13*4096+1]<<'\n';
-//     0.134461
-// -0.867309
-// 0.342726
-// -0.0916849
-// -2.65548
-// -1.01567
-// -0.291421
-// -0.993172
-// -1.0575
-// -0.299
     ov::Tensor sub_image_features_hd_newline = add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
-    // std::cout << sub_image_features_hd_newline.get_shape()<<'\n';
-    // std::cout<<global_image_features_hd_newline.get_shape()<<'\n';
-//     std::cout<<sub_image_features_hd_newline.data<float>()[0]<<'\n';
-//     std::cout<<sub_image_features_hd_newline.data<float>()[1]<<'\n';
-//     std::cout<<sub_image_features_hd_newline.data<float>()[4096]<<'\n';
-//     std::cout<<sub_image_features_hd_newline.data<float>()[12*13*4096]<<'\n';
-//     std::cout<<sub_image_features_hd_newline.data<float>()[12*13*4096+1]<<'\n';
-//     0.134461
-// -0.867309
-// 0.342726
-// 0.0147288
-// -1.87735
-// -1.01567
-// -0.291421
-// -0.993172
-// -1.03232
-// -0.183072
     return concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
 }
+
+std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer) {
+    constexpr int make_suffix_iterator = -1;
+    std::regex rgx{R"(<\|image_\d+\|>)"};
+    std::sregex_token_iterator iter{
+        text.begin(),
+        text.end(),
+        rgx,
+        make_suffix_iterator
+    };
+    std::vector<ov::Tensor> tokenized;
+    for ( ; iter != std::sregex_token_iterator{}; ++iter) {
+        if (iter->str().empty()) {
+            continue;
+        }
+        tokenized.push_back(tokenizer.encode(*iter).input_ids);
+    }
+    return tokenized;
+}
+
+// ov::Tensor apply_template_and_tokenize(bool is_chat_conversation, const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
+//     ov::Tensor encoded_input_ids;
+//     if (is_chat_conversation) {
+//         // KV cache in model already contains prompts and answers from previous iterations.
+//         // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+//         // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+//         // <bos token> will be inserted on every iteration.
+//         // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+//         // and takes only the difference between them.
+//         // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+//         // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
+//         m_history.push_back({{"role", "user"}, {"content", prompt}});
+//         constexpr bool add_generation_prompt = true;
+//         std::string new_templated_chat_history;
+//         try {
+//             new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+//         } catch (const std::exception& error) {
+//             // Use fallback chat template if it was not found in tokenizer_config.json
+//             new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
+//         }
+//         auto start_tokenizer_time = std::chrono::steady_clock::now();
+//         ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
+//         if (m_is_cache_empty) {
+//             encoded_input_ids = new_chat_tokens;
+//             // after first `get_inputs_embeds` is called, we supposed LLM is inferred and cache is not empty
+//             m_is_cache_empty = false;
+//         } else {
+//             TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
+//                 m_templated_chat_history
+//             );
+//             encoded_input_ids = utils::subtract_chat_tokenized_inputs(
+//                 {new_chat_tokens}, prev_chat_tokens
+//             ).input_ids;
+//         }
+//         auto end_tokenizer_time = std::chrono::steady_clock::now();
+//         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+//         m_templated_chat_history = std::move(new_templated_chat_history);
+//     } else {
+//         auto start_tokenizer_time = std::chrono::steady_clock::now();
+//         encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+//         auto end_tokenizer_time = std::chrono::steady_clock::now();
+//         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+//     }
+//     return encoded_input_ids;
+// }
 }
 }
 
@@ -1415,6 +1419,8 @@ class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
 public:
     ov::InferRequest m_hd_feature_transformer;
     ov::InferRequest m_vision_projection;
+    // Used to insert <|image_i|>\n per image (not a slice).
+    size_t m_image_id = 1;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1427,30 +1433,19 @@ public:
         m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device).create_infer_request()} {}
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
-        std::string images_prompt;
-        std::vector<EncodedImage> embeds;
+        // TODO: perfmetrics
+        std::cout << prompt<<'\n';
+        std::stringstream images_prompt;
+        std::vector<ov::Tensor> images_features_proj;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
-            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection);
-            std::cout << image_features_proj.data<float>()[0]<<'\n';
-            std::cout << image_features_proj.data<float>()[4096]<<'\n';
-            std::cout << image_features_proj.data<float>()[4097]<<'\n';
-            std::cout << image_features_proj.data<float>()[700*4096]<<'\n';
-            std::cout << image_features_proj.data<float>()[700*4097]<<'\n';
-            std::cout << image_features_proj.data<float>()[757*4096-1]<<'\n';
-            // 0.134461
-// 0.342726
-// 0.0631084
-// 0.434334
-// 0.650556
-// 0
-// -1.01567
-// -0.993172
-// -0.226981
-// -1.89643
-// -0.907323
-// 0
+            images_features_proj.push_back(phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
+            images_prompt << "<|image_" << m_image_id << "|>\n";
+            ++m_image_id;
         }
+        images_prompt << prompt;
+        phi3_v::split_tokenize(images_prompt.str(), m_tokenizer);
+
         ov::Tensor inputs_embeds;
         //     if (m_vlm_config.use_image_id) {
         //         images_prompt += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
@@ -1549,10 +1544,6 @@ public:
         IInputsEmbedder::finish_chat();
         m_image_id = 0;
     }
-
-private:
-    // Used to insert <|image_i|>\n per image (not a slice).
-    size_t m_image_id;
 };
 
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
