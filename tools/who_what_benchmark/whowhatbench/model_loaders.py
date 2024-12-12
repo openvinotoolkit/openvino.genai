@@ -1,7 +1,7 @@
 import logging
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq
-from diffusers import DiffusionPipeline
+from diffusers import DiffusionPipeline, AutoPipelineForImage2Image
 
 
 
@@ -180,6 +180,51 @@ def load_visual_text_model(
     return model
 
 
+def load_imagetext2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
+    try:
+        import openvino_genai
+    except ImportError as e:
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        exit(-1)
+
+    return GenAIModelWrapper(
+        openvino_genai.Image2ImagePipeline(model_dir, device, **ov_config),
+        model_dir,
+        "imagetext-to-image"
+    )
+
+
+def load_magetext2image_model(
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
+    if use_hf:
+        logger.info("Using HF Transformers API")
+        model = AutoPipelineForImage2Image.from_pretrained(
+            model_id, trust_remote_code=True
+        )
+    elif use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        model = load_imagetext2image_genai_pipeline(model_id, device, ov_config)
+    else:
+        logger.info("Using Optimum API")
+        from optimum.intel.openvino import OVPipelineForImage2Image
+        try:
+            model = OVPipelineForImage2Image.from_pretrained(
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+            )
+        except ValueError:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            model = OVPipelineForImage2Image.from_pretrained(
+                model_id,
+                config=config,
+                trust_remote_code=True,
+                use_cache=True,
+                device=device,
+                ov_config=ov_config,
+            )
+    return model
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
@@ -200,5 +245,7 @@ def load_model(
         )
     elif model_type == "visual-text":
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai)
+    elif model_type == "imagetext-to-image":
+        return load_magetext2image_model(model_id, device, ov_options, use_hf, use_genai)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

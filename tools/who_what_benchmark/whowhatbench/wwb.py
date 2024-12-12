@@ -59,9 +59,10 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text"],
+        choices=["text", "text-to-image", "visual-text", "imagetext-to-image"],
         default="text",
-        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation.",
+        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
+        "visual-text - for Visual Language Models, imagetext-to-image - for image generation based on image and prompt",
     )
     parser.add_argument(
         "--data-encoder",
@@ -272,8 +273,30 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
     return image
 
 
+def genai_gen_imagetext(model, prompt, image, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    if model.resolution[0] is not None:
+        image_tensor = model.generate(
+            prompt,
+            image=image,
+            width=model.resolution[0],
+            height=model.resolution[1],
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+    else:
+        image_tensor = model.generate(
+            prompt,
+            image=image_data,
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
     config = model.get_generation_config()
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
@@ -333,6 +356,18 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+            )
+        elif task == "imagetext-to-image":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                resolution=(args.image_size, args.image_size),
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_imagetext if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -442,7 +477,7 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
-        elif "text-to-image" in args.model_type:
+        elif "text-to-image" in args.model_type or "imagetext-to-image" in args.model_type:
             print_image_results(evaluator)
 
 

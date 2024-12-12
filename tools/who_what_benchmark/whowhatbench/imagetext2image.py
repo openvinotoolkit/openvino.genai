@@ -88,15 +88,17 @@ class ImageText2ImageEvaluator(Text2ImageEvaluator):
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
-            output = model(
-                prompt,
-                num_inference_steps=num_inference_steps,
-                output_type="pil",
-                width=self.resolution[0],
-                height=self.resolution[0],
-                generator=generator,
-            )
+        def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
+            with torch.no_grad():
+                output = model(
+                    prompt,
+                    image=image,
+                    num_inference_steps=num_inference_steps,
+                    output_type="pil",
+                    width=self.resolution[0],
+                    height=self.resolution[0],
+                    generator=generator,
+                )
             return output.images[0]
 
         generation_fn = gen_image_fn or default_gen_image_fn
@@ -115,6 +117,7 @@ class ImageText2ImageEvaluator(Text2ImageEvaluator):
 
         prompts = data["prompts"]
         images = data["images"]
+        output_images = []
         rng = torch.Generator(device="cpu")
 
         if not os.path.exists(image_dir):
@@ -123,7 +126,7 @@ class ImageText2ImageEvaluator(Text2ImageEvaluator):
         for i, (prompt, image) in tqdm(enumerate(zip(prompts, images)), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
-            image = generation_fn(
+            output = generation_fn(
                 model,
                 prompt,
                 image=image,
@@ -131,10 +134,10 @@ class ImageText2ImageEvaluator(Text2ImageEvaluator):
                 generator=Generator(self.seed, rng) if self.is_genai else rng
             )
             image_path = os.path.join(image_dir, f"{i}.png")
-            image.save(image_path)
-            images.append(image_path)
+            output.save(image_path)
+            output_images.append(image_path)
 
-        res_data = {"prompts": list(prompts), "images": images}
+        res_data = {"prompts": list(prompts), "images": output_images}
         df = pd.DataFrame(res_data)
 
         return df
