@@ -26,8 +26,14 @@ struct WhisperGenerateResult {
     WhisperPerfMetrics perf_metrics;
 };
 
+struct WhisperContextTokens {
+    std::vector<int64_t> initial_prompt;
+    std::vector<int64_t> hotwords;
+};
+
 WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                        const ov::genai::WhisperConfig& model_config,
+                                       const WhisperContextTokens& context_tokens,
                                        const ov::genai::RawSpeechInput& raw_speech,
                                        ov::genai::WhisperInitializedModels& models,
                                        ov::genai::WhisperFeatureExtractor& feature_extractor,

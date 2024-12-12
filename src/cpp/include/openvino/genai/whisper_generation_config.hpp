@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <optional>
 #include <filesystem>
+#include <optional>
 
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
@@ -46,6 +46,10 @@ public:
     // Transcribe token id.
     int64_t transcribe_token_id = 50359;
 
+    // todo: add to bindings
+    // Corresponds to the ”<|startofprev|>” token.
+    int64_t prev_sot_token_id = 50361;
+
     // No timestamps token id.
     int64_t no_timestamps_token_id = 50363;
 
@@ -74,6 +78,14 @@ public:
     // then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
     // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     bool return_timestamps = false;
+
+    // todo: add to bindings
+    // Text string to provide as a prompt for the first window.
+    std::string initial_prompt = "";
+
+    // todo: add to bindings
+    // Hotwords/hint phrases to provide the model with.
+    std::string hotwords = "";
 
     // A list containing tokens that will be suppressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
@@ -114,6 +126,8 @@ static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_tok
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};
+static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
+static constexpr ov::Property<std::string> hotwords{"hotwords"};
 static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
 
 }  // namespace genai

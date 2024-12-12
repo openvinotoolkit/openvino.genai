@@ -175,11 +175,11 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
-                                      ov::InferRequest decoder,
-                                      const ov::genai::WhisperGenerationConfig& config,
-                                      const bool return_timestamps,
-                                      ov::genai::RawPerfMetrics& raw_metrics) {
+std::vector<int64_t> prepare_init_tokens(ov::Tensor& encoder_hidden_state,
+                                         ov::InferRequest decoder,
+                                         const ov::genai::WhisperGenerationConfig& config,
+                                         const bool return_timestamps,
+                                         ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
         if (return_timestamps) {
             return std::vector<int64_t>{config.decoder_start_token_id};
@@ -264,6 +264,31 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     return {false, output_tokens};
 }
 
+std::vector<int64_t> get_prompt_tokens(const ov::genai::WhisperContextTokens& context_tokens,
+                                       const ov::genai::WhisperGenerationConfig& config,
+                                       size_t chunk_offset) {
+    bool should_add_initial_prompt = !context_tokens.initial_prompt.empty() && chunk_offset == 0;
+    bool should_add_hotwords = !context_tokens.hotwords.empty();
+
+    if (!should_add_initial_prompt && !should_add_hotwords) {
+        return {};
+    }
+
+    std::vector<int64_t> prompt_tokens{config.prev_sot_token_id};
+
+    if (should_add_initial_prompt) {
+        prompt_tokens.insert(prompt_tokens.end(),
+                             context_tokens.initial_prompt.begin(),
+                             context_tokens.initial_prompt.end());
+    }
+
+    if (should_add_hotwords) {
+        prompt_tokens.insert(prompt_tokens.end(), context_tokens.hotwords.begin(), context_tokens.hotwords.end());
+    }
+
+    return prompt_tokens;
+}
+
 template <typename T>
 void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
     OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
@@ -290,6 +315,7 @@ namespace genai {
 
 WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                        const ov::genai::WhisperConfig& model_config,
+                                       const WhisperContextTokens& context_tokens,
                                        const RawSpeechInput& raw_speech,
                                        ov::genai::WhisperInitializedModels& models,
                                        WhisperFeatureExtractor& feature_extractor,
@@ -313,7 +339,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
-    std::vector<int64_t> init_ids;
+    std::vector<int64_t> init_tokens;
     std::vector<int64_t>& output_tokens = result.output_tokens;
     std::vector<Segment> segments;
 
@@ -335,14 +361,18 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 raw_metrics);
 
         // prepare init_ids just once for whole input
-        if (init_ids.empty()) {
-            init_ids = prepare_init_ids(hidden_state_tensor, models.decoder, config, return_timestamps, raw_metrics);
+        if (init_tokens.empty()) {
+            init_tokens =
+                prepare_init_tokens(hidden_state_tensor, models.decoder, config, return_timestamps, raw_metrics);
         }
+
+        std::vector<int64_t> chunk_init_tokens = get_prompt_tokens(context_tokens, config, chunk_offset);
+        chunk_init_tokens.insert(chunk_init_tokens.end(), init_tokens.begin(), init_tokens.end());
 
         auto [cancelled, chunk_output_tokens] = full_decode(hidden_state_tensor,
                                                             config,
                                                             models,
-                                                            init_ids,
+                                                            chunk_init_tokens,
                                                             max_new_tokens - output_tokens.size(),
                                                             return_timestamps,
                                                             raw_metrics,
