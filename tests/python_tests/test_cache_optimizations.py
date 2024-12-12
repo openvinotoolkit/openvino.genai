@@ -146,12 +146,12 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 
 
 scheduler_params_list = [
-                         ({"num_kv_blocks": 0, "cache_size": 5, "dynamic_split_fuse": True, "enable_prefix_caching": True, "max_num_seqs": 500}, get_beam_search()),
-                         ({"num_kv_blocks": 0, "cache_size": 5, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True, "max_num_seqs": 500}, get_beam_search()),
-                         ({"num_kv_blocks": 0, "cache_size": 5, "dynamic_split_fuse": True, "enable_prefix_caching": False, "max_num_seqs": 500}, get_greedy()),
-                         ({"num_kv_blocks": 0, "cache_size": 5, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False, "max_num_seqs": 500}, get_greedy()),
-                         ({"num_kv_blocks": 0, "cache_size": 5, "dynamic_split_fuse": True, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_beam_search()),
-                         ({"num_kv_blocks": 0, "cache_size": 5, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": False, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy())]
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True, "max_num_seqs": 500}, get_beam_search()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True, "max_num_seqs": 500}, get_beam_search()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False, "max_num_seqs": 500}, get_greedy()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False, "max_num_seqs": 500}, get_greedy()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_beam_search()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": False, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
