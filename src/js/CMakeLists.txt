@@ -73,6 +73,19 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     SUFFIX ".node"
 )
 
+# setting RPATH / LC_RPATH depending on platform
+if(LINUX)
+    # to find libopenvino_genai.so in the same folder
+    set(rpaths "$ORIGIN")
+elseif(APPLE)
+    # to find libopenvino_genai.dylib in the same folder
+    set(rpaths "@loader_path")
+endif()
+
+if(rpaths)
+    set_target_properties(${PROJECT_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
+endif()
+
 install(TARGETS ${PROJECT_NAME}
     LIBRARY DESTINATION . COMPONENT ${PROJECT_NAME}
     RUNTIME DESTINATION . COMPONENT ${PROJECT_NAME}

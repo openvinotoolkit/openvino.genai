@@ -141,10 +141,10 @@ if(CPACK_GENERATOR STREQUAL "NPM")
 
     # setting RPATH / LC_RPATH depending on platform
     if(LINUX)
-        # to find libopenvino_genai.so in the same folder
+        # to find libopenvino.so in the same folder
         set(rpaths "$ORIGIN")
     elseif(APPLE)
-        # to find libopenvino_genai.dylib in the same folder
+        # to find libopenvino.dylib in the same folder
         set(rpaths "@loader_path")
     endif()
 
