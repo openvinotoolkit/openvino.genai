@@ -105,7 +105,7 @@ class Sampler::GroupBeamSearcher {
         bool done = false;
 
         int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params);
-        void is_done(const ov::genai::GenerationConfig& sampling_params);
+        void is_done(const ov::genai::GenerationConfig& sampling_params, size_t prompt_len);
     };
 
     SequenceGroup::Ptr m_sequence_group;
