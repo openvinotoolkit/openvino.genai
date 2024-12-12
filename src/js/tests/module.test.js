@@ -11,7 +11,7 @@ describe('module', async () => {
   let pipeline = null;
 
   await before(async () => {
-    pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
 
     await pipeline.startChat();
   });
@@ -23,8 +23,8 @@ describe('module', async () => {
   await it('should generate "Hello world"', async () => {
     const result = await pipeline.generate(
       'Type "Hello world!" in English',
+      { temperature: '0', max_new_tokens: '4' },
       () => {},
-      { temperature: '0', max_new_tokens: '4' }
     );
 
     assert.strictEqual(result, 'Hello world!');
@@ -33,7 +33,7 @@ describe('module', async () => {
 
 describe('corner cases', async () => {
   it('should throw an error if pipeline is already initialized', async () => {
-    const pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
 
     await assert.rejects(
       async () => await pipeline.init(),
@@ -45,7 +45,7 @@ describe('corner cases', async () => {
   });
 
   it('should throw an error if chat is already started', async () => {
-    const pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
 
     await pipeline.startChat();
 
@@ -59,7 +59,7 @@ describe('corner cases', async () => {
   });
 
   it('should throw an error if chat is not started', async () => {
-    const pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
 
     await assert.rejects(
       () => pipeline.finishChat(),
@@ -75,7 +75,7 @@ describe('generation parameters validation', () => {
   let pipeline = null;
 
   before(async () => {
-    pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
 
     await pipeline.startChat();
   });
@@ -95,7 +95,7 @@ describe('generation parameters validation', () => {
   });
 
   it('should throw an error if generationCallback is not a function', async () => {
-    const pipeline = await Pipeline.create('LLMPipeline', MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
 
     await pipeline.startChat();
 
@@ -110,7 +110,7 @@ describe('generation parameters validation', () => {
 
   it('should throw an error if options specified but not an object', async () => {
     await assert.rejects(
-      async () => await pipeline.generate('prompt', () => {}, 'options'),
+      async () => await pipeline.generate('prompt', 'options', () => {}),
       {
         name: 'Error',
         message: 'Options must be an object',
@@ -120,7 +120,7 @@ describe('generation parameters validation', () => {
 
   it('should perform generation with default options', async () => {
     try {
-      await pipeline.generate('prompt', () => {}, { max_new_tokens: 1 });
+      await pipeline.generate('prompt', { max_new_tokens: 1 }, () => {});
     } catch (error) {
       assert.fail(error);
     }
@@ -129,14 +129,14 @@ describe('generation parameters validation', () => {
   });
 
   it('should return a string as generation result', async () => {
-    const reply = await pipeline.generate('prompt', () => {}, { max_new_tokens: 1 });
+    const reply = await pipeline.generate('prompt', { max_new_tokens: 1 }, () => {});
 
     assert.strictEqual(typeof reply, 'string');
   });
 
   it('should call generationCallback with string chunk', async () => {
-    await pipeline.generate('prompt', (chunk) => {
+    await pipeline.generate('prompt', { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, 'string');
-    }, { max_new_tokens: 1 });
+    });
   });
 });

@@ -55,7 +55,14 @@ class LLMPipeline {
     return result;
   }
 
-  async generate(prompt, generationCallback, options = {}) {
+  async generate(prompt, generationCallbackOrOptions, generationCallback) {
+    let options = {};
+
+    if (!generationCallback)
+      generationCallback = generationCallbackOrOptions;
+    else
+      options = generationCallbackOrOptions;
+
     if (!this.isInitialized)
       throw new Error('Pipeline is not initialized');
 
@@ -95,24 +102,17 @@ class LLMPipeline {
   }
 }
 
-const availablePipelines = { LLMPipeline: LLMPipeline };
-
 class Pipeline {
-  static async create(pipelineType, modelPath, device = 'CPU') {
-    if (!Object.keys(availablePipelines).includes(pipelineType))
-      throw new Error(`Pipeline type: '${pipelineType}' doesn't support`);
-
-    const pipeline = new availablePipelines[pipelineType](modelPath, device);
+  static async LLMPipeline(modelPath, device = 'CPU') {
+    const pipeline = new LLMPipeline(modelPath, device);
     await pipeline.init();
 
     return pipeline;
   }
 }
 
-const availablePipelinesKeys = Object.keys(availablePipelines);
 
 export {
   addon,
   Pipeline,
-  availablePipelinesKeys as availablePipelines,
 };
