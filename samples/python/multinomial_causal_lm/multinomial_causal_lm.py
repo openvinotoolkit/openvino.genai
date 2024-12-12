@@ -120,6 +120,19 @@ class IterableStreamer(openvino_genai.StreamerBase):
         self.put_word(None)
 
 
+class ChunkStreamer(IterableStreamer):
+
+    def __init__(self, tokenizer, tokens_len):
+        super().__init__(tokenizer)
+        self.tokens_len = tokens_len
+
+    def put(self, token_id: int) -> bool:
+        if (len(self.tokens_cache) + 1) % self.tokens_len != 0:
+            self.tokens_cache.append(token_id)
+            return False
+        return super().put(token_id)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
@@ -127,16 +140,21 @@ def main():
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
+    tokens_len = 10  # chunk size
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
-    
-    text_print_streamer = IterableStreamer(pipe.get_tokenizer())
+
+    text_print_streamer = ChunkStreamer(
+        pipe.get_tokenizer(),
+        tokens_len
+    )
+
     def token_printer():
         # Getting next elements from iterable will be blocked until a new token is available.
         for word in text_print_streamer:
             print(word, end='', flush=True)
     printer_thread = threading.Thread(target=token_printer, daemon=True)
     printer_thread.start()
-    
+
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
     config.do_sample = True
@@ -147,6 +165,7 @@ def main():
     # every time a new token is generated and put into the streamer queue.
     pipe.generate(args.prompt, config, text_print_streamer)
     printer_thread.join()
+
 
 if '__main__' == __name__:
     main()
