@@ -136,7 +136,6 @@ public:
     size_t get_vae_scale_factor() const;
 
 private:
-    void merge_vae_image_pre_processing() const;
     void merge_vae_image_post_processing() const;
 
     Config m_config;
