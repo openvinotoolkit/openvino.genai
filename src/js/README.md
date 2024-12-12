@@ -19,7 +19,7 @@ TODO: Add instructions
 
 - To run sample you should have prepared model.
   Use this instruction [to download model](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/chat_sample/README.md#download-and-convert-the-model-and-tokenizers)
-- Go to [samples](../../samples/js/)
+- Go to [samples/js](../../samples/js/)
 - Run `node app.js`, you should see: `User Prompt: ...`
 
 ### Using as npm Dependency
