@@ -9,8 +9,8 @@ import shutil
 
 # Define model names and directories
 MODELS = {
-    "TinyLlama-1.1B-Chat-v1.1": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "TinyLlama-1.1B": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+    "TinyLlama-1.1B-Chat-v1.0": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "TinyLlama-1.1B-intermediate-step-1431k-3T": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
     "WhisperTiny": "openai/whisper-tiny",
     "open_llama_3b_v2": "openlm-research/open_llama_3b_v2"
 }
@@ -103,7 +103,7 @@ def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_cont
 @pytest.mark.llm
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model, sample_args", [
-    ({"model_id": "TinyLlama-1.1B-Chat-v1.1", "extra_args": ["--trust-remote-code"]}, "0"),
+    ({"model_id": "TinyLlama-1.1B-Chat-v1.0", "extra_args": ["--trust-remote-code"]}, "0"),
     ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "b")
 ], indirect=["convert_model"])
 def test_python_sample_multinomial_causal_lm(convert_model, sample_args):
@@ -124,7 +124,7 @@ def test_cpp_sample_multinomial_causal_lm(convert_model):
 @pytest.mark.llm
 @pytest.mark.cpp
 @pytest.mark.parametrize("convert_model, sample_args", [
-    ({"model_id": "TinyLlama-1.1B-Chat-v1.1"}, ""),
+    ({"model_id": "TinyLlama-1.1B-Chat-v1.0"}, ""),
     ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "return 0")
 ], indirect=["convert_model"])
 def test_cpp_sample_greedy_causal_lm(convert_model, sample_args):
