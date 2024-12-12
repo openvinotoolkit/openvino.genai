@@ -84,9 +84,10 @@ jobs:
     runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
+      volumes: 
         - /mount:/mount
-      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -318,11 +319,19 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
         
   genai_samples_tests:
-    name: Samples Tests - ${{ matrix.build-type }}
+    name: Sample ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
       fail-fast: false
       matrix:
         build-type: [Release]
+        test:
+          - name: 'LLM'
+            marker: 'llm'
+            cmd: 'tests/python_tests/samples/test_samples.py'
+          - name: 'Whisper'
+            marker: 'whisper'
+            cmd: 'tests/python_tests/samples/test_samples.py'
+            
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
     timeout-minutes: 45
     defaults:
@@ -368,39 +377,16 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
      
-      - name: Download & convert Models and data
-        run: |
-          mkdir -p ${{ env.MODELS_DIR }}
-          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 ${{ env.MODELS_DIR }}/TinyLlama-1.1B-Chat-v1.0
-          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny ${{ env.MODELS_DIR }}/whisper-tiny
-          wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav -O ${{ env.MODELS_DIR }}/how_are_you_doing_today.wav
-        
-      - name: Test multinomial_causal_lm.py
+      - name: Test Python Samples
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        timeout-minutes: 1
-        run: ${{ env.INSTALL_DIR }}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        working-directory: ${{ env.MODELS_DIR }}
-
-      - name: Test whisper_speech_recognition.py
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        timeout-minutes: 1
-        run: ${{ env.INSTALL_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
-        working-directory: ${{ env.MODELS_DIR }}
-      
-      - name: C++ Tests Prerequisites
-        run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
+        run: python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and py"
+        working-directory: ${{ env.INSTALL_DIR }}/samples/python
         
-      - name: Test greedy_causal_lm
+      - name: Test C++ Samples
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          ${{ env.INSTALL_DIR }}/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
-        working-directory: ${{ env.MODELS_DIR }}
-
-      - name: Test whisper_speech_recognition
-        run: |
-          source ${{ env.INSTALL_DIR }}/setupvars.sh
-          ${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
-        working-directory: ${{ env.MODELS_DIR }}
+          python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and cpp"
+        working-directory: ${{ env.INSTALL_DIR }}/samples_bin
 
   Overall_Status:
     name: ci/gha_overall_status_linux
