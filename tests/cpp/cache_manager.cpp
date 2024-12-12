@@ -32,7 +32,7 @@ std::shared_ptr<ov::Model> get_dummy_model(size_t num_layers) {
     return std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
 }
 
-size_t get_total_accocated_bytes(std::shared_ptr<ov::genai::CacheManager> cache_manager, size_t num_decoder_layers) {
+size_t get_total_allocated_bytes(std::shared_ptr<ov::genai::CacheManager> cache_manager, size_t num_decoder_layers) {
     size_t allocated_bytes = 0;
     for (size_t i = 0; i < num_decoder_layers; i++) {
         auto key_cache = cache_manager->get_key_cache(i);
@@ -62,7 +62,7 @@ TEST(TestCacheManager, test_cache_size_param) {
     OPENVINO_ASSERT(block_manager.block_allocator_initialized());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
     
-    ASSERT_EQ(get_total_accocated_bytes(cache_manager, num_decoder_layers), 2146959360);
+    ASSERT_EQ(get_total_allocated_bytes(cache_manager, num_decoder_layers), 2146959360);
 }
 
 
@@ -115,7 +115,7 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     OPENVINO_ASSERT(block_manager.get_total_number_of_kv_blocks(), 100);
 
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
-    OPENVINO_ASSERT(get_total_accocated_bytes(cache_manager, num_decoder_layers), 100 * block_size_in_bytes);
+    OPENVINO_ASSERT(get_total_allocated_bytes(cache_manager, num_decoder_layers), 100 * block_size_in_bytes);
 
 
     // check cache increase
@@ -124,10 +124,10 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     OPENVINO_ASSERT(block_manager.get_total_number_of_kv_blocks(), 200);
 
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
-    OPENVINO_ASSERT(get_total_accocated_bytes(cache_manager, num_decoder_layers), 200 * block_size_in_bytes);
+    OPENVINO_ASSERT(get_total_allocated_bytes(cache_manager, num_decoder_layers), 200 * block_size_in_bytes);
 
 
     // check that cache does not increase if new blocks were not allocated
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
-    OPENVINO_ASSERT(get_total_accocated_bytes(cache_manager, num_decoder_layers), 200 * block_size_in_bytes);
+    OPENVINO_ASSERT(get_total_allocated_bytes(cache_manager, num_decoder_layers), 200 * block_size_in_bytes);
 }
