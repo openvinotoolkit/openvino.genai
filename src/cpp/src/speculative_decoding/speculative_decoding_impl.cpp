@@ -23,27 +23,22 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
-    const std::filesystem::path& main_models_path,
-    const SchedulerConfig& main_scheduler_config,
-    const std::string& main_device,
-    const ov::AnyMap& main_properties,
-    const ov::genai::ModelDesc draft_model_desc,
-    const ov::AnyMap& tokenizer_properties) {
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
+                                                                             const ov::genai::ModelDesc& draft_model_desc) {
     ov::Core core;
-    auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(main_properties);
+    auto [core_properties, compile_properties] = utils::split_core_compile_config(main_model_desc.properties);
     core.set_property(core_properties);
 
-    std::filesystem::path openvino_model_name = "openvino_model.xml",
-                          draft_models_path = draft_model_desc.models_path;
+    auto main_model = main_model_desc.model;
+    auto draft_model = draft_model_desc.model;
 
-    std::shared_ptr<ov::Model> main_model = core.read_model((main_models_path / openvino_model_name).string()),
-                               draft_model = core.read_model((draft_models_path / openvino_model_name).string());
+    auto main_scheduler_config = main_model_desc.scheduler_config;
+    auto main_device = main_model_desc.device;
 
-    utils::apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
 
-    std::string draft_device = draft_model_desc.device.empty() ? main_device : draft_model_desc.device;
+    std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
 
     bool is_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
@@ -76,8 +71,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
 
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
-    Tokenizer main_model_tokenizer(main_models_path, tokenizer_properties),
-              draft_model_tokenizer(draft_models_path, tokenizer_properties);
+    Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
+    Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
@@ -86,10 +81,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
-        main_model, main_model_tokenizer, utils::from_config_json_if_exists(main_models_path),
+        main_model, main_model_tokenizer, main_model_desc.generation_config,
         main_device_config, main_scheduler_config, main_device, compile_properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
-        draft_model, draft_model_tokenizer, utils::from_config_json_if_exists(draft_models_path),
+        draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
         draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
 }
 
@@ -97,8 +92,11 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  ov::genai::GenerationConfig sampling_params) {
+    m_sd_metrics.set_generated_len(request_id, sampling_params.max_new_tokens);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, sampling_params)});
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
 
@@ -106,8 +104,11 @@ GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  ov::genai::GenerationConfig sampling_params) {
+    m_sd_metrics.set_generated_len(request_id, sampling_params.max_new_tokens);
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, sampling_params)});
+    auto draft_sampling_params = sampling_params;
+    draft_sampling_params.ignore_eos = true;
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
 
@@ -131,7 +132,7 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
-    m_draft_pipeline->pull_awaiting_requests();
+    m_draft_pipeline->pull_awaiting_requests(true);
     m_main_pipeline->pull_awaiting_requests();
 
     // generate candidates by draft model
@@ -208,6 +209,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        m_sd_metrics.set_generated_len(request_id, sampling_params[request_id].max_new_tokens);
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
 

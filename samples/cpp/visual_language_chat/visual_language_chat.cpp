@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
 
     std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap enable_compile_cache;
-    if ("GPU" == device) {
+    if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
