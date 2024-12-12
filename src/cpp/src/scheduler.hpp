@@ -22,7 +22,7 @@ class Scheduler {
     friend class CacheStateDumper;
     std::shared_ptr<CacheManager> m_cache_manager;
     const size_t m_kv_blocks_initial_multiplier = 4;
-    const float m_cache_increase_rate = 2;
+    const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
     const float m_precentage_threshold_for_cache_increase = 80;
     bool m_dynamic_memory_allocation = false;
 
@@ -63,7 +63,7 @@ public:
             m_dynamic_memory_allocation = true;
         }
         else if (m_dynamic_memory_allocation && m_block_manager.get_used_percentage() > m_precentage_threshold_for_cache_increase) {
-            size_t new_cache_size = (size_t)(m_block_manager.get_total_number_of_kv_blocks() * m_cache_increase_rate);
+            size_t new_cache_size = (size_t)(m_block_manager.get_total_number_of_kv_blocks() * m_cache_growth_factor);
             m_block_manager.increase_kv_blocks_number(new_cache_size);
         }
         OPENVINO_ASSERT(m_cache_manager != nullptr, "Cache manager needs to be set in the Scheduler constructor.");
