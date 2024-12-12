@@ -1277,7 +1277,6 @@ ov::InferRequest create_hd_feature_transformer() {
 ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop, InferRequest& hd_feature_transformer) {
     ov::Shape shape = image_features.get_shape();
     OPENVINO_ASSERT(3 == shape.size());
-    OPENVINO_ASSERT(1 == shape.at(0));
     OPENVINO_ASSERT(24 * 24 == shape.at(1));
     OPENVINO_ASSERT(1024 == shape.at(2));
     hd_feature_transformer.set_input_tensor(0, image_features);
@@ -1323,8 +1322,22 @@ ov::Tensor add_image_newline(const ov::Tensor& image_features_hd, const std::vec
     return image_features_hd_new_line;
 }
 
+ov::Tensor concatenate_2d(const ov::Tensor& first_1lf, const std::vector<float>& second_f, const ov::Tensor& third_1lf) {
+    size_t first_l = first_1lf.get_shape().at(1);
+    constexpr size_t second_l = 1;
+    size_t third_l = third_1lf.get_shape().at(1);
+    size_t features = first_1lf.get_shape().at(2);
+    OPENVINO_ASSERT(second_f.size() == features);
+    ov::Tensor out_1lf{ov::element::f32, {1, first_l + second_l + third_l, features}};
+    float* out = out_1lf.data<float>();
+    std::copy_n(first_1lf.data<float>(), first_l * features, out);
+    std::copy(second_f.begin(), second_f.end(), out + first_l * features);
+    std::copy_n(third_1lf.data<float>(), third_l * features, out + (first_l + second_l) * features);
+    return out_1lf;
+}
+
 // image_features.resized_source: (num_crops+1, 24*24, 1024)
-ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer, const std::vector<float>& sub_GN) {
+ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer, const std::vector<float>& sub_GN, const std::vector<float>& glb_GN, ov::InferRequest& vision_projection) {
     // std::cout << image_features.resized_source.data<float>()[576*1024 + 0] << '\n';
     // std::cout << image_features.resized_source.data<float>()[576*1024 + 1] << '\n';
     // std::cout << image_features.resized_source.data<float>()[576*1024 + 1025] << '\n';
@@ -1346,7 +1359,7 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     ov::Tensor global_image_features{ov::element::f32, {1, image_features_shape.at(1), image_features_shape.at(2)}, image_features.resized_source.data<float>()};
     // global feature can be viewed as a special HD case with num_crops 1x1
     ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1, hd_feature_transformer);
-    ov::Tensor global_image_features_hd_newline = add_image_newline(global_image_features_hd, sub_GN);
+    ov::Tensor global_image_features_hd_newline = add_image_newline(global_image_features_hd, sub_GN);  // [1,12*(12+1),4096]
     constexpr size_t INPUT_IMAGE_SIZE = 336;
     size_t h_crop = image_features.resized_source_size.height / INPUT_IMAGE_SIZE;
     size_t w_crop = image_features.resized_source_size.width / INPUT_IMAGE_SIZE;
@@ -1354,7 +1367,46 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
 
     // NOTE: real num_crops is padded
     // (num_crops, 24*24, 1024)
-    return {};
+    ov::Tensor sub_image_features{ov::element::f32, {
+        num_crops,
+        image_features_shape.at(1),
+        image_features_shape.at(2)
+    }, image_features.resized_source.data<float>() + image_features_shape.at(1) * image_features_shape.at(2)};
+    ov::Tensor sub_image_features_hd = reshape_hd_patches_2x2merge(sub_image_features, h_crop, w_crop, hd_feature_transformer);  // [1, 24, 24, 4096]
+    // std::cout<<sub_image_features_hd.data<float>()[0]<<'\n';
+    // std::cout<<sub_image_features_hd.data<float>()[1]<<'\n';
+    // std::cout<<sub_image_features_hd.data<float>()[4096]<<'\n';
+    // std::cout<<sub_image_features_hd.data<float>()[12*13*4096]<<'\n';
+    // std::cout<<sub_image_features_hd.data<float>()[12*13*4096+1]<<'\n';
+//     0.134461
+// -0.867309
+// 0.342726
+// -0.0916849
+// -2.65548
+// -1.01567
+// -0.291421
+// -0.993172
+// -1.0575
+// -0.299
+    ov::Tensor sub_image_features_hd_newline = add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
+    // std::cout << sub_image_features_hd_newline.get_shape()<<'\n';
+    // std::cout<<global_image_features_hd_newline.get_shape()<<'\n';
+//     std::cout<<sub_image_features_hd_newline.data<float>()[0]<<'\n';
+//     std::cout<<sub_image_features_hd_newline.data<float>()[1]<<'\n';
+//     std::cout<<sub_image_features_hd_newline.data<float>()[4096]<<'\n';
+//     std::cout<<sub_image_features_hd_newline.data<float>()[12*13*4096]<<'\n';
+//     std::cout<<sub_image_features_hd_newline.data<float>()[12*13*4096+1]<<'\n';
+//     0.134461
+// -0.867309
+// 0.342726
+// 0.0147288
+// -1.87735
+// -1.01567
+// -0.291421
+// -0.993172
+// -1.03232
+// -0.183072
+    return concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
 }
 }
 }
@@ -1362,6 +1414,7 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
 class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
 public:
     ov::InferRequest m_hd_feature_transformer;
+    ov::InferRequest m_vision_projection;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1370,14 +1423,33 @@ public:
         const ov::AnyMap device_config
     ):
         IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
-        m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()} {}
+        m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()},
+        m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device).create_infer_request()} {}
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string images_prompt;
         std::vector<EncodedImage> embeds;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
-            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN);
+            ov::Tensor image_features_proj = phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection);
+            std::cout << image_features_proj.data<float>()[0]<<'\n';
+            std::cout << image_features_proj.data<float>()[4096]<<'\n';
+            std::cout << image_features_proj.data<float>()[4097]<<'\n';
+            std::cout << image_features_proj.data<float>()[700*4096]<<'\n';
+            std::cout << image_features_proj.data<float>()[700*4097]<<'\n';
+            std::cout << image_features_proj.data<float>()[757*4096-1]<<'\n';
+            // 0.134461
+// 0.342726
+// 0.0631084
+// 0.434334
+// 0.650556
+// 0
+// -1.01567
+// -0.993172
+// -0.226981
+// -1.89643
+// -0.907323
+// 0
         }
         ov::Tensor inputs_embeds;
         //     if (m_vlm_config.use_image_id) {

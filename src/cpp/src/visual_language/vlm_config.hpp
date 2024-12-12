@@ -56,6 +56,7 @@ public:
     std::string image_end_token = "</img>";
     /// @brief phi3_v new line token embedding to separate images.
     std::vector<float> sub_GN = std::vector(4096, 0.0f);
+    std::vector<float> glb_GN = std::vector(4096, 0.0f);
     
     /// @brief Default constructor.
     VLMConfig() = default;
