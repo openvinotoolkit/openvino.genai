@@ -102,8 +102,6 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     : AutoencoderKL(vae_decoder_path) {
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
-    // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
-    merge_vae_image_pre_processing();
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
@@ -147,8 +145,6 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
     : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_decoder_config) {
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model(vae_encoder_model, vae_encoder_weights);
-    // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
-    merge_vae_image_pre_processing();
 }
 
 AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
@@ -191,7 +187,7 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     const size_t vae_scale_factor = get_vae_scale_factor();
 
     OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by ",
             vae_scale_factor);
 
     if (m_encoder_model) {
@@ -274,27 +270,6 @@ const AutoencoderKL::Config& AutoencoderKL::get_config() const {
 
 size_t AutoencoderKL::get_vae_scale_factor() const {
     return std::pow(2, m_config.block_out_channels.size() - 1);
-}
-
-void AutoencoderKL::merge_vae_image_pre_processing() const {
-    ov::preprocess::PrePostProcessor ppp(m_encoder_model);
-
-    // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L90-L110
-
-    ppp.input().tensor().set_layout("NHWC");
-    ppp.input().model().set_layout("NCHW");
-
-    ppp.input().tensor()
-        .set_element_type(ov::element::u8);
-
-    ppp.input().preprocess()
-        .convert_layout()
-        .convert_element_type(ov::element::f32)
-        // this is less accurate that in VaeImageProcessor::normalize
-        .scale(255.0 / 2.0)
-        .mean(1.0f);
-
-    ppp.build();
 }
 
 void AutoencoderKL::merge_vae_image_post_processing() const {
