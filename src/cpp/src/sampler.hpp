@@ -19,6 +19,7 @@
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
+#include "threadpool.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
@@ -40,6 +41,12 @@ struct SamplerOutput {
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
 };
 
+struct SequenceGroupSamplingInfo {
+    SamplerOutput sampler_output;
+    size_t max_removed_tokens_per_request = 0; 
+    size_t min_generated_len = std::numeric_limits<size_t>::max();
+};
+
 class Sampler {
     class GroupBeamSearcher;
 
@@ -53,6 +60,7 @@ class Sampler {
 
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
+    std::mutex m_beam_search_info_mutex;
 
     std::mt19937 rng_engine;
     // { request_id, logit_processor }
@@ -60,10 +68,14 @@ class Sampler {
 
     Tokenizer m_tokenizer;
 
+    ThreadPool m_thread_pool;
+
 public:
     Sampler() = default;
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
+    SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits, 
+                                                         LogitProcessor& logit_processor, bool is_validation_mode_enabled = false);
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
 
