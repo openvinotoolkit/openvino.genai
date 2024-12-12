@@ -10,15 +10,19 @@ import shutil
 # Define model names and directories
 MODELS = {
     "TinyLlama-1.1B-Chat-v1.1": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "TinyLlama-1.1B": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3TB-Chat-v1.0",
+    "TinyLlama-1.1B": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
     "WhisperTiny": "openai/whisper-tiny",
     "open_llama_3b_v2": "openlm-research/open_llama_3b_v2"
+}
+
+TEST_FILES = {
+    "how_are_you_doing_today.wav": "https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav",
+    "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors"
 }
 
 TEMP_DIR = os.environ.get("TEMP_DIR", tempfile.mkdtemp())
 MODELS_DIR = os.path.join(TEMP_DIR, "test_models")
 TEST_DATA = os.path.join(TEMP_DIR, "test_data")
-TEST_FILE_URL = "https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav"
 
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.getcwd())
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
@@ -79,7 +83,7 @@ def download_test_content(request):
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny", "extra_args": ["--trust-remote-code"]}], 
                          indirect=True, ids=lambda p: f"model={p['model_id']}")
-@pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
+@pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
 def test_python_sample_whisper_speech_recognition(convert_model, download_test_content):
     script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
     result = subprocess.run(["python", script, convert_model, download_test_content], check=True)
@@ -89,7 +93,7 @@ def test_python_sample_whisper_speech_recognition(convert_model, download_test_c
 @pytest.mark.cpp
 @pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny"}], 
                          indirect=True, ids=lambda p: f"model={p['model_id']}")
-@pytest.mark.parametrize("download_test_content", [TEST_FILE_URL], indirect=True)
+@pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
 def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_content):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')
     exit_code = subprocess.run([cpp_sample, convert_model, download_test_content], check=True).returncode
@@ -127,3 +131,21 @@ def test_cpp_sample_greedy_causal_lm(convert_model, sample_args):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
     exit_code = subprocess.run([cpp_sample, convert_model, sample_args], check=True).returncode
     assert exit_code == 0, "C++ sample execution failed"
+    
+# text_generation sample
+@pytest.mark.llm
+@pytest.mark.py
+@pytest.mark.parametrize("convert_model, sample_args", [
+    (
+        {
+            "model_id": "TinyLlama-1.1B-intermediate-step-1431k-3T", 
+            "extra_args": ["--trust-remote-code"]
+        }, 
+        "How to create a table with two columns, one of them has type float, another one has type int?"
+    )
+], indirect=True)
+@pytest.mark.parametrize("download_test_content", [TEST_FILES["adapter_model.safetensors"]], indirect=True)
+def test_python_sample_text_generation(convert_model, download_test_content, sample_args):
+    script = os.path.join(SAMPLES_PY_DIR, "text_generation/lora.py")
+    result = subprocess.run(["python", script, convert_model, download_test_content, sample_args], check=True)
+    assert result.returncode == 0, f"Script execution failed for model {convert_model}"
