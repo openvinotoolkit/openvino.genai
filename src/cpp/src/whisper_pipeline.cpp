@@ -107,14 +107,14 @@ public:
         ov::genai::WhisperContextTokens context_tokens;
         float duration = 0.0f;
 
-        if (!config.initial_prompt.empty()) {
-            auto [initial_prompt_tokens, initial_prompt_duration] = tokenize(" " + config.initial_prompt, config);
+        if (config.initial_prompt.has_value()) {
+            auto [initial_prompt_tokens, initial_prompt_duration] = tokenize(" " + *config.initial_prompt, config);
             context_tokens.initial_prompt = initial_prompt_tokens;
             duration += initial_prompt_duration;
         }
 
-        if (!config.hotwords.empty()) {
-            auto [hotwords_tokens, hotwords_duration] = tokenize(" " + config.hotwords, config);
+        if (config.hotwords.has_value()) {
+            auto [hotwords_tokens, hotwords_duration] = tokenize(" " + *config.hotwords, config);
             context_tokens.hotwords = hotwords_tokens;
             duration += hotwords_duration;
         }

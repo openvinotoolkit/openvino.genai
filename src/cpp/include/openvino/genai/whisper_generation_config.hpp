@@ -81,11 +81,11 @@ public:
 
     // todo: add to bindings
     // Text string to provide as a prompt for the first window.
-    std::string initial_prompt = "";
+    std::optional<std::string> initial_prompt = std::nullopt;
 
     // todo: add to bindings
     // Hotwords/hint phrases to provide the model with.
-    std::string hotwords = "";
+    std::optional<std::string> hotwords = std::nullopt;
 
     // A list containing tokens that will be suppressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;

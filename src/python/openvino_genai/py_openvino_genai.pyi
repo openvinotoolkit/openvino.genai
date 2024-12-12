@@ -1649,10 +1649,18 @@ class WhisperGenerationConfig:
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
+    
+        :param initial_prompt: Text string to provide as a prompt for the first window.
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords: Hotwords/hint phrases to provide the model with.
+        :type hotwords: Optional[str]
     """
     begin_suppress_tokens: list[int]
     decoder_start_token_id: int
     eos_token_id: int
+    hotwords: str | None
+    initial_prompt: str | None
     is_multilingual: bool
     lang_to_id: dict[str, int]
     language: str | None
@@ -1781,6 +1789,12 @@ class WhisperPipeline:
                                then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
+        
+            :param initial_prompt: Text string to provide as a prompt for the first window.
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords: Hotwords/hint phrases to provide the model with.
+            :type hotwords: Optional[str]
         """
     def get_generation_config(self) -> WhisperGenerationConfig:
         ...

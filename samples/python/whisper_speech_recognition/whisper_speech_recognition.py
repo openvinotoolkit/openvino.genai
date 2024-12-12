@@ -34,8 +34,9 @@ def main():
 
     print(result)
 
-    for chunk in result.chunks:
-        print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
+    if result.chunks:
+        for chunk in result.chunks:
+            print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
 
 
 if "__main__" == __name__:

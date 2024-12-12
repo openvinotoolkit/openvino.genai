@@ -131,6 +131,12 @@ auto whisper_generation_config_docstring = R"(
                        then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                        Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     :type return_timestamps: bool
+
+    :param initial_prompt: Text string to provide as a prompt for the first window.
+    :type initial_prompt: Optional[str]
+
+    :param hotwords: Hotwords/hint phrases to provide the model with.
+    :type hotwords: Optional[str]
 )";
 
 auto streamer_base_docstring = R"(
@@ -267,6 +273,8 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
         .def_readwrite("task", &WhisperGenerationConfig::task)
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
+        .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
+        .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"));
 
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
