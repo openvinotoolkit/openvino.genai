@@ -44,6 +44,7 @@ public:
     std::vector<int64_t> m_tokenized_chat_history;
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     size_t m_to_remove_from_hist = 0;
+    size_t m_kv_cache_seq_length_axis = 2;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -78,6 +79,7 @@ public:
         ov::Core core;
         auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
         utils::slice_matmul_statefull_model(model);
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
@@ -286,7 +288,7 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-        ov::genai::utils::trim_kv_cache(m_model_runner, m_to_remove_from_hist, m_adapter_controller);
+        ov::genai::utils::trim_kv_cache(m_model_runner, m_to_remove_from_hist, m_kv_cache_seq_length_axis, m_adapter_controller);
 
         size_t kv_cache_len = 0;
         ov::Tensor concatenated_attention_mask;

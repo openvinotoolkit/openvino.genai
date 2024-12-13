@@ -100,7 +100,9 @@ void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value)
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens);
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, std::optional<AdapterController> adapter_controller);
+size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
 
 }  // namespace utils
 }  // namespace genai

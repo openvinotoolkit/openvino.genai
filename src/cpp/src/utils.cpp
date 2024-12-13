@@ -325,12 +325,40 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         return idx;
 }
 
-void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, std::optional<AdapterController> adapter_controller) {
+size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // therefore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
+
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        // check input size, as in LoRA adapters case it could be 0
+        if (op->get_type_name() != kv_node_type_name || op->get_input_size() < 1) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
     // nothing to trim in this case
     if (remove_from_end == 0)
         return;
 
-    // TODO: add handling for case with LoRA adapters enabled
     auto states = request.query_state();
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
@@ -339,7 +367,7 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, std::opti
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-        shape[2] -= remove_from_end;
+        shape[seq_length_axis] -= remove_from_end;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};

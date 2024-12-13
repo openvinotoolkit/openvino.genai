@@ -64,6 +64,8 @@ public:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Load pipeline time
     float m_load_time_ms = 0;
+    // Axis num in kv cache from m_language model, which contains information about history len
+    size_t m_kv_cache_seq_length_axis = 2;
 
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -87,9 +89,14 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        m_language = utils::singleton_core().compile_model(
+        auto compiled_language_model = utils::singleton_core().compile_model(
             models_dir / "openvino_language_model.xml", device, properties
-        ).create_infer_request();
+        );
+
+        auto language_model = compiled_language_model.get_runtime_model();
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
+
+        m_language = compiled_language_model.create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
@@ -154,7 +161,7 @@ public:
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
-        ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, std::nullopt);
+        ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
 
         Sampler sampler = Sampler(m_tokenizer);
 
