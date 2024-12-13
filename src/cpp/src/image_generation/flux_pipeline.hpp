@@ -326,9 +326,11 @@ public:
             m_custom_generation_config.strength = 1.0f;
         }
 
-        if (!initial_image) {
-            // in case of typical text to image generation, we need to ignore 'strength'
-            m_custom_generation_config.strength = 1.0f;
+        // Use callback if defined
+        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -355,14 +357,6 @@ public:
         m_scheduler->set_timesteps_with_sigma(sigmas, mu);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
-        // Use callback if defined
-        std::function<bool(size_t, ov::Tensor&)> callback;
-        auto callback_iter = properties.find(ov::genai::callback.name());
-        bool do_callback = callback_iter != properties.end();
-        if (do_callback) {
-            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
-        }
-
         // 6. Denoising loop
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
@@ -375,10 +369,8 @@ public:
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
-            if (do_callback) {
-                if (callback(inference_step, latents)) {
-                    return ov::Tensor(ov::element::u8, {});
-                }
+            if (callback && callback(inference_step, timesteps.size(), latents)) {
+                return ov::Tensor(ov::element::u8, {});
             }
         }
 
