@@ -198,7 +198,8 @@ image_tensor = pipe.generate(
     "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
     width=512,
     height=512,
-    num_inference_steps=20
+    num_inference_steps=20,
+    generator=openvino_genai.TorchGenerator(42)
 )
 
 image = Image.fromarray(image_tensor.data[0])
@@ -245,7 +246,8 @@ image_data = ov.Tensor(image_data)
 image_tensor = pipe.generate(
     "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
     image=image_data,
-    strength=0.8
+    strength=0.8,
+    generator=openvino_genai.TorchGenerator(42)
 )
 
 image = Image.fromarray(image_tensor.data[0])
@@ -296,7 +298,8 @@ mask_image = read_image("mask.jpg")
 image_tensor = pipe.generate(
     "Face of a yellow cat, high resolution, sitting on a park bench",
     image=image,
-    mask_image=mask_image
+    mask_image=mask_image,
+    generator=openvino_genai.TorchGenerator(42)
 )
 
 image = Image.fromarray(image_tensor.data[0])

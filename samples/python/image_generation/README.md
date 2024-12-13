@@ -20,6 +20,10 @@ Users can change the sample code and play with the following generation paramete
 - Apply multiple different LoRA adapters and mix them with different blending coefficients
 - (Image to image and inpainting) Play with `strength` parameter to control how initial image is noised and reduce number of inference steps
 
+> [!NOTE]  
+> All samples use `openvino_genai.TorchGenerator` as an argument to `generate` call to align random numbers generation with Diffusers library where `torch.Generator` is used underhood.
+> To have the same results in HuggingFace, pass manually created `torch.Generator(device='cpu').manual_seed(42)` to Diffusers generation pipelines to fix `seed` parameter.
+
 ## Download and convert the models and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.

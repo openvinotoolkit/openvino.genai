@@ -27,7 +27,8 @@ def main():
     image = read_image(args.image)
 
     image_tensor = pipe.generate(args.prompt, image,
-        strength=0.8 # controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
+        strength=0.8, # controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
+        generator=openvino_genai.TorchGenerator(42)
     )
 
     image = Image.fromarray(image_tensor.data[0])
