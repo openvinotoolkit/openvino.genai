@@ -21,9 +21,9 @@ class Scheduler {
     BlockManager m_block_manager;
     friend class CacheStateDumper;
     std::shared_ptr<CacheManager> m_cache_manager;
-    const size_t m_kv_blocks_initial_multiplier = 4;
+    const size_t m_kv_blocks_initial_multiplier = 2;
     const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
-    const float m_precentage_threshold_for_cache_increase = 80;
+    const float m_precentage_threshold_for_cache_increase = 100;
     bool m_dynamic_memory_allocation = false;
 
 public:
@@ -52,6 +52,7 @@ public:
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
+        float eps = 1e-5;
 
         if (!m_block_manager.block_allocator_initialized()) {
             size_t prompt_sum_size = 0;
@@ -62,7 +63,7 @@ public:
             m_block_manager.increase_kv_blocks_number(initial_kv_cache_size);
             m_dynamic_memory_allocation = true;
         }
-        else if (m_dynamic_memory_allocation && m_block_manager.get_used_percentage() > m_precentage_threshold_for_cache_increase) {
+        else if (m_dynamic_memory_allocation && (m_block_manager.get_used_percentage() + eps) > m_precentage_threshold_for_cache_increase) {
             size_t new_cache_size = (size_t)(m_block_manager.get_total_number_of_kv_blocks() * m_cache_growth_factor);
             m_block_manager.increase_kv_blocks_number(new_cache_size);
         }
