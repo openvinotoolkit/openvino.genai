@@ -202,8 +202,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
-        bool continue_generation = true;
-        if (streamer_ptr && continue_generation) {
+        if (streamer_ptr) {
             // not generated tokens like several prompt phase
             if (!generations.at(0).get()->can_read()) {
                 continue;
@@ -212,8 +211,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
             OPENVINO_ASSERT(1 <= token.size());
             OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
             for (const auto& gen_token : token.begin()->second.generated_ids) {
-                continue_generation = !streamer_ptr->put(gen_token);
-                if (!continue_generation) {
+                if (!streamer_ptr->put(gen_token)) {
                     break;
                 }
             }
