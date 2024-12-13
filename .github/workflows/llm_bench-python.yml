@@ -19,10 +19,6 @@ concurrency:
   group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-llm-bench-python
   cancel-in-progress: true
 
-env:
-  LLM_BENCH_PYPATH: tools/llm_bench
-  WWB_PATH: tools/who_what_benchmark
-
 jobs:
   openvino_download:
     name: Download OpenVINO
@@ -31,6 +27,7 @@ jobs:
       ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
       ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
       ov_version: ${{ steps.openvino_download.outputs.ov_version }}
+      docker_tag: ${{ steps.get_docker_tag.outputs.docker_tag }}
     timeout-minutes: 10
     defaults:
       run:
@@ -50,29 +47,61 @@ jobs:
         commit_packages_to_provide: wheels
         revision: latest_available_commit
 
+    - name: Clone docker tag from OpenVINO repo
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        repository: 'openvinotoolkit/openvino'
+        path: 'openvino'
+        ref: ${{ env.OV_BRANCH }}
+        sparse-checkout: |
+          .github/dockerfiles/docker_tag
+
+    - name: Save docker tag to output
+      id: get_docker_tag
+      run: |
+        docker_tag=$(cat openvino/.github/dockerfiles/docker_tag)
+        echo "docker_tag=$docker_tag" >> $GITHUB_OUTPUT
+
   build:
-    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10"]
+        python-version: ["3.11"]
     needs: [ openvino_download ]
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      SRC_DIR: ${{ github.workspace }}
+      LLM_BENCH_PYPATH: ${{ github.workspace }}/tools/llm_bench
+      WWB_PATH: ${{ github.workspace }}/tools/who_what_benchmark
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install flake8 pytest black
-          python -m pip install . -v --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
         working-directory: ${{ env.OV_INSTALL_DIR }}
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
@@ -83,7 +112,7 @@ jobs:
         run: |
           python -m black -l 160 -S ${{ env.LLM_BENCH_PYPATH }}/
           git diff > llm.bench_diff.diff
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         if: failure()
         with:
           name: llm.bench_diff
@@ -98,24 +127,23 @@ jobs:
         run: |
           optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1 --optimum
-      - name: Test tiny-stable-diffusion on Linux Optimum Intel
+      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux Optimum Intel
         run: |
-          optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd/pytorch/dldt/FP16/
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum
-      - name: Test dreamlike-anime on Linux with GenAI
+          huggingface-cli download OpenVINO/LCM_Dreamshaper_v7-int8-ov --local-dir ov_models/lcm_dreamshaper_v7
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum
+      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux with GenAI
         run: |
-          optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 ov_models/dreamlike-art-dreamlike-anime-1.0/FP16
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/dreamlike-art-dreamlike-anime-1.0/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1
-      - name: Test dreamlike-anime on Linux with GenAI and LoRA
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1
+      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux with GenAI and LoRA
         run: |
           wget -O ./ov_models/soulcard.safetensors https://civitai.com/api/download/models/72591
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/dreamlike-art-dreamlike-anime-1.0/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7
       - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Deconding mode on Linux
         run: |
           optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format fp16 ov_models/TinyLlama-1.1B-Chat-v1.0/FP16
           optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format int8 ov_models/TinyLlama-1.1B-Chat-v1.0/INT8
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1  --assistant_confidence_threshold 0.4
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1  --num_assistant_tokens 5
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --assistant_confidence_threshold 0.4
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --num_assistant_tokens 5
       - name: Test whisper-tiny on Linux
         run: |
           GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch main --single-branch https://huggingface.co/datasets/facebook/multilingual_librispeech
@@ -134,23 +162,40 @@ jobs:
           python -m pytest -v ${{ env.WWB_PATH }}/tests
 
   stateful:
-    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-22.04
     needs: [ openvino_download ]
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      SRC_DIR: ${{ github.workspace }}
+      LLM_BENCH_PYPATH: ${{ github.workspace }}/tools/llm_bench
+      WWB_PATH: ${{ github.workspace }}/tools/who_what_benchmark
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          python-version: "3.10"
+          submodules: recursive
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
       - name: Test stateful
         run: |
-          python -m pip install . -v --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r tools/llm_bench/requirements.txt
-          python tools/llm_bench/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
-          grep beam_idx pytorch/dldt/FP32/openvino_model.xml
+          python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
+          python ${{ env.LLM_BENCH_PYPATH }}/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ${{ env.SRC_DIR }} --stateful
+          grep beam_idx ${{ env.SRC_DIR }}/pytorch/dldt/FP32/openvino_model.xml
         working-directory: ${{ env.OV_INSTALL_DIR }}
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
       - name: WWB Tests
         run: |
           pip install pytest
