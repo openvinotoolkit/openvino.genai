@@ -126,7 +126,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                                                 get_active_sequence_groups),
                                  active_sequence_groups.end());
 
-    while (active_sequence_groups.size() > 0) {
+    do {
         size_t total_num_tokens = 0;
 
         for (auto& sequence_group : active_sequence_groups) {
@@ -214,8 +214,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                 if (!streamer_ptr->put(gen_token)) {
                     break;
                 }
-            }
-            
+            }   
         }
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
@@ -224,13 +223,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                                                     active_sequence_groups.end(),
                                                     get_active_sequence_groups),
                                     active_sequence_groups.end());
-    }
-
-    if (streamer_ptr) {
-        int64_t out_token = sequence_groups.at(0).get()->operator[](0)->get_generated_ids().back();
-        streamer_ptr->put(out_token);
-        streamer_ptr->end();
-    }
+    } while (active_sequence_groups.size() > 0);
     
     size_t next_selected_beam = 0;
     for (size_t i = 0; i < sequence_groups.size(); i++) {
