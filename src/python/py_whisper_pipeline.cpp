@@ -103,6 +103,9 @@ auto whisper_generation_config_docstring = R"(
     :param no_timestamps_token_id: No timestamps token id.
     :type no_timestamps_token_id: int
 
+    :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+    :type prev_sot_token_id: int
+
     :param is_multilingual:
     :type is_multilingual: bool
 
@@ -268,6 +271,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
         .def_readwrite("max_initial_timestamp_index", &WhisperGenerationConfig::max_initial_timestamp_index)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
+        .def_readwrite("prev_sot_token_id", &WhisperGenerationConfig::prev_sot_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
         .def_readwrite("language", &WhisperGenerationConfig::language)
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)

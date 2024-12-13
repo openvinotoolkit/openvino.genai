@@ -46,7 +46,6 @@ public:
     // Transcribe token id.
     int64_t transcribe_token_id = 50359;
 
-    // todo: add to bindings
     // Corresponds to the ”<|startofprev|>” token.
     int64_t prev_sot_token_id = 50361;
 
@@ -79,11 +78,9 @@ public:
     // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     bool return_timestamps = false;
 
-    // todo: add to bindings
     // Text string to provide as a prompt for the first window.
     std::optional<std::string> initial_prompt = std::nullopt;
 
-    // todo: add to bindings
     // Hotwords/hint phrases to provide the model with.
     std::optional<std::string> hotwords = std::nullopt;
 
@@ -123,6 +120,7 @@ static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
 static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
 static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
+static constexpr ov::Property<int64_t> prev_sot_token_id{"prev_sot_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};

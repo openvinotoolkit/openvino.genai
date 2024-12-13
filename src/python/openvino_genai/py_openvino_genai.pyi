@@ -1621,6 +1621,9 @@ class WhisperGenerationConfig:
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
     
+        :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+        :type prev_sot_token_id: int
+    
         :param is_multilingual:
         :type is_multilingual: bool
     
@@ -1669,6 +1672,7 @@ class WhisperGenerationConfig:
     max_new_tokens: int
     no_timestamps_token_id: int
     pad_token_id: int
+    prev_sot_token_id: int
     return_timestamps: bool
     suppress_tokens: list[int]
     task: str | None
@@ -1760,6 +1764,9 @@ class WhisperPipeline:
         
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
+        
+            :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+            :type prev_sot_token_id: int
         
             :param is_multilingual:
             :type is_multilingual: bool

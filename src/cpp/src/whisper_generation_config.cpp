@@ -8,8 +8,8 @@
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
 
-#include "utils.hpp"
 #include "json_utils.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -31,6 +31,7 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::filesystem::path& js
     read_json_param(data, "pad_token_id", pad_token_id);
     read_json_param(data, "no_timestamps_token_id", no_timestamps_token_id);
     read_json_param(data, "max_initial_timestamp_index", max_initial_timestamp_index);
+    read_json_param(data, "prev_sot_token_id", prev_sot_token_id);
 
     read_json_param(data, "is_multilingual", is_multilingual);
     if (is_multilingual) {
