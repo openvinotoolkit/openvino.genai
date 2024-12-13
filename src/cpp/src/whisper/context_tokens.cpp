@@ -11,9 +11,9 @@ std::pair<std::vector<int64_t>, float> tokenize(std::string text,
         return {{}, 0.0f};
     }
 
-    auto decode_start_time = std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::now();
     auto encoded = tokenizer.encode(text, ov::genai::add_special_tokens(false));
-    auto duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time);
+    auto duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time);
 
     auto input_ids = encoded.input_ids;
     auto input_ids_data = input_ids.data<int64_t>();
