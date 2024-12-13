@@ -216,11 +216,11 @@ static constexpr ov::Property<int> max_sequence_length{"max_sequence_length"};
 
 /**
  * User callback for image generation pipelines, which is called within a pipeline with the following arguments:
- * - Total number of inference steps. Note, that in case of 'strength' parameter, the number of inference steps is reduced linearly
  * - Current inference step
+ * - Total number of inference steps. Note, that in case of 'strength' parameter, the number of inference steps is reduced linearly
  * - Tensor representing current latent. Such latent can be converted to human-readable representation via image generation pipeline 'decode()' method
  */
-static constexpr ov::Property<std::function<bool(size_t, ov::Tensor&)>> callback{"callback"};
+static constexpr ov::Property<std::function<bool(size_t, size_t, ov::Tensor&)>> callback{"callback"};
 
 /**
  * Function to pass 'ImageGenerationConfig' as property to 'generate()' call.

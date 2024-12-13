@@ -62,35 +62,35 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
 
-      - name: Download and convert models and tokenizer
+      - name: Download models
         run: |
           source openvino_lcm_cpp/bin/activate
-          optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --task stable-diffusion --weight-format fp16 models/lcm_dreamshaper_v7/FP16
+          huggingface-cli download OpenVINO/LCM_Dreamshaper_v7-int8-ov --local-dir models/lcm_dreamshaper_v7
           wget -O ./image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png
           wget -O ./mask_image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png
 
       - name: Run heterogeneous_stable_diffusion
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          ${{ env.build_dir }}/samples/cpp/image_generation/heterogeneous_stable_diffusion ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
+          ${{ env.build_dir }}/samples/cpp/image_generation/heterogeneous_stable_diffusion ./models/lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
 
       - name: Run heterogeneous_stable_diffusion.py
         run: |
           source openvino_lcm_cpp/bin/activate
           source ./ov/setupvars.sh
-          python ./samples/python/image_generation/heterogeneous_stable_diffusion.py ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          python ./samples/python/image_generation/heterogeneous_stable_diffusion.py ./models/lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
       - name: Run image2image
         run: |
           source ./ov/setupvars.sh
-          ${{ env.build_dir }}/samples/cpp/image_generation/image2image ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png
+          ${{ env.build_dir }}/samples/cpp/image_generation/image2image ./models/lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png
 
       - name: Run inpainting
         run: |
           source ./ov/setupvars.sh
-          ${{ env.build_dir }}/samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
+          ${{ env.build_dir }}/samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
 
   lcm_dreamshaper_v7_cpp-windows:
     runs-on: windows-2019
@@ -134,24 +134,24 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
 
-      - name: Download and convert models and tokenizer
+      - name: Download models
         run: |
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
-          optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --task stable-diffusion --weight-format fp16 models/lcm_dreamshaper_v7/FP16
+          huggingface-cli download OpenVINO/LCM_Dreamshaper_v7-int8-ov --local-dir models/lcm_dreamshaper_v7
           Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png' -OutFile 'image.png'
           Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png' -OutFile 'mask_image.png'
 
       - name: Run heterogeneous_stable_diffusion
         run: >
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          & "${{ env.build_dir }}/samples/cpp/image_generation/Release/heterogeneous_stable_diffusion.exe ./models/lcm_dreamshaper_v7/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'"
+          & "${{ env.build_dir }}/samples/cpp/image_generation/Release/heterogeneous_stable_diffusion.exe ./models/lcm_dreamshaper_v7 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'"
 
       - name: Run heterogeneous_stable_diffusion.py
         run: |
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           $env:Path += "${{ env.build_dir }}\openvino_genai"
-          python .\samples\python\image_generation\heterogeneous_stable_diffusion.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+          python .\samples\python\image_generation\heterogeneous_stable_diffusion.py .\models\lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
@@ -160,7 +160,7 @@ jobs:
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           $env:Path += "${{ env.build_dir }}\openvino_genai"
-          python .\samples\python\image_generation\image2image.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" .\image.png
+          python .\samples\python\image_generation\image2image.py .\models\lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" .\image.png
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
@@ -169,7 +169,7 @@ jobs:
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           $env:Path += "${{ env.build_dir }}\openvino_genai"
-          python .\samples\python\image_generation\inpainting.py .\models\lcm_dreamshaper_v7\FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" .\image.png .\mask_image.png
+          python .\samples\python\image_generation\inpainting.py .\models\lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" .\image.png .\mask_image.png
         env:
           PYTHONPATH: ${{ env.build_dir }}
 
