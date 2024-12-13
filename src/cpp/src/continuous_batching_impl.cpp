@@ -88,6 +88,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
                                                        /* is_use_per_layer_cache_control = */ true);
         m_rotation_deltas_stores.reserve(m_num_decoder_layers);
         ov::Shape rotation_deltas_store_shape{m_scheduler->get_block_size() * scheduler_config.num_kv_blocks};
+        std::cout << "VSHAMPOR: memsetting and pushing delta stores" << std::endl;
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
             std::memset(store.data(), 0, store.get_byte_size());
@@ -96,12 +97,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
 
         const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
         size_t max_sequence_cache_occupation_length = eviction_config.get_evictable_size() + eviction_config.get_recent_size() + m_scheduler->get_block_size();
+        std::cout << "VSHAMPOR: max_sequence_occupation_length is " << max_sequence_cache_occupation_length << std::endl;
         size_t embedding_size = device_config.get_head_size();
         m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
             m_scheduler->get_block_size(),
             max_sequence_cache_occupation_length,
             embedding_size);
-        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length, device_config.get_head_size()});
+        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length, embedding_size});
         float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
         std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
 

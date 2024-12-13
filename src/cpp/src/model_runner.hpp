@@ -210,6 +210,7 @@ public:
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
+            std::cout << "VSHAMPOR: m_request.infer() " << std::endl;
             m_request.infer();
             timer.end();
         }
