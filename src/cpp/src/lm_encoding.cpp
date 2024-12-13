@@ -202,12 +202,22 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
-        if (streamer_ptr) {
-            // stream data from first sequence
-            int64_t out_token = sequence_groups.at(0).get()->operator[](0)->get_generated_ids().back();
-            if (streamer_ptr->put(out_token)) {
-                break;
+        bool continue_generation = true;
+        if (streamer_ptr && continue_generation) {
+            // not generated tokens like several prompt phase
+            if (!generations.at(0).get()->can_read()) {
+                continue;
             }
+            std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
+            OPENVINO_ASSERT(1 <= token.size());
+            OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
+            for (const auto& gen_token : token.begin()->second.generated_ids) {
+                continue_generation = !streamer_ptr->put(gen_token);
+                if (!continue_generation) {
+                    break;
+                }
+            }
+            
         }
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
