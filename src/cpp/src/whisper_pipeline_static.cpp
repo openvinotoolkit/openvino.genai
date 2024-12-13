@@ -572,6 +572,9 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     config.validate();
 
+    OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
+    OPENVINO_ASSERT(!config.hotwords.has_value(), "'hotwords' parameter is not supported on NPU device.");
+
     std::shared_ptr<ChunkStreamerBase> streamer_ptr;
     if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
         streamer_ptr = nullptr;
