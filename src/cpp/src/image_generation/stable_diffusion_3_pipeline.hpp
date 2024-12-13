@@ -218,6 +218,15 @@ public:
         initialize_generation_config("StableDiffusion3Pipeline");
     }
 
+    StableDiffusion3Pipeline(PipelineType pipeline_type, const StableDiffusion3Pipeline& pipe) :
+        StableDiffusion3Pipeline(pipe) {
+        OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
+            pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
+
+        m_pipeline_type = pipeline_type;
+        initialize_generation_config("StableDiffusion3Pipeline");
+    }
+
     void reshape(const int num_images_per_prompt,
                  const int height,
                  const int width,
@@ -426,21 +435,21 @@ public:
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
-        if (!initial_image) {
-            // in case of typical text to image generation, we need to ignore 'strength'
-            generation_config.strength = 1.0f;
+        // Use callback if defined
+        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale)
-                                                 ? 2
-                                                 : 1;  // Transformer accepts 2x batch in case of CFG
+        const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
 
         if (generation_config.height < 0)
-            generation_config.height = transformer_config.sample_size * vae_scale_factor;
+            compute_dim(generation_config.height, initial_image, 1 /* assume NHWC */);
         if (generation_config.width < 0)
-            generation_config.width = transformer_config.sample_size * vae_scale_factor;
+            compute_dim(generation_config.width, initial_image, 2 /* assume NHWC */);
 
         check_inputs(generation_config, initial_image);
 
@@ -466,14 +475,6 @@ public:
 
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
-
-        // Use callback if defined
-        std::function<bool(size_t, ov::Tensor&)> callback;
-        auto callback_iter = properties.find(ov::genai::callback.name());
-        bool do_callback = callback_iter != properties.end();
-        if (do_callback) {
-            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
-        }
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             // concat the same latent twice along a batch dimension in case of CFG
@@ -510,10 +511,8 @@ public:
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            if (do_callback) {
-                if (callback(inference_step, latent)) {
-                    return ov::Tensor(ov::element::u8, {});
-                }
+            if (callback && callback(inference_step, timesteps.size(), latent)) {
+                return ov::Tensor(ov::element::u8, {});
             }
         }
 
@@ -525,6 +524,29 @@ public:
     }
 
 private:
+    bool is_inpainting_model() const {
+        assert(m_transformer != nullptr);
+        assert(m_vae != nullptr);
+        return m_transformer->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1);
+    }
+
+    void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        const auto& transformer_config = m_transformer->get_config();
+
+        // in case of image to image generation_config_value is just ignored and computed based on initial image
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            OPENVINO_ASSERT(initial_image, "Initial image is empty for image to image pipeline");
+            ov::Shape shape = initial_image.get_shape();
+            int64_t dim_val = shape[dim_idx];
+
+            generation_config_value = dim_val - (dim_val % vae_scale_factor);
+        }
+
+        if (generation_config_value < 0)
+            generation_config_value = transformer_config.sample_size * vae_scale_factor;
+    }
+
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0;
     }
@@ -536,8 +558,13 @@ private:
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
-        m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
+        m_generation_config = ImageGenerationConfig();
+
+        // in case of image to image, the shape is computed based on initial image
+        if (m_pipeline_type != PipelineType::IMAGE_2_IMAGE) {
+            m_generation_config.height = transformer_config.sample_size * vae_scale_factor;
+            m_generation_config.width = transformer_config.sample_size * vae_scale_factor;
+        }
 
         if (class_name == "StableDiffusion3Pipeline" || class_name == "StableDiffusion3Img2ImgPipeline" || class_name == "StableDiffusion3InpaintPipeline") {
             m_generation_config.guidance_scale = 7.0f;

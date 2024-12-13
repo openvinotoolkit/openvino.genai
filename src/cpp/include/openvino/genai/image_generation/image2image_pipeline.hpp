@@ -3,27 +3,10 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-#include <random>
-#include <filesystem>
-
-#include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
-
-#include "openvino/genai/image_generation/scheduler.hpp"
-#include "openvino/genai/image_generation/generation_config.hpp"
-
-#include "openvino/genai/image_generation/clip_text_model.hpp"
-#include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
-#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
-#include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
 
 namespace ov {
 namespace genai {
-
-// forward declaration
-class DiffusionPipeline;
 
 //
 // Image to image pipeline
@@ -41,6 +24,8 @@ public:
                         const std::string& device,
                         Properties&&... properties)
         : Image2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    Image2ImagePipeline(const InpaintingPipeline& pipe);
 
     // creates either LCM or SD pipeline from building blocks
     static Image2ImagePipeline stable_diffusion(
@@ -99,6 +84,10 @@ private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
     explicit Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
+
+    // to create other pipelines from image to image
+    friend class Text2ImagePipeline;
+    friend class InpaintingPipeline;
 };
 
 } // namespace genai
