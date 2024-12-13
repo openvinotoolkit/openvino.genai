@@ -105,7 +105,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
 SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "SD3 Transformer 2D model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

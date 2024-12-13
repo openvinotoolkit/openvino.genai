@@ -306,7 +306,7 @@ ov::Core singleton_core() {
     return core;
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model) {
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);
@@ -315,7 +315,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model) {
     if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
         // output of the actual settings that the device selected
         auto supported_properties = compiled_Model.get_property(ov::supported_properties);
-        std::cout << "Model:" << std::endl;
+        std::cout << "Model: " << model_title << std::endl;
         for (const auto& cfg : supported_properties) {
             if (cfg == ov::supported_properties)
                 continue;

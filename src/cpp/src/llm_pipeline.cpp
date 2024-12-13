@@ -88,7 +88,7 @@ public:
             compiled_model = core.compile_model(model, device, plugin_config);
             m_model_runner = compiled_model.create_infer_request();
         }
-        ov::genai::utils::print_compiled_model_properties(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)

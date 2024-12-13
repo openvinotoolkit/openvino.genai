@@ -638,7 +638,7 @@ public:
         ov::Core core = ov::genai::utils::singleton_core();
         auto model = std::make_shared<ov::Model>(request_results, request_parameters);
         auto compiled_model = core.compile_model(model, device);
-        ov::genai::utils::print_compiled_model_properties(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "Infer Request Signature Cache");
         rwb.request = compiled_model.create_infer_request();
         requests.emplace(signature, rwb);
     }

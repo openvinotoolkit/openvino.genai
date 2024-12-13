@@ -89,7 +89,7 @@ public:
 
         auto compiled_model =
             utils::singleton_core().compile_model(models_dir / "openvino_language_model.xml", device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "language model");
         m_language = compiled_model.create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});

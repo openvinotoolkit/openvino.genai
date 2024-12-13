@@ -93,7 +93,7 @@ ov::Core singleton_core();
 template <typename T>
 void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model);
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
 }  // namespace utils
 }  // namespace genai

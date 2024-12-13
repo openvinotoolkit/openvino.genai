@@ -20,7 +20,7 @@ public:
         ov::Core core = utils::singleton_core();
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");
         m_request = compiled_model.create_infer_request();
     }
 

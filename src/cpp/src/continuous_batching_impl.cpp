@@ -47,7 +47,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     const DeviceConfig& device_config,
     ov::Core& core) {
     auto compiled_model = core.compile_model(model, device_config.get_device(), properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Contimuous batching");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
