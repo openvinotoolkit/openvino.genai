@@ -59,10 +59,10 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "imagetext-to-image"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models, imagetext-to-image - for image generation based on image and prompt",
+        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
     )
     parser.add_argument(
         "--data-encoder",
@@ -255,7 +255,7 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
-    if model.resolution[0] is not None:
+    if model.resolution is not None and model.resolution[0] is not None:
         image_tensor = model.generate(
             prompt,
             width=model.resolution[0],
@@ -273,9 +273,10 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
     return image
 
 
-def genai_gen_imagetext(model, prompt, image, num_inference_steps, generator=None):
+def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
     image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    if model.resolution[0] is not None:
+    print("model.resolution: ", model.resolution)
+    if model.resolution is not None and model.resolution[0] is not None:
         image_tensor = model.generate(
             prompt,
             image=image,
@@ -357,7 +358,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
             )
-        elif task == "imagetext-to-image":
+        elif task == "image-to-image":
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -365,7 +366,7 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
-                gen_image_fn=genai_gen_imagetext if args.genai else None,
+                gen_image_fn=genai_gen_image2image if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
             )
@@ -477,7 +478,7 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
-        elif "text-to-image" in args.model_type or "imagetext-to-image" in args.model_type:
+        elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
 
 

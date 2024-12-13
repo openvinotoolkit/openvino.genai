@@ -44,8 +44,8 @@ def prepare_default_data(num_samples=None):
     )
 
 
-@register_evaluator("imagetext-to-image")
-class ImageText2ImageEvaluator(Text2ImageEvaluator):
+@register_evaluator("image-to-image")
+class Image2ImageEvaluator(Text2ImageEvaluator):
     def __init__(
         self,
         base_model: Any = None,

@@ -181,7 +181,7 @@ def load_visual_text_model(
     return model
 
 
-def load_imagetext2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
+def load_image2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
     except ImportError as e:
@@ -191,11 +191,11 @@ def load_imagetext2image_genai_pipeline(model_dir, device="CPU", ov_config=None)
     return GenAIModelWrapper(
         openvino_genai.Image2ImagePipeline(model_dir, device, **ov_config),
         model_dir,
-        "imagetext-to-image"
+        "image-to-image"
     )
 
 
-def load_magetext2image_model(
+def load_imagetext2image_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
 ):
     if use_hf:
@@ -205,7 +205,7 @@ def load_magetext2image_model(
         )
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
-        model = load_imagetext2image_genai_pipeline(model_id, device, ov_config)
+        model = load_image2image_genai_pipeline(model_id, device, ov_config)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForImage2Image
@@ -246,7 +246,7 @@ def load_model(
         )
     elif model_type == "visual-text":
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai)
-    elif model_type == "imagetext-to-image":
-        return load_magetext2image_model(model_id, device, ov_options, use_hf, use_genai)
+    elif model_type == "image-to-image":
+        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
