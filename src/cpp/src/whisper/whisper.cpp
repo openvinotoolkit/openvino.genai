@@ -8,6 +8,7 @@
 #include <regex>
 #include <thread>
 
+#include "context_tokens.hpp"
 #include "logit_processor.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
@@ -264,31 +265,6 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     return {false, output_tokens};
 }
 
-std::vector<int64_t> get_prompt_tokens(const ov::genai::WhisperContextTokens& context_tokens,
-                                       const ov::genai::WhisperGenerationConfig& config,
-                                       size_t chunk_offset) {
-    bool should_add_initial_prompt = !context_tokens.initial_prompt.empty() && chunk_offset == 0;
-    bool should_add_hotwords = !context_tokens.hotwords.empty();
-
-    if (!should_add_initial_prompt && !should_add_hotwords) {
-        return {};
-    }
-
-    std::vector<int64_t> prompt_tokens{config.prev_sot_token_id};
-
-    if (should_add_initial_prompt) {
-        prompt_tokens.insert(prompt_tokens.end(),
-                             context_tokens.initial_prompt.begin(),
-                             context_tokens.initial_prompt.end());
-    }
-
-    if (should_add_hotwords) {
-        prompt_tokens.insert(prompt_tokens.end(), context_tokens.hotwords.begin(), context_tokens.hotwords.end());
-    }
-
-    return prompt_tokens;
-}
-
 template <typename T>
 void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
     OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
@@ -366,7 +342,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 prepare_init_tokens(hidden_state_tensor, models.decoder, config, return_timestamps, raw_metrics);
         }
 
-        std::vector<int64_t> chunk_init_tokens = get_prompt_tokens(context_tokens, config, chunk_offset);
+        std::vector<int64_t> chunk_init_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
         chunk_init_tokens.insert(chunk_init_tokens.end(), init_tokens.begin(), init_tokens.end());
 
         auto [cancelled, chunk_output_tokens] = full_decode(hidden_state_tensor,

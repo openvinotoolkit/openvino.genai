@@ -5,6 +5,7 @@
 
 #include <openvino/openvino.hpp>
 
+#include "context_tokens.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "whisper_config.hpp"
@@ -24,11 +25,6 @@ struct WhisperGenerateResult {
     std::vector<int64_t> output_tokens;
     std::optional<std::vector<Segment>> segments = std::nullopt;
     WhisperPerfMetrics perf_metrics;
-};
-
-struct WhisperContextTokens {
-    std::vector<int64_t> initial_prompt;
-    std::vector<int64_t> hotwords;
 };
 
 WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,

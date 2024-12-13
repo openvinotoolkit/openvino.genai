@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "utils.hpp"
+#include "whisper/context_tokens.hpp"
 #include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
@@ -72,56 +73,6 @@ public:
         }
     }
 
-    std::pair<std::vector<int64_t>, float> tokenize(std::string text, WhisperGenerationConfig& config) {
-        if (text.empty()) {
-            return {{}, 0.0f};
-        }
-
-        auto decode_start_time = std::chrono::steady_clock::now();
-        auto encoded = m_tokenizer.encode(text, ov::genai::add_special_tokens(false));
-        auto duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time);
-
-        auto input_ids = encoded.input_ids;
-        auto input_ids_data = input_ids.data<int64_t>();
-
-        std::vector<int64_t> prompt_tokens;
-        prompt_tokens.reserve(input_ids.get_size());
-
-        // even with ov::genai::add_special_tokens(false) tokenizer adds next special tokens
-        std::set<int64_t> special_tokens{config.decoder_start_token_id,
-                                         config.eos_token_id,
-                                         config.no_timestamps_token_id};
-
-        for (size_t i = 0; i < input_ids.get_size(); i++) {
-            if (special_tokens.count(input_ids_data[i])) {
-                continue;
-            }
-
-            prompt_tokens.emplace_back(input_ids_data[i]);
-        }
-
-        return {prompt_tokens, duration};
-    }
-
-    std::pair<ov::genai::WhisperContextTokens, float> prepare_context_tokens(WhisperGenerationConfig& config) {
-        ov::genai::WhisperContextTokens context_tokens;
-        float duration = 0.0f;
-
-        if (config.initial_prompt.has_value()) {
-            auto [initial_prompt_tokens, initial_prompt_duration] = tokenize(" " + *config.initial_prompt, config);
-            context_tokens.initial_prompt = initial_prompt_tokens;
-            duration += initial_prompt_duration;
-        }
-
-        if (config.hotwords.has_value()) {
-            auto [hotwords_tokens, hotwords_duration] = tokenize(" " + *config.hotwords, config);
-            context_tokens.hotwords = hotwords_tokens;
-            duration += hotwords_duration;
-        }
-
-        return {context_tokens, duration};
-    }
-
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
                                    ChunkStreamerVariant streamer) override {
@@ -138,7 +89,7 @@ public:
             streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
 
-        auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config);
+        auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 
         auto generate_result = ov::genai::whisper_generate(config,
                                                            m_model_config,
