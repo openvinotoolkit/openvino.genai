@@ -143,7 +143,7 @@ def test_cpp_sample_greedy_causal_lm(convert_model, sample_args):
         }, 
         "How to create a table with two columns, one of them has type float, another one has type int?"
     )
-], indirect=True)
+], indirect=["convert_model"])
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["adapter_model.safetensors"]], indirect=True)
 def test_python_sample_text_generation(convert_model, download_test_content, sample_args):
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/lora.py")
