@@ -94,9 +94,6 @@ public:
 
         if (device_name.find("GPU") == std::string::npos) {
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
-
-                auto old_byte_size_key = m_key_cache[decoder_layer_id].get_byte_size();
-                auto old_byte_size_value = m_value_cache[decoder_layer_id].get_byte_size();
                 ov::Coordinate end_key(m_key_cache[decoder_layer_id].get_shape());
                 ov::Coordinate end_value(m_value_cache[decoder_layer_id].get_shape());
 
@@ -120,9 +117,6 @@ public:
         } else {
             auto remote_context = m_core.get_default_context(device_name);
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
-
-                auto old_byte_size_key = m_key_cache[decoder_layer_id].get_byte_size();
-                auto old_byte_size_value = m_value_cache[decoder_layer_id].get_byte_size();
                 ov::Coordinate end_key(m_key_cache[decoder_layer_id].get_shape());
                 ov::Coordinate end_value(m_value_cache[decoder_layer_id].get_shape());
 
