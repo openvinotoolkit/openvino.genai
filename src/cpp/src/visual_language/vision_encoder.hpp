@@ -62,18 +62,34 @@ public:
     ) : m_vision_encoder{encoder}, m_processor_config{processor_config} {}
 
     /// @brief Construct the encoder from model_dir.
-    /// @param model_dir A folder containing openvino_embedding.xml and
+    /// @param model_dir A folder containing openvino_vision_embeddings_model.xml and
     /// preprocessor_config.json.
+    /// @param model_type A type of VLM model.
     /// @param device A device to compile the encoder for.
     /// @param device_config A config to be passed to
     /// ov::Core::compile_model().
-    /// @param core ov::Core to be used to compile the model.
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
         const VLMModelType model_type,
-        const std::string& device="CPU",
-        const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{}
+        const std::string& device,
+        const ov::AnyMap device_config={}
+    );
+
+    /// @brief Construct the encoder from models map.
+    /// @param model Model IR as string (openvino_vision_embeddings_model.xml)
+    /// @param weights Model weights as tensor (openvino_vision_embeddings_model.bin)
+    /// @param config_dir_path A path to directory containing preprocessor_config.json.
+    /// @param model_type A type of VLM model.
+    /// @param device A device to compile the encoder for.
+    /// @param device_config A config to be passed to
+    /// ov::Core::compile_model().
+    explicit VisionEncoder(
+        const std::string& model,
+        const ov::Tensor& weights,
+        const std::filesystem::path& config_dir_path,
+        const VLMModelType model_type,
+        const std::string& device,
+        const ov::AnyMap device_config={}
     );
 
     /// @brief Compute embeddings of an image.

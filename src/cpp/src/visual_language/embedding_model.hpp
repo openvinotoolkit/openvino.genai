@@ -29,6 +29,12 @@ public:
                     const std::string& device,
                     const ov::AnyMap& properties);
 
+    EmbeddingsModel(const std::string& model,
+                    const ov::Tensor& weights,
+                    const float scale_emb,
+                    const std::string& device,
+                    const ov::AnyMap& properties);
+
     EmbeddingsModel() = default;
 
     ov::Tensor infer(ov::Tensor input_idx);

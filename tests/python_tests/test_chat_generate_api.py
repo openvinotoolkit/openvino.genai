@@ -158,6 +158,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         **tokenizer_config)
     
     tok = load_tok([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
+    tok.set_chat_template(tokenizer_config['chat_template'])
     full_history_str = tok.apply_chat_template(conversation, add_generation_prompt=False)
     if full_history_str != full_history_str_hf:
         print(f'hf reference: {full_history_str_hf}')
@@ -219,7 +220,6 @@ def test_add_special_tokens(add_special_tokens, prompt):
     assert np.all(res_genai == res_hf)
 
 @pytest.mark.precommit
-@pytest.mark.xfail(reason="Need to turn them back on when openvino_tokenizers will be updated.")
 @pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("skip_special_tokens", [True, False])
