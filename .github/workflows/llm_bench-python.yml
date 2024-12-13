@@ -45,7 +45,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: latest_available_commit
+        revision: 747d0e7e105c9f2c9966a37861f95b1c7f886868
 
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -98,7 +98,7 @@ jobs:
           python -m pip install flake8 pytest black
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
         env:
           CMAKE_BUILD_PARALLEL_LEVEL: 4
@@ -190,7 +190,7 @@ jobs:
         run: |
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python ${{ env.LLM_BENCH_PYPATH }}/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ${{ env.SRC_DIR }} --stateful
           grep beam_idx ${{ env.SRC_DIR }}/pytorch/dldt/FP32/openvino_model.xml
         working-directory: ${{ env.OV_INSTALL_DIR }}
