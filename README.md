@@ -107,12 +107,12 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 
 ### Converting and compressing the model from Hugging Face library
 
-```sh
-#(Basic) download and convert to OpenVINO MiniCPM-V-2_6 model
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format fp16 MiniCPM-V-2_6
+To convert the [OpenGVLab/InternVL2-1B](https://huggingface.co/OpenGVLab/InternVL2-1B) model, `timm` and `einops` are required: `pip install timm einops`.
 
-#(Recommended) Same as above but with compression: language model is compressed to int4, other model components are compressed to int8
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 --dataset contextual --num-samples 1 MiniCPM-V-2_6 
+```sh
+# Download and convert the OpenGVLab/InternVL2-1B model to OpenVINO with int4 weight-compression for the language model
+# Other components are compressed to int8
+optimum-cli export openvino -m OpenGVLab/InternVL2-1B --trust-remote-code --weight-format int4 InternVL2-1B
 ```
 
 ### Run generation using VLMPipeline API in Python
@@ -132,7 +132,7 @@ import openvino_genai as ov_genai
 from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
-pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
+pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
