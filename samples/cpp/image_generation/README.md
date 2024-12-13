@@ -52,9 +52,9 @@ Please find the template of the callback usage below.
 ```cpp
 ov::genai::Text2ImagePipeline pipe(models_path, device);
 
-auto callback = [&](size_t step, ov::Tensor& intermediate_res) -> bool {
-   std::cout << "Image generation step: " << step << std::endl;
-   ov::Tensor img = pipe.decode(intermediate_res); // get intermediate image tensor
+auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
+   std::cout << "Image generation step: " << step << " / " << num_steps << std::endl;
+   ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
    if (your_condition) // return true if you want to interrupt image generation
       return true;
    return false;
