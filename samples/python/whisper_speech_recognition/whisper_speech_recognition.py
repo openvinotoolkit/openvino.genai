@@ -18,7 +18,7 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    device = "CPU"  # GPU can be used as well
+    device = "CPU"  # GPU, NPU can be used as well
     pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
 
     config = pipe.get_generation_config()
