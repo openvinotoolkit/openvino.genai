@@ -85,9 +85,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def(py::init<>());
 
     py::class_<ov::genai::CppStdGenerator, ov::genai::Generator, std::shared_ptr<ov::genai::CppStdGenerator>>(m, "CppStdGenerator", "This class wraps std::mt19937 pseudo-random generator.")
-        .def(py::init([](
-            uint32_t seed
-        ) {
+        .def(py::init([](uint32_t seed) {
             return std::make_unique<ov::genai::CppStdGenerator>(seed);
         }), 
         py::arg("seed"))
@@ -140,9 +138,7 @@ void init_image_generation_pipelines(py::module_& m) {
         });
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
-        .def(py::init([](
-            const std::filesystem::path& models_path
-        ) {
+        .def(py::init([](const std::filesystem::path& models_path) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Text2ImagePipeline>(models_path);
         }),
@@ -151,7 +147,6 @@ void init_image_generation_pipelines(py::module_& m) {
             Text2ImagePipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
         )")
-
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
@@ -211,9 +206,7 @@ void init_image_generation_pipelines(py::module_& m) {
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
-        .def(py::init([](
-            const std::filesystem::path& models_path
-        ) {
+        .def(py::init([](const std::filesystem::path& models_path) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::Image2ImagePipeline>(models_path);
         }),
@@ -222,7 +215,6 @@ void init_image_generation_pipelines(py::module_& m) {
             Image2ImagePipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
         )")
-
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
@@ -277,9 +269,7 @@ void init_image_generation_pipelines(py::module_& m) {
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
-        .def(py::init([](
-            const std::filesystem::path& models_path
-        ) {
+        .def(py::init([](const std::filesystem::path& models_path) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::InpaintingPipeline>(models_path);
         }),
@@ -288,7 +278,6 @@ void init_image_generation_pipelines(py::module_& m) {
             InpaintingPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
         )")
-
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
@@ -342,4 +331,25 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"));
+
+    // define constructors to create one pipeline from another
+    // NOTE: needs to be defined once all pipelines are created
+
+    text2image_pipeline
+        .def(py::init([](const ov::genai::Image2ImagePipeline& pipe) {
+            return std::make_unique<ov::genai::Text2ImagePipeline>(pipe);
+        }), py::arg("pipe"))
+        .def(py::init([](const ov::genai::InpaintingPipeline& pipe) {
+            return std::make_unique<ov::genai::Text2ImagePipeline>(pipe);
+        }), py::arg("pipe"));
+
+    image2image_pipeline
+        .def(py::init([](const ov::genai::InpaintingPipeline& pipe) {
+            return std::make_unique<ov::genai::Image2ImagePipeline>(pipe);
+        }), py::arg("pipe"));
+
+    inpainting_pipeline
+        .def(py::init([](const ov::genai::Image2ImagePipeline& pipe) {
+            return std::make_unique<ov::genai::InpaintingPipeline>(pipe);
+        }), py::arg("pipe"));
 }
