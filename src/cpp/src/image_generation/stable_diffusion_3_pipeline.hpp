@@ -431,6 +431,13 @@ public:
             generation_config.strength = 1.0f;
         }
 
+        // Use callback if defined
+        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
+        }
+
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale)
@@ -467,14 +474,6 @@ public:
         // 6. Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
 
-        // Use callback if defined
-        std::function<bool(size_t, ov::Tensor&)> callback;
-        auto callback_iter = properties.find(ov::genai::callback.name());
-        bool do_callback = callback_iter != properties.end();
-        if (do_callback) {
-            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
-        }
-
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
@@ -510,10 +509,8 @@ public:
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            if (do_callback) {
-                if (callback(inference_step, latent)) {
-                    return ov::Tensor(ov::element::u8, {});
-                }
+            if (callback && callback(inference_step, timesteps.size(), latent)) {
+                return ov::Tensor(ov::element::u8, {});
             }
         }
 
