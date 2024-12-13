@@ -233,7 +233,7 @@ public:
         }
         size_t added_blocks = new_kv_blocks_count - m_total_num_blocks;
         for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
-            m_free_blocks_num[idx] = added_blocks;
+            m_free_blocks_num[idx] += added_blocks;
         }
         for (auto& per_layer_block_list : m_free_blocks) {
             for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
