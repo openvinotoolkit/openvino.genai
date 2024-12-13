@@ -311,11 +311,10 @@ public:
         generation_config.update_generation_config(properties);
 
         // use callback if defined
-        std::function<bool(size_t, ov::Tensor&)> callback;
+        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
-        bool do_callback = callback_iter != properties.end();
-        if (do_callback) {
-            callback = callback_iter->second.as<std::function<bool(size_t, ov::Tensor&)>>();
+        if (callback_iter != properties.end()) {
+            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
         // Stable Diffusion pipeline
@@ -405,10 +404,8 @@ public:
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
 
-            if (do_callback) {
-                if (callback(inference_step, denoised)) {
-                    return ov::Tensor(ov::element::u8, {});
-                }
+            if (callback && callback(inference_step, timesteps.size(), denoised)) {
+                return ov::Tensor(ov::element::u8, {});
             }
         }
 
