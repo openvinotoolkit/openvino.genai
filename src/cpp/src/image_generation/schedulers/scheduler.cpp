@@ -29,7 +29,6 @@ std::shared_ptr<Scheduler> Scheduler::from_config(const std::filesystem::path& s
 
     std::shared_ptr<Scheduler> scheduler = nullptr;
     if (scheduler_type == Scheduler::Type::LCM) {
-        // TODO: do we need to pass RNG generator somehow to LCM?
         scheduler = std::make_shared<LCMScheduler>(scheduler_config_path);
     } else if (scheduler_type == Scheduler::Type::LMS_DISCRETE) {
         scheduler = std::make_shared<LMSDiscreteScheduler>(scheduler_config_path);

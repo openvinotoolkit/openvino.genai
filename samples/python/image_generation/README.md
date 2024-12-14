@@ -52,9 +52,9 @@ Please find the template of the callback usage below.
 ```python
 pipe = openvino_genai.Text2ImagePipeline(model_dir, device)
 
-def callback(step, intermediate_res):
-   print("Image generation step: ", step)
-   image_tensor = pipe.decode(intermediate_res) # get intermediate image tensor
+def callback(step, num_steps, latent):
+   print(f"Image generation step: {step} / {num_steps}")
+   image_tensor = pipe.decode(latent) # get intermediate image tensor
    if your_condition: # return True if you want to interrupt image generation
       return True
    return False
@@ -112,7 +112,7 @@ To run the sample, download initial image first:
 
 And then run the sample:
 
-`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' small_city.bmp`
+`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
 The resuling image is:
 
