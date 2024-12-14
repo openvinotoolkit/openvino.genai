@@ -227,7 +227,7 @@ public:
         IInputsEmbedder(vlm_config, model_dir, device, device_config) {
         auto compiled_model =
             utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, device_config);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "resampler model");
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
         m_resampler = compiled_model.create_infer_request();
 
         m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
