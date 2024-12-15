@@ -126,7 +126,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                                                 get_active_sequence_groups),
                                  active_sequence_groups.end());
 
-    do {
+    while (active_sequence_groups.size() > 0) {
         size_t total_num_tokens = 0;
 
         for (auto& sequence_group : active_sequence_groups) {
@@ -202,20 +202,14 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
-        if (streamer_ptr) {
-            // not generated tokens like several prompt phase
-            if (!generations.at(0).get()->can_read()) {
-                continue;
+    if (streamer_ptr && generations.at(0).get()->can_read()) {
+        std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
+        for (const auto& gen_token : token.begin()->second.generated_ids) {
+            if (!streamer_ptr->put(gen_token)) {
+                break;
             }
-            std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
-            OPENVINO_ASSERT(1 <= token.size());
-            OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
-            for (const auto& gen_token : token.begin()->second.generated_ids) {
-                if (!streamer_ptr->put(gen_token)) {
-                    break;
-                }
-            }   
-        }
+        } 
+    }
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
 
@@ -223,7 +217,16 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                                                     active_sequence_groups.end(),
                                                     get_active_sequence_groups),
                                     active_sequence_groups.end());
-    } while (active_sequence_groups.size() > 0);
+    }
+
+    if (streamer_ptr && generations.at(0).get()->can_read()) {
+        std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
+        for (const auto& gen_token : token.begin()->second.generated_ids) {
+            if (!streamer_ptr->put(gen_token)) {
+                break;
+            }
+        } 
+    }
     
     size_t next_selected_beam = 0;
     for (size_t i = 0; i < sequence_groups.size(); i++) {
