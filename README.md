@@ -58,7 +58,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 ## Performing text generation 
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing text generation model from Hugging Face library
 
@@ -103,7 +103,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+a
 ## Performing visual language text generation
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing the model from Hugging Face library
 
@@ -173,7 +173,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-l
 
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing image generation model from Hugging Face library
 
@@ -335,7 +335,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+
 ## Speech-to-text processing using Whisper Pipeline
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
  
@@ -397,7 +397,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 ## Additional materials
 
 - [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
-- [OpenVINO LLM inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+- [OpenVINO Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
 ## License

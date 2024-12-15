@@ -112,7 +112,7 @@ To run the sample, download initial image first:
 
 And then run the sample:
 
-`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' small_city.bmp`
+`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
 The resuling image is:
 

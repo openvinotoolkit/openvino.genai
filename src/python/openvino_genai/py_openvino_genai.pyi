@@ -772,6 +772,9 @@ class Image2ImagePipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Image2ImagePipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: InpaintingPipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -868,6 +871,9 @@ class InpaintingPipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: InpaintingPipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: Image2ImagePipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -1535,6 +1541,12 @@ class Text2ImagePipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Text2ImagePipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: Image2ImagePipeline) -> None:
+        ...
+    @typing.overload
+    def __init__(self, pipe: InpaintingPipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.

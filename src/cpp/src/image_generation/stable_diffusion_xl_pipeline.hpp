@@ -116,6 +116,15 @@ public:
         m_force_zeros_for_empty_prompt = true;
     }
 
+    StableDiffusionXLPipeline(PipelineType pipeline_type, const StableDiffusionXLPipeline& pipe) :
+        StableDiffusionXLPipeline(pipe) {
+        OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
+            pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
+
+        m_pipeline_type = pipeline_type;
+        initialize_generation_config("StableDiffusionXLPipeline");
+    }
+
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
 
@@ -291,8 +300,13 @@ private:
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        m_generation_config.height = unet_config.sample_size * vae_scale_factor;
-        m_generation_config.width = unet_config.sample_size * vae_scale_factor;
+        m_generation_config = ImageGenerationConfig();
+
+        // in case of image to image, the shape is computed based on initial image
+        if (m_pipeline_type != PipelineType::IMAGE_2_IMAGE) {
+            m_generation_config.height = unet_config.sample_size * vae_scale_factor;
+            m_generation_config.width = unet_config.sample_size * vae_scale_factor;
+        }
 
         if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLImg2ImgPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {

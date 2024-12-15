@@ -3,30 +3,10 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-#include <random>
-#include <filesystem>
-
-#include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
-
-#include "openvino/genai/image_generation/scheduler.hpp"
-#include "openvino/genai/image_generation/generation_config.hpp"
-
-#include "openvino/genai/image_generation/clip_text_model.hpp"
-#include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
-#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
-#include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
-#include "openvino/genai/image_generation/autoencoder_kl.hpp"
-#include "openvino/genai/image_generation/t5_encoder_model.hpp"
-#include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
 
 namespace ov {
 namespace genai {
-
-// forward declaration
-class DiffusionPipeline;
 
 /**
  * Text to image pipelines which provides unified API to all supported models types.
@@ -62,6 +42,20 @@ public:
                        const std::string& device,
                        Properties&&... properties)
         : Text2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    /**
+     * Creates text to image pipeline based on image to image pipeline and shares models
+     * @param pipe Image to image pipeline to share models with
+     * @note Generation config is not shared with image to image pipeline and default one is created
+     */
+    Text2ImagePipeline(const Image2ImagePipeline& pipe);
+
+    /**
+     * Creates text to image pipeline based on inpainting pipeline and shares models
+     * @param pipe Inpainting pipeline to share models with
+     * @note Generation config is not shared with image to image pipeline and default one is created
+     */
+    Text2ImagePipeline(const InpaintingPipeline& pipe);
 
     /**
      * Creates Stable Diffusion pipeline from individual models
@@ -178,6 +172,15 @@ public:
      * @param guidance_scale A guidance scale. Note, that it's important whether guidance_scale > 1, which affects whether negative prompts
      * are used or not. For example, all values > 1 are the same for reshape perspective and may vary in subsequent 'generate()' calls.
      * @note If pipeline has been already compiled, it cannot be reshaped and an exception is thrown.
+     * 
+     * Example how to reshape SD3 or Flux models for specific max sequence length:
+     * @code
+     *  ov::genai::Text2ImagePipeline pipe("/path");
+     *  ov::genai::ImageGenerationConfig default_config = pipe.get_generation_config();
+     *  default_config.max_sequence_length = 30;
+     *  pipe.set_generation_config(default_config);
+     *  pipe.reshape(1, 512, 512, default_config.guidance_scale); // reshape will bypass `max_sequence_length` to T5 encoder model
+     * @endcode
      */
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale);
 
@@ -200,7 +203,7 @@ public:
      * Generates image(s) based on prompt and other image generarion parameters
      * @param positive_prompt Prompt to generate image(s) from
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
-     * @return A tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
     ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 
