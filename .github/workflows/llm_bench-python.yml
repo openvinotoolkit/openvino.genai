@@ -139,7 +139,7 @@ jobs:
           python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-tiny --media multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/3283_1447_000000.flac -d cpu -n 1
       - name: Text llava-next-tiny on Linux
         run: |
-          optimum-cli export openvino --model katuni4ka/tiny-random-llava-next ./ov_models/tiny-random-llava-next
+          optimum-cli export openvino --model katuni4ka/tiny-random-llava-next ./ov_models/tiny-random-llava-next --task image-text-to-text
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava-next --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?"
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava-next --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" --optimum
       - name: WWB Tests
