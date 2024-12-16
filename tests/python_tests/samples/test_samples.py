@@ -1,7 +1,8 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import subprocess
+# nosec B404
+
 import os
 from subprocess import run
 import tempfile
