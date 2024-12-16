@@ -189,7 +189,6 @@ def load_image_genai(image_path):
 def run_image_text_generation_genai(
     inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id, mem_consumption
 ):
-    set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
