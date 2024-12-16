@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cassert>
-#include <ctime>
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
