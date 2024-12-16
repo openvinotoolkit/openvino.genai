@@ -21,8 +21,8 @@ Users can change the sample code and play with the following generation paramete
 - (Image to image and inpainting) Play with `strength` parameter to control how initial image is noised and reduce number of inference steps
 
 > [!NOTE]  
-> All samples use `openvino_genai.TorchGenerator` as an argument to `generate` call to align random numbers generation with Diffusers library where `torch.Generator` is used underhood.
-> To have the same results in HuggingFace, pass manually created `torch.Generator(device='cpu').manual_seed(42)` to Diffusers generation pipelines to fix `seed` parameter.
+> OpenVINO GenAI is written in C++ and uses `CppStdGenerator` random generator in Image Generation pipelines, while Diffusers library uses `torch.Generator` underhood.
+> To have the same results with HuggingFace, pass manually created `torch.Generator(device='cpu').manual_seed(seed)` to Diffusers generation pipelines and `openvino_genai.TorchGenerator(seed)` to OpenVINO GenAI pipelines as value for `generator` kwarg.
 
 ## Download and convert the models and tokenizers
 
@@ -45,7 +45,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting`
 
-   ![](./text2image.bmp)
+   ![](./../../cpp/image_generation/512x512.bmp)
 
 ### Run with callback
 
@@ -89,7 +89,7 @@ Check the difference:
 
 With adapter | Without adapter
 :---:|:---:
-![](./lora.bmp) | ![](./baseline.bmp)
+![](./../../cpp/image_generation/lora.bmp) | ![](./../../cpp/image_generation/baseline.bmp)
 
 ## Run text to image with multiple devices
 

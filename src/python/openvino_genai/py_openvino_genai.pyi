@@ -398,6 +398,8 @@ class CppStdGenerator(Generator):
         ...
     def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
         ...
+    def seed(self, new_seed: int) -> None:
+        ...
 class DecodedResults:
     """
     
@@ -804,6 +806,7 @@ class Image2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
             generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
@@ -836,6 +839,7 @@ class ImageGenerationConfig:
     num_inference_steps: int
     prompt_2: str | None
     prompt_3: str | None
+    rng_seed: int
     strength: float
     width: int
     def __init__(self) -> None:
@@ -903,6 +907,7 @@ class InpaintingPipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
             generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
@@ -1576,6 +1581,7 @@ class Text2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
             generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
@@ -1658,6 +1664,8 @@ class TorchGenerator(CppStdGenerator):
     def next(self) -> float:
         ...
     def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
+        ...
+    def seed(self, new_seed: int) -> None:
         ...
 class UNet2DConditionModel:
     """

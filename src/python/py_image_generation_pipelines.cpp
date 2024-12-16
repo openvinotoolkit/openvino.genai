@@ -44,6 +44,7 @@ auto text2image_generate_docstring = R"(
     height: int - height of resulting images,
     width: int - width of resulting images,
     num_inference_steps: int - number of inference steps,
+    rng_seed: int - a seed for random numbers generator,
     generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
     adapters: LoRA adapters,
     strength: strength for image to image generation. 1.0f means initial image is fully noised,
@@ -63,6 +64,10 @@ public:
     ov::Tensor randn_tensor(const ov::Shape& shape) override {
         PYBIND11_OVERRIDE(ov::Tensor, Generator, randn_tensor, shape);
     }
+
+    void seed(size_t new_seed) override {
+        PYBIND11_OVERRIDE_PURE(void, Generator, seed, new_seed);
+    }
 };
 
 py::list to_py_list(const ov::Shape shape) {
@@ -76,45 +81,73 @@ py::list to_py_list(const ov::Shape shape) {
 class TorchGenerator : public ov::genai::CppStdGenerator {
     py::module_ m_torch;
     py::object m_torch_generator, m_float32;
-    py::object m_torch_tensor; // we need to hold torch.Tensor to avoid memory destruction
+
+    void create_torch_generator(size_t seed) {
+        m_torch_generator = m_torch.attr("Generator")("device"_a="cpu").attr("manual_seed")(seed);
+    }
 public:
     explicit TorchGenerator(uint32_t seed) : CppStdGenerator(seed) {
         try {
             m_torch = py::module_::import("torch");
-            m_torch_generator = m_torch.attr("Generator")("device"_a="cpu").attr("manual_seed")(seed);
-            m_float32 = m_torch.attr("float32");
         } catch (const py::error_already_set& e) {
             if (e.matches(PyExc_ModuleNotFoundError)) {
-                PyErr_WarnEx(PyExc_ImportWarning, "'torch' module is not installed. Random generation will fall back to 'CppStdGenerator'", 1);
+                throw std::runtime_error("The 'torch' package is not installed. Please, call 'pip install torch' or use 'rng_seed' parameter.");
             } else {
                 // Re-throw other exceptions
                 throw;
             }
         }
+
+        m_float32 = m_torch.attr("float32");
+        create_torch_generator(seed);
     }
 
     float next() override {
-        if (m_torch) {
-            return m_torch.attr("randn")(1, "generator"_a=m_torch_generator, "dtype"_a=m_float32).attr("item")().cast<float>();
-        } else {
-            return CppStdGenerator::next();
-        }
+        return m_torch.attr("randn")(1, "generator"_a=m_torch_generator, "dtype"_a=m_float32).attr("item")().cast<float>();
     }
 
     ov::Tensor randn_tensor(const ov::Shape& shape) override {
-        if (m_torch) {
-            m_torch_tensor = m_torch.attr("randn")(to_py_list(shape), "generator"_a=m_torch_generator, "dtype"_a=m_float32);
-            py::object numpy_tensor = m_torch_tensor.attr("numpy")();
-            py::array numpy_array = py::cast<py::array>(numpy_tensor);
+        py::object torch_tensor = m_torch.attr("randn")(to_py_list(shape), "generator"_a=m_torch_generator, "dtype"_a=m_float32);
+        py::object numpy_tensor = torch_tensor.attr("numpy")();
+        py::array numpy_array = py::cast<py::array>(numpy_tensor);
 
-            if (!numpy_array.dtype().is(py::dtype::of<float>())) {
-                throw std::runtime_error("Expected a NumPy array with dtype float32");
+        if (!numpy_array.dtype().is(py::dtype::of<float>())) {
+            throw std::runtime_error("Expected a NumPy array with dtype float32");
+        }
+
+        class TorchTensorAllocator {
+            size_t m_total_size;
+            void * m_mutable_data;
+            py::object m_torch_tensor; // we need to hold torch.Tensor to avoid memory destruction
+
+        public:
+            TorchTensorAllocator(size_t total_size, void * mutable_data, py::object torch_tensor) :
+                m_total_size(total_size), m_mutable_data(mutable_data), m_torch_tensor(torch_tensor) { }
+
+            void* allocate(size_t bytes, size_t) const {
+                if (m_total_size == bytes) {
+                    return m_mutable_data;
+                }
+                throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
             }
 
-            return ov::Tensor(ov::element::f32, shape, numpy_array.mutable_data());
-        } else {
-            return CppStdGenerator::randn_tensor(shape);
-        }
+            void deallocate(void*, size_t bytes, size_t) {
+                if (m_total_size != bytes) {
+                    throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
+                }
+            }
+
+            bool is_equal(const TorchTensorAllocator& other) const noexcept {
+                return this == &other;
+            }
+        };
+
+        return ov::Tensor(ov::element::f32, shape,
+            TorchTensorAllocator(ov::shape_size(shape) * ov::element::f32.size(), numpy_array.mutable_data(), torch_tensor));
+    }
+
+    void seed(size_t new_seed) override {
+        create_torch_generator(new_seed);
     }
 };
 
@@ -135,18 +168,18 @@ void init_image_generation_pipelines(py::module_& m) {
     py::class_<ov::genai::CppStdGenerator, ov::genai::Generator, std::shared_ptr<ov::genai::CppStdGenerator>>(m, "CppStdGenerator", "This class wraps std::mt19937 pseudo-random generator.")
         .def(py::init([](uint32_t seed) {
             return std::make_unique<ov::genai::CppStdGenerator>(seed);
-        }), 
-        py::arg("seed"))
+        }), py::arg("seed"))
         .def("next", &ov::genai::CppStdGenerator::next)
-        .def("randn_tensor", &ov::genai::CppStdGenerator::randn_tensor, py::arg("shape"));
+        .def("randn_tensor", &ov::genai::CppStdGenerator::randn_tensor, py::arg("shape"))
+        .def("seed", &ov::genai::CppStdGenerator::seed, py::arg("new_seed"));
 
     py::class_<::TorchGenerator, ov::genai::CppStdGenerator, std::shared_ptr<::TorchGenerator>>(m, "TorchGenerator", "This class provides OpenVINO GenAI Generator wrapper for torch.Generator")
         .def(py::init([](uint32_t seed) {
             return std::make_unique<::TorchGenerator>(seed);
-        }), 
-        py::arg("seed"))
+        }), py::arg("seed"))
         .def("next", &::TorchGenerator::next)
-        .def("randn_tensor", &::TorchGenerator::randn_tensor, py::arg("shape"));
+        .def("randn_tensor", &::TorchGenerator::randn_tensor, py::arg("shape"))
+        .def("seed", &::TorchGenerator::seed, py::arg("new_seed"));
 
     // init image generation models
     init_clip_text_model(m);
@@ -178,6 +211,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("negative_prompt_2", &ov::genai::ImageGenerationConfig::negative_prompt_2)
         .def_readwrite("negative_prompt_3", &ov::genai::ImageGenerationConfig::negative_prompt_3)
         .def_readwrite("generator", &ov::genai::ImageGenerationConfig::generator)
+        .def_readwrite("rng_seed", &ov::genai::ImageGenerationConfig::rng_seed)
         .def_readwrite("guidance_scale", &ov::genai::ImageGenerationConfig::guidance_scale)
         .def_readwrite("height", &ov::genai::ImageGenerationConfig::height)
         .def_readwrite("width", &ov::genai::ImageGenerationConfig::width)

@@ -22,9 +22,7 @@ def main():
         width=512,
         height=512,
         num_inference_steps=20,
-        num_images_per_prompt=1,
-        generator=openvino_genai.TorchGenerator(42)  # openvino_genai.CppStdGenerator can be used to have same images as C++ sample
-    )
+        num_images_per_prompt=1)
 
     image = Image.fromarray(image_tensor.data[0])
     image.save("image.bmp")

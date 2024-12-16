@@ -32,12 +32,13 @@ def main():
 
     # LoRA adapters passed to the constructor will be activated by default in next generates
     pipe = openvino_genai.Text2ImagePipeline(args.models_path, device, adapters=adapter_config)
+
     print("Generating image with LoRA adapters applied, resulting image will be in lora.bmp")
     image = pipe.generate(prompt,
                           width=512,
                           height=896,
                           num_inference_steps=20,
-                          generator=openvino_genai.TorchGenerator(42))
+                          rng_seed=42)
 
     image_write("lora.bmp", image)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
@@ -47,7 +48,7 @@ def main():
                           width=512,
                           height=896,
                           num_inference_steps=20,
-                          generator=openvino_genai.TorchGenerator(42))
+                          rng_seed=42)
     image_write("baseline.bmp", image)
 
 

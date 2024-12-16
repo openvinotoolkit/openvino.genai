@@ -194,13 +194,7 @@ import openvino_genai
 
 device = 'CPU'  # GPU can be used as well
 pipe = openvino_genai.Text2ImagePipeline("./dreamlike_anime_1_0_ov/INT8", device)
-image_tensor = pipe.generate(
-    "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
-    width=512,
-    height=512,
-    num_inference_steps=20,
-    generator=openvino_genai.TorchGenerator(42)
-)
+image_tensor = pipe.generate("cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting")
 
 image = Image.fromarray(image_tensor.data[0])
 image.save("image.bmp")
@@ -219,10 +213,7 @@ int main(int argc, char* argv[]) {
    const std::string device = "CPU";  // GPU can be used as well
 
    ov::genai::Text2ImagePipeline pipe(models_path, device);
-   ov::Tensor image = pipe.generate(prompt,
-        ov::genai::width(512),
-        ov::genai::height(512),
-        ov::genai::num_inference_steps(20));
+   ov::Tensor image = pipe.generate(prompt);
 
    imwrite("image.bmp", image, true);
 }
@@ -246,8 +237,7 @@ image_data = ov.Tensor(image_data)
 image_tensor = pipe.generate(
     "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
     image=image_data,
-    strength=0.8,
-    generator=openvino_genai.TorchGenerator(42)
+    strength=0.8
 )
 
 image = Image.fromarray(image_tensor.data[0])
@@ -298,8 +288,7 @@ mask_image = read_image("mask.jpg")
 image_tensor = pipe.generate(
     "Face of a yellow cat, high resolution, sitting on a park bench",
     image=image,
-    mask_image=mask_image,
-    generator=openvino_genai.TorchGenerator(42)
+    mask_image=mask_image
 )
 
 image = Image.fromarray(image_tensor.data[0])

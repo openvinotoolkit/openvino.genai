@@ -28,8 +28,7 @@ def main():
     image = read_image(args.image)
     mask_image = read_image(args.mask)
 
-    image_tensor = pipe.generate(args.prompt, image, mask_image,
-        generator=openvino_genai.TorchGenerator(42))
+    image_tensor = pipe.generate(args.prompt, image, mask_image)
 
     image = Image.fromarray(image_tensor.data[0])
     image.save("image.bmp")
