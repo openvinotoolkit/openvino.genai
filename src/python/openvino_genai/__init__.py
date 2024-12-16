@@ -28,9 +28,8 @@ from .py_openvino_genai import (
 
 # LLM pipeline
 from .py_openvino_genai import (
-    LLMPipeline,
-    prompt_lookup
-
+    LLMPipeline, 
+    draft_model,
 )
 
 # LoRA

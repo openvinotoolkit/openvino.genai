@@ -134,6 +134,8 @@ public:
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
+    OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
+    bool is_speculative_decoding() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;
     void update_generation_config(const ov::AnyMap& config_map);

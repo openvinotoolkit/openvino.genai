@@ -126,6 +126,10 @@ bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
+bool GenerationConfig::is_speculative_decoding() const {
+    return is_assisting_generation();
+}
+
 bool GenerationConfig::is_assisting_generation() const {
     return (assistant_confidence_threshold > 0 || num_assistant_tokens > 0);
 }
