@@ -147,6 +147,18 @@ public:
         initialize_generation_config(pipeline_name);
     }
 
+    StableDiffusionPipeline(PipelineType pipeline_type, const StableDiffusionPipeline& pipe) :
+        StableDiffusionPipeline(pipe) {
+        OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
+            pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
+
+        m_pipeline_type = pipeline_type;
+
+        const bool is_lcm = m_unet->get_config().time_cond_proj_dim > 0;
+        const char * const pipeline_name = is_lcm ? "LatentConsistencyModelPipeline" : "StableDiffusionPipeline";
+        initialize_generation_config(pipeline_name);
+    }
+
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
 
@@ -206,8 +218,7 @@ public:
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const bool is_inpainting = m_pipeline_type == PipelineType::INPAINTING,
             is_strength_max = is_inpainting && generation_config.strength == 1.0f,
-            is_inpainting_model = is_inpainting && m_unet->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1),
-            return_image_latent = is_inpainting && !is_inpainting_model;
+            return_image_latent = is_inpainting && !is_inpainting_model();
 
         ov::Shape latent_shape{generation_config.num_images_per_prompt, m_vae->get_config().latent_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
@@ -254,7 +265,6 @@ public:
 
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        const bool is_inpainting_model = m_unet->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1);
         ov::Shape target_shape = processed_image.get_shape();
 
         ov::Tensor mask_condition = m_image_resizer->execute(mask_image, target_shape[2], target_shape[3]);
@@ -266,7 +276,7 @@ public:
 
         ov::Tensor masked_image_latent;
 
-        if (is_inpainting_model) {
+        if (is_inpainting_model()) {
             // create masked image
             ov::Tensor masked_image(ov::element::f32, processed_image.get_shape());
             const float * mask_condition_data = mask_condition.data<const float>();
@@ -300,11 +310,6 @@ public:
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
-        if (!initial_image) {
-            // in case of typical text to image generation, we need to ignore 'strength'
-            generation_config.strength = 1.0f;
-        }
-
         // use callback if defined
         std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
@@ -318,12 +323,12 @@ public:
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        const bool is_inpainting_model = unet_config.in_channels == (m_vae->get_config().latent_channels * 2 + 1);
 
         if (generation_config.height < 0)
             compute_dim(generation_config.height, initial_image, 1 /* assume NHWC */);
         if (generation_config.width < 0)
             compute_dim(generation_config.width, initial_image, 2 /* assume NHWC */);
+
         check_inputs(generation_config, initial_image);
 
         set_lora_adapters(generation_config.adapters);
@@ -364,7 +369,7 @@ public:
 
             m_scheduler->scale_model_input(latent_cfg, inference_step);
 
-            ov::Tensor latent_model_input = is_inpainting_model ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
+            ov::Tensor latent_model_input = is_inpainting_model() ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
 
@@ -391,7 +396,7 @@ public:
             latent = scheduler_step_result["latent"];
 
             // in case of non-specialized inpainting model, we need manually mask current denoised latent and initial image latent
-            if (m_pipeline_type == PipelineType::INPAINTING && !is_inpainting_model) {
+            if (m_pipeline_type == PipelineType::INPAINTING && !is_inpainting_model()) {
                 blend_latents(image_latent, noise, mask, latent, inference_step);
             }
 
@@ -412,6 +417,12 @@ public:
     }
 
 protected:
+    bool is_inpainting_model() const {
+        assert(m_unet != nullptr);
+        assert(m_vae != nullptr);
+        return m_unet->get_config().in_channels == (m_vae->get_config().latent_channels * 2 + 1);
+    }
+
     void compute_dim(int64_t & generation_config_value, ov::Tensor initial_image, int dim_idx) {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& unet_config = m_unet->get_config();
@@ -435,13 +446,15 @@ protected:
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
+        m_generation_config = ImageGenerationConfig();
+
         // in case of image to image, the shape is computed based on initial image
         if (m_pipeline_type != PipelineType::IMAGE_2_IMAGE) {
             m_generation_config.height = unet_config.sample_size * vae_scale_factor;
             m_generation_config.width = unet_config.sample_size * vae_scale_factor;
         }
 
-        if (class_name == "StableDiffusionPipeline" || class_name == "StableDiffusionInpaintPipeline" || class_name == "StableDiffusionInpaintPipeline") {
+        if (class_name == "StableDiffusionPipeline" || class_name == "StableDiffusionImg2ImgPipeline" || class_name == "StableDiffusionInpaintPipeline") {
             m_generation_config.guidance_scale = 7.5f;
             m_generation_config.num_inference_steps = 50;
             m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.8f : 1.0f;
