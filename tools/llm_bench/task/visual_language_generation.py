@@ -26,7 +26,7 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
-def run_image_text_generation_optimum(
+def run_visual_language_generation_optimum(
     inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, bench_hook, model_precision, proc_id, mem_consumption
 ):
     set_seed(args['seed'])
@@ -186,7 +186,7 @@ def load_image_genai(image_path):
     return ov.Tensor(image_data)
 
 
-def run_image_text_generation_genai(
+def run_visual_language_generation_genai(
     inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id, mem_consumption
 ):
     if args['batch_size'] != 1:
@@ -291,7 +291,7 @@ def run_image_text_generation_genai(
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
-def run_image_text_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     model, processor, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_image_text_gen_model(model_path, device, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -313,9 +313,9 @@ def run_image_text_generation_benchmark(model_path, framework, device, args, num
              f'prompt nums: {len(image_text_list)}, prompt idx: {prompt_idx_list}')
 
     if not use_genai:
-        gen_fn = run_image_text_generation_optimum
+        gen_fn = run_visual_language_generation_optimum
     else:
-        gen_fn = run_image_text_generation_genai
+        gen_fn = run_visual_language_generation_genai
 
     proc_id = os.getpid()
     iter_timestamp = model_utils.init_timestamp(num_iters, image_text_list, prompt_idx_list)

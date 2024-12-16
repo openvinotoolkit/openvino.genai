@@ -537,7 +537,7 @@ def get_vlm_processor(model_path):
         preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
     else:
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-        preprocessors = {"processor": processor, "tokenizer": None}
+        preprocessors = {"processor": processor, "tokenizer": processor}
     return preprocessors
 
 

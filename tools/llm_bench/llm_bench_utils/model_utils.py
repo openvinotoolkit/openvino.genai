@@ -43,6 +43,8 @@ def get_param_from_file(args, input_key):
                 data_dict["media"] = args["media"]
             if args["prompt"] is None:
                 data_dict["prompt"] = "What is OpenVINO?" if args["media"] is None else "Describe image"
+            else:
+                data_dict["prompt"] = args["prompt"]
             data_list.append(data_dict)
     else:
         input_prompt_list = args['prompt_file']
