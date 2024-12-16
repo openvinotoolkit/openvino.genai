@@ -39,6 +39,16 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
     }
 }
 
+Image2ImagePipeline::Image2ImagePipeline(const InpaintingPipeline& pipe) {
+    if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion_xl);
+    } else if (auto stable_diffusion = std::dynamic_pointer_cast<StableDiffusionPipeline>(pipe.m_impl); stable_diffusion != nullptr) {
+        m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion);
+    } else {
+        OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Image2ImagePipeline");
+    }
+}
+
 Image2ImagePipeline::Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
     : m_impl(impl) {
     assert(m_impl != nullptr);
