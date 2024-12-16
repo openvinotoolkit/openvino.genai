@@ -58,11 +58,7 @@ def convert_model(request):
             command.extend(extra_args)
         result = subprocess.run(command, check=True)
         assert result.returncode == 0, f"Model {model_name} conversion failed"
-    yield model_path
-    # Cleanup the model after tests
-    if os.path.exists(model_path):
-        print(f"Removing converted model: {model_path}")
-        shutil.rmtree(model_path)
+    return model_path
 
 @pytest.fixture(scope="session")
 def download_test_content(request):
@@ -80,11 +76,7 @@ def download_test_content(request):
         print(f"Downloaded test content to {file_path}")
     else:
         print(f"Test content already exists at {file_path}")
-    yield file_path
-    # Cleanup the test content after tests
-    if os.path.exists(file_path):
-        print(f"Removing test content: {file_path}")
-        os.remove(file_path)
+    return file_path
 
 # whisper_speech_recognition sample
 @pytest.mark.whisper
@@ -157,3 +149,54 @@ def test_python_sample_text_generation(convert_model, download_test_content, sam
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/lora.py")
     result = subprocess.run(["python", script, convert_model, download_test_content, sample_args], check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model}"
+    
+# multinomial_causal_lm sample
+# A shared fixture to hold data
+@pytest.fixture(scope="session")
+def shared_data():
+    return {}
+
+@pytest.mark.llm
+@pytest.mark.py
+@pytest.mark.parametrize("convert_model, sample_args", [
+    (
+        {
+            "model_id": "open_llama_3b_v2", 
+            "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]
+        }, 
+        "return 0"
+    )
+], indirect=["convert_model"])
+def test_python_sample_multinomial_causal_lm_1(convert_model, sample_args, shared_data):
+    script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
+    result = subprocess.run(["python", script, convert_model, sample_args], check=True, capture_output=True, text=True)
+    assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
+    shared_data["result1"] = result.stdout
+
+@pytest.mark.llm    
+@pytest.mark.cpp
+@pytest.mark.parametrize("convert_model", [
+    (
+        {
+        "model_id": "open_llama_3b_v2", 
+        "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]
+        },
+        "return 0"
+    ),
+], indirect=["convert_model"])
+def test_cpp_sample_multinomial_causal_lm_2(convert_model, shared_data):
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
+    result = subprocess.run([cpp_sample, convert_model, "a"], check=True, capture_output=True, text=True)
+    assert result.returncode == 0, "C++ sample execution failed"
+    shared_data["result2"] = result.stdout
+
+@pytest.mark.llm    
+@pytest.mark.cpp
+@pytest.mark.py
+def test_sample_multinomial_causal_lm_diff(shared_data, request):
+    if not shared_data.get("result1") or not shared_data.get("result2") :
+        pytest.skip("Skipping because one of the prior tests was skipped or failed.")
+    print("Checking if the results match")
+    print(shared_data["result1"])
+    print(shared_data["result2"])
+    assert shared_data["result1"] == shared_data["result2"], "Results should match"
