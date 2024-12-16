@@ -58,7 +58,11 @@ def convert_model(request):
             command.extend(extra_args)
         result = subprocess.run(command, check=True)
         assert result.returncode == 0, f"Model {model_name} conversion failed"
-    return model_path
+    yield model_path
+    # Cleanup the model after tests
+    if os.path.exists(model_path):
+        print(f"Removing converted model: {model_path}")
+        shutil.rmtree(model_path)
 
 @pytest.fixture(scope="session")
 def download_test_content(request):
@@ -76,7 +80,11 @@ def download_test_content(request):
         print(f"Downloaded test content to {file_path}")
     else:
         print(f"Test content already exists at {file_path}")
-    return file_path
+    yield file_path
+    # Cleanup the test content after tests
+    if os.path.exists(file_path):
+        print(f"Removing test content: {file_path}")
+        os.remove(file_path)
 
 # whisper_speech_recognition sample
 @pytest.mark.whisper
