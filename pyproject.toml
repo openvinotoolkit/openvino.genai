@@ -54,7 +54,7 @@ requires = [
     "py-build-cmake==0.3.3",
     "openvino~=2025.0.0.0.dev",
     "pybind11-stubgen==2.5.1",
-    "cmake~=3.23.0"
+    "cmake~=3.31.2"
 ]
 build-backend = "py_build_cmake.build"
 
