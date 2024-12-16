@@ -221,6 +221,8 @@ class SequenceGroup {
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
 
+    size_t m_num_streamed_tokens = 0;
+
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
@@ -612,7 +614,7 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void notify_handle(size_t num_output_token_to_push = 0) {
+    void notify_handle() {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
@@ -626,10 +628,18 @@ public:
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
-            if (num_total_seqs() == 1 &&
-                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
-                if (num_output_token_to_push)
-                    push_partial_outputs(num_output_token_to_push);
+            if (num_total_seqs() == 1) {
+                const auto generated_len = m_sequences.front()->get_generated_len();
+                // speculative decoding draft handling
+                if (generated_len < m_num_streamed_tokens) {
+                    m_num_streamed_tokens = generated_len;
+                }
+                OPENVINO_ASSERT(generated_len >= m_num_streamed_tokens);
+                auto delta = generated_len - m_num_streamed_tokens;
+
+                size_t num_output_token_to_push = generated_len - m_num_streamed_tokens;
+                push_partial_outputs(num_output_token_to_push);
+                m_num_streamed_tokens += (num_output_token_to_push);
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }

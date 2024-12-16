@@ -273,7 +273,7 @@ public:
         } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
             streamer_ptr = *streamer_obj;
         } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-            streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+            streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback, generation_config->stop_strings);
         }
 
         auto batch_size = input_ids.get_shape().at(0);

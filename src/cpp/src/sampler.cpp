@@ -578,8 +578,6 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
         if (!sampling_params.stop_strings.empty()) {
             int num_matched_last_tokens = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), sampling_params.stop_strings);
             if (num_matched_last_tokens) {
-                if (!sampling_params.include_stop_str_in_output)
-                    running_sequence->remove_last_tokens(num_matched_last_tokens);
                 running_sequence->set_status(SequenceStatus::FINISHED);
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                 dropped_seq_ids.push_back(running_sequence->get_id());
@@ -886,8 +884,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             // Notify handle after sampling is done. 
             // For non-streaming this is effective only when the generation is finished.
             OPENVINO_ASSERT(num_tokens_to_process >= max_removed_tokens_per_request);
-            size_t num_output_token_to_push = num_tokens_to_process - max_removed_tokens_per_request + 1;
-            sequence_group->notify_handle(num_output_token_to_push);
+            sequence_group->notify_handle();
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }

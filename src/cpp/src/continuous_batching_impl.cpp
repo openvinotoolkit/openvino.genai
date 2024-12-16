@@ -246,8 +246,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         [](const std::shared_ptr<StreamerBase>& streamer) {
             return streamer;
         },
-        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
+        [this, &sampling_params](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return sampling_params.size() == 1 ? std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer, sampling_params.begin()->stop_strings) : std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
         }
     }, streamer);
 
@@ -275,8 +275,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         m_requests.clear();
     };
 
-    bool continue_generation = true;
-    while (has_non_finished_requests() && continue_generation) {
+    while (has_non_finished_requests()) {
         try {
             step();
         } catch (...) {
@@ -297,11 +296,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         streamer_ptr->end();
     }
 
-    if (!continue_generation) {
-        drop_requests();
-    } else {
-        OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
-    }
+    OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
         const auto& generation = generations[generation_idx];
