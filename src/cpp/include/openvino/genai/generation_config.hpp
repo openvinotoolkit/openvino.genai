@@ -134,7 +134,7 @@ public:
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
-    OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
+    OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2025.0.0 release")
     bool is_speculative_decoding() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;

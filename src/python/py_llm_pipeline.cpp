@@ -24,7 +24,6 @@ using ov::genai::StreamerVariant;
 using ov::genai::DecodedResults;
 using ov::genai::Tokenizer;
 using ov::genai::draft_model;
-using ov::genai::prompt_lookup;
 
 namespace {
 
