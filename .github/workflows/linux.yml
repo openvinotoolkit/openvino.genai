@@ -469,6 +469,15 @@ jobs:
                 -S ./openvino -B ./build
           cmake --build ./build --target package -j
 
+      - name: Run javascript tests
+        working-directory: ${{ env.GENAI_REPO }}/src/js
+        run: |
+          mkdir bin
+          cp ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz bin
+          cd bin && tar -xzf genai_nodejs_bindings.tar.gz && rm genai_nodejs_bindings.tar.gz cd ..
+          npm install
+          npm test
+
       #
       # Upload build artifacts and logs
       #
