@@ -163,7 +163,7 @@ struct RegexParser {
     std::regex pattern;
     size_t capture_index;
     RegexParser (const std::string& pattern, size_t capture_index) : pattern(pattern), capture_index(capture_index) {}
-    std::optional<std::string> operator() (const std::string& name) {
+    std::optional<std::string> operator() (const std::string& name) const {
         std::smatch match;
         if(std::regex_match(name, match, pattern)) {
             return match[capture_index];
@@ -808,6 +808,87 @@ std::shared_ptr<v0::Constant> alpha_as_constant(float alpha) {
 }
 
 
+class ReplaceRule {
+    RegexParser src_pattern;
+    std::string dst_pattern;
+    size_t dst_pos;
+public:
+    ReplaceRule (const std::string& _src_pattern, const std::string& _dst_pattern, size_t group = 1) :
+    src_pattern(_src_pattern, group),
+    dst_pattern(_dst_pattern),
+    dst_pos(dst_pattern.find("{}")) {
+        dst_pattern.erase(dst_pos, 2);
+    }
+
+    std::optional<std::string> operator() (const std::string& src) const {
+        if(auto match = src_pattern(src)) {
+            return dst_pattern.substr(0, dst_pos) + *match + dst_pattern.substr(dst_pos);
+        }
+        return std::nullopt;
+    }
+};
+
+std::optional<std::string> replace_by_rules (const std::string& src, const std::vector<ReplaceRule>& rules) {
+    for(auto rule: rules) {
+        if(auto dst = rule(src)) {
+            return dst;
+        }
+    }
+    return std::nullopt;
+}
+
+LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
+    std::vector<ReplaceRule> rules = {
+        {
+            "lora_unet_double_blocks_(\\d+)_img_attn_proj",
+            "transformer.transformer_blocks.{}.attn.to_out.0" },
+        {
+            "lora_unet_double_blocks_(\\d+)_img_mlp_0",
+            "transformer.transformer_blocks.{}.ff.net.0.proj" },
+        {
+            "lora_unet_double_blocks_(\\d+)_img_mlp_2",
+            "transformer.transformer_blocks.{}.ff.net.2" },
+        {
+            "lora_unet_double_blocks_(\\d+)_img_mod_lin",
+            "transformer.transformer_blocks.{}.norm1.linear" },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_attn_proj",
+            "transformer.transformer_blocks.{}.attn.to_add_out" },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_mlp_0",
+            "transformer.transformer_blocks.{}.ff_context.net.0.proj" },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_mlp_2",
+            "transformer.transformer_blocks.{}.ff_context.net.2" },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_mod_lin",
+            "transformer.transformer_blocks.{}.norm1_context.linear" },
+        {
+            "lora_unet_single_blocks_(\\d+)_linear2",
+            "transformer.single_transformer_blocks.{}.proj_out" },
+        {
+            "lora_unet_single_blocks_(\\d+)_modulation_lin",
+            "transformer.single_transformer_blocks.{}.norm.linear" },
+
+    };
+
+    LoRATensors new_tensors;
+
+    for(const auto& src_tensor: tensors) {
+        const std::string& old_name = src_tensor.first;
+        const auto& lora = src_tensor.second;
+        if(auto new_name = replace_by_rules(old_name, rules)) {
+            OPENVINO_ASSERT(new_tensors.end() == new_tensors.find(*new_name), "Name ", *new_name, " already exist in newly created LoRA tensor names after FLUX naming convention mapping");
+            new_tensors.emplace(*new_name, lora);
+        } else {
+            new_tensors.emplace(old_name, lora);
+        }
+    }
+
+    return new_tensors;
+}
+
+
 } // namespace
 
 
@@ -820,6 +901,10 @@ public:
     Impl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
     {
+        if(true) {  // FIXME: This is for Kohya fine tuned FLUX only
+            // TODO: Move it into a separate Adapter class with name mappings
+            tensors = flux_lora_preprocessing(tensors);
+        }
         std::set<std::string> keys;
         for(const auto& kv: tensors) {
             keys.insert(kv.first);

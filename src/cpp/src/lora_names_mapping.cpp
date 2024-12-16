@@ -320,6 +320,14 @@ NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int 
 }
 
 
+void convert_prefix_te(std::string& name) {
+    std::string source = "lora_te1_";
+    if(name.find(source) == 0) {
+        name.replace(0, source.length(), "lora_te_");
+    }
+}
+
+
 NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& keys) {
     NameMap new_keys = maybe_map_sgm_blocks_to_diffusers(keys);
     for(const auto& key: keys) {
@@ -329,6 +337,7 @@ NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& k
             new_key = it->second;
         }
         new_key = _convert_unet_lora_key(new_key);
+        convert_prefix_te(new_key);
         new_keys[key] = new_key;
     }
     return new_keys;
