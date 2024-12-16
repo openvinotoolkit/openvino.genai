@@ -17,7 +17,8 @@ endif()
 
 project(genai_node_addon)
 
-# Add definitions
+# Specify NAPI version 8
+# supports v12.22.0+, v14.17.0+, v15.12.0+, 16.0.0 and all later Node.js versions
 add_definitions(-DNAPI_VERSION=8)
 
 include(FetchContent)
