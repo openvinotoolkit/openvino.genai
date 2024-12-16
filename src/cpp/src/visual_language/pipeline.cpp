@@ -169,7 +169,7 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
+        auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
         ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
@@ -217,10 +217,8 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        ov::genai::EncodedResults encoded_result;
-        int32_t m_selected_beam = 0;
-        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                      position_ids, m_embedding, std::nullopt);
+        ov::genai::EncodedResults encoded_result = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
+                                                                                     position_ids, m_embedding);
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -229,6 +227,9 @@ public:
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
         auto decode_end_time = std::chrono::steady_clock::now();
+
+        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH,
+                                                    generation_config.is_beam_search(), m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
@@ -255,8 +256,6 @@ public:
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
-
-        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH);
 
         return decoded;
     }
