@@ -56,7 +56,7 @@ def convert_model(request):
         ]
         if extra_args:
             command.extend(extra_args)
-        result = subprocess.run(command, check=True)
+        result = run(command, check=True)
         assert result.returncode == 0, f"Model {model_name} conversion failed"
     return model_path
 
@@ -68,7 +68,7 @@ def download_test_content(request):
     file_path = os.path.join(TEST_DATA, file_name)
     if not os.path.exists(file_path):
         print(f"Downloading test content from {file_url}...")
-        result = subprocess.run(
+        result = run(
             ["wget", file_url, "-O", file_path],
             check=True
         )
@@ -86,7 +86,7 @@ def download_test_content(request):
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
 def test_python_sample_whisper_speech_recognition(convert_model, download_test_content):
     script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
-    result = subprocess.run(["python", script, convert_model, download_test_content], check=True)
+    result = run(["python", script, convert_model, download_test_content], check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model}"
 
 @pytest.mark.whisper
@@ -96,7 +96,7 @@ def test_python_sample_whisper_speech_recognition(convert_model, download_test_c
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
 def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_content):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')
-    exit_code = subprocess.run([cpp_sample, convert_model, download_test_content], check=True).returncode
+    exit_code = run([cpp_sample, convert_model, download_test_content], check=True).returncode
     assert exit_code == 0, "C++ sample execution failed"
 
 # multinomial_causal_lm sample
@@ -108,7 +108,7 @@ def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_cont
 ], indirect=["convert_model"])
 def test_python_sample_multinomial_causal_lm(convert_model, sample_args):
     script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
-    exit_code = subprocess.run(["python", script, convert_model, sample_args], check=True).returncode
+    exit_code = run(["python", script, convert_model, sample_args], check=True).returncode
     assert exit_code == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
 
 @pytest.mark.llm    
@@ -117,7 +117,7 @@ def test_python_sample_multinomial_causal_lm(convert_model, sample_args):
                          indirect=True, ids=lambda p: f"model={p['model_id']}")
 def test_cpp_sample_multinomial_causal_lm(convert_model):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
-    exit_code = subprocess.run([cpp_sample, convert_model, "a"], check=True).returncode
+    exit_code = run([cpp_sample, convert_model, "a"], check=True).returncode
     assert exit_code == 0, "C++ sample execution failed"
 
 # Greedy causal LM samples
