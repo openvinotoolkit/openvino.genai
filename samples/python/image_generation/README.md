@@ -20,6 +20,10 @@ Users can change the sample code and play with the following generation paramete
 - Apply multiple different LoRA adapters and mix them with different blending coefficients
 - (Image to image and inpainting) Play with `strength` parameter to control how initial image is noised and reduce number of inference steps
 
+> [!NOTE]  
+> OpenVINO GenAI is written in C++ and uses `CppStdGenerator` random generator in Image Generation pipelines, while Diffusers library uses `torch.Generator` underhood.
+> To have the same results with HuggingFace, pass manually created `torch.Generator(device='cpu').manual_seed(seed)` to Diffusers generation pipelines and `openvino_genai.TorchGenerator(seed)` to OpenVINO GenAI pipelines as value for `generator` kwarg.
+
 ## Download and convert the models and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
@@ -41,7 +45,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting`
 
-   ![](./text2image.bmp)
+   ![](./../../cpp/image_generation/512x512.bmp)
 
 ### Run with callback
 
@@ -85,7 +89,7 @@ Check the difference:
 
 With adapter | Without adapter
 :---:|:---:
-![](./lora.bmp) | ![](./baseline.bmp)
+![](./../../cpp/image_generation/lora.bmp) | ![](./../../cpp/image_generation/baseline.bmp)
 
 ## Run text to image with multiple devices
 
@@ -108,11 +112,11 @@ Also, `strength` parameter linearly affects a number of inferenece steps, becaus
 
 To run the sample, download initial image first:
 
-`wget https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png`
+`wget -O cat.png https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png`
 
 And then run the sample:
 
-`python image2mage.py ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
+`python image2image.py ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
 The resuling image is:
 
