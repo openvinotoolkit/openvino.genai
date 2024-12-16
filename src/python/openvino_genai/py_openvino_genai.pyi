@@ -573,6 +573,7 @@ class GenerationConfig:
     logprobs: int
     max_length: int
     max_new_tokens: int
+    max_ngram_size: int
     min_new_tokens: int
     no_repeat_ngram_size: int
     num_assistant_tokens: int
@@ -596,11 +597,13 @@ class GenerationConfig:
     @typing.overload
     def __init__(self, **kwargs) -> None:
         ...
+    def is_assisting_generation(self) -> bool:
+        ...
     def is_beam_search(self) -> bool:
         ...
     def is_greedy_decoding(self) -> bool:
         ...
-    def is_speculative_decoding(self) -> bool:
+    def is_prompt_lookup(self) -> bool:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
@@ -2101,11 +2104,7 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-class draft_model:
+def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
-    This class is used to enable Speculative Decoding
+    device on which inference will be performed
     """
-    def __init__(self, models_path: os.PathLike, device: str = '', **kwargs) -> None:
-        """
-        device on which inference will be performed
-        """
