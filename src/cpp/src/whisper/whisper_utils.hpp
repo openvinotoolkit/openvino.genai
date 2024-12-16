@@ -8,15 +8,10 @@
 #include "openvino/genai/perf_metrics.hpp"
 
 namespace ov {
-
 namespace genai {
-
 namespace utils {
 
 void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics);
-
-template <typename T>
-void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges);
 
 void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
                                 size_t offset,
