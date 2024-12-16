@@ -4,8 +4,6 @@
 
 import argparse
 import openvino_genai
-import queue
-import threading
 
 def streamer(subword): 
         print(subword, end='', flush=True) 
@@ -24,9 +22,7 @@ def main():
     # cache params
     scheduler_config.cache_size = 2
 
-    prompt_lookup = openvino_genai.prompt_lookup(True)
-
-    pipe = openvino_genai.LLMPipeline(args.model_dir, device, scheduler_config=scheduler_config, prompt_lookup=prompt_lookup)
+    pipe = openvino_genai.LLMPipeline(args.model_dir, device, scheduler_config=scheduler_config, prompt_lookup=True)
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
