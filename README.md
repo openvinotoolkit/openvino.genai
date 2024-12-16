@@ -58,7 +58,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 ## Performing text generation 
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing text generation model from Hugging Face library
 
@@ -103,7 +103,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+a
 ## Performing visual language text generation
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing the model from Hugging Face library
 
@@ -147,8 +147,8 @@ print(pipe.generate(prompt, image=image_data, max_new_tokens=100))
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details). See [Visual Language Chat](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) for a demo application.
 
 ```cpp
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "load_image.hpp"
-#include <openvino/genai/visual_language/pipeline.hpp>
 #include <iostream>
 
 int main(int argc, char* argv[]) {
@@ -173,16 +173,16 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-l
 
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing image generation model from Hugging Face library
 
 ```sh
 #Download and convert to OpenVINO dreamlike-anime-1.0 model
-optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
+optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --weight-format fp16 dreamlike_anime_1_0_ov/FP16
 
 #You can also use INT8 hybrid quantization to further optimize the model and reduce inference latency
-optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format int8 --dataset conceptual_captions dreamlike_anime_1_0_ov/INT8
+optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --weight-format int8 --dataset conceptual_captions dreamlike_anime_1_0_ov/INT8
 ```
 
 ### Run generation using Text2Image API in Python
@@ -192,23 +192,17 @@ import argparse
 from PIL import Image
 import openvino_genai
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
-    args = parser.parse_args()
+device = 'CPU'  # GPU can be used as well
+pipe = openvino_genai.Text2ImagePipeline("./dreamlike_anime_1_0_ov/INT8", device)
+image_tensor = pipe.generate(
+    "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
+    width=512,
+    height=512,
+    num_inference_steps=20
+)
 
-    device = 'CPU'  # GPU, NPU can be used as well
-    pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
-    image_tensor = pipe.generate(
-        args.prompt,
-        width=512,
-        height=512,
-        num_inference_steps=20
-    )
-
-    image = Image.fromarray(image_tensor.data[0])
-    image.save("image.bmp")
+image = Image.fromarray(image_tensor.data[0])
+image.save("image.bmp")
 ```
 
 ### Run generation using Text2Image API in C++
@@ -218,10 +212,10 @@ Code below requires installation of C++ compatible package (see [here](https://d
 ```cpp
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "imwrite.hpp"
-int main(int argc, char* argv[]) {
 
+int main(int argc, char* argv[]) {
    const std::string models_path = argv[1], prompt = argv[2];
-   const std::string device = "CPU";  // GPU, NPU can be used as well
+   const std::string device = "CPU";  // GPU can be used as well
 
    ov::genai::Text2ImagePipeline pipe(models_path, device);
    ov::Tensor image = pipe.generate(prompt,
@@ -232,6 +226,106 @@ int main(int argc, char* argv[]) {
    imwrite("image.bmp", image, true);
 }
 ```
+
+### Run generation using Image2Image API in Python
+
+```python
+import argparse
+from PIL import Image
+import openvino_genai
+import openvino as ov
+
+device = 'CPU'  # GPU can be used as well
+pipe = openvino_genai.Image2ImagePipeline("./dreamlike_anime_1_0_ov/INT8", device)
+
+image = Image.open("small_city.jpg")
+image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
+image_data = ov.Tensor(image_data)
+
+image_tensor = pipe.generate(
+    "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
+    image=image_data,
+    strength=0.8
+)
+
+image = Image.fromarray(image_tensor.data[0])
+image.save("image.bmp")
+```
+
+### Run generation using Image2Image API in C++
+
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for additional setup details, or this blog for full instruction [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
+
+```cpp
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include "load_image.hpp"
+#include "imwrite.hpp"
+
+int main(int argc, char* argv[]) {
+   const std::string models_path = argv[1], prompt = argv[2], image_path = argv[3];
+   const std::string device = "CPU";  // GPU can be used as well
+
+   ov::Tensor image = utils::load_image(image_path);
+
+   ov::genai::Image2ImagePipeline pipe(models_path, device);
+   ov::Tensor generated_image = pipe.generate(prompt, image, ov::genai::strength(0.8f));
+
+   imwrite("image.bmp", generated_image, true);
+}
+```
+
+### Run generation using Inpainting API in Python
+
+```python
+import argparse
+from PIL import Image
+import openvino_genai
+import openvino as ov
+
+def read_image(path: str) -> openvino.Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic.getdata()).reshape(1, pic.size[1], pic.size[0], 3).astype(np.uint8)
+    return openvino.Tensor(image_data)
+
+device = 'CPU'  # GPU can be used as well
+pipe = openvino_genai.InpaintingPipeline(args.model_dir, device)
+
+image = read_image("image.jpg")
+mask_image = read_image("mask.jpg")
+
+image_tensor = pipe.generate(
+    "Face of a yellow cat, high resolution, sitting on a park bench",
+    image=image,
+    mask_image=mask_image
+)
+
+image = Image.fromarray(image_tensor.data[0])
+image.save("image.bmp")
+```
+
+### Run generation using Inpainting API in C++
+
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for additional setup details, or this blog for full instruction [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
+
+```cpp
+#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "load_image.hpp"
+#include "imwrite.hpp"
+
+int main(int argc, char* argv[]) {
+   const std::string models_path = argv[1], prompt = argv[2];
+   const std::string device = "CPU";  // GPU can be used as well
+
+   ov::Tensor image = utils::load_image(argv[3]);
+   ov::Tensor mask_image = utils::load_image(argv[4]);
+
+   ov::genai::InpaintingPipeline pipe(models_path, device);
+   ov::Tensor generated_image = pipe.generate(prompt, image, mask_image);
+
+   imwrite("image.bmp", generated_image, true);
+}
+```
+
 ### Sample notebooks using this API
 
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+Image+pipeline+and+OpenVINO+with+Generate+API)
@@ -241,7 +335,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+
 ## Speech-to-text processing using Whisper Pipeline
 <details>
 
-For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
  
@@ -258,7 +352,6 @@ NOTE: This sample is a simplified version of the full sample that is available [
 ```python
 import openvino_genai
 import librosa
-
 
 def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
@@ -304,7 +397,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 ## Additional materials
 
 - [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
-- [OpenVINO LLM inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+- [OpenVINO Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
 ## License
