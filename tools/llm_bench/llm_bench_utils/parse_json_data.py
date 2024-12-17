@@ -16,23 +16,6 @@ def parse_text_json_data(json_data_list):
     return text_param_list
 
 
-def parse_vlm_json_data(json_data_list):
-    text_param_list = []
-    for json_data in json_data_list:
-        prompt_data = {}
-        if 'prompt' in json_data:
-            if json_data['prompt'] != '':
-                prompt_data["prompt"] = json_data['prompt']
-            else:
-                raise RuntimeError('== prompt should not be empty string ==')
-        else:
-            raise RuntimeError('== key word "prompt" does not exist ==')
-        if "media" in json_data_list:
-            prompt_data["media"] = json_data["media"]
-        text_param_list.append(prompt_data)
-    return text_param_list
-
-
 def parse_image_json_data(json_data_list):
     image_param_list = []
     for data in json_data_list:
