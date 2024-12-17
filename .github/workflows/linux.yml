@@ -496,16 +496,16 @@ jobs:
     runs-on: ubuntu-20.04-16-cores
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
-      SRC_DIR: ${{ github.workspace }}/src
+      GENAI_REPO: ${{ github.workspace }}/openvino.genai
       MODELS_DIR: ${{ github.workspace }}/models
-      JS_SRC_DIR: ${{ github.workspace }}/src/openvino.genai/src/js
-      JS_SAMPLES_DIR: ${{ github.workspace }}/src/openvino.genai/samples/js
-      BIN_DIR: ${{ github.workspace }}/src/openvino.genai/src/js/bin
+      JS_SRC_DIR: ${{ github.workspace }}/openvino.genai/src/js
+      JS_SAMPLES_DIR: ${{ github.workspace }}/openvino.genai/samples/js
+      BIN_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
     steps:
       - name: Clone openvino.genai
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          path: ${{ env.SRC_DIR }}
+          path: ${{ env.GENAI_REPO }}
           submodules: recursive
 
       - name: Download genai nodejs bindings archive
