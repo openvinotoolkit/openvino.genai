@@ -19,6 +19,18 @@ class CacheManager {
     ov::Core m_core;
     ov::InferRequest m_request;
 
+    ov::Shape set_first_dim_and_make_static(const ov::PartialShape& shape, size_t dim) {
+        ov::PartialShape res_shape = shape;
+        res_shape[0] = dim;
+        OPENVINO_ASSERT(res_shape.is_static());
+        return res_shape.to_shape();
+    }
+
+    void update_request_tensor(size_t decoder_layer_id) {
+        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_key_cache[decoder_layer_id]);
+        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
+    }
+
 public:
     explicit CacheManager(const DeviceConfig &device_config, ov::InferRequest request, ov::Core core) :
             m_device_config(device_config),
@@ -26,13 +38,6 @@ public:
             m_core(core) {
         m_key_cache.reserve(m_device_config.get_num_layers());
         m_value_cache.reserve(m_device_config.get_num_layers());
-    }
-
-    ov::Shape set_first_dim_and_make_static(const ov::PartialShape& shape, size_t dim) {
-        ov::PartialShape res_shape = shape;
-        res_shape[0] = dim;
-        OPENVINO_ASSERT(res_shape.is_static());
-        return res_shape.to_shape();
     }
 
     void allocate_cache_if_needed(size_t num_kv_blocks) {
@@ -77,11 +82,6 @@ public:
                 update_request_tensor(decoder_layer_id);
             }
         }
-    }
-
-    void update_request_tensor(size_t decoder_layer_id) {
-        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_key_cache[decoder_layer_id]);
-        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
     }
 
     void increase_cache(size_t num_kv_blocks) {

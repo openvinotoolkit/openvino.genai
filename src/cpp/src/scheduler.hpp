@@ -11,7 +11,6 @@
 #include "device_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
-#include "cache_manager.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -20,11 +19,6 @@ class Scheduler {
     SchedulerConfig m_config;
     BlockManager m_block_manager;
     friend class CacheStateDumper;
-    std::shared_ptr<CacheManager> m_cache_manager;
-    const size_t m_kv_blocks_initial_multiplier = 2;
-    const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
-    const float m_precentage_threshold_for_cache_increase = 100;
-    bool m_dynamic_memory_allocation = false;
 
 public:
     struct Output {
@@ -42,8 +36,7 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    explicit Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
-            m_cache_manager(cache_manager),
+    explicit Scheduler(size_t block_size, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
             m_can_use_partial_preemption(can_use_partial_preemption),
             m_config(config),
             m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers) {
@@ -52,23 +45,6 @@ public:
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
-        float eps = 1e-5;
-
-        if (!m_block_manager.block_allocator_initialized()) {
-            size_t prompt_sum_size = 0;
-            for (auto idx = 0; idx < sequence_groups.size(); idx++) {
-                prompt_sum_size += sequence_groups[idx]->get_prompt_len();
-            }
-            size_t initial_kv_cache_size = prompt_sum_size * m_kv_blocks_initial_multiplier;
-            m_block_manager.increase_kv_blocks_number(initial_kv_cache_size);
-            m_dynamic_memory_allocation = true;
-        }
-        else if (m_dynamic_memory_allocation && (m_block_manager.get_used_percentage() + eps) > m_precentage_threshold_for_cache_increase) {
-            size_t new_cache_size = (size_t)(m_block_manager.get_total_number_of_kv_blocks() * m_cache_growth_factor);
-            m_block_manager.increase_kv_blocks_number(new_cache_size);
-        }
-        OPENVINO_ASSERT(m_cache_manager != nullptr, "Cache manager needs to be set in the Scheduler constructor.");
-        m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
 
         if (m_config.dynamic_split_fuse) {
             // deepspeed-mii case
@@ -129,6 +105,10 @@ public:
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
         m_block_manager.free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
+    }
+
+    BlockManager& get_block_manager() {
+        return m_block_manager;
     }
 
 private:

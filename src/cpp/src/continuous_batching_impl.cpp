@@ -40,6 +40,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
     m_awaiting_requests.clear();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reallocate_kv_cache_if_needed(std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    float eps = 1e-5;
+    if (!m_scheduler->get_block_manager().block_allocator_initialized()) {
+        size_t prompt_sum_size = 0;
+        for (auto idx = 0; idx < sequence_groups.size(); idx++) {
+            prompt_sum_size += sequence_groups[idx]->get_prompt_len();
+        }
+        size_t initial_kv_cache_size = prompt_sum_size * m_kv_blocks_initial_multiplier;
+        m_scheduler->get_block_manager().increase_kv_blocks_number(initial_kv_cache_size);
+        m_dynamic_memory_allocation = true;
+    }
+    else if (m_dynamic_memory_allocation && (m_scheduler->get_block_manager().get_used_percentage() + eps) > m_precentage_threshold_for_cache_increase) {
+        size_t new_cache_size = (size_t)(m_scheduler->get_block_manager().get_total_number_of_kv_blocks() * m_cache_growth_factor);
+        m_scheduler->get_block_manager().increase_kv_blocks_number(new_cache_size);
+    }
+    m_cache_manager->allocate_cache_if_needed(m_scheduler->get_block_manager().get_total_number_of_kv_blocks());
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
@@ -64,7 +82,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
         can_use_partial_preemption = false;
     }
 
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), m_cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     // and finally create model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
@@ -131,6 +149,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         static ManualTimer timer("scheduling");
         timer.start();
         m_scheduler->clean_empty_blocks(m_requests);
+        _reallocate_kv_cache_if_needed(m_requests);
         scheduler_output = m_scheduler->schedule(m_requests);
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;

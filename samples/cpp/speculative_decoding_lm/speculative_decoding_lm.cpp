@@ -26,15 +26,11 @@ int main(int argc, char* argv[]) try {
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
     std::string main_device = "CPU", draft_device = "CPU";
 
-    ov::genai::SchedulerConfig scheduler_config;
-    scheduler_config.cache_size = 5;
-
     // Different devices require different block sizes, so different scheduler configs need to be set.
     ov::genai::LLMPipeline pipe(
         main_model_path,
         main_device,
-        ov::genai::draft_model(draft_model_path, draft_device),
-        ov::genai::scheduler_config(scheduler_config));
+        ov::genai::draft_model(draft_model_path, draft_device));
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;

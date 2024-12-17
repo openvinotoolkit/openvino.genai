@@ -30,6 +30,13 @@ protected:
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 
+    // dynamic kv-cache allocation params
+    const size_t m_kv_blocks_initial_multiplier = 2;
+    const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
+    const float m_precentage_threshold_for_cache_increase = 100;
+
+    bool m_dynamic_memory_allocation = false;
+
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif
@@ -41,6 +48,7 @@ protected:
     void _notify_requests_dropped_by_handle();
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
+    void _reallocate_kv_cache_if_needed(std::vector<SequenceGroup::Ptr>& sequence_groups);
     void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
 
     void init(std::shared_ptr<ov::Model> model,
