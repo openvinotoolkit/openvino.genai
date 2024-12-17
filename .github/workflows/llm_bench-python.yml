@@ -34,7 +34,7 @@ jobs:
     runs-on: aks-linux-2-cores-8gb
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
-      volumes: 
+      volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
 
@@ -102,7 +102,7 @@ jobs:
       - name: Test native pytorch model on Linux
         run: |
           git clone --depth 1 https://huggingface.co/katuni4ka/tiny-random-qwen
-          python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
+          python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt -ic 20
           rm -rf tiny-random-qwen
         env:
           GIT_LFS_SKIP_SMUDGE: 0
