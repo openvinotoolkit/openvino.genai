@@ -42,7 +42,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "openai/clip-vit-large-patch14",
-        resolution=(512, 512),
+        resolution=(None, None),
         num_inference_steps=4,
         crop_prompts=True,
         num_samples=None,
