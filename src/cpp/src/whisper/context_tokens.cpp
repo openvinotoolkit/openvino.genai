@@ -4,7 +4,7 @@
 #include "context_tokens.hpp"
 
 namespace {
-std::pair<std::vector<int64_t>, float> tokenize(std::string text,
+std::pair<std::vector<int64_t>, float> tokenize(std::string&& text,
                                                 const ov::genai::WhisperGenerationConfig& config,
                                                 ov::genai::Tokenizer& tokenizer) {
     if (text.empty()) {
@@ -47,13 +47,13 @@ std::pair<WhisperContextTokens, float> prepare_context_tokens(const WhisperGener
     if (config.initial_prompt.has_value()) {
         auto [initial_prompt_tokens, initial_prompt_duration] =
             tokenize(" " + *config.initial_prompt, config, tokenizer);
-        context_tokens.initial_prompt = initial_prompt_tokens;
+        context_tokens.initial_prompt = std::move(initial_prompt_tokens);
         duration += initial_prompt_duration;
     }
 
     if (config.hotwords.has_value()) {
         auto [hotwords_tokens, hotwords_duration] = tokenize(" " + *config.hotwords, config, tokenizer);
-        context_tokens.hotwords = hotwords_tokens;
+        context_tokens.hotwords = std::move(hotwords_tokens);
         duration += hotwords_duration;
     }
 

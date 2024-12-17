@@ -78,10 +78,30 @@ public:
     // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     bool return_timestamps = false;
 
-    // Text string to provide as a prompt for the first window.
+    /*
+     * Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+     * window Can be used to steer the model to use particular spellings or styles.
+     *
+     * Example:
+     *   auto result = pipeline.generate(raw_speech);
+     *  //  He has gone and gone for good answered Paul Icrom who...
+     *
+     *   auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+     *   //  He has gone and gone for good answered Polychrome who...
+     */
     std::optional<std::string> initial_prompt = std::nullopt;
 
-    // Hotwords/hint phrases to provide the model with.
+    /*
+     * Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+     * window Can be used to steer the model to use particular spellings or styles.
+     *
+     * Example:
+     *   auto result = pipeline.generate(raw_speech);
+     *  //  He has gone and gone for good answered Paul Icrom who...
+     *
+     *   auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+     *   //  He has gone and gone for good answered Polychrome who...
+     */
     std::optional<std::string> hotwords = std::nullopt;
 
     // A list containing tokens that will be suppressed at the beginning of the sampling process.
