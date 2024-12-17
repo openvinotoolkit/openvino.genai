@@ -30,9 +30,9 @@ public:
                 ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape());
                 ov::Tensor value_cache(device_config.get_cache_precision(), device_config.get_value_cache_shape());
 
-                // force allocation
-                std::memset(key_cache.data(), 0, key_cache.get_byte_size());
-                std::memset(value_cache.data(), 0, value_cache.get_byte_size());
+                // // force allocation
+                // std::memset(key_cache.data(), 0, key_cache.get_byte_size());
+                // std::memset(value_cache.data(), 0, value_cache.get_byte_size());
 
                 m_key_cache.emplace_back(key_cache);
                 m_value_cache.emplace_back(value_cache);
