@@ -142,4 +142,8 @@ And run the sample:
 
 `python inpainting.py ./stable-diffusion-2-inpainting 'Face of a yellow cat, high resolution, sitting on a park bench' image.png mask_image.png`
 
+The resuling image is:
+
+   ![](./../../cpp/image_generation/inpainting.bmp)
+
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `InpaintingPipeline`.

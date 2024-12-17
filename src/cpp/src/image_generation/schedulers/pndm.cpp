@@ -132,6 +132,14 @@ void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_ets = {};
     m_counter = 0;
     m_cur_sample = ov::Tensor(ov::element::f32, {});
+
+    // apply 'strength' used in image generation
+    // in diffusers, it's https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L711
+    {
+        size_t init_timestep = std::min<size_t>(num_inference_steps * strength, num_inference_steps);
+        size_t t_start = std::max<size_t>(num_inference_steps - init_timestep, 0);
+        m_timesteps = std::vector<int64_t>(m_timesteps.begin() + t_start, m_timesteps.end());
+    }
 }
 
 std::map<std::string, ov::Tensor> PNDMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
