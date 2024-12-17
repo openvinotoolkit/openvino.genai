@@ -23,27 +23,22 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
-    const std::filesystem::path& main_models_path,
-    const SchedulerConfig& main_scheduler_config,
-    const std::string& main_device,
-    const ov::AnyMap& main_properties,
-    const ov::genai::ModelDesc draft_model_desc,
-    const ov::AnyMap& tokenizer_properties) {
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
+                                                                             const ov::genai::ModelDesc& draft_model_desc) {
     ov::Core core;
-    auto [core_properties, compile_properties] = utils::split_core_compile_config(main_properties);
+    auto [core_properties, compile_properties] = utils::split_core_compile_config(main_model_desc.properties);
     core.set_property(core_properties);
 
-    std::filesystem::path openvino_model_name = "openvino_model.xml",
-                          draft_models_path = draft_model_desc.models_path;
+    auto main_model = main_model_desc.model;
+    auto draft_model = draft_model_desc.model;
 
-    std::shared_ptr<ov::Model> main_model = core.read_model((main_models_path / openvino_model_name).string()),
-                               draft_model = core.read_model((draft_models_path / openvino_model_name).string());
+    auto main_scheduler_config = main_model_desc.scheduler_config;
+    auto main_device = main_model_desc.device;
 
-    utils::apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
 
-    std::string draft_device = draft_model_desc.device.empty() ? main_device : draft_model_desc.device;
+    std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
 
     bool is_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
@@ -76,8 +71,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
 
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
-    Tokenizer main_model_tokenizer(main_models_path, tokenizer_properties),
-              draft_model_tokenizer(draft_models_path, tokenizer_properties);
+    Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
+    Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
@@ -86,10 +81,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
-        main_model, main_model_tokenizer, utils::from_config_json_if_exists(main_models_path),
+        main_model, main_model_tokenizer, main_model_desc.generation_config,
         main_device_config, main_scheduler_config, main_device, compile_properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
-        draft_model, draft_model_tokenizer, utils::from_config_json_if_exists(draft_models_path),
+        draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
         draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
 }
 
@@ -264,8 +259,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                 continue;
             }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
-            OPENVINO_ASSERT(1 <= token.size());
-            OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 continue_generation = !streamer_ptr->put(gen_token);
                 if (!continue_generation) {

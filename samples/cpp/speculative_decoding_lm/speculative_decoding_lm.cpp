@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) try {
     // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5;
     // add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
-    // config.assistant_confidence_threshold = 0.4
+    // config.assistant_confidence_threshold = 0.4;
 
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
