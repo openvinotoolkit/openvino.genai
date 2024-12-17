@@ -36,6 +36,9 @@ const runTest = async () => {
       if (code !== 0) {
         return reject(`Process exited with code ${code}`);
       }
+
+      console.log(`Result output: ${output}`);
+
       // Validate the output
       if (output.includes('"Hello world"')) {
         resolve('Test passed!');
