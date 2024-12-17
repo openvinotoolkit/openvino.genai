@@ -14,17 +14,6 @@ from .text2image_evaluator import Text2ImageEvaluator
 from .whowhat_metrics import ImageSimilarity
 
 
-class Generator(openvino_genai.Generator):
-    def __init__(self, seed, rng, mu=0.0, sigma=1.0):
-        openvino_genai.Generator.__init__(self)
-        self.mu = mu
-        self.sigma = sigma
-        self.rng = rng
-
-    def next(self):
-        return torch.randn(1, generator=self.rng, dtype=torch.float32).item()
-
-
 def preprocess_fn(example):
     return {
         "prompts": example["Instruction_VLM-LLM"],
@@ -131,7 +120,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 prompt,
                 image=image,
                 num_inference_steps=self.num_inference_steps,
-                generator=Generator(self.seed, rng) if self.is_genai else rng
+                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             output.save(image_path)
