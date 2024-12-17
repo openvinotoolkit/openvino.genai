@@ -246,8 +246,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         [](const std::shared_ptr<StreamerBase>& streamer) {
             return streamer;
         },
-        [this, &sampling_params](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return sampling_params.size() == 1 ? std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer, sampling_params.begin()->stop_strings) : std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
+        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
         }
     }, streamer);
 
@@ -285,7 +285,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         if (streamer_ptr && generations.at(0)->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
-                if (!streamer_ptr->put(gen_token)) {
+                if (streamer_ptr->put(gen_token)) {
                     break;
                 }
             }

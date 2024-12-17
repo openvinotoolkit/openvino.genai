@@ -44,8 +44,6 @@ class Sequence {
     static std::mutex m_counter_mutex;
 
     size_t _make_hash(size_t content_length);
-    // num tokens to remove from result. Used in case of match by stop_string
-    size_t m_token_cnt_to_ignore = 0;
 public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
@@ -128,7 +126,7 @@ public:
         }
     }
 
-    GenerationOutput get_last_generation_output(size_t token_cnt = 1) {
+    GenerationOutput get_last_generation_output(size_t token_cnt = 1, size_t num_token_to_ignore = 0) {
         GenerationOutput output;
         if (token_cnt > 0) {
             OPENVINO_ASSERT(m_generated_ids.size());
@@ -137,23 +135,23 @@ public:
             auto generated_token_id = get_generated_ids();
             auto generated_log_probs = get_generated_log_probs();
 
+            if (get_generated_len() < token_cnt) {
+                auto a = 0;
+            }
             OPENVINO_ASSERT(get_generated_len() >= token_cnt);
-            auto offset = get_generated_len() - token_cnt;
-            auto offset_back = get_generated_len();
+            if (get_generated_len() > num_token_to_ignore) {
+                auto offset = get_generated_len() - token_cnt - num_token_to_ignore;
+                auto offset_back = get_generated_len() - num_token_to_ignore;
 
-            std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
-            std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
+                std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.begin() + offset_back);
+                std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.begin() + offset_back);
 
-            output.generated_ids = token_id;
-            output.generated_log_probs = log_probs;
-            output.finish_reason = get_finish_reason();
-            output.token_cnt_to_ignore = m_token_cnt_to_ignore;
+                output.generated_ids = token_id;
+                output.generated_log_probs = log_probs;
+                output.finish_reason = get_finish_reason();
+            }
         }
         return output;
-    }
-
-    void set_num_token_token_cnt_to_ignore(size_t k) {
-        m_token_cnt_to_ignore = k;
     }
 
     size_t get_generated_len() const {
@@ -231,7 +229,7 @@ class SequenceGroup {
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
 
-    size_t m_num_streamed_tokens = 0;
+    size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
@@ -466,6 +464,10 @@ public:
     size_t get_num_tokens_to_validate() {
         return m_num_validation_tokens;
     }
+    
+    void set_stream_window_size(size_t k) {
+        m_stream_window_size = k;
+    }
 
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
@@ -613,7 +615,7 @@ public:
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
-            auto output = sequence->get_last_generation_output(token_cnt);
+            auto output = sequence->get_last_generation_output(token_cnt, m_stream_window_size);
             if (m_sampling_params.echo && !m_has_echoed) {
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
@@ -640,14 +642,18 @@ public:
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
                 const auto generated_len = m_sequences.front()->get_generated_len();
+                if (has_finished()) {
+                    m_stream_window_size = 0;
+                }
+                if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    return;
+                }
                 // speculative decoding draft handling
                 if (generated_len < m_num_streamed_tokens) {
                     m_num_streamed_tokens = generated_len;
                 }
-                OPENVINO_ASSERT(generated_len >= m_num_streamed_tokens);
-                auto delta = generated_len - m_num_streamed_tokens;
-
-                size_t num_output_token_to_push = generated_len - m_num_streamed_tokens;
+                OPENVINO_ASSERT(generated_len >= (m_num_streamed_tokens + m_stream_window_size));
+                size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
                 push_partial_outputs(num_output_token_to_push);
                 m_num_streamed_tokens += (num_output_token_to_push);
             } else if (has_finished() || out_of_memory()) {

@@ -199,8 +199,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         [](const std::shared_ptr<StreamerBase>& streamer) {
             return streamer;
         },
-        [this, &sampling_params](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return sampling_params.size() == 1 ? std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer, sampling_params.begin()->stop_strings) : std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
+        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
         }
     }, streamer);
 
