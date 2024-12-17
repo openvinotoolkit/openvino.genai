@@ -8,5 +8,8 @@
   },
   "engines": {
     "node": ">=21.0.0"
+  },
+  "scripts": {
+    "test": "node tests/usage.test.js"
   }
 }

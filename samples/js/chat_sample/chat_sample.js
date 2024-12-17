@@ -49,6 +49,6 @@ async function main() {
     await pipe.generate(input, config, streamer);
     console.log('\n----------');
 
-    promptUser();
+    if (!rl.closed) promptUser();
   }
 }
