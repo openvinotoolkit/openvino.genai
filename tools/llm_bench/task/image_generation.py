@@ -25,7 +25,7 @@ DEFAULT_IMAGE_HEIGHT = 512
 stable_diffusion_hook = StableDiffusionHook()
 
 
-def collects_input_args(image_param, model_type, model_name):
+def collects_input_args(image_param, model_type, model_name, callback=None):
     input_args = {}
     input_args["width"] = image_param.get('width', DEFAULT_IMAGE_WIDTH)
     input_args["height"] = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
@@ -37,6 +37,19 @@ def collects_input_args(image_param, model_type, model_name):
     else:
         if 'turbo' in model_name:
             input_args["guidance_scale"] = 0.0
+    if callback is not None:
+        from openvino import get_version
+        from packaging.version import parse
+
+        version = get_version()
+        # avoid invalid format
+        if "-" in version:
+            ov_major_version, dev_info = version.split("-", 1)
+            commit_id = dev_info.split("-")[0]
+            version = f"{ov_major_version}-{commit_id}"
+        is_callback_supported = parse(version) >= parse("2025.0.0")
+        if is_callback_supported:
+            input_args["callback"] = callback
 
     return input_args
 
@@ -107,7 +120,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
 def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'])
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], callback)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
@@ -127,7 +140,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     callback.reset()
     start = time.perf_counter()
-    res = pipe.generate(input_text, **input_args, callback=callback).data
+    res = pipe.generate(input_text, **input_args).data
     end = time.perf_counter()
     callback.duration = end - start
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
@@ -157,7 +170,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        stable_diffusion=callback,
+        stable_diffusion=callback if "callback" in input_args else None,
         prompt_idx=image_id
     )
     metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn, prompt_idx=image_id)
