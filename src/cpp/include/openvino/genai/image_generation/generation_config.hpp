@@ -40,6 +40,12 @@ public:
     virtual ov::Tensor randn_tensor(const ov::Shape& shape);
 
     /**
+     * Sets a new initial seed value to random generator
+     * @param new_seed A new seed value
+     */
+    virtual void seed(size_t new_seed) = 0;
+
+    /**
      * Default dtor defined to ensure working RTTI.
      */
     virtual ~Generator();
@@ -58,9 +64,11 @@ public:
 
     virtual float next() override;
 
+    virtual void seed(size_t new_seed) override;
+
 private:
-    std::mt19937 gen;
-    std::normal_distribution<float> normal;
+    std::mt19937 m_gen;
+    std::normal_distribution<float> m_normal;
 };
 
 /**
@@ -81,9 +89,17 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_images_per_prompt = 1;
 
     /**
-     * Random generator to initial latents, add noise to initial images in case of image to image / inpainting pipelines
+     * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting pipelines
+     * By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
+     * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
      */
-    std::shared_ptr<Generator> generator = std::make_shared<CppStdGenerator>(42);
+    std::shared_ptr<Generator> generator = nullptr;
+
+    /**
+     * Seed for random generator
+     * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
+     */
+    size_t rng_seed = 42;
 
     float guidance_scale = 7.5f;
     int64_t height = -1;
@@ -91,7 +107,7 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_inference_steps = 50;
 
     /**
-     * Max sequence lenght for T4 encoder / tokenizer used in SD3 / FLUX models
+     * Max sequence length for T5 encoder / tokenizer used in SD3 / FLUX models
      */
     int max_sequence_length = -1;
 
@@ -204,6 +220,12 @@ static constexpr ov::Property<float> strength{"strength"};
 static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"};
 
 /**
+ * Seed for random generator
+ * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
+ */
+extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
+
+/**
  * This parameters limits max sequence length for T5 encoder for SD3 and FLUX models.
  * T5 tokenizer output is padded with pad tokens to 'max_sequence_length' within a pipeline.
  * So, for better performance, you can specify this parameter to lower value to speed-up
@@ -216,11 +238,11 @@ static constexpr ov::Property<int> max_sequence_length{"max_sequence_length"};
 
 /**
  * User callback for image generation pipelines, which is called within a pipeline with the following arguments:
- * - Total number of inference steps. Note, that in case of 'strength' parameter, the number of inference steps is reduced linearly
  * - Current inference step
+ * - Total number of inference steps. Note, that in case of 'strength' parameter, the number of inference steps is reduced linearly
  * - Tensor representing current latent. Such latent can be converted to human-readable representation via image generation pipeline 'decode()' method
  */
-static constexpr ov::Property<std::function<bool(size_t, ov::Tensor&)>> callback{"callback"};
+static constexpr ov::Property<std::function<bool(size_t, size_t, ov::Tensor&)>> callback{"callback"};
 
 /**
  * Function to pass 'ImageGenerationConfig' as property to 'generate()' call.

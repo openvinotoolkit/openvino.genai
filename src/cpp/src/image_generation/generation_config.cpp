@@ -27,11 +27,15 @@ ov::Tensor Generator::randn_tensor(const ov::Shape& shape) {
 }
 
 CppStdGenerator::CppStdGenerator(uint32_t seed)
-    : gen(seed), normal(0.0f, 1.0f) {
+    : m_gen(seed), m_normal(0.0f, 1.0f) {
 }
 
 float CppStdGenerator::next() {
-    return normal(gen);
+    return m_normal(m_gen);
+}
+
+void CppStdGenerator::seed(size_t new_seed) {
+    m_gen.seed(new_seed);
 }
 
 //
@@ -55,7 +59,6 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "negative_prompt_2", negative_prompt_2);
     read_anymap_param(properties, "negative_prompt_3", negative_prompt_3);
     read_anymap_param(properties, "num_images_per_prompt", num_images_per_prompt);
-    read_anymap_param(properties, "generator", generator);
     read_anymap_param(properties, "guidance_scale", guidance_scale);
     read_anymap_param(properties, "height", height);
     read_anymap_param(properties, "width", width);
@@ -63,6 +66,25 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "strength", strength);
     read_anymap_param(properties, "adapters", adapters);
     read_anymap_param(properties, "max_sequence_length", max_sequence_length);
+
+    // 'generator' has higher priority than 'seed' parameter
+    const bool have_generator_param = properties.find(ov::genai::generator.name()) != properties.end();
+    if (have_generator_param) {
+        read_anymap_param(properties, "generator", generator);
+    } else {
+        read_anymap_param(properties, "rng_seed", rng_seed);
+
+        // initialize random generator with a given seed value
+        if (!generator) {
+            generator = std::make_shared<CppStdGenerator>(rng_seed);
+        }
+
+        const bool have_rng_seed = properties.find(ov::genai::rng_seed.name()) != properties.end();
+        if (have_rng_seed) {
+            // we need to change seed as an user have specified it manually
+            generator->seed(rng_seed);
+        }
+    }
 
     validate();
 }
