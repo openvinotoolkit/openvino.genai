@@ -41,34 +41,30 @@ void IImageProcessor::compile(std::shared_ptr<ov::Model> model) {
     m_request = utils::singleton_core().compile_model(model, m_device).create_infer_request();
 }
 
-ImageProcessor::ImageProcessor(const std::string& device, bool do_normalize, bool do_binarize) :
+ImageProcessor::ImageProcessor(const std::string& device, bool do_normalize, bool do_binarize, bool gray_scale_source) :
     IImageProcessor(device) {
     auto image_processor_model = create_empty_model();
-    merge_image_preprocessing(image_processor_model, do_normalize, do_binarize);
+    merge_image_preprocessing(image_processor_model, do_normalize, do_binarize, gray_scale_source);
 
     compile(image_processor_model);
 }
 
-void ImageProcessor::merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize, bool do_binarize) {
+void ImageProcessor::merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize, bool do_binarize, bool gray_scale_source) {
     OPENVINO_ASSERT(do_normalize ^ do_binarize, "Both binarize and normalize are not supported");
 
     // https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L90-L110
     ov::preprocess::PrePostProcessor ppp(model);
 
+    ov::preprocess::ColorFormat source_color_format = gray_scale_source ? ov::preprocess::ColorFormat::GRAY : ov::preprocess::ColorFormat::RGB;
+
     ppp.input().tensor()
         .set_layout("NHWC")
         .set_element_type(ov::element::u8)
-        .set_color_format(ov::preprocess::ColorFormat::BGR);
+        .set_color_format(source_color_format);
     ppp.input().model()
         .set_layout("NCHW");
 
     if (do_normalize) {
-        ppp.input().tensor().set_layout("NHWC");
-        ppp.input().model().set_layout("NCHW");
-
-        ppp.input().tensor()
-            .set_element_type(ov::element::u8);
-
         ppp.input().preprocess()
             .convert_layout()
             .convert_element_type(ov::element::f32)
