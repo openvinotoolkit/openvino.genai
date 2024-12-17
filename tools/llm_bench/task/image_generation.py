@@ -25,11 +25,14 @@ DEFAULT_IMAGE_HEIGHT = 512
 stable_diffusion_hook = StableDiffusionHook()
 
 
-def collects_input_args(image_param, model_type, model_name, callback=None):
+def collects_input_args(image_param, model_type, model_name, infer_count=None, callback=None):
     input_args = {}
     input_args["width"] = image_param.get('width', DEFAULT_IMAGE_WIDTH)
     input_args["height"] = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
-    input_args["num_inference_steps"] = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in model_name else LCM_DEFAULT_INFERENCE_STEPS)
+    if infer_count is None:
+        input_args["num_inference_steps"] = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in model_name else LCM_DEFAULT_INFERENCE_STEPS)
+    else:
+        input_args["num_inference_steps"] = infer_count
     guidance_scale = image_param.get('guidance_scale', None)
 
     if guidance_scale is not None:
@@ -57,7 +60,7 @@ def collects_input_args(image_param, model_type, model_name, callback=None):
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'])
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["infer_count"])
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
@@ -120,7 +123,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
 def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], callback)
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["infer_count"], callback)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
