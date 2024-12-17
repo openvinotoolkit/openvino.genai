@@ -38,7 +38,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     
     std::filesystem::path openvino_model_name = "openvino_model.xml";
-    auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
+    auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, properties);
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     if (draft_model_desr.model == nullptr) {
@@ -58,7 +58,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     std::filesystem::path openvino_model_name = "openvino_model.xml";
-    auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
+    auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, properties_without_draft_model);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
     if (draft_model_desr.model == nullptr) {

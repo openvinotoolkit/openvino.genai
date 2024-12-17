@@ -20,18 +20,15 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     ) {
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
-    
-    ov::Core core;
 
-    auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
-    core.set_property(core_properties);
+    ov::Core core = utils::singleton_core();
 
-    DeviceConfig device_config(core, scheduler_config, device, compile_properties);
+    DeviceConfig device_config(core, scheduler_config, device, properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
-    init(model, scheduler_config, compile_properties, device_config, core);
+    init(model, scheduler_config, properties, device_config, core);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {

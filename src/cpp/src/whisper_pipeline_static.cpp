@@ -528,9 +528,9 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     : WhisperPipelineImplBase{models_path} {
     ov::Core core = utils::singleton_core();
 
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml");
-    auto decoder_model = core.read_model(models_path / "openvino_decoder_model.xml");
-    auto decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml");
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
+    auto decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+    auto decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties);
 
     add_attention_mask_input_for_decoder(decoder_model);
     add_attention_mask_input(decoder_with_past_model);

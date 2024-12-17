@@ -62,7 +62,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ) : StatefulLLMPipeline{
-            ov::genai::utils::read_model_with_config(models_path, plugin_config),
+            utils::singleton_core().read_model(models_path, {}, plugin_config),
             tokenizer, 
             device, 
             plugin_config, 
@@ -76,17 +76,16 @@ public:
         const ov::AnyMap& config,
         const ov::genai::GenerationConfig& generation_config
     ) : LLMPipelineImplBase(tokenizer, generation_config) {
-        ov::Core core;
-        auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
         utils::slice_matmul_statefull_model(model);
         m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
-        if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
+        ov::Core core = utils::singleton_core();
+        if (auto filtered_config = extract_adapters_from_properties(config, &m_generation_config.adapters)) {
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
             m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-            m_model_runner = core.compile_model(model, device, *filtered_plugin_config).create_infer_request();
+            m_model_runner = core.compile_model(model, device, *filtered_config).create_infer_request();
         } else {
-            m_model_runner = core.compile_model(model, device, plugin_config).create_infer_request();
+            m_model_runner = core.compile_model(model, device, config).create_infer_request();
         }
 
         // If eos_token_id was not provided, take value
@@ -465,7 +464,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
     
     std::filesystem::path openvino_model_name = "openvino_model.xml";
-    auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
+    auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -515,7 +514,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{tokenizer}, m_impl{
-        models_path.string(),
+        models_path,
         tokenizer,
         scheduler_config,
         device,
@@ -545,8 +544,8 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{Tokenizer(models_path.string())}, m_impl{
-        models_path.string(),
+    ): LLMPipelineImplBase{Tokenizer(models_path)}, m_impl{
+        models_path,
         m_tokenizer,
         scheduler_config,
         device,
@@ -734,11 +733,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& config,
     const ov::genai::GenerationConfig& generation_config
 ){
-    auto [core_properties, plugin_config] = ov::genai::utils::split_core_compile_config(config);
-
     auto start_time = std::chrono::steady_clock::now();
-    if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end()) {
-        auto [plugin_config_, scheduler_config] = utils::split_scheduler_config(plugin_config);
+    if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
+        auto [plugin_config_, scheduler_config] = utils::split_scheduler_config(config);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, plugin_config_, generation_config);
     } else if (device == "NPU") {
@@ -753,7 +750,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         //                                      {"num_key_value_heads", 32}};
         // ov::genai::LLMPipeline pipe(model_str,..., model_descr_properties);
         // This will convert from AnyMap to ModelDesc.
-        auto [properties, model_descr] = split_model_descr(plugin_config);
+        auto [properties, model_descr] = split_model_descr(config);
 
         m_pimpl = std::make_unique<StaticLLMPipeline>(
             utils::singleton_core().read_model(model_str, weights_tensor), 
@@ -765,10 +762,10 @@ ov::genai::LLMPipeline::LLMPipeline(
         );
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(
-            utils::singleton_core().read_model(model_str, weights_tensor), 
+            utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,
             device,
-            plugin_config,
+            config,
             generation_config);
     }
     auto stop_time = std::chrono::steady_clock::now();

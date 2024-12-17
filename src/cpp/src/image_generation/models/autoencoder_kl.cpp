@@ -91,8 +91,7 @@ AutoencoderKL::Config::Config(const std::filesystem::path& config_path) {
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path)
     : m_config(vae_decoder_path / "config.json") {
-    ov::Core core = utils::singleton_core();
-    m_decoder_model = core.read_model((vae_decoder_path / "openvino_model.xml").string());
+    m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     merge_vae_image_post_processing();
 }
@@ -100,8 +99,7 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path)
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
                              const std::filesystem::path& vae_decoder_path)
     : AutoencoderKL(vae_decoder_path) {
-    ov::Core core = utils::singleton_core();
-    m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
+    m_encoder_model = utils::singleton_core().read_model(vae_encoder_path / "openvino_model.xml");
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
@@ -131,8 +129,7 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
                              const Tensor& vae_decoder_weights,
                              const Config& vae_decoder_config)
     : m_config(vae_decoder_config) {
-    ov::Core core = utils::singleton_core();
-    m_decoder_model = core.read_model(vae_decoder_model, vae_decoder_weights);
+    m_decoder_model = utils::singleton_core().read_model(vae_decoder_model, vae_decoder_weights);
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     merge_vae_image_post_processing();
 }
@@ -143,8 +140,7 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
                              const Tensor& vae_decoder_weights,
                              const Config& vae_decoder_config)
     : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_decoder_config) {
-    ov::Core core = utils::singleton_core();
-    m_encoder_model = core.read_model(vae_encoder_model, vae_encoder_weights);
+    m_encoder_model = utils::singleton_core().read_model(vae_encoder_model, vae_encoder_weights);
 }
 
 AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,

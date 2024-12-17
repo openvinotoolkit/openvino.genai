@@ -53,17 +53,15 @@ public:
                                 const ov::AnyMap& properties)
         : WhisperPipelineImplBase{models_path} {
         ov::Core core = utils::singleton_core();
-        auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(properties);
-        core.set_property(core_properties);
 
         m_models.encoder =
-            core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties)
+            core.compile_model(models_path / "openvino_encoder_model.xml", device, properties)
                 .create_infer_request();
         m_models.decoder =
-            core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
+            core.compile_model(models_path / "openvino_decoder_model.xml", device, properties)
                 .create_infer_request();
         m_models.decoder_with_past =
-            core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties)
+            core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, properties)
                 .create_infer_request();
 
         // If eos_token_id was not provided, take value
@@ -77,6 +75,10 @@ public:
                                    ChunkStreamerVariant streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (config.eos_token_id == -1)
+            config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
         std::shared_ptr<ChunkStreamerBase> streamer_ptr;

@@ -68,7 +68,7 @@ template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
     auto config_file_path = models_path / config_name;
     if (std::filesystem::exists(config_file_path)) {
-        return Config{(config_file_path).string()};
+        return Config{config_file_path};
     } else {
         return Config{};
     }
@@ -84,10 +84,7 @@ ProcessorConfig from_any_map(
 );
 
 
-std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties);
 std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties);
-
-std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 

@@ -28,8 +28,7 @@ CLIPTextModelWithProjection::Config::Config(const std::filesystem::path& config_
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::filesystem::path& root_dir) :
     m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
     m_config(root_dir / "config.json") {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model((root_dir / "openvino_model.xml").string());
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::filesystem::path& root_dir,
@@ -44,8 +43,7 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& mode
                                                          const Config& config,
                                                          const Tokenizer& clip_tokenizer) :
     m_clip_tokenizer(clip_tokenizer), m_config(config) {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model(model, weights);
+    m_model = utils::singleton_core().read_model(model, weights);
 }
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& model,

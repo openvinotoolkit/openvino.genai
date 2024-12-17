@@ -321,13 +321,13 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
     return params;
 }
 
-std::string ov_tokenizers_module_path() {
+std::filesystem::path ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
     std::filesystem::path from_relative = tokenizers_relative_to_genai();
     if (std::filesystem::exists(from_relative)) {
-        return from_relative.string();
+        return from_relative;
     }
-    return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
+    return py::module_::import("openvino_tokenizers").attr("_ext_path").cast<std::filesystem::path>();
 }
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer) {
