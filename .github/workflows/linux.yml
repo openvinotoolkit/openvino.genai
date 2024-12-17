@@ -493,7 +493,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-2-cores-8gb
+    runs-on: ubuntu-20.04-16-cores
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
