@@ -382,7 +382,7 @@ jobs:
       - name: Test C++ Samples
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }} and cpp"
+          python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         working-directory: ${{ env.INSTALL_DIR }}/samples_bin
 
   Overall_Status:
