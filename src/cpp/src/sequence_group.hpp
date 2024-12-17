@@ -44,6 +44,8 @@ class Sequence {
     static std::mutex m_counter_mutex;
 
     size_t _make_hash(size_t content_length);
+    // num tokens to remove from result. Used in case of match by stop_string
+    size_t m_token_cnt_to_ignore = 0;
 public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
@@ -128,22 +130,33 @@ public:
 
     GenerationOutput get_last_generation_output(size_t token_cnt = 1) {
         GenerationOutput output;
-        OPENVINO_ASSERT(m_generated_ids.size());
-        output.score = get_cumulative_log_probs();
+        if (token_cnt > 0) {
+            OPENVINO_ASSERT(m_generated_ids.size());
+            output.score = get_cumulative_log_probs();
 
-        auto generated_token_id = get_generated_ids();
-        auto generated_log_probs = get_generated_log_probs();
+            auto generated_token_id = get_generated_ids();
+            auto generated_log_probs = get_generated_log_probs();
 
-        OPENVINO_ASSERT(get_generated_len() >= token_cnt);
-        auto offset = get_generated_len() - token_cnt;
+            OPENVINO_ASSERT(get_generated_len() >= token_cnt);
+            auto offset = get_generated_len() - token_cnt;
 
-        std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
-        std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
+            auto offset_back = get_generated_len() - m_token_cnt_to_ignore;
+            if (m_token_cnt_to_ignore)
+                auto a = 0;
+            m_token_cnt_to_ignore = 0;
 
-        output.generated_ids = token_id;
-        output.generated_log_probs = log_probs;
-        output.finish_reason = get_finish_reason();
+            std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.begin() + offset_back);
+            std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.begin() + offset_back);
+
+            output.generated_ids = token_id;
+            output.generated_log_probs = log_probs;
+            output.finish_reason = get_finish_reason();
+        }
         return output;
+    }
+
+    void set_num_token_token_cnt_to_ignore(size_t k) {
+        m_token_cnt_to_ignore = k;
     }
 
     size_t get_generated_len() const {
@@ -621,7 +634,7 @@ public:
             set_generation_status(GenerationStatus::FINISHED);
         }
         // For beam search streaming is not available, so we notify only upon finishing
-        if(m_sampling_params.is_beam_search()) {
+        if (m_sampling_params.is_beam_search()) {
             if (has_finished() || out_of_memory()) {
                 push_outputs();
             }

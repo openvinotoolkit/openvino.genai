@@ -34,7 +34,8 @@ int main(int argc, char* argv[]) try {
         main_model_path,
         main_device,
         ov::genai::draft_model(draft_model_path, draft_device),
-        ov::genai::scheduler_config(scheduler_config));
+        ov::genai::scheduler_config(scheduler_config)
+    );
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;

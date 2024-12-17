@@ -400,7 +400,9 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, Sa
 
                     if(!m_parameters.include_stop_str_in_output) {
                         // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
-                        candidate.m_sequence->remove_last_tokens(num_last_matched_tokens - 1);
+                        if (!m_parameters.include_stop_str_in_output) {
+                            candidate.m_sequence->set_num_token_token_cnt_to_ignore(num_last_matched_tokens - 1);
+                        }
                     }
 
                     // try to finish candidate
@@ -578,6 +580,9 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
         if (!sampling_params.stop_strings.empty()) {
             int num_matched_last_tokens = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), sampling_params.stop_strings);
             if (num_matched_last_tokens) {
+                if (!sampling_params.include_stop_str_in_output) {
+                    running_sequence->set_num_token_token_cnt_to_ignore(num_matched_last_tokens - 1);
+                }
                 running_sequence->set_status(SequenceStatus::FINISHED);
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                 dropped_seq_ids.push_back(running_sequence->get_id());
