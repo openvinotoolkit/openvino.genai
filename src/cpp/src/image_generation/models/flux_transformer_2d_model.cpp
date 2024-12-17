@@ -21,7 +21,7 @@ FluxTransformer2DModel::Config::Config(const std::filesystem::path& config_path)
     using utils::read_json_param;
 
     read_json_param(data, "in_channels", in_channels);
-    file.close();
+    read_json_param(data, "guidance_embeds", guidance_embeds);
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir)
@@ -95,6 +95,8 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
             name_to_shape[input_name] = {height * width / 4, name_to_shape[input_name][1]};
         } else if (input_name == "txt_ids") {
             name_to_shape[input_name] = {tokenizer_model_max_length, name_to_shape[input_name][1]};
+        } else if (input_name == "guidance") {
+            name_to_shape[input_name] = {batch_size};
         }
     }
 
@@ -106,6 +108,7 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
 FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Flux Transformer 2D model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

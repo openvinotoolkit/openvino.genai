@@ -67,6 +67,19 @@ constexpr char bos_token_key_name[] = "bos_token";
 constexpr char eos_token_key_name[] = "eos_token";
 constexpr char pad_token_key_name[] = "pad_token";
 
+ov::Core core_with_extension() {
+    ov::Core core;
+    const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+    OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
+    core.add_extension(ov_tokenizer_path);
+    return core;
+}
+
+ov::Core get_core_singleton() {
+    static ov::Core core = core_with_extension();
+    return core;
+}
+
 }  // namespace
 
 namespace ov {
@@ -76,7 +89,7 @@ class Tokenizer::TokenizerImpl {
 public:
     ov::CompiledModel m_tokenizer;
     ov::CompiledModel m_detokenizer;
-
+    
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
     // To change the adding special tokens mode we use a statefull subgraph, 
@@ -135,65 +148,107 @@ public:
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path, const ov::AnyMap& properties)
-        : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
-        ov::Core core;
+    TokenizerImpl(const std::filesystem::path& models_papth,  const ov::AnyMap& properties) {
+        setupTokenizer(models_papth, properties);
+    }
 
-        OPENVINO_ASSERT(tokenizer_path.extension() != ".xml", "'tokenizer_path' parameter should be a path to a dir not a xml file");
+    TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,  const ov::AnyMap& properties) {
+        setupTokenizer(models, properties);
+    }
 
-        const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-        OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
-        core.add_extension(ov_tokenizer_path);
+    void setupTokenizer(const std::filesystem::path& models_path,  const ov::AnyMap& properties) {
+        ScopedVar env_manager(tokenizers_relative_to_genai().string());
+        auto core = get_core_singleton();
 
-        read_config(tokenizer_path);
-        read_special_tokens_map(tokenizer_path);
+        OPENVINO_ASSERT(models_path.extension() != ".xml", "'models_papth' parameter should be a path to a dir not a xml file");
 
-        // Try to read tokenizer_config if some token ids or token str are not defined.
-        read_tokenizer_config_if_necessary(tokenizer_path);
-
-        auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-        auto ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
+        std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
         std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-        if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
-            ov_detokenizer = core.read_model(tokenizer_path / "openvino_detokenizer.xml");
+
+        if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
+            ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml");
         }
+        
+        if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
+            ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml");
+        }
+
+        setupTokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+
+        // If special tokens were not found from IR, try to read them from config.
+        // This will be triggered only for IRs older than 2024.3.
+        if (m_pad_token_id == -1 || m_bos_token_id == -1 || m_eos_token_id == -1 ||
+            m_pad_token.empty() || m_bos_token.empty() || m_eos_token.empty()) {
+            read_config(models_path);
+            read_special_tokens_map(models_path);
+            // Try to read tokenizer_config if some token ids or token str are not defined.
+            read_tokenizer_config_if_necessary(models_path);
+        }
+        
+        // If chat_template was not found in IR, try to read them from config.
+        if (m_chat_template.empty()) {
+            m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
+        }
+    }
+    
+
+    void setupTokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,  const ov::AnyMap& properties) {
+        auto [ov_tokenizer, ov_detokenizer] = models;
+
         m_older_than_24_5 = ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") != 1;
-        
-        ov::pass::Manager manager_tok;
-        manager_tok.register_pass<MakeCombineSegmentsSatateful>();
-        manager_tok.run_passes(ov_tokenizer);
-        
-        m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
+        auto core = get_core_singleton();
+        std::string device = "CPU"; // only CPU is supported for now
+        if (ov_tokenizer) {
+            ov::pass::Manager manager;
+            manager.register_pass<MakeCombineSegmentsSatateful>();
+            manager.run_passes(ov_tokenizer);
+            m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
+            ov::genai::utils::print_compiled_model_properties(m_tokenizer, "OV Tokenizer");
+
+            m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+                m_tokenizer.get_property(ov::optimal_number_of_infer_requests),
+                [this]() -> ov::InferRequest {
+                    return std::move(this->m_tokenizer.create_infer_request());
+                });
+        }
+
         if (ov_detokenizer) {
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
             m_detokenizer = core.compile_model(ov_detokenizer, device, properties);
-        }
+            ov::genai::utils::print_compiled_model_properties(m_detokenizer, "OV Detokenizer");
 
-        const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::optimal_number_of_infer_requests);
-        m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            INFER_REQUEST_QUEUE_SIZE,
-            [this]() -> ov::InferRequest {
-                return std::move(this->m_tokenizer.create_infer_request());
-            });
-        if (m_detokenizer) {
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-                INFER_REQUEST_QUEUE_SIZE,
+                m_detokenizer.get_property(ov::optimal_number_of_infer_requests),
                 [this]() -> ov::InferRequest {
                     return std::move(this->m_detokenizer.create_infer_request());
                 });
         }
-
-        // Get special token ids by inference if they are not defined.
-        infer_special_tokens_if_necessary();
+        
         // Initialize tokenizer's cache to save time later.
-        // infer_special_tokens_if_necessary() already could do that
-        // but it didn't run decode() for sure.
-        // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-        auto tokenized_input = encode("non empty string").input_ids;
+        if (m_tokenizer) {
+            // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+            encode("non empty string").input_ids;
         if (m_detokenizer)
-            decode(tokenized_input);
+            decode({1, 33, 199, 42, 42});
+        }
+
+        utils::read_rt_info(ov_tokenizer, "chat_template", m_chat_template);
+        utils::read_rt_info(ov_tokenizer, "pad_token_id", m_pad_token_id);
+        utils::read_rt_info(ov_tokenizer, "bos_token_id", m_bos_token_id);
+        utils::read_rt_info(ov_tokenizer, "eos_token_id", m_eos_token_id);
+
+        m_chat_template = patch_chat_template(m_chat_template);
+        if (m_detokenizer) {
+            // Unset/-1 token causes exception in SentencePiece detokenization.
+            if (m_pad_token_id != -1)
+                m_pad_token = decode(std::vector{m_pad_token_id});
+            if (m_bos_token_id != -1)
+                m_bos_token = decode(std::vector{m_bos_token_id});
+            if (m_eos_token_id != -1)
+                m_eos_token = decode(std::vector{m_eos_token_id});
+        }
     }
 
     // load special tokens ids from config.json
@@ -453,7 +508,7 @@ public:
 
         std::string res;
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-        
+
         return patch_chat_template(res);
     }
 
@@ -518,8 +573,38 @@ public:
 };
 
 Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
-    ScopedVar env_manager(tokenizers_relative_to_genai().string());
     m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, properties);
+}
+
+Tokenizer::Tokenizer(
+    const std::string& tokenizer_model_str,
+    ov::Tensor& tokenizer_weights_tensor,
+    std::string& detokenizer_model_str,
+    ov::Tensor&  detokenizer_weights_tensor,
+    const ov::AnyMap& properties
+) {
+    ScopedVar env_manager(tokenizers_relative_to_genai().string());
+    auto core = get_core_singleton();
+
+    auto ov_tokenizer = core.read_model(tokenizer_model_str, tokenizer_weights_tensor);
+    auto ov_detokenizer = core.read_model(detokenizer_model_str, detokenizer_weights_tensor);
+    m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
+}
+
+Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties) {
+    ScopedVar env_manager(tokenizers_relative_to_genai().string());
+    auto core = get_core_singleton();
+    auto model = core.read_model(model_str, weights_tensor);
+    
+    auto parameters = model->get_parameters();
+    OPENVINO_ASSERT(!parameters.empty());
+    if (parameters.front()->get_element_type() == ov::element::string) {
+        // It's a tokenizer
+        m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(model, nullptr), properties);
+    } else {
+        // It's a detokenizer
+        m_pimpl = std::make_shared<TokenizerImpl>(std::make_pair(nullptr, model), properties);
+    }
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
@@ -556,6 +641,7 @@ std::vector<std::string> Tokenizer::decode(std::vector<std::vector<int64_t>> lin
     check_arguments(detokenization_params, {ov::genai::skip_special_tokens.name()});
     return m_pimpl->decode(lines, detokenization_params);
 }
+
 
 int64_t Tokenizer::get_bos_token_id() const {
     return m_pimpl->m_bos_token_id;
