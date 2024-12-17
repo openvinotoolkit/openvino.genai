@@ -41,7 +41,7 @@ def test_cpp_sample_multinomial_causal_lm(convert_model, sample_args, shared_dat
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
     result = subprocess.run([cpp_sample, convert_model, sample_args], check=True)
     assert result.returncode == 0, "C++ sample execution failed"
-    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("cpp", {}).setdefault(convert_model, {})[sample_args] = result.stdout
+    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("cpp", {}).setdefault("open_llama_3b_v2", {})[sample_args] = result.stdout
 
 @pytest.mark.llm    
 @pytest.mark.cpp
