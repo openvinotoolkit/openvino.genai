@@ -80,8 +80,8 @@ if(WIN32 OR APPLE)
 endif()
 
 # Workaround for an MSVC compiler issue in some versions of Visual Studio 2022.
-# The issue involves a null reference to a mutex. For details, refer to link https://github.com/microsoft/STL/wiki/Changelog#vs-2022-1710
-if(MSVC AND CMAKE_GENERATOR MATCHES "Visual Studio 17 2022")
+# The issue involves a null dereference to a mutex. For details, refer to link https://github.com/microsoft/STL/wiki/Changelog#vs-2022-1710
+if(MSVC AND MSVC_VERSION GREATER_EQUAL 1930 AND MSVC_VERSION LESS 1941)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
