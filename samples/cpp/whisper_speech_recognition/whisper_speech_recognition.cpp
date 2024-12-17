@@ -28,8 +28,8 @@ int main(int argc, char* argv[]) try {
 
     std::cout << result << "\n";
 
+    std::cout << std::setprecision(2);
     for (auto& chunk : *result.chunks) {
-        std::cout << std::setprecision(2);
         std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
     }
 
