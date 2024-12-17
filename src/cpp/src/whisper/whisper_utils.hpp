@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -17,6 +17,6 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
                                 size_t offset,
                                 std::vector<std::pair<size_t, size_t>>& ranges);
 
-} //namespace utils
-} // namespace genai
-} // namespace ov
+}  // namespace utils
+}  // namespace genai
+}  // namespace ov

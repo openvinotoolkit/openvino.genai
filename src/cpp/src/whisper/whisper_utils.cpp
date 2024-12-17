@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "whisper_utils.hpp"
@@ -16,7 +16,7 @@ void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pai
     value = result;
 }
 
-} // namespace
+}  // namespace
 
 namespace ov {
 namespace genai {
@@ -41,6 +41,6 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
     filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
 }
 
-} // namespace utils
+}  // namespace utils
 }  // namespace genai
 }  // namespace ov
