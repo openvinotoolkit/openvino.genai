@@ -383,7 +383,9 @@ jobs:
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
-        working-directory: ${{ env.INSTALL_DIR }}/samples_bin
+        env:
+          SAMPLES_PY_DIR: ${{ env.INSTALL_DIR }}/samples/python
+          SAMPLES_CPP_DIR: ${{ env.INSTALL_DIR }}/samples_bin
 
   Overall_Status:
     name: ci/gha_overall_status_linux
