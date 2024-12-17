@@ -60,6 +60,8 @@ public:
 
                 m_key_cache.emplace_back(key_cache);
                 m_value_cache.emplace_back(value_cache);
+
+                update_request_tensor(decoder_layer_id);
             }
         } else {
             auto remote_context = m_core.get_default_context(device_name);
@@ -71,16 +73,15 @@ public:
 
                 m_key_cache.emplace_back(key_cache);
                 m_value_cache.emplace_back(value_cache);
+
+                update_request_tensor(decoder_layer_id);
             }
         }
-        update_request_tensor();
     }
 
-    void update_request_tensor() {
-        for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
-            m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_key_cache[decoder_layer_id]);
-            m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
-        }
+    void update_request_tensor(size_t decoder_layer_id) {
+        m_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_key_cache[decoder_layer_id]);
+        m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
     }
 
     void increase_cache(size_t num_kv_blocks) {
@@ -100,19 +101,23 @@ public:
                 ov::Tensor key_cache(m_device_config.get_cache_precision(), new_value_cache_shape);
                 ov::Tensor value_cache(m_device_config.get_cache_precision(), new_key_cache_shape);
                 
-                // force allocation
-                std::memset(key_cache.data(), 0, key_cache.get_byte_size());
-                std::memset(value_cache.data(), 0, value_cache.get_byte_size());
-                
                 // copy current cache data
                 ov::Tensor dst_key_roi(key_cache, start_key, end_key);
                 ov::Tensor dst_value_roi(value_cache, start_value, end_value);
                 m_key_cache[decoder_layer_id].copy_to(dst_key_roi);
                 m_value_cache[decoder_layer_id].copy_to(dst_value_roi);
 
+                // force allocation on the added cache data
+                auto key_cache_roi_end = static_cast<unsigned char*>(key_cache.data()) + dst_key_roi.get_byte_size();
+                auto value_cache_roi_end = static_cast<unsigned char*>(value_cache.data()) + dst_value_roi.get_byte_size();
+                std::memset(key_cache_roi_end, 0, key_cache.get_byte_size() - dst_key_roi.get_byte_size());
+                std::memset(value_cache_roi_end, 0, value_cache.get_byte_size() - dst_value_roi.get_byte_size());
+                
                 // set new cache tensors
                 m_key_cache[decoder_layer_id] = key_cache;
                 m_value_cache[decoder_layer_id] = value_cache;
+
+                update_request_tensor(decoder_layer_id);
             }
         } else {
             auto remote_context = m_core.get_default_context(device_name);
@@ -132,10 +137,10 @@ public:
                 // set new cache tensors
                 m_key_cache[decoder_layer_id] = key_cache;
                 m_value_cache[decoder_layer_id] = value_cache;
+                
+                update_request_tensor(decoder_layer_id);
             }
         }
-        update_request_tensor();
-
         m_num_allocated_kv_blocks = num_kv_blocks;
     }
 
