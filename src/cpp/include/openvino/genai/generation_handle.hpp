@@ -57,6 +57,7 @@ struct GenerationOutput {
     std::vector<float> generated_log_probs;
     float score;
     GenerationFinishReason finish_reason;
+    size_t token_cnt_to_ignore;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;

@@ -139,18 +139,15 @@ public:
 
             OPENVINO_ASSERT(get_generated_len() >= token_cnt);
             auto offset = get_generated_len() - token_cnt;
+            auto offset_back = get_generated_len();
 
-            auto offset_back = get_generated_len() - m_token_cnt_to_ignore;
-            if (m_token_cnt_to_ignore)
-                auto a = 0;
-            m_token_cnt_to_ignore = 0;
-
-            std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.begin() + offset_back);
-            std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.begin() + offset_back);
+            std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
+            std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
 
             output.generated_ids = token_id;
             output.generated_log_probs = log_probs;
             output.finish_reason = get_finish_reason();
+            output.token_cnt_to_ignore = m_token_cnt_to_ignore;
         }
         return output;
     }

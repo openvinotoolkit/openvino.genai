@@ -46,7 +46,8 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
         } else {
             auto generated_len = iteration_result.second.generated_ids.size();
             OPENVINO_ASSERT(generated_len == iteration_result.second.generated_log_probs.size());
-            for (size_t i = 0; i < generated_len; ++i) {
+            OPENVINO_ASSERT(generated_len >= iteration_result.second.token_cnt_to_ignore);
+            for (size_t i = 0; i < generated_len - iteration_result.second.token_cnt_to_ignore; ++i) {
                 partial_result_iter->second.generated_ids.push_back(iteration_result.second.generated_ids[i]);
                 partial_result_iter->second.generated_log_probs.push_back(iteration_result.second.generated_log_probs[i]);
             }
