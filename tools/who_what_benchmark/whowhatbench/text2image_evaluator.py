@@ -27,17 +27,6 @@ default_data = {
 }
 
 
-class Generator(openvino_genai.Generator):
-    def __init__(self, seed, rng, mu=0.0, sigma=1.0):
-        openvino_genai.Generator.__init__(self)
-        self.mu = mu
-        self.sigma = sigma
-        self.rng = rng
-
-    def next(self):
-        return torch.randn(1, generator=self.rng, dtype=torch.float32).item()
-
-
 @register_evaluator("text-to-image")
 class Text2ImageEvaluator(BaseEvaluator):
     def __init__(
@@ -171,7 +160,7 @@ class Text2ImageEvaluator(BaseEvaluator):
                 model,
                 prompt,
                 self.num_inference_steps,
-                generator=Generator(self.seed, rng) if self.is_genai else rng
+                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             image.save(image_path)

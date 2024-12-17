@@ -6,20 +6,6 @@ import argparse
 
 import openvino as ov
 import openvino_genai
-import numpy as np
-import sys
-
-
-class Generator(openvino_genai.Generator):
-    def __init__(self, seed, mu=0.0, sigma=1.0):
-        openvino_genai.Generator.__init__(self)
-        np.random.seed(seed)
-        self.mu = mu
-        self.sigma = sigma
-
-    def next(self):
-        return np.random.normal(self.mu, self.sigma)
-
 
 def image_write(path: str, image_tensor: ov.Tensor):
     from PIL import Image
@@ -46,23 +32,23 @@ def main():
 
     # LoRA adapters passed to the constructor will be activated by default in next generates
     pipe = openvino_genai.Text2ImagePipeline(args.models_path, device, adapters=adapter_config)
+
     print("Generating image with LoRA adapters applied, resulting image will be in lora.bmp")
     image = pipe.generate(prompt,
-                          generator=Generator(42),
                           width=512,
                           height=896,
-                          num_inference_steps=20)
+                          num_inference_steps=20,
+                          rng_seed=42)
 
     image_write("lora.bmp", image)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
     image = pipe.generate(prompt,
                           # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
                           adapters=openvino_genai.AdapterConfig(),
-                          generator=Generator(42),
                           width=512,
                           height=896,
-                          num_inference_steps=20
-                          )
+                          num_inference_steps=20,
+                          rng_seed=42)
     image_write("baseline.bmp", image)
 
 

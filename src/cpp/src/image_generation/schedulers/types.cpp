@@ -55,6 +55,8 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Schedu
             param = Scheduler::EULER_DISCRETE;
         else if (scheduler_type_str == "FlowMatchEulerDiscreteScheduler")
             param = Scheduler::FLOW_MATCH_EULER_DISCRETE;
+        else if (scheduler_type_str == "PNDMScheduler")
+            param = Scheduler::PNDM;
         else if (!scheduler_type_str.empty()) {
             OPENVINO_THROW("Unsupported value for 'scheduler' ", scheduler_type_str);
         }
