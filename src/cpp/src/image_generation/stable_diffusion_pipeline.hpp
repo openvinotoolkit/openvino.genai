@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <ctime>
 #include <cassert>
 #include <filesystem>
 
@@ -34,14 +33,15 @@ public:
         const std::string device = "CPU";
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-            const bool do_normalize = true, do_binarize = false;
-            m_image_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize);
+            const bool do_normalize = true, do_binarize = false, gray_scale_source = false;
+            m_image_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, gray_scale_source);
             m_image_resizer = std::make_shared<ImageResizer>(device, ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
         }
 
         if (m_pipeline_type == PipelineType::INPAINTING) {
-            const bool do_normalize = false, do_binarize = true;
-            m_mask_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize);
+            bool do_normalize = false, do_binarize = true;
+            m_mask_processor_rgb = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, false);
+            m_mask_processor_gray = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, true);
             m_mask_resizer = std::make_shared<ImageResizer>(device, ov::element::f32, "NCHW", ov::op::v11::Interpolate::InterpolateMode::NEAREST);
         }
     }
@@ -268,7 +268,8 @@ public:
         ov::Shape target_shape = processed_image.get_shape();
 
         ov::Tensor mask_condition = m_image_resizer->execute(mask_image, target_shape[2], target_shape[3]);
-        mask_condition = m_mask_processor->execute(mask_condition);
+        std::shared_ptr<IImageProcessor> mask_processor = mask_condition.get_shape()[3] == 1 ? m_mask_processor_gray : m_mask_processor_rgb;
+        mask_condition = mask_processor->execute(mask_condition);
 
         // resize mask to shape of latent space
         ov::Tensor mask = m_mask_resizer->execute(mask_condition, target_shape[2] / vae_scale_factor, target_shape[3] / vae_scale_factor);
@@ -332,11 +333,6 @@ public:
         check_inputs(generation_config, initial_image);
 
         set_lora_adapters(generation_config.adapters);
-
-        if (generation_config.generator == nullptr) {
-            uint32_t seed = time(NULL);
-            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
-        }
 
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
@@ -507,7 +503,7 @@ protected:
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
     std::shared_ptr<UNet2DConditionModel> m_unet = nullptr;
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
-    std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor = nullptr;
+    std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
 };
 

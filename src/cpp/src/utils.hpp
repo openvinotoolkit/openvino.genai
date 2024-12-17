@@ -104,6 +104,8 @@ size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);
 
 void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
 
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
