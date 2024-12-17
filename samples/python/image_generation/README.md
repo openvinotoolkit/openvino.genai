@@ -24,6 +24,12 @@ Users can change the sample code and play with the following generation paramete
 > OpenVINO GenAI is written in C++ and uses `CppStdGenerator` random generator in Image Generation pipelines, while Diffusers library uses `torch.Generator` underhood.
 > To have the same results with HuggingFace, pass manually created `torch.Generator(device='cpu').manual_seed(seed)` to Diffusers generation pipelines and `openvino_genai.TorchGenerator(seed)` to OpenVINO GenAI pipelines as value for `generator` kwarg.
 
+## OpenVINO blogs about Image Generation with GenAI 
+
+Please follow the following blogs to setup your first hands-on experience with samples.
+
+* [How to generate images locally on AI PC with OpenVINO GenAI API](https://medium.com/openvino-toolkit/how-to-generate-images-locally-on-ai-pc-with-openvino-genai-api-220d08370958)
+
 ## Download and convert the models and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
