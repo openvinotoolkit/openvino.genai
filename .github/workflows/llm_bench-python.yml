@@ -61,6 +61,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}
       LLM_BENCH_PYPATH: ${{ github.workspace }}/tools/llm_bench
       WWB_PATH: ${{ github.workspace }}/tools/who_what_benchmark
+      OPENVINO_LOG_LEVEL: 3
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

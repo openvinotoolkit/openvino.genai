@@ -48,7 +48,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), properties).create_infer_request();
+    auto compiled_model = core.compile_model(model, device_config.get_device(), properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
+    ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
