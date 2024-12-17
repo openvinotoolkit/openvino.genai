@@ -17,29 +17,83 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.10'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/l_openvino_toolkit_ubuntu20_2025.0.0.dev20241205_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/w_openvino_toolkit_windows_2025.0.0.dev20241205_x86_64.zip
+  PYTHON_VERSION: '3.11'
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 jobs:
+  openvino_download_linux:
+    name: Download OpenVINO for Linux
+    outputs:
+      status: ${{ steps.openvino_download.outcome }}
+      ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
+      ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
+      ov_version: ${{ steps.openvino_download.outputs.ov_version }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-2-cores-8gb
+    container:
+      image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+
+    steps:
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+      id: openvino_download
+      with:
+        platform: ubuntu22
+        commit_packages_to_provide: wheels
+        revision: latest_available_commit
+
+  openvino_download_windows:
+    name: Download OpenVINO for Windows
+    outputs:
+      status: ${{ steps.openvino_download.outcome }}
+      ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
+      ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
+      ov_version: ${{ steps.openvino_download.outputs.ov_version }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-2-cores-8gb
+    container:
+      image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+
+    steps:
+    - uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+      id: openvino_download
+      with:
+        platform: windows
+        commit_packages_to_provide: wheels
+        revision: latest_available_commit
+
   stable_diffusion_1_5_cpp-linux:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
+    needs: [ openvino_download_linux ]
     defaults:
       run:
         shell: bash -l {0}
     env:
       build_dir: ${{ github.workspace }}//build
+      SRC_DIR: ${{ github.workspace }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Download OpenVINO archive
-        run: |
-          wget ${{ env.LINUX_OV_ARCHIVE_URL}} --progress=bar:force:noscroll -O openvino_package.tar.gz
-          mkdir ${{ env.OV_INSTALL_DIR }}
-          tar -xzf openvino_package.tar.gz -C ${{ env.OV_INSTALL_DIR }} --strip-components=1
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download_linux.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -58,9 +112,10 @@ jobs:
 
       - name: Install python dependencies
         run: |
-          source openvino_sd_cpp/bin/activate
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
+          source ${{ github.workspace }}/openvino_sd_cpp/bin/activate
+          python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] ${{ needs.openvino_download_linux.outputs.ov_wheel_source }}
+          python -m pip install -r ${{ env.SRC_DIR }}/samples/requirements.txt
+        working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Download and convert models and tokenizer
         run: |
@@ -95,25 +150,26 @@ jobs:
           PYTHONPATH: ${{ env.build_dir }}
 
   stable_diffusion_1_5_cpp-windows:
+    needs: [ openvino_download_windows ]
     runs-on: windows-2019
     defaults:
       run:
         shell: pwsh
     env:
       build_dir: ${{ github.workspace }}\build
+      SRC_DIR: ${{ github.workspace }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Download OpenVINO archive
-        run: |
-          mkdir ${{ env.OV_INSTALL_DIR }}
-          pushd ${{ env.OV_INSTALL_DIR }}
-            Invoke-WebRequest "${{ env.WINDOWS_OV_ARCHIVE_URL}}" -OutFile "openvino_package.zip"
-            Expand-Archive openvino_package.zip -DestinationPath ./tmp
-            mv ./tmp/*/* .
-          popd
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download_windows.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -132,9 +188,10 @@ jobs:
 
       - name: Install python dependencies
         run: |
-          . "./openvino_sd_cpp/Scripts/Activate.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
+          . "${{ github.workspace }}/openvino_sd_cpp/Scripts/Activate.ps1"
+          python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers/[transformers] ${{ needs.openvino_download_windows.outputs.ov_wheel_source }}
+          python -m pip install -r ${{ env.SRC_DIR }}/samples/requirements.txt
+        working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Download and convert models and tokenizer
         run: |

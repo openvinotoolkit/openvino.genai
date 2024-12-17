@@ -13,6 +13,8 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 
+#include "sampler.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -304,6 +306,79 @@ template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
+}
+
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+    size_t idx = 0;
+    auto encoded_history_data = encoded_history.data<int64_t>();
+    while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
+        if (encoded_history_data[idx] != tokenized_history[idx])
+            break;
+        idx++;
+    }
+
+    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
+    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
+        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
+        return SIZE_MAX;
+    else
+        return idx;
+}
+
+size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // therefore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
+
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        // check input size, as in LoRA adapters case it could be 0
+        if (op->get_type_name() != kv_node_type_name || op->get_input_size() < 1) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
+    // nothing to trim in this case
+    if (remove_from_end == 0)
+        return;
+
+    auto states = request.query_state();
+    for (auto& state : states) {
+        if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
+            continue;
+
+        ov::Tensor old_tensor = state.get_state();
+        // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+        auto shape = old_tensor.get_shape();
+        shape[seq_length_axis] -= remove_from_end;
+
+        ov::Coordinate new_shape_begin{0, 0, 0, 0};
+        ov::Coordinate new_shape_end{shape};
+
+        auto trimmed_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+
+        ov::Tensor new_tensor(old_tensor.get_element_type(), shape);
+        trimmed_tensor.copy_to(new_tensor);
+
+        state.set_state(new_tensor);
+    }
 }
 
 }  // namespace utils

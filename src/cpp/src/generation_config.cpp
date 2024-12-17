@@ -14,6 +14,8 @@
 namespace ov {
 namespace genai {
 
+ov::Property<size_t> rng_seed{"rng_seed"};
+
 GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     using utils::read_json_param;
 
@@ -21,7 +23,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     OPENVINO_ASSERT(f.is_open(), "Failed to open '", json_path, "' with generation config");
 
     nlohmann::json data = nlohmann::json::parse(f);
-    
+
     read_json_param(data, "max_new_tokens", max_new_tokens);
     read_json_param(data, "max_length", max_length);
     // note that ignore_eos is not present in HF GenerationConfig
@@ -103,6 +105,9 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "echo", echo);
     read_anymap_param(config_map, "logprobs", logprobs);
     read_anymap_param(config_map, "adapters", adapters);
+
+    // TODO: add support of 'generator' property similar to Image generation
+    read_anymap_param(config_map, "rng_seed", rng_seed);
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
