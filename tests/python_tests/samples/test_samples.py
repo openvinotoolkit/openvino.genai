@@ -27,6 +27,11 @@ TEST_DATA = os.path.join(TEMP_DIR, "test_data")
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.getcwd())
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
+# A shared fixture to hold data
+@pytest.fixture(scope="session")
+def shared_data():
+    return {}
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request):
     """Fixture to set up and tear down the temporary directories."""
@@ -112,21 +117,36 @@ def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_cont
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model, sample_args", [
     ({"model_id": "TinyLlama-1.1B-Chat-v1.0", "extra_args": ["--trust-remote-code"]}, "0"),
-    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "b")
+    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "a"),
+    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "return 0"),
 ], indirect=["convert_model"])
-def test_python_sample_multinomial_causal_lm(convert_model, sample_args):
+def test_python_sample_multinomial_causal_lm(convert_model, sample_args, shared_data):
     script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
-    exit_code = subprocess.run(["python", script, convert_model, sample_args], check=True).returncode
-    assert exit_code == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
+    result = subprocess.run(["python", script, convert_model, sample_args], check=True)
+    assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
+    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("py", {}).setdefault(convert_model, {})[sample_args] = result.stdout
 
 @pytest.mark.llm    
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [{"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}], 
-                         indirect=True, ids=lambda p: f"model={p['model_id']}")
-def test_cpp_sample_multinomial_causal_lm(convert_model):
+@pytest.mark.parametrize("convert_model, sample_args", [
+    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "b"),
+    ({"model_id": "open_llama_3b_v2", "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]}, "return 0"),
+], indirect=["convert_model"])
+def test_cpp_sample_multinomial_causal_lm(convert_model, sample_args, shared_data):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
-    exit_code = subprocess.run([cpp_sample, convert_model, "a"], check=True).returncode
-    assert exit_code == 0, "C++ sample execution failed"
+    result = subprocess.run([cpp_sample, convert_model, sample_args], check=True)
+    assert result.returncode == 0, "C++ sample execution failed"
+    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("cpp", {}).setdefault(convert_model, {})[sample_args] = result.stdout
+
+@pytest.mark.llm    
+@pytest.mark.cpp
+@pytest.mark.py
+def test_sample_multinomial_causal_lm_diff(shared_data):
+    py_result = shared_data.get("multinomial_causal_lm", {}).get("py", {}).get("open_llama_3b_v2", {}).get("return 0")
+    cpp_result = shared_data.get("multinomial_causal_lm", {}).get("cpp", {}).get("open_llama_3b_v2", {}).get("return 0")
+    if not py_result or not cpp_result:
+        pytest.skip("Skipping because one of the prior tests was skipped or failed.")
+    assert py_result == cpp_result, "Results should match"
 
 # Greedy causal LM samples
 @pytest.mark.llm
@@ -157,54 +177,3 @@ def test_python_sample_text_generation(convert_model, download_test_content, sam
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/lora.py")
     result = subprocess.run(["python", script, convert_model, download_test_content, sample_args], check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model}"
-    
-# multinomial_causal_lm sample
-# A shared fixture to hold data
-@pytest.fixture(scope="session")
-def shared_data():
-    return {}
-
-@pytest.mark.llm
-@pytest.mark.py
-@pytest.mark.parametrize("convert_model, sample_args", [
-    (
-        {
-            "model_id": "open_llama_3b_v2", 
-            "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]
-        }, 
-        "return 0"
-    )
-], indirect=["convert_model"])
-def test_python_sample_multinomial_causal_lm_1(convert_model, sample_args, shared_data):
-    script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
-    result = subprocess.run(["python", script, convert_model, sample_args], check=True, capture_output=True, text=True)
-    assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
-    shared_data["result1"] = result.stdout
-
-@pytest.mark.llm    
-@pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [
-    (
-        {
-        "model_id": "open_llama_3b_v2", 
-        "extra_args": ["--trust-remote-code", "--weight-format", "fp16"]
-        },
-        "return 0"
-    ),
-], indirect=["convert_model"])
-def test_cpp_sample_multinomial_causal_lm_2(convert_model, shared_data):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
-    result = subprocess.run([cpp_sample, convert_model, "a"], check=True, capture_output=True, text=True)
-    assert result.returncode == 0, "C++ sample execution failed"
-    shared_data["result2"] = result.stdout
-
-@pytest.mark.llm    
-@pytest.mark.cpp
-@pytest.mark.py
-def test_sample_multinomial_causal_lm_diff(shared_data, request):
-    if not shared_data.get("result1") or not shared_data.get("result2") :
-        pytest.skip("Skipping because one of the prior tests was skipped or failed.")
-    print("Checking if the results match")
-    print(shared_data["result1"])
-    print(shared_data["result2"])
-    assert shared_data["result1"] == shared_data["result2"], "Results should match"
