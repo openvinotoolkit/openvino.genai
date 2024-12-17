@@ -4,7 +4,7 @@
 import os
 import subprocess
 import pytest
-from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 
 # multinomial_causal_lm sample
 
@@ -29,7 +29,7 @@ def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_ar
     script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
     result = subprocess.run(["python", script, convert_model, sample_args], check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
-    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("py", {}).setdefault(convert_model, {})[sample_args] = result.stdout
+    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("py", {}).setdefault("open_llama_3b_v2", {})[sample_args] = result.stdout
 
 @pytest.mark.llm    
 @pytest.mark.cpp
