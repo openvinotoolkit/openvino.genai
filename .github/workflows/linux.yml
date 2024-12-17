@@ -499,7 +499,7 @@ jobs:
       GENAI_REPO: ${{ github.workspace }}/openvino.genai
       MODELS_DIR: ${{ github.workspace }}/models
       JS_SRC_DIR: ${{ github.workspace }}/openvino.genai/src/js
-      JS_SAMPLES_DIR: ${{ github.workspace }}/openvino.genai/samples/js
+      JS_SAMPLES_DIR: ${{ github.workspace }}/openvino.genai/samples/js/chat_sample
       BIN_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
     steps:
       - name: Clone openvino.genai
@@ -524,7 +524,7 @@ jobs:
 
       - name: Download model for tests
         run: npm run test_setup
-        working-directory: ${{ env.JS_SAMPLES_DIR }}
+        working-directory: ${{ env.JS_SRC_DIR }}
 
       - name: Link genai-node package
         run: npm link
