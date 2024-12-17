@@ -125,6 +125,17 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                                                 active_sequence_groups.end(),
                                                 get_active_sequence_groups),
                                  active_sequence_groups.end());
+    
+    auto stream_generated_tokens = [&streamer_ptr, &generations]() {
+        if (streamer_ptr && generations.at(0).get()->can_read()) {
+            std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
+            for (const auto& gen_token : token.begin()->second.generated_ids) {
+                if (!streamer_ptr->put(gen_token)) {
+                    break;
+                }
+            }
+        }
+    };
 
     while (active_sequence_groups.size() > 0) {
         size_t total_num_tokens = 0;
@@ -202,13 +213,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
-        if (streamer_ptr) {
-            // stream data from first sequence
-            int64_t out_token = sequence_groups.at(0).get()->operator[](0)->get_generated_ids().back();
-            if (streamer_ptr->put(out_token)) {
-                break;
-            }
-        }
+        stream_generated_tokens();
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
 
@@ -218,9 +223,9 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                                     active_sequence_groups.end());
     }
 
+    // to stream last token
+    stream_generated_tokens();
     if (streamer_ptr) {
-        int64_t out_token = sequence_groups.at(0).get()->operator[](0)->get_generated_ids().back();
-        streamer_ptr->put(out_token);
         streamer_ptr->end();
     }
     

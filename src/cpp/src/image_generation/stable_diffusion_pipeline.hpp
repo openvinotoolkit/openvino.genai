@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <ctime>
 #include <cassert>
 #include <filesystem>
 
@@ -332,11 +331,6 @@ public:
         check_inputs(generation_config, initial_image);
 
         set_lora_adapters(generation_config.adapters);
-
-        if (generation_config.generator == nullptr) {
-            uint32_t seed = time(NULL);
-            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
-        }
 
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
