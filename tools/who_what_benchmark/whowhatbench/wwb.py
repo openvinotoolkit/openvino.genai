@@ -9,30 +9,19 @@ import json
 import logging
 import os
 
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel, AutoModelForVision2Seq
+import openvino as ov
+
 import pandas as pd
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
-from optimum.exporters.tasks import TasksManager
-from optimum.intel import OVPipelineForText2Image
-from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
-from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from PIL import Image
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel, AutoModelForVision2Seq
-import openvino as ov
 
 from whowhatbench import EVALUATOR_REGISTRY
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = (
-    TasksManager._SUPPORTED_MODEL_TYPE["llama"]
-)
-NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
-    num_layers="num_hidden_layers",
-    num_attention_heads="num_attention_heads",
-)
 
 
 class GenAIModelWrapper:
@@ -81,6 +70,7 @@ def load_text_model(
         model = load_text_genai_pipeline(model_id, device, ov_config)
     else:
         logger.info("Using Optimum API")
+        from optimum.intel.openvino import OVModelForCausalLM
         try:
             model = OVModelForCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
@@ -98,11 +88,6 @@ def load_text_model(
             )
 
     return model
-
-
-TEXT2IMAGE_TASK2CLASS = {
-    "text-to-image": OVPipelineForText2Image,
-}
 
 
 def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
@@ -132,7 +117,8 @@ def load_text2image_model(
             model_id, trust_remote_code=True)
     else:
         logger.info("Using Optimum API")
-        TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
+        from optimum.intel import OVPipelineForText2Image
+        TEXT2IMAGEPipeline = OVPipelineForText2Image
 
         try:
             model = TEXT2IMAGEPipeline.from_pretrained(
@@ -192,6 +178,7 @@ def load_visual_text_model(
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)
     else:
         logger.info("Using Optimum API")
+        from optimum.intel.openvino import OVModelForVisualCausalLM
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
@@ -565,7 +552,6 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
-        print("optimized_model: ", e["optimized_model"])
         for l1, l2 in zip(
             e["source_model"].splitlines(), e["optimized_model"].splitlines()
         ):
@@ -576,12 +562,13 @@ def print_text_results(evaluator):
             diff += diff_strings(l1, l2) + "\n"
 
         logger.info(
-            "--------------------------------------------------------------------------------------"
+            "======================================================================================================="
         )
-        logger.info("## Reference text %d:\n%s", i + 1, ref_text)
-        logger.info("## Actual text %d:\n%s", i + 1, actual_text)
-        logger.info("## Diff %d: ", i + 1)
-        logger.info(diff)
+        logger.info("## Prompt %d:\n%s\n", i + 1, e["prompt"])
+        logger.info("## Metric value:%.4f\n", e[metric_of_interest])
+        logger.info("## Reference text:\n%s\n", ref_text)
+        logger.info("## Actual text:\n%s\n", actual_text)
+        logger.info("## Diff:\n%s\n", diff)
 
 
 def print_image_results(evaluator):
@@ -591,7 +578,7 @@ def print_image_results(evaluator):
         top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         logger.info(
-            "--------------------------------------------------------------------------------------"
+            "======================================================================================================="
         )
         logger.info(f"Top-{i+1} example:")
         logger.info(e)
@@ -651,7 +638,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics.csv"))
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
-    if args.verbose and args.target_model is not None:
+    if args.verbose and (args.target_model or args.target_data):
         if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type:

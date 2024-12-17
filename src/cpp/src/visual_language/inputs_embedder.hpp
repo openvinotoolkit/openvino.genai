@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -23,6 +24,13 @@ public:
                    const std::string& device,
                    const ov::AnyMap device_config);
 
+    InputsEmbedder(const VLMConfig& vlm_config,
+                   const ModelsMap& models_map,
+                   const Tokenizer& tokenizer,
+                   const std::filesystem::path& config_dir_path,
+                   const std::string& device,
+                   const ov::AnyMap device_config);
+
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
@@ -31,6 +39,13 @@ public:
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
+
+    // returns tokenized chat history
+    std::vector<int64_t> get_tokenized_chat_history() const;
+    // add new results to tokenized chat history
+    void update_tokenized_chat_history(std::vector<int64_t> encoded_result);
+    // returns amount of elements, which need to remove from the end of the KV cache
+    size_t get_amount_to_remove_from_hist() const;
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);

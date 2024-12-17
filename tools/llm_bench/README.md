@@ -32,7 +32,7 @@ huggingface-cli login
 The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
 - Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
 - To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html).
-- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html).
+- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html).
 
 **Usage:**
 
@@ -42,7 +42,7 @@ optimum-cli export openvino --model <MODEL_ID> --weight-format <PRECISION> <OUTP
 optimum-cli export openvino -h # For detailed information
 ```
 
-* `--model <MODEL_ID>` : model_id for downloading from [huggngface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
 * `--weight-format <PRECISION>` : precision for model conversion. Available options: `fp32, fp16, int8, int4, mxfp4`
 * `<OUTPUT_DIR>`: output directory for saving generated OpenVINO model.
 

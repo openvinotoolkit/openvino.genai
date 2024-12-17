@@ -7,7 +7,6 @@ from typing import Dict, List, Optional
 
 import pytest
 
-import whowhatbench
 from optimum.intel.openvino import OVModelForCausalLM
 
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult, GenerationConfig, CacheEvictionConfig, AggregationMode
@@ -97,6 +96,8 @@ SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32,
 ])
 @pytest.mark.parametrize("enable_prefix_caching", [True, False])  # prefix caching shouldn't impact similarity
 def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, test_struct, enable_prefix_caching):
+    import whowhatbench
+    
     seqs_per_request = 32
     scheduler_config = get_scheduler_config(test_struct.num_kv_blocks)
 
