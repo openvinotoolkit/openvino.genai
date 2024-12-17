@@ -275,23 +275,12 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
     image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    print("model.resolution: ", model.resolution)
-    if model.resolution is not None and model.resolution[0] is not None:
-        image_tensor = model.generate(
-            prompt,
-            image=image,
-            width=model.resolution[0],
-            height=model.resolution[1],
-            num_inference_steps=num_inference_steps,
-            generator=generator,
-        )
-    else:
-        image_tensor = model.generate(
-            prompt,
-            image=image_data,
-            num_inference_steps=num_inference_steps,
-            generator=generator,
-        )
+    image_tensor = model.generate(
+        prompt,
+        image=image_data,
+        num_inference_steps=num_inference_steps,
+        generator=generator,
+    )
     image = Image.fromarray(image_tensor.data[0])
     return image
 
