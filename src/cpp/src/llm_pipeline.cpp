@@ -62,7 +62,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ) : StatefulLLMPipeline{
-            utils::singleton_core().read_model(models_path, {}, plugin_config),
+            utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, plugin_config),
             tokenizer, 
             device, 
             plugin_config, 
