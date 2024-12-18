@@ -101,8 +101,7 @@ def main():
             height=height,
             guidance_scale=guidance_scale,
             num_inference_steps=number_of_inference_steps_per_image,
-            num_images_per_prompt=1,
-            generator=openvino_genai.CppStdGenerator(42)
+            num_images_per_prompt=1
         )
 
         image = Image.fromarray(image_tensor.data[0])

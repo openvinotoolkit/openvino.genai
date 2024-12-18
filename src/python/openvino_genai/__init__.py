@@ -11,7 +11,6 @@ from .__version__ import __version__
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
 
-
 from .py_openvino_genai import (
     DecodedResults,
     EncodedResults,
@@ -29,7 +28,7 @@ from .py_openvino_genai import (
 # LLM pipeline
 from .py_openvino_genai import (
     LLMPipeline, 
-    draft_model
+    draft_model,
 )
 
 # LoRA
@@ -75,6 +74,7 @@ from .py_openvino_genai import (
     ImageGenerationConfig,
     Generator,
     CppStdGenerator,
+    TorchGenerator,
 )
 
 # Continuous batching
