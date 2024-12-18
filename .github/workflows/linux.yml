@@ -377,7 +377,7 @@ jobs:
       - name: Test Samples (Python and C++)
         run: python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ env.TEST_MARKERS }}"
         env:
-          LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:$LD_LIBRARY_PATH"
+          LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
           TEST_MARKERS: ${{ (matrix.build-type == 'Release') && matrix.test.marker || format('{0} and cpp', matrix.test.marker) }}
