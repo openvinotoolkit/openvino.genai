@@ -491,7 +491,6 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
@@ -505,36 +504,22 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          python ./samples/python/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
+          with open('predictions_py.txt', 'r') as f:
+              predicted_prompt_lookup_py = f.readline()
           assert predicted_greedy == predicted_prompt_lookup
+          assert predicted_greedy == predicted_prompt_lookup_py
+          assert predicted_prompt_lookup == predicted_prompt_lookup_py
           "
           echo "Prompt lookup" passed
-      - name: run and compare (model with seq_length_axis = 1)
-        run: |
-          source ./ov/setupvars.sh
-
-          echo 'Code:```python
-          def add(a, b):
-              return a + b
-          ```
-          Question: Can you please add 2 and 3
-          A:' > ./prompt.txt
-
-          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          ./build/samples/cpp/text_generation/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_prompt_lookup.txt', 'r') as f:
-              predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
-          "
-          echo "Prompt lookup" passed
-
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
     defaults:

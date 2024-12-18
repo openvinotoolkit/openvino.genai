@@ -352,6 +352,43 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
     }
 }
 
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+    // Specify the name of the environment variable
+    const char* env_var_name = "OPENVINO_LOG_LEVEL";
+    const char* env_var_value = std::getenv(env_var_name);
+
+    // Check if the environment variable was found
+    if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
+        // output of the actual settings that the device selected
+        auto supported_properties = compiled_Model.get_property(ov::supported_properties);
+        std::cout << "Model: " << model_title << std::endl;
+        for (const auto& cfg : supported_properties) {
+            if (cfg == ov::supported_properties)
+                continue;
+            auto prop = compiled_Model.get_property(cfg);
+            if (cfg == ov::device::properties) {
+                auto devices_properties = prop.as<ov::AnyMap>();
+                for (auto& item : devices_properties) {
+                    std::cout << "  " << item.first << ": " << std::endl;
+                    for (auto& item2 : item.second.as<ov::AnyMap>()) {
+                        std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
+                    }
+                }
+            } else {
+                std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
+            }
+        }
+
+        ov::Core core;
+        std::vector<std::string> exeTargets;
+        exeTargets = compiled_Model.get_property(ov::execution_devices);
+        std::cout << "EXECUTION_DEVICES:" << std::endl;
+        for (const auto& device : exeTargets) {
+            std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+        }
+    }
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

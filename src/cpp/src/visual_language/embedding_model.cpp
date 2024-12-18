@@ -26,6 +26,7 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
     merge_postprocess(m_model, scale_emb);
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
     m_request = compiled_model.create_infer_request();
 }
 

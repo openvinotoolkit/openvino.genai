@@ -107,12 +107,14 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("logprobs", &GenerationConfig::logprobs)
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
+        .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
         .def("is_beam_search", &GenerationConfig::is_beam_search)
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)
-        .def("is_speculative_decoding", &GenerationConfig::is_speculative_decoding)
+        .def("is_assisting_generation", &GenerationConfig::is_assisting_generation)
+        .def("is_prompt_lookup", &GenerationConfig::is_prompt_lookup)
         .def("update_generation_config", static_cast<void (GenerationConfig::*)(const ov::AnyMap&)>(&ov::genai::GenerationConfig::update_generation_config), py::arg("config_map"));
    }

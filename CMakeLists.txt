@@ -79,6 +79,13 @@ if(WIN32 OR APPLE)
   set(CMAKE_DEBUG_POSTFIX "d")
 endif()
 
+# Workaround for an MSVC compiler issue in some versions of Visual Studio 2022.
+# The issue involves a null dereference to a mutex. For details, refer to link https://github.com/microsoft/STL/wiki/Changelog#vs-2022-1710
+if(MSVC AND MSVC_VERSION GREATER_EQUAL 1930 AND MSVC_VERSION LESS 1941)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
+
+
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples")

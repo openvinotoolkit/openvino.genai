@@ -95,6 +95,7 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     } else {
         compiled_model = core.compile_model(m_model, device, properties);
     }
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

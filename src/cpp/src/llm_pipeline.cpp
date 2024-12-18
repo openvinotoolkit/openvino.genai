@@ -80,13 +80,18 @@ public:
         m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
         ov::Core core = utils::singleton_core();
+        ov::CompiledModel compiled_model;
+
         if (auto filtered_config = extract_adapters_from_properties(config, &m_generation_config.adapters)) {
             m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
             m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-            m_model_runner = core.compile_model(model, device, *filtered_config).create_infer_request();
+            compiled_model = core.compile_model(model, device, *filtered_config);
+            m_model_runner = compiled_model.create_infer_request();
         } else {
-            m_model_runner = core.compile_model(model, device, config).create_infer_request();
+            compiled_model = core.compile_model(model, device, config);
+            m_model_runner = compiled_model.create_infer_request();
         }
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)

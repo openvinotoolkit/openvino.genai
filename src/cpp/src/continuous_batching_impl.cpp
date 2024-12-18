@@ -16,13 +16,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled
     ) {
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
 
     ov::Core core = utils::singleton_core();
-
     DeviceConfig device_config(core, scheduler_config, device, properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
@@ -43,7 +44,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), properties).create_infer_request();
+    auto compiled_model = core.compile_model(model, device_config.get_device(), properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
+    ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
