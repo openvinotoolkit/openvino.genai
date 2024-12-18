@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cassert>
-#include <ctime>
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
@@ -466,11 +465,6 @@ public:
             compute_dim(generation_config.width, initial_image, 2 /* assume NHWC */);
 
         check_inputs(generation_config, initial_image);
-
-        if (generation_config.generator == nullptr) {
-            uint32_t seed = time(NULL);
-            generation_config.generator = std::make_shared<CppStdGenerator>(seed);
-        }
 
         // 3. Prepare timesteps
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);

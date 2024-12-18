@@ -89,7 +89,14 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
+    /**
+     * Inpaints an initial image within an area defined by mask and conditioned on prompt
+     * @param positive_prompt Prompt to generate image(s) from
+     * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
+     * @param mask_image RGB/BGR or GRAY/BINARY image of [1, height, width, 3 or 1] shape used as a mask
+     * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @returns ImageResults includes a tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     */
     ImageResults generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>

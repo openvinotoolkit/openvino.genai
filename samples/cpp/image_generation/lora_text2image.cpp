@@ -24,10 +24,10 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     std::cout << "Generating image with LoRA adapters applied, resulting image will be in lora.bmp\n";
     auto image_results = pipe.generate(prompt,
-        ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
-        ov::genai::num_inference_steps(20));
+        ov::genai::num_inference_steps(20),
+        ov::genai::rng_seed(42));
     imwrite("lora.bmp", image_results.image, true);
     std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
     std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
@@ -35,10 +35,10 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
     image_results = pipe.generate(prompt,
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
-        ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
-        ov::genai::num_inference_steps(20));
+        ov::genai::num_inference_steps(20),
+        ov::genai::rng_seed(42));
     imwrite("baseline.bmp", image_results.image, true);
     std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
     std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;

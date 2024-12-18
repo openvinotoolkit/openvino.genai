@@ -41,6 +41,12 @@ public:
     virtual ov::Tensor randn_tensor(const ov::Shape& shape);
 
     /**
+     * Sets a new initial seed value to random generator
+     * @param new_seed A new seed value
+     */
+    virtual void seed(size_t new_seed) = 0;
+
+    /**
      * Default dtor defined to ensure working RTTI.
      */
     virtual ~Generator();
@@ -59,9 +65,11 @@ public:
 
     virtual float next() override;
 
+    virtual void seed(size_t new_seed) override;
+
 private:
-    std::mt19937 gen;
-    std::normal_distribution<float> normal;
+    std::mt19937 m_gen;
+    std::normal_distribution<float> m_normal;
 };
 
 /**
@@ -82,9 +90,17 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_images_per_prompt = 1;
 
     /**
-     * Random generator to initial latents, add noise to initial images in case of image to image / inpainting pipelines
+     * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting pipelines
+     * By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
+     * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
      */
-    std::shared_ptr<Generator> generator = std::make_shared<CppStdGenerator>(42);
+    std::shared_ptr<Generator> generator = nullptr;
+
+    /**
+     * Seed for random generator
+     * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
+     */
+    size_t rng_seed = 42;
 
     float guidance_scale = 7.5f;
     int64_t height = -1;
@@ -92,7 +108,7 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_inference_steps = 50;
 
     /**
-     * Max sequence lenght for T4 encoder / tokenizer used in SD3 / FLUX models
+     * Max sequence length for T5 encoder / tokenizer used in SD3 / FLUX models
      */
     int max_sequence_length = -1;
 
@@ -203,6 +219,12 @@ static constexpr ov::Property<float> strength{"strength"};
  * which ensures the generated images will look as in HuggingFace when the same sed value if used.
  */
 static constexpr ov::Property<std::shared_ptr<Generator>> generator{"generator"};
+
+/**
+ * Seed for random generator
+ * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
+ */
+extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 
 /**
  * This parameters limits max sequence length for T5 encoder for SD3 and FLUX models.

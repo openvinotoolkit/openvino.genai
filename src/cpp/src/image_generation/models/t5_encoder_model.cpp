@@ -63,6 +63,7 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
     compiled_model = core.compile_model(m_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "T5 encoder model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

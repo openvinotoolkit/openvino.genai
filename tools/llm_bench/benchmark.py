@@ -12,6 +12,7 @@ import traceback
 from llm_bench_utils.memory_profile import MemConsumption
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
+import task.visual_language_generation as bench_vlm
 import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
@@ -167,6 +168,7 @@ CASE_TO_BENCH = {
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
+    "vlm": bench_vlm.run_visual_language_generation_benchmark
 }
 
 
