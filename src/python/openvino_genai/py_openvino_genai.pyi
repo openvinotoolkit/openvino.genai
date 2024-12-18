@@ -1953,10 +1953,26 @@ class WhisperGenerationConfig:
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
     
-        :param initial_prompt: Text string to provide as a prompt for the first window.
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+        window. Can be used to steer the model to use particular spellings or styles.
+
+        Example:
+        auto result = pipeline.generate(raw_speech);
+        //  He has gone and gone for good answered Paul Icrom who...
+
+        auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+        //  He has gone and gone for good answered Polychrome who...
         :type initial_prompt: Optional[str]
     
-        :param hotwords: Hotwords/hint phrases to provide the model with.
+        :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+        Can be used to steer the model to use particular spellings or styles.
+
+        Example:
+        auto result = pipeline.generate(raw_speech);
+        //  He has gone and gone for good answered Paul Icrom who...
+
+        auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+        //  He has gone and gone for good answered Polychrome who...
         :type hotwords: Optional[str]
     """
     begin_suppress_tokens: list[int]
@@ -2097,10 +2113,26 @@ class WhisperPipeline:
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
         
-            :param initial_prompt: Text string to provide as a prompt for the first window.
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+            window. Can be used to steer the model to use particular spellings or styles.
+
+            Example:
+            auto result = pipeline.generate(raw_speech);
+            //  He has gone and gone for good answered Paul Icrom who...
+
+            auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+            //  He has gone and gone for good answered Polychrome who...
             :type initial_prompt: Optional[str]
         
-            :param hotwords: Hotwords/hint phrases to provide the model with.
+            :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+            Can be used to steer the model to use particular spellings or styles.
+
+            Example:
+            auto result = pipeline.generate(raw_speech);
+            //  He has gone and gone for good answered Paul Icrom who...
+
+            auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+            //  He has gone and gone for good answered Polychrome who...
             :type hotwords: Optional[str]
         """
     def get_generation_config(self) -> WhisperGenerationConfig:

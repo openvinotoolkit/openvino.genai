@@ -80,27 +80,27 @@ public:
 
     /*
      * Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
-     * window Can be used to steer the model to use particular spellings or styles.
+     * window. Can be used to steer the model to use particular spellings or styles.
      *
      * Example:
-     *   auto result = pipeline.generate(raw_speech);
+     *  auto result = pipeline.generate(raw_speech);
      *  //  He has gone and gone for good answered Paul Icrom who...
      *
-     *   auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
-     *   //  He has gone and gone for good answered Polychrome who...
+     *  auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+     *  //  He has gone and gone for good answered Polychrome who...
      */
     std::optional<std::string> initial_prompt = std::nullopt;
 
     /*
      * Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
-     * window Can be used to steer the model to use particular spellings or styles.
+     * Can be used to steer the model to use particular spellings or styles.
      *
      * Example:
-     *   auto result = pipeline.generate(raw_speech);
+     *  auto result = pipeline.generate(raw_speech);
      *  //  He has gone and gone for good answered Paul Icrom who...
      *
-     *   auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
-     *   //  He has gone and gone for good answered Polychrome who...
+     *  auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+     *  //  He has gone and gone for good answered Polychrome who...
      */
     std::optional<std::string> hotwords = std::nullopt;
 
