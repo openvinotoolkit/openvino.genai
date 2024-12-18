@@ -137,14 +137,14 @@ public:
                 if (sequence_group->requires_sampling() || echo_output) {
                     size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
                     size_t tokens_to_sample_per_group = tokens_to_sample_per_sequence * num_running_sequences;
-                    actual_seq_len = tokens_to_sample_per_group;
+                    actual_seq_len = std::min(tokens_to_sample_per_group, num_scheduled_tokens);
 
                     size_t initial_size = gather_indice_values.size();
                     gather_indice_values.resize(initial_size + tokens_to_sample_per_group);
                     auto it = gather_indice_values.begin() + initial_size;
 
                     for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id, it += tokens_to_sample_per_sequence, total_tokens_to_schedule += num_scheduled_tokens) {
-                        std::iota(it, it + tokens_to_sample_per_sequence, total_tokens_to_schedule);
+                        std::iota(it, it + tokens_to_sample_per_sequence, total_tokens_to_schedule + num_scheduled_tokens - 1);
                     }
                 } else {
                     total_tokens_to_schedule += num_scheduled_tokens * num_running_sequences;
