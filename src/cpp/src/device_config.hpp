@@ -128,7 +128,7 @@ public:
             // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
             // so, we have to extend head_size by 8, which is sizeof(float)
             // for scale and sizeof(float) for zeropoint
-            auto init_cache_shape = [&](ov::element::Type precision) {
+            auto init_cache_shape = [&](ov::element::Type precision, size_t group_size) {
                 size_t head_size = m_head_size;
                 if (m_head_size % group_size != 0)
                     throw std::runtime_error("head_size cannot be divided by group_size");
@@ -142,8 +142,8 @@ public:
                 }
                 return ov::Shape{m_num_kv_blocks, m_num_kv_heads, m_block_size, head_size};
             };
-            m_key_cache_shape = init_cache_shape(m_key_cache_type);
-            m_value_cache_shape = init_cache_shape(m_value_cache_type);
+            m_key_cache_shape = init_cache_shape(m_key_cache_type, m_key_cache_group_size);
+            m_value_cache_shape = init_cache_shape(m_value_cache_type, m_value_cache_group_size);
         }
 
         if (m_device.find("GPU") != std::string::npos) {
