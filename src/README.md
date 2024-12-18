@@ -403,3 +403,7 @@ For information on how OpenVINO™ GenAI works, refer to the [How It Works Secti
 ## Supported Models
 
 For a list of supported models, refer to the [Supported Models Section](./docs/SUPPORTED_MODELS.md).
+
+## Debug Log
+
+For using debug log, refer to [DEBUG Log](./doc/DEBUG_LOG.md).
