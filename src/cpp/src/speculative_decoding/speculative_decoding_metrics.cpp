@@ -95,4 +95,18 @@ void SpeculativeDecodingMetrics::set_generated_len(int64_t request_id, size_t ge
     m_generated_len.insert({ request_id, generated_len });
 }
 
+void SpeculativeDecodingMetrics::reset() {
+    draft_duration = 0;
+    main_duration = 0;
+    total_duration = 0;
+    draft_infer_duration = 0;
+    main_infer_duration = 0;
+    first_token_duration = 0;
+    draft_infer_for_first_token = 0;
+    main_infer_for_first_token = 0;
+    m_acceptance_rate.clear();
+    m_draft_accepted_tokens.clear();
+    m_generated_len.clear();
+}
+
 }

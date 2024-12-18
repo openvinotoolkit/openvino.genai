@@ -217,6 +217,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+        auto draft_generation = m_draft_generations.find(request_id);
+        if (draft_generation != m_draft_generations.end()) {
+            m_draft_generations.erase(draft_generation);
+        }
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
 
@@ -224,29 +228,38 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     results.reserve(input_ids.size());
 
     bool continue_generation = true;
-    bool first_step = false;
+    bool get_first_token = false;
+    float first_token_time = 0;
+    int first_tokens_num = 0;
+    m_sd_metrics.reset();
     while (has_non_finished_requests() && continue_generation) {
         ManualTimer step_timer("speculative_decoding: step()");
         step_timer.start();
         step();
         step_timer.end();
-        if (!first_step) {
-            first_step = true;
-            std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
-            m_sd_metrics.first_token_duration = step_timer.get_duration() / token.begin()->second.generated_ids.size();
-        }
+        first_token_time += step_timer.get_duration();
         if (streamer_ptr) {
             // not generated tokens like several prompt phase
             if (!main_generations.at(0).get()->can_read()) {
                 continue;
             }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
+            if (!get_first_token && !token.begin()->second.generated_ids.empty()) {
+                first_tokens_num = token.begin()->second.generated_ids.size();
+            }
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 continue_generation = !streamer_ptr->put(gen_token);
                 if (!continue_generation) {
                     break;
                 }
             }
+        }
+        if (!get_first_token && first_tokens_num > 0) {
+            get_first_token = true;
+            m_sd_metrics.first_token_duration = first_token_time;
+            int number = 0;
+            m_draft_pipeline->get_infer_duration(m_sd_metrics.draft_infer_for_first_token, number);
+            m_main_pipeline->get_infer_duration(m_sd_metrics.main_infer_for_first_token, number);
         }
     }
     if (streamer_ptr) {
@@ -276,11 +289,12 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
     m_sd_metrics.total_duration = generate_timer.get_duration();
-    m_sd_metrics.draft_infer_duration = m_draft_pipeline->get_infer_duration();
-    m_sd_metrics.main_infer_duration = m_main_pipeline->get_infer_duration();
+    int draft_infer_num = 0, main_infer_num = 0;
+    m_draft_pipeline->get_infer_duration(m_sd_metrics.draft_infer_duration, draft_infer_num);
+    m_main_pipeline->get_infer_duration(m_sd_metrics.main_infer_duration, main_infer_num);
 
     // Print Speculative decoding metrics
-    if (0) {
+    if (1) {
         std::cout << std::endl;
         std::cout << "Total duration, s: " << m_sd_metrics.total_duration << std::endl;
         std::cout << "Draft model duration, s: " << m_sd_metrics.draft_duration << std::endl;
@@ -288,10 +302,13 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
         std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
         std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(0) << std::endl;
-        std::cout << "Draft model inference duration, s: " << m_sd_metrics.draft_infer_duration << std::endl;
-        std::cout << "main model inference duration, s: " << m_sd_metrics.main_infer_duration << std::endl;
+        std::cout << "Draft model inference duration, s: " << m_sd_metrics.draft_infer_duration << " number:" << draft_infer_num << std::endl;
+        std::cout << "Main model inference duration, s: " << m_sd_metrics.main_infer_duration << " number:" << main_infer_num << std::endl;
         std::cout << "Token per sec: " << float(sampling_params[0].max_new_tokens) / m_sd_metrics.total_duration << std::endl;
         std::cout << "First token duration, s:" << m_sd_metrics.first_token_duration << std::endl;
+        std::cout << "First token number :" << first_tokens_num << std::endl;
+        std::cout << "First token inference duration, draft:" << m_sd_metrics.draft_infer_for_first_token
+                  << " main:" << m_sd_metrics.main_infer_for_first_token << std::endl;
         std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(0) << std::endl;
         std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(0) << std::endl;
         std::cout << "Generated tokens: " << sampling_params[0].max_new_tokens << std::endl;

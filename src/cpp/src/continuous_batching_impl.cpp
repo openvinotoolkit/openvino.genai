@@ -322,8 +322,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     return results;
 }
 
-float ContinuousBatchingPipeline::ContinuousBatchingImpl::get_infer_duration() {
-    return m_model_runner->get_infer_duration();
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::get_infer_duration(float& duration, int& number) {
+    m_model_runner->get_infer_duration(duration, number);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::reset_infer_duration() {
+    m_model_runner->reset_infer_duration();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {

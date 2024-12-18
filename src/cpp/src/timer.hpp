@@ -30,6 +30,8 @@ public:
         return m_total / 1000.;
     }
 
+    void reset() { m_total = 0; }
+
     ~ManualTimer() {
         // std::cout << m_title << ": " << m_total / 1000. << " secs" << std::endl;
     }

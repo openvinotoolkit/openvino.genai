@@ -76,6 +76,8 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
 
-    float get_infer_duration();
+    void get_infer_duration(float& duration, int& number);
+    void reset_infer_duration();
+
 };
 }
