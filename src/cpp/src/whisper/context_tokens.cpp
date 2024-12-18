@@ -21,7 +21,7 @@ std::pair<std::vector<int64_t>, float> tokenize(std::string&& text,
     std::vector<int64_t> prompt_tokens;
     prompt_tokens.reserve(input_ids.get_size());
 
-    // even with ov::genai::add_special_tokens(false) tokenizer adds next special tokens
+    // even with ov::genai::add_special_tokens(false) tokenizer adds next special tokens. Ticket: 159569
     std::set<int64_t> special_tokens{config.decoder_start_token_id, config.eos_token_id, config.no_timestamps_token_id};
 
     for (size_t i = 0; i < input_ids.get_size(); i++) {
