@@ -2,6 +2,8 @@ import { env } from 'process';
 import { spawn } from 'child_process';
 
 const MODEL_PATH = env.MODEL_PATH;
+const prompt = 'Tell me exactly, no changes, print as is: "Hello world"';
+const expected = 'Hello world';
 
 if (!MODEL_PATH)
   throw new Error(
@@ -26,7 +28,7 @@ const runTest = async () => {
     // Send input after detecting the question prompt
     script.stdout.once('data', (data) => {
       if (data.toString().startsWith('question:')) {
-        script.stdin.write('Say exactly, without any changes, print it as is: "Hello world"\n'); // Provide input
+        script.stdin.write(`${prompt}\n`); // Provide input
         script.stdin.end(); // Close stdin to signal EOF
       }
     });
@@ -37,10 +39,11 @@ const runTest = async () => {
         return reject(`Process exited with code ${code}`);
       }
 
+      // Log the output
       console.log(`Result output: ${output}`);
 
       // Validate the output
-      if (output.includes('"Hello world"')) {
+      if (output.includes(expected)) {
         resolve('Test passed!');
       } else {
         reject('Test failed: Output did not match expected result.');
