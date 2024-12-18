@@ -16,10 +16,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled
     ) {
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
     
     ov::Core core;
 
