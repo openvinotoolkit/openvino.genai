@@ -92,7 +92,7 @@ public:
         auto compiled_language_model = utils::singleton_core().compile_model(
             models_dir / "openvino_language_model.xml", device, properties
         );
-
+        ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
         auto language_model = compiled_language_model.get_runtime_model();
         m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
 
