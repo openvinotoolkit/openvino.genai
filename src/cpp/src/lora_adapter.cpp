@@ -808,84 +808,170 @@ std::shared_ptr<v0::Constant> alpha_as_constant(float alpha) {
 }
 
 
+class FormattedString {
+    std::string part1, part2;
+public:
+    FormattedString (const std::string& _part1, const std::string& _part2) : part1(_part1), part2(_part2) {}
+    std::string format(const std::string& subs) const {
+        return part1 + subs + part2;
+    }
+};
+
+
 class ReplaceRule {
     RegexParser src_pattern;
-    std::string dst_pattern;
-    size_t dst_pos;
+    FormattedString dst_pattern;
 public:
-    ReplaceRule (const std::string& _src_pattern, const std::string& _dst_pattern, size_t group = 1) :
+    ReplaceRule (const std::string& _src_pattern, const FormattedString& _dst_pattern, size_t group = 1) :
     src_pattern(_src_pattern, group),
-    dst_pattern(_dst_pattern),
-    dst_pos(dst_pattern.find("{}")) {
-        dst_pattern.erase(dst_pos, 2);
-    }
+    dst_pattern(_dst_pattern) {}
 
-    std::optional<std::string> operator() (const std::string& src) const {
-        if(auto match = src_pattern(src)) {
-            return dst_pattern.substr(0, dst_pos) + *match + dst_pattern.substr(dst_pos);
+    std::optional<LoRATensors> operator() (const LoRATensors::value_type& weight) const {
+        if(auto match = src_pattern(weight.first)) {
+            return LoRATensors({{dst_pattern.format(*match), weight.second}});
         }
         return std::nullopt;
     }
 };
 
-std::optional<std::string> replace_by_rules (const std::string& src, const std::vector<ReplaceRule>& rules) {
+template <typename R>
+std::optional<LoRATensors> replace_by_rules (const LoRATensors::value_type& weight, const std::vector<R>& rules) {
     for(auto rule: rules) {
-        if(auto dst = rule(src)) {
+        if(auto dst = rule(weight)) {
             return dst;
         }
     }
     return std::nullopt;
 }
 
+
+class SplitRule {
+    RegexParser src_pattern;
+    std::vector<FormattedString> dst_patterns;
+    std::vector<size_t> dims;
+public:
+    SplitRule (const std::string& _src_pattern, const std::vector<FormattedString>& _dst_patterns, const std::vector<size_t>& _dims = {}, size_t group = 1) :
+        src_pattern(_src_pattern, group),
+        dst_patterns(_dst_patterns),
+        dims(_dims) {
+        OPENVINO_ASSERT(dims.empty() || dims.size() == dst_patterns.size());
+    }
+
+    std::optional<LoRATensors> operator() (const LoRATensors::value_type& weight) const {
+        if(auto match = src_pattern(weight.first)) {
+            std::vector<size_t> cur_dims;
+            const auto B_shape = weight.second.B->get_output_shape(0);
+            if(dims.empty()) {
+                size_t num_splits = dst_patterns.size();
+                cur_dims = std::vector<size_t>(num_splits, B_shape[0] / num_splits);
+            } else {
+                OPENVINO_ASSERT(std::accumulate(dims.begin(), dims.end(), 0u) == B_shape[0]);
+                cur_dims = dims;
+            }
+
+            // Skip checking for zeroed parts of the tensor for now -- TODO
+
+            LoRATensors result;
+            ov::Coordinate total_size = B_shape;
+            size_t cur_index = 0;
+            for(size_t i = 0; i < dst_patterns.size(); ++i) {
+                ov::Coordinate begin = total_size, end = total_size;
+                begin[0] = cur_index;
+                cur_index += cur_dims[i];
+                end[0] = cur_index;
+                auto B = std::make_shared<v0::Constant>(ov::Tensor(weight.second.B->get_tensor_view(), begin, end));
+                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;  // ov::Tensor ROI constructor doesn't respect the origin ownership so we need to keep a pointer to the original constant
+                result.emplace(
+                    dst_patterns[i].format(*match),
+                    LoRAWeight(
+                        nullptr,
+                        weight.second.A,
+                        B
+                    )
+                );
+            }
+
+            return result;
+        }
+        return std::nullopt;
+    }
+};
+
+
+
 LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
-    std::vector<ReplaceRule> rules = {
+    std::vector<ReplaceRule> replace_rules = {
         {
             "lora_unet_double_blocks_(\\d+)_img_attn_proj",
-            "transformer.transformer_blocks.{}.attn.to_out.0" },
+            { "transformer.transformer_blocks.", ".attn.to_out.0" } },
         {
             "lora_unet_double_blocks_(\\d+)_img_mlp_0",
-            "transformer.transformer_blocks.{}.ff.net.0.proj" },
+            { "transformer.transformer_blocks.", ".ff.net.0.proj" } },
         {
             "lora_unet_double_blocks_(\\d+)_img_mlp_2",
-            "transformer.transformer_blocks.{}.ff.net.2" },
+            { "transformer.transformer_blocks.", ".ff.net.2" } },
         {
             "lora_unet_double_blocks_(\\d+)_img_mod_lin",
-            "transformer.transformer_blocks.{}.norm1.linear" },
+            { "transformer.transformer_blocks.", ".norm1.linear" } },
         {
             "lora_unet_double_blocks_(\\d+)_txt_attn_proj",
-            "transformer.transformer_blocks.{}.attn.to_add_out" },
+            { "transformer.transformer_blocks.", ".attn.to_add_out" } },
         {
             "lora_unet_double_blocks_(\\d+)_txt_mlp_0",
-            "transformer.transformer_blocks.{}.ff_context.net.0.proj" },
+            { "transformer.transformer_blocks.", ".ff_context.net.0.proj" } },
         {
             "lora_unet_double_blocks_(\\d+)_txt_mlp_2",
-            "transformer.transformer_blocks.{}.ff_context.net.2" },
+            { "transformer.transformer_blocks.", ".ff_context.net.2" } },
         {
             "lora_unet_double_blocks_(\\d+)_txt_mod_lin",
-            "transformer.transformer_blocks.{}.norm1_context.linear" },
+            { "transformer.transformer_blocks.", ".norm1_context.linear" } },
         {
             "lora_unet_single_blocks_(\\d+)_linear2",
-            "transformer.single_transformer_blocks.{}.proj_out" },
+            { "transformer.single_transformer_blocks.", ".proj_out" } },
         {
             "lora_unet_single_blocks_(\\d+)_modulation_lin",
-            "transformer.single_transformer_blocks.{}.norm.linear" },
+            { "transformer.single_transformer_blocks.", ".norm.linear" } },
 
     };
 
-    LoRATensors new_tensors;
+    std::vector<SplitRule> split_rules = {
+        {
+            "lora_unet_double_blocks_(\\d+)_img_attn_qkv",
+            {
+                { "transformer.transformer_blocks.", ".attn.to_q" },
+                { "transformer.transformer_blocks.", ".attn.to_k" },
+                { "transformer.transformer_blocks.", ".attn.to_v" } } },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_attn_qkv",
+            {
+                { "transformer.transformer_blocks.", ".attn.add_q_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_k_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_v_proj" } } },
+        {
+            "lora_unet_single_blocks_(\\d+)_linear1",
+            {
+                { "transformer.single_transformer_blocks.", ".attn.to_q" },
+                { "transformer.single_transformer_blocks.", ".attn.to_k" },
+                { "transformer.single_transformer_blocks.", ".attn.to_v" },
+                { "transformer.single_transformer_blocks.", ".proj_mlp" } },
+            { 3072, 3072, 3072, 12288 } }
+    };
+
+    LoRATensors result;
 
     for(const auto& src_tensor: tensors) {
-        const std::string& old_name = src_tensor.first;
-        const auto& lora = src_tensor.second;
-        if(auto new_name = replace_by_rules(old_name, rules)) {
-            OPENVINO_ASSERT(new_tensors.end() == new_tensors.find(*new_name), "Name ", *new_name, " already exist in newly created LoRA tensor names after FLUX naming convention mapping");
-            new_tensors.emplace(*new_name, lora);
-        } else {
-            new_tensors.emplace(old_name, lora);
+        if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
         }
+        if(auto new_tensors = replace_by_rules(src_tensor, split_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        result.emplace(std::regex_replace(src_tensor.first, std::regex("lora.unet"), "transformer"), src_tensor.second);
     }
 
-    return new_tensors;
+    return result;
 }
 
 
@@ -1017,6 +1103,8 @@ struct AdapterControllerImpl {
         }
 
         pm.run_passes(model);
+
+        //ov::serialize(model, "after.lora.xml");
 
         // Collect all variable names to quickly detect which state tensor belongs to this adapter controller later
         for(const auto& var: variable_ids) {
