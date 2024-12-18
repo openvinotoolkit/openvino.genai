@@ -1,7 +1,3 @@
-from .utils import patch_diffusers
-
-patch_diffusers()
-
 import argparse
 import difflib
 import numpy as np
@@ -279,6 +275,7 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
         prompt,
         image=image_data,
         num_inference_steps=num_inference_steps,
+        strength=0.8,
         generator=generator,
     )
     image = Image.fromarray(image_tensor.data[0])
@@ -353,7 +350,6 @@ def create_evaluator(base_model, args):
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
-                resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
                 gen_image_fn=genai_gen_image2image if args.genai else None,
                 is_genai=args.genai,

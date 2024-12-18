@@ -42,7 +42,6 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "openai/clip-vit-large-patch14",
-        resolution=(None, None),
         num_inference_steps=4,
         crop_prompts=True,
         num_samples=None,
@@ -56,7 +55,6 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
 
         self.test_data = test_data
         self.metrics = metrics
-        self.resolution = resolution
         self.crop_prompt = crop_prompts
         self.num_samples = num_samples
         self.num_inference_steps = num_inference_steps
@@ -67,9 +65,9 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
         self.generation_fn = gen_image_fn
         self.is_genai = is_genai
+        self.resolution = None
 
         if base_model:
-            base_model.resolution = self.resolution
             self.gt_data = self._generate_data(
                 base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
             )
@@ -84,8 +82,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                     image=image,
                     num_inference_steps=num_inference_steps,
                     output_type="pil",
-                    width=self.resolution[0],
-                    height=self.resolution[0],
+                    strength=0.8,
                     generator=generator,
                 )
             return output.images[0]
