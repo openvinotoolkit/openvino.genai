@@ -130,7 +130,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         if (streamer_ptr && generations.at(0).get()->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
-                if (!streamer_ptr->put(gen_token)) {
+                if (streamer_ptr->put(gen_token)) {
                     break;
                 }
             }

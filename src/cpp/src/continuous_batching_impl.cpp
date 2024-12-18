@@ -275,7 +275,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         m_requests.clear();
     };
 
-    while (has_non_finished_requests()) {
+    bool continue_generation = true;
+    while (has_non_finished_requests() && continue_generation) {
         try {
             step();
         } catch (...) {
@@ -285,7 +286,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         if (streamer_ptr && generations.at(0)->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
-                if (streamer_ptr->put(gen_token)) {
+                continue_generation = !streamer_ptr->put(gen_token);
+                if (!continue_generation) {
                     break;
                 }
             }
@@ -296,7 +298,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         streamer_ptr->end();
     }
 
-    OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
+    if (!continue_generation) {
+        drop_requests();
+    } else {
+        OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
+    }
 
     for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
         const auto& generation = generations[generation_idx];
