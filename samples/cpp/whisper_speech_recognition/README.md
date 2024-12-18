@@ -99,6 +99,7 @@ for (auto& chunk : *result.chunks) {
 ### Long-Form audio Transcription
 
 The Whisper model is designed to work on audio samples of up to 30s in duration. Whisper pipeline uses sequential chunking algorithm to transcribe audio samples of arbitrary length.
+Sequential chunking algorithm uses a "sliding window", transcribing 30-second slices one after the other.
 
 ### Initial prompt and hotwords
 
