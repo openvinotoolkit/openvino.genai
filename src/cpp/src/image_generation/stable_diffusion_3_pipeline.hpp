@@ -443,7 +443,7 @@ public:
         ImageResults image_results;
         RawPerfMetrics& raw_metrics = image_results.perf_metrics.raw_metrics;
         raw_metrics.generate_durations.clear();
-        raw_metrics.m_inference_durations.clear();
+        raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
         const auto gen_start = std::chrono::steady_clock::now();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
