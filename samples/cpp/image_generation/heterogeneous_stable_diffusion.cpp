@@ -98,13 +98,16 @@ int32_t main(int32_t argc, char* argv[]) try {
     for (int imagei = 0; imagei < number_of_images_to_generate; imagei++) {
         std::cout << "Generating image " << imagei << std::endl;
 
-        ov::Tensor image = pipe.generate(prompt,
+        auto image_results = pipe.generate(prompt,
                                          ov::genai::width(width),
                                          ov::genai::height(height),
                                          ov::genai::guidance_scale(guidance_scale),
                                          ov::genai::num_inference_steps(number_of_inference_steps_per_image));
 
-        imwrite("image_" + std::to_string(imagei) + ".bmp", image, true);
+        imwrite("image_" + std::to_string(imagei) + ".bmp", image_results.image, true);
+
+        std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
+        std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
     }
 
     return EXIT_SUCCESS;

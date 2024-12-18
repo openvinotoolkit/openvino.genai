@@ -254,13 +254,13 @@ public:
         m_transformer->compile(device, properties);
     }
     
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, RawPerfMetrics& raw_metrics) override {
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
-        m_clip_text_encoder->infer(positive_prompt, {}, false);
+        m_clip_text_encoder->infer(positive_prompt, {}, false, raw_metrics);
         ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
-        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length, raw_metrics);
 
         pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
@@ -316,10 +316,15 @@ public:
         OPENVINO_THROW("LORA adapters are not implemented for FLUX pipeline yet");
     }
 
-    ov::Tensor generate(const std::string& positive_prompt,
+    ImageResults generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        ImageResults image_results;
+        RawPerfMetrics &raw_metrics = image_results.perf_metrics.raw_metrics;
+        raw_metrics.generate_durations.clear();
+        raw_metrics.m_inference_durations.clear();
+        const auto gen_start = std::chrono::steady_clock::now();
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
 
@@ -340,7 +345,7 @@ public:
 
         check_inputs(m_custom_generation_config, initial_image);
 
-        compute_hidden_states(positive_prompt, m_custom_generation_config);
+        compute_hidden_states(positive_prompt, m_custom_generation_config, raw_metrics);
 
         ov::Tensor latents, processed_image, image_latent, noise;
         std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
@@ -361,26 +366,32 @@ public:
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             timestep_data[0] = timesteps[inference_step] / 1000;
 
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
+            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep, raw_metrics);
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
             if (callback && callback(inference_step, timesteps.size(), latents)) {
-                return ov::Tensor(ov::element::u8, {});
+                image_results.image = ov::Tensor(ov::element::u8, {});
+                const auto gen_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+                raw_metrics.generate_durations.emplace_back(gen_ms);
+                return image_results;
             }
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
-        return m_vae->decode(latents);
+        image_results.image = m_vae->decode(latents, raw_metrics);
+        const auto gen_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+        raw_metrics.generate_durations.emplace_back(gen_ms);
+        return image_results;
     }
 
-    ov::Tensor decode(const ov::Tensor latent) override {
+    ov::Tensor decode(const ov::Tensor latent, RawPerfMetrics& raw_metrics) override {
         ov::Tensor unpacked_latent = unpack_latents(latent,
                                                 m_custom_generation_config.height,
                                                 m_custom_generation_config.width,
                                                 m_vae->get_vae_scale_factor());
-        return m_vae->decode(unpacked_latent);
+        return m_vae->decode(unpacked_latent, raw_metrics);
     }
 
 private:

@@ -16,6 +16,7 @@
 
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov {
 namespace genai {
@@ -89,7 +90,7 @@ public:
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 
-    ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep);
+    ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, RawPerfMetrics& raw_metrics);
 
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0f && m_config.time_cond_proj_dim < 0;

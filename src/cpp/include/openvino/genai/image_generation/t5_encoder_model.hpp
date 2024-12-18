@@ -9,6 +9,7 @@
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -68,7 +69,8 @@ public:
     ov::Tensor infer(const std::string& pos_prompt,
                      const std::string& neg_prompt,
                      bool do_classifier_free_guidance,
-                     int max_sequence_length);
+                     int max_sequence_length,
+                     RawPerfMetrics& raw_metrics);
 
     ov::Tensor get_output_tensor(const size_t idx);
 

@@ -23,21 +23,25 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::genai::Text2ImagePipeline pipe(models_path, device, ov::genai::adapters(adapter_config));
 
     std::cout << "Generating image with LoRA adapters applied, resulting image will be in lora.bmp\n";
-    ov::Tensor image = pipe.generate(prompt,
+    auto image_results = pipe.generate(prompt,
         ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20));
-    imwrite("lora.bmp", image, true);
+    imwrite("lora.bmp", image_results.image, true);
+    std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
+    std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
 
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
-    image = pipe.generate(prompt,
+    image_results = pipe.generate(prompt,
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20));
-    imwrite("baseline.bmp", image, true);
+    imwrite("baseline.bmp", image_results.image, true);
+    std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
+    std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
