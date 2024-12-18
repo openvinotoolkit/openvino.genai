@@ -203,7 +203,7 @@ public:
      * Generates image(s) based on prompt and other image generation parameters
      * @param positive_prompt Prompt to generate image(s) from
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
-     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     * @returns ImageResults includes a tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
     ImageResults generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 
