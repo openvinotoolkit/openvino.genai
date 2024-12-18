@@ -21,7 +21,6 @@ using ov::genai::DecodedResults;
 using ov::genai::EncodedResults;
 using ov::genai::StreamerBase;
 using ov::genai::StringInputs;
-using ov::genai::draft_model;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);

@@ -420,7 +420,8 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     start = time.perf_counter()
 
     scheduler_type = data.get("scheduler", ["", ""])[1]
-    if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler", "FlowMatchEulerDiscreteScheduler"]):
+    if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler",
+                               "FlowMatchEulerDiscreteScheduler"]):
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
 
