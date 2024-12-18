@@ -29,7 +29,6 @@ int main(int argc, char* argv[]) try {
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.cache_size = 5;
 
-    // Different devices require different block sizes, so different scheduler configs need to be set.
     ov::genai::LLMPipeline pipe(
         main_model_path,
         main_device,

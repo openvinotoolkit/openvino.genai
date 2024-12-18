@@ -107,12 +107,12 @@ For more examples check out our [Generative AI workflow](https://docs.openvino.a
 
 ### Converting and compressing the model from Hugging Face library
 
-```sh
-#(Basic) download and convert to OpenVINO MiniCPM-V-2_6 model
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format fp16 MiniCPM-V-2_6
+To convert the [OpenGVLab/InternVL2-1B](https://huggingface.co/OpenGVLab/InternVL2-1B) model, `timm` and `einops` are required: `pip install timm einops`.
 
-#(Recommended) Same as above but with compression: language model is compressed to int4, other model components are compressed to int8
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 MiniCPM-V-2_6
+```sh
+# Download and convert the OpenGVLab/InternVL2-1B model to OpenVINO with int4 weight-compression for the language model
+# Other components are compressed to int8
+optimum-cli export openvino -m OpenGVLab/InternVL2-1B --trust-remote-code --weight-format int4 InternVL2-1B
 ```
 
 ### Run generation using VLMPipeline API in Python
@@ -132,7 +132,7 @@ import openvino_genai as ov_genai
 from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
-pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
+pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
@@ -194,12 +194,7 @@ import openvino_genai
 
 device = 'CPU'  # GPU can be used as well
 pipe = openvino_genai.Text2ImagePipeline("./dreamlike_anime_1_0_ov/INT8", device)
-image_tensor = pipe.generate(
-    "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting",
-    width=512,
-    height=512,
-    num_inference_steps=20
-)
+image_tensor = pipe.generate("cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting")
 
 image = Image.fromarray(image_tensor.data[0])
 image.save("image.bmp")
@@ -218,10 +213,7 @@ int main(int argc, char* argv[]) {
    const std::string device = "CPU";  // GPU can be used as well
 
    ov::genai::Text2ImagePipeline pipe(models_path, device);
-   ov::Tensor image = pipe.generate(prompt,
-        ov::genai::width(512),
-        ov::genai::height(512),
-        ov::genai::num_inference_steps(20));
+   ov::Tensor image = pipe.generate(prompt);
 
    imwrite("image.bmp", image, true);
 }
