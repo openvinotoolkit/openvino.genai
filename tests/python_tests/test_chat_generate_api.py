@@ -158,6 +158,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         **tokenizer_config)
     
     tok = load_tok([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
+    tok.set_chat_template(tokenizer_config['chat_template'])
     full_history_str = tok.apply_chat_template(conversation, add_generation_prompt=False)
     if full_history_str != full_history_str_hf:
         print(f'hf reference: {full_history_str_hf}')
@@ -217,3 +218,24 @@ def test_add_special_tokens(add_special_tokens, prompt):
     res_genai = genai_tokenzier.encode(prompt, add_special_tokens).input_ids.data
     res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
     assert np.all(res_genai == res_hf)
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("add_special_tokens", [True, False])
+@pytest.mark.parametrize("skip_special_tokens", [True, False])
+@pytest.mark.parametrize("prompt", prompts)
+def test_add_special_tokens(add_special_tokens, skip_special_tokens, prompt):
+    import numpy as np
+    model_descr = get_chat_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    genai_tokenizer = pipe.get_tokenizer()
+    
+    # Calling encode with add_special_tokens will set state flag.
+    res_genai = genai_tokenizer.encode(prompt, add_special_tokens).input_ids.data
+    res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
+    assert np.all(res_genai == res_hf)
+    
+    # Decode with skip_special_tokens
+    decoded_genai = genai_tokenizer.decode(res_genai, skip_special_tokens=skip_special_tokens)[0]
+    decoded_hf = hf_tokenizer.decode(res_hf[0], skip_special_tokens=skip_special_tokens)
+    assert decoded_genai == decoded_hf

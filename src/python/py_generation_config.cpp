@@ -40,10 +40,10 @@ char generation_config_docstring[] = R"(
     max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
     ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
     eos_token_id:  token_id of <eos> (end of sentence)
-    min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-    stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+    stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
     include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-    stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
     echo:           if set to true, the model will echo the prompt in the output.
     logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                     Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
@@ -107,12 +107,14 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("logprobs", &GenerationConfig::logprobs)
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
+        .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
         .def("is_beam_search", &GenerationConfig::is_beam_search)
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)
-        .def("is_speculative_decoding", &GenerationConfig::is_speculative_decoding)
+        .def("is_assisting_generation", &GenerationConfig::is_assisting_generation)
+        .def("is_prompt_lookup", &GenerationConfig::is_prompt_lookup)
         .def("update_generation_config", static_cast<void (GenerationConfig::*)(const ov::AnyMap&)>(&ov::genai::GenerationConfig::update_generation_config), py::arg("config_map"));
    }

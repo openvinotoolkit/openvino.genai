@@ -235,7 +235,7 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -244,6 +244,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
@@ -299,7 +300,7 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -308,6 +309,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_python_lib_vlm:
@@ -363,7 +365,7 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_vlm_api.py
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -425,7 +427,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 

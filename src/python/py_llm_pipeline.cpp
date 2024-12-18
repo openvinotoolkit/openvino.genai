@@ -122,7 +122,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
@@ -151,7 +151,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
             kwargs: Device properties.
@@ -195,14 +195,14 @@ void init_llm_pipeline(py::module_& m) {
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config, py::arg("config"));
 
-    py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
-        .def(py::init([](
+    m.def("draft_model", [](
             const std::filesystem::path& models_path,
             const std::string& device,
             const py::kwargs& kwargs
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return draft_model(models_path, device, pyutils::kwargs_to_any_map(kwargs)).second;
-        }),
+        },
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
         py::arg("device") = "", "device on which inference will be performed");
 }

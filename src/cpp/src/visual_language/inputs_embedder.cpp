@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 #include "visual_language/clip.hpp"
@@ -16,6 +17,8 @@ constexpr size_t BATCH_SIZE = 1;
 } // namespace
 
 namespace ov::genai {
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
 class InputsEmbedder::IInputsEmbedder {
 protected:
@@ -36,11 +39,14 @@ protected:
     ChatHistory m_history;
     // Templated chat history
     std::string m_templated_chat_history;
-    // Whether we have computed some inputs already
-    bool m_is_cache_empty = true;
+    // Tokenized chat history
+    std::vector<int64_t> m_tokenized_chat_history;
+    // The number of elements, which need to remove from the end of KV cache
+    // removed elements will be added to inputs_ids
+    size_t m_to_remove_from_hist = 0;
 
 public:
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) = 0;
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
     EmbeddingsModel get_embedding_model() const {
         return m_embedding;
@@ -50,12 +56,26 @@ public:
         return m_tokenizer;
     }
 
+    std::vector<int64_t> get_tokenized_chat_history() const {
+        return m_tokenized_chat_history;
+    }
+
+    size_t get_amount_to_remove_from_hist() const {
+        return m_to_remove_from_hist;
+    }
+
+    void update_tokenized_chat_history(std::vector<int64_t> encoded_result) {
+        std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_chat_history));
+        m_to_remove_from_hist = 0;
+    }
+
     virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
-        if (!m_is_cache_empty) {
+        m_to_remove_from_hist = 0;
+        if (!m_tokenized_chat_history.empty()) {
             m_history.clear();
             m_templated_chat_history.clear();
-            m_is_cache_empty = true;
+            m_tokenized_chat_history.clear();
         }
         if (system_message.empty()) {
             return;
@@ -74,10 +94,11 @@ public:
 
     virtual void finish_chat() {
         m_is_chat_conversation = false;
-        m_is_cache_empty = true;
+        m_to_remove_from_hist = 0;
 
         m_history.clear();
         m_templated_chat_history.clear();
+        m_tokenized_chat_history.clear();
     }
 
 protected:
@@ -87,11 +108,36 @@ protected:
         const std::string& device,
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, utils::singleton_core()),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
         m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
-        m_tokenizer{model_dir.string(), device_config} { }
+        m_tokenizer{model_dir, device_config} { }
+    
+    IInputsEmbedder(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        m_vlm_config{vlm_config},
+        m_vision_encoder(
+            get_model_weights_pair(models_map, "vision_embeddings").first,
+            get_model_weights_pair(models_map, "vision_embeddings").second,
+            config_dir_path,
+            m_vlm_config.model_type,
+            device,
+            device_config
+        ),
+        m_embedding(
+            get_model_weights_pair(models_map, "text_embeddings").first,
+            get_model_weights_pair(models_map, "text_embeddings").second,
+            m_vlm_config.scale_emb,
+            device,
+            device_config
+        ),
+        m_tokenizer(tokenizer) { }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, const std::string& chat_template_fallback = "") {
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
         ov::Tensor encoded_input_ids;
         if (m_is_chat_conversation) {
             // KV cache in model already contains prompts and answers from previous iterations.
@@ -111,22 +157,44 @@ protected:
                 // Use fallback chat template if it was not found in tokenizer_config.json
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
             }
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
-            if (m_is_cache_empty) {
+            auto start_tokenizer_time = std::chrono::steady_clock::now();
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
+            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+
+            // some symbols combinations can be encoded by the tokenizer in different ways
+            // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
+            // so let's check it out, find the trusted part and use it in on the next step
+            size_t last_same_hist_token = 0;
+            if (!m_tokenized_chat_history.empty()) {
+                std::set<int64_t> stop_tokens = {m_tokenizer.get_eos_token_id()};
+                last_same_hist_token = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
+            }
+
+            if (m_tokenized_chat_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
-                // after first `get_inputs_embeds` is called, we supposed LLM is inferred and cache is not empty
-                m_is_cache_empty = false;
+            } else if (last_same_hist_token != SIZE_MAX) {
+                m_to_remove_from_hist = m_tokenized_chat_history.size() - last_same_hist_token;
+
+                ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
+                                                   {1, new_chat_tokens.get_shape().at(1) - last_same_hist_token},
+                                                   new_chat_tokens.data<int64_t>() + last_same_hist_token);
+                encoded_input_ids = new_tensor;
             } else {
-                TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
-                    m_templated_chat_history
-                );
                 encoded_input_ids = utils::subtract_chat_tokenized_inputs(
                     {new_chat_tokens}, prev_chat_tokens
                 ).input_ids;
             }
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_templated_chat_history = std::move(new_templated_chat_history);
+            m_tokenized_chat_history.clear();
+            std::copy(new_chat_tokens.data<int64_t>(), new_chat_tokens.data<int64_t>() + new_chat_tokens.get_size(),
+                        std::back_inserter(m_tokenized_chat_history));
         } else {
+            auto start_tokenizer_time = std::chrono::steady_clock::now();
             encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
         return encoded_input_ids;
     }
@@ -191,14 +259,33 @@ public:
         const std::string& device,
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-        m_resampler = utils::singleton_core().compile_model(
-            model_dir / "openvino_resampler_model.xml", device, device_config
-        ).create_infer_request();
+        auto compiled_model =
+            utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, device_config);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
+        m_resampler = compiled_model.create_infer_request();
 
         m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
     }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    InputsEmbedderMiniCPM(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+            m_resampler = utils::singleton_core().compile_model(
+                get_model_weights_pair(models_map, "resampler").first,
+                get_model_weights_pair(models_map, "resampler").second,
+                device,
+                device_config
+            ).create_infer_request();
+
+            m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
+        }
+
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string images_prompt;
         std::vector<EncodedImage> embeds;
 
@@ -233,19 +320,23 @@ public:
         }
         images_prompt += prompt;
 
-        ov::Tensor encoded_input = get_encoded_input_ids(images_prompt);
+        ov::Tensor encoded_input = get_encoded_input_ids(images_prompt, metrics);
 
         ov::Tensor inputs_embeds = m_embedding.infer(encoded_input);
         OPENVINO_ASSERT(
             m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
             "Unexpected embedding size"
         );
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor special_tokens = m_tokenizer.encode(
             m_vlm_config.im_start
             + m_vlm_config.im_end
             + m_vlm_config.slice_start
             + m_vlm_config.slice_end
         ).input_ids;
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
+        metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         OPENVINO_ASSERT(
             4 == special_tokens.get_shape().at(1),
             "Every special token must be represented with a single int."
@@ -290,7 +381,6 @@ public:
         if (!m_is_chat_conversation) {
             m_image_id = 0;
         }
-
         return inputs_embeds;
     }
 
@@ -484,7 +574,16 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    InputsEmbedderLLaVA(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
@@ -502,16 +601,18 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
             return text_embeds;
         }
-
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
+        metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-
         return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
     }
 
@@ -573,7 +674,6 @@ protected:
                 merged_idx++;
             }
         }
-
         return merged_embeds;
     }
 };
@@ -587,7 +687,16 @@ public:
         const ov::AnyMap device_config) :
         InputsEmbedderLLaVA(vlm_config, model_dir, device, device_config) { }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    InputsEmbedderLLaVANext(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        InputsEmbedderLLaVA(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
@@ -619,16 +728,18 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
             return text_embeds;
         }
-
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
+        metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-
         return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
     }
 
@@ -903,7 +1014,16 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
 
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) override {
+    InputsEmbedderInternVLChat(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) :
+        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+
+    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_start_token = m_vlm_config.image_start_token;
         std::string image_context_token = m_vlm_config.image_context_token;
         std::string image_end_token = m_vlm_config.image_end_token;
@@ -931,16 +1051,18 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
             return text_embeds;
         }
-
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
+        metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         int64_t image_context_token_id = encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
-
         return merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id);
     }
 
@@ -1023,12 +1145,43 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
     }
 }
 
-ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images) {
-    return m_impl->get_inputs_embeds(prompt, images);
+InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
+                               const ModelsMap& models_map,
+                               const Tokenizer& tokenizer,
+                               const std::filesystem::path& config_dir_path,
+                               const std::string& device,
+                               const ov::AnyMap device_config) {
+    if (vlm_config.model_type == VLMModelType::MINICPM) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LLAVA) {
+        m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
+        m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else {
+        OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
+    }
+}
+
+ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
+}
+
+std::vector<int64_t> InputsEmbedder::get_tokenized_chat_history() const {
+    return m_impl->get_tokenized_chat_history();
+}
+
+void InputsEmbedder::update_tokenized_chat_history(std::vector<int64_t> encoded_result) {
+    return m_impl->update_tokenized_chat_history(encoded_result);
+}
+
+size_t InputsEmbedder::get_amount_to_remove_from_hist() const {
+    return m_impl->get_amount_to_remove_from_hist();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {

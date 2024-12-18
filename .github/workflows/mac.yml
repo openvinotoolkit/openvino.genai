@@ -224,7 +224,7 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -234,6 +234,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
+          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
@@ -288,7 +289,7 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -298,6 +299,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
+          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
 
   genai_package:
@@ -354,7 +356,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 

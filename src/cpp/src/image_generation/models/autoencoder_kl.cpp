@@ -102,8 +102,6 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     : AutoencoderKL(vae_decoder_path) {
     ov::Core core = utils::singleton_core();
     m_encoder_model = core.read_model((vae_encoder_path / "openvino_model.xml").string());
-    // apply VaeImageProcessor pre-processing steps by merging them into the VAE encoder
-    merge_vae_image_pre_processing();
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
@@ -129,6 +127,58 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
     }
 }
 
+AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
+                             const Tensor& vae_decoder_weights,
+                             const Config& vae_decoder_config)
+    : m_config(vae_decoder_config) {
+    ov::Core core = utils::singleton_core();
+    m_decoder_model = core.read_model(vae_decoder_model, vae_decoder_weights);
+    // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
+    merge_vae_image_post_processing();
+}
+
+AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
+                             const Tensor& vae_encoder_weights,
+                             const std::string& vae_decoder_model,
+                             const Tensor& vae_decoder_weights,
+                             const Config& vae_decoder_config)
+    : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_decoder_config) {
+    ov::Core core = utils::singleton_core();
+    m_encoder_model = core.read_model(vae_encoder_model, vae_encoder_weights);
+}
+
+AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
+                             const Tensor& vae_decoder_weights,
+                             const Config& vae_decoder_config,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_decoder_config) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
+}
+
+AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
+                             const Tensor& vae_encoder_weights,
+                             const std::string& vae_decoder_model,
+                             const Tensor& vae_decoder_weights,
+                             const Config& vae_decoder_config,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : AutoencoderKL(vae_encoder_model,
+                    vae_encoder_weights,
+                    vae_decoder_model,
+                    vae_decoder_weights,
+                    vae_decoder_config) {
+    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
+}
+
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
@@ -137,7 +187,7 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     const size_t vae_scale_factor = get_vae_scale_factor();
 
     OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
-            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by",
+            (width % vae_scale_factor == 0 || width < 0), "Both 'width' and 'height' must be divisible by ",
             vae_scale_factor);
 
     if (m_encoder_model) {
@@ -162,12 +212,14 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
 
     if (m_encoder_model) {
         ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, properties);
+        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
         m_encoder_request = encoder_compiled_model.create_infer_request();
         // release the original model
         m_encoder_model.reset();
     }
 
     ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
     m_decoder_model.reset();
@@ -219,27 +271,6 @@ const AutoencoderKL::Config& AutoencoderKL::get_config() const {
 
 size_t AutoencoderKL::get_vae_scale_factor() const {
     return std::pow(2, m_config.block_out_channels.size() - 1);
-}
-
-void AutoencoderKL::merge_vae_image_pre_processing() const {
-    ov::preprocess::PrePostProcessor ppp(m_encoder_model);
-
-    // https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L90-L110
-
-    ppp.input().tensor().set_layout("NHWC");
-    ppp.input().model().set_layout("NCHW");
-
-    ppp.input().tensor()
-        .set_element_type(ov::element::u8);
-
-    ppp.input().preprocess()
-        .convert_layout()
-        .convert_element_type(ov::element::f32)
-        // this is less accurate that in VaeImageProcessor::normalize
-        .scale(255.0 / 2.0)
-        .mean(1.0f);
-
-    ppp.build();
 }
 
 void AutoencoderKL::merge_vae_image_post_processing() const {

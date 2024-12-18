@@ -10,10 +10,20 @@ from ov_genai_test_utils import get_whisper_models_list
 import datasets
 from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+import gc
 import json
 import time
 import typing
+import numpy as np
 
+@pytest.fixture(scope="class", autouse=True)
+def run_gc_after_test():
+    """
+    Fixture to run garbage collection after each test class.
+    This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
+    """
+    yield
+    gc.collect()
 
 @functools.lru_cache(1)
 def read_whisper_model(params, **tokenizer_kwargs):
@@ -586,3 +596,13 @@ def test_perf_metrics(model_descr, test_sample):
     assert perf_metrics.get_generate_duration().mean > 0
     assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_features_extraction_duration().mean > 0
+
+    # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
+    whisper_raw_metrics = perf_metrics.whisper_raw_metrics
+
+    raw_dur = np.array(whisper_raw_metrics.features_extraction_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
+    assert np.allclose(mean_dur, np.mean(raw_dur))
+    assert np.allclose(std_dur, np.std(raw_dur))

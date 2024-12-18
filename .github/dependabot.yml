@@ -1,18 +1,43 @@
+# See help here: https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/enabling-and-disabling-version-updates
+
 version: 2
 updates:
   - package-ecosystem: "pip"
     directory: "./tests/python_tests/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    versioning-strategy: increase-if-necessary
+      
   - package-ecosystem: "pip"
     directory: "./tools/llm_bench/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    versioning-strategy: increase-if-necessary
+      
   - package-ecosystem: "pip"
     directory: "./tools/who_what_benchmark/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    versioning-strategy: increase-if-necessary
+      
   - package-ecosystem: "pip"
     directory: "samples/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    versioning-strategy: increase-if-necessary
+      
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    versioning-strategy: increase-if-necessary

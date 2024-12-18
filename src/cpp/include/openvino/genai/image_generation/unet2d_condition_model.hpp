@@ -36,12 +36,39 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties = {});
 
+    UNet2DConditionModel(const std::string& model,
+                         const Tensor& weights,
+                         const Config& config,
+                         const size_t vae_scale_factor);
+
+    UNet2DConditionModel(const std::string& model,
+                         const Tensor& weights,
+                         const Config& config,
+                         const size_t vae_scale_factor,
+                         const std::string& device,
+                         const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     UNet2DConditionModel(const std::filesystem::path& root_dir,
                          const std::string& device,
                          Properties&&... properties)
         : UNet2DConditionModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    UNet2DConditionModel(const std::string& model,
+                         const Tensor& weights,
+                         const Config& config,
+                         const size_t vae_scale_factor,
+                         const std::string& device,
+                         Properties&&... properties)
+        : UNet2DConditionModel(model,
+                               weights,
+                               config,
+                               vae_scale_factor,
+                               device,
+                               ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     UNet2DConditionModel(const UNet2DConditionModel&);
 

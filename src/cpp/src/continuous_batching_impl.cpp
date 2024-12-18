@@ -11,21 +11,22 @@ template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
-    const std::filesystem::path& models_path,
+    const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    bool is_validation_mode_enabled
+    ) {
     m_tokenizer = tokenizer;
-    m_generation_config = utils::from_config_json_if_exists(models_path);
-
+    m_generation_config = generation_config;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
+    
     ov::Core core;
 
-    auto [core_properties, compile_properties] = utils::split_core_complile_config(properties);
+    auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
     core.set_property(core_properties);
-
-    // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> model = core.read_model((models_path / "openvino_model.xml").string());
 
     DeviceConfig device_config(core, scheduler_config, device, compile_properties);
 
@@ -47,7 +48,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), properties).create_infer_request();
+    auto compiled_model = core.compile_model(model, device_config.get_device(), properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
+    ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
@@ -57,7 +60,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     }
 
     SchedulerConfig updated_config = scheduler_config;
-    // update KV number in scheduler config
+    // update KV blocks number in scheduler config
     if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
         updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
     }
@@ -166,24 +169,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         timer.start();
         logits = m_model_runner->forward(m_requests, scheduler_output);
         timer.end();
-
-        ov::InferRequest infer_request = m_model_runner->get_infer_request();
-        ov::CompiledModel compiled_model = infer_request.get_compiled_model();
-        const bool is_profiling_enabled = compiled_model.get_property(ov::enable_profiling);
-
-        // collect detailed statistic
-        if (is_profiling_enabled) {
-            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
-            for (const ov::ProfilingInfo& info : profiling_info) {
-                double current_time = info.real_time.count();
-                if (info.node_type == "PagedAttentionExtension") {
-                    m_perf.m_paged_attention_time_ms += current_time;
-                } else if (info.node_type == "FullyConnected") {
-                    m_perf.m_matmul_time_ms += current_time;
-                }
-                m_perf.m_infer_total_ms += current_time;
-            }
-        }
     }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -304,9 +289,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
         if (streamer_ptr && generations.at(0)->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
-            OPENVINO_ASSERT(1 == token.size());
-            OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
-            continue_generation = !streamer_ptr->put(token.begin()->second.generated_ids.at(0));
+            for (const auto& gen_token : token.begin()->second.generated_ids) {
+                if (!streamer_ptr->put(gen_token)) {
+                    break;
+                }
+            }
         }
     }
 
