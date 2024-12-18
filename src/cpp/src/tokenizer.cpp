@@ -203,6 +203,7 @@ public:
             manager.register_pass<MakeCombineSegmentsSatateful>();
             manager.run_passes(ov_tokenizer);
             m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
+            ov::genai::utils::print_compiled_model_properties(m_tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
                 m_tokenizer.get_property(ov::optimal_number_of_infer_requests),
@@ -216,6 +217,7 @@ public:
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
             m_detokenizer = core.compile_model(ov_detokenizer, device, properties);
+            ov::genai::utils::print_compiled_model_properties(m_detokenizer, "OV Detokenizer");
 
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
                 m_detokenizer.get_property(ov::optimal_number_of_infer_requests),
