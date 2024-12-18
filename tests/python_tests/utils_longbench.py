@@ -144,16 +144,6 @@ dataset2metric = {
     "repobench-p": code_sim_score,
 }
 
-# Max length for NVIDIA GeForce RTX 3090 (24 GB)
-model2maxlen = {
-    "meta-llama/Llama-2-7b-chat-hf": 4096,
-    "meta-llama/Meta-Llama-3-8B-Instruct": 5000,
-    "meta-llama/Llama-3.1-8B-Instruct": 10000,
-    "microsoft/Phi-3-mini-4k-instruct": 4096,
-    'meta-llama/Llama-3.2-1B-Instruct': 10000,
-    'meta-llama/Llama-3.2-3B-Instruct': 10000,
-}
-
 dataset2maxlen = {
     "narrativeqa": 128,
     "qasper": 128,
@@ -235,20 +225,12 @@ def build_chat(prompt, model_name):
     return prompt
 
 
-def preprocess_prompt(tokenizer, data_sample, subset, model_name):
+def preprocess_prompt(data_sample, subset, model_name):
     prompt_format = dataset2prompt[subset]
-    max_length = model2maxlen[model_name]
-
     prompt = prompt_format.format(**data_sample)
-    tokenized_prompt = tokenizer(prompt, truncation=False, return_tensors="pt").input_ids[0]
-    context_len = tokenized_prompt.shape[-1]
-    if len(tokenized_prompt) > max_length:
-        context_len = max_length
-        half = int(max_length/2)
-        prompt = tokenizer.decode(tokenized_prompt[:half], skip_special_tokens=True) + tokenizer.decode(tokenized_prompt[-half:], skip_special_tokens=True)
     if subset not in ["trec", "triviaqa", "samsum", "lsht", "lcc", "repobench-p"]:
         prompt = build_chat(prompt, model_name)
-    return prompt, context_len
+    return prompt
 
 
 def post_process_pred(pred, subset, model_name):
@@ -257,5 +239,7 @@ def post_process_pred(pred, subset, model_name):
     elif subset == "samsum":
         pred = pred[:pred.find("\nDialogue")]
     elif "Phi-3" in model_name and subset == "hotpotqa":
+        pred = pred.lstrip('\n').split('\n')[0]
+    elif "Qwen" in model_name and subset == "qasper":
         pred = pred.lstrip('\n').split('\n')[0]
     return pred
