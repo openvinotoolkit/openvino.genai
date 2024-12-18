@@ -206,6 +206,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
           <li><a href="https://huggingface.co/philschmid/stable-diffusion-v1-4-endpoints"><code>philschmid/stable-diffusion-v1-4-endpoints</code></a></li>
           <li><a href="https://huggingface.co/naclbit/trinart_stable_diffusion_v2"><code>naclbit/trinart_stable_diffusion_v2</code></a></li>
           <li><a href="https://huggingface.co/Fictiverse/Stable_Diffusion_PaperCut_Model"><code>Fictiverse/Stable_Diffusion_PaperCut_Model</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/sdxl-turbo"><code>stabilityai/sdxl-turbo</code></a></li>
         </ul>
       </td>
     </tr>
