@@ -22,8 +22,7 @@ class OPENVINO_GENAI_EXPORTS CLIPTextModel {
 public:
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t max_position_embeddings = 77;
-        size_t hidden_size = 512;
-        size_t num_hidden_layers = 13;
+        size_t num_hidden_layers = 12;
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -34,12 +33,39 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer);
+
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     CLIPTextModel(const std::filesystem::path& root_dir,
                   const std::string& device,
                   Properties&&... properties)
         : CLIPTextModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModel(const std::string& model,
+                  const Tensor& weights,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  Properties&&... properties)
+        : CLIPTextModel(model,
+                        weights,
+                        config,
+                        clip_tokenizer,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     CLIPTextModel(const CLIPTextModel&);
 

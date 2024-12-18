@@ -53,7 +53,13 @@ py::object call_common_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    auto updated_config = pyutils::update_config_from_kwargs(config, kwargs);
+    ov::genai::GenerationConfig default_config;
+    if (config.has_value()) {
+        default_config = *config;
+    } else {
+        default_config = pipe.get_generation_config();
+    }
+    auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
     py::object results;
     EncodedInputs tensor_data;
     StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
@@ -116,7 +122,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor for manually created openvino_genai.Tokenizer.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
@@ -145,7 +151,7 @@ void init_llm_pipeline(py::module_& m) {
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
             kwargs: Device properties.
@@ -158,7 +164,7 @@ void init_llm_pipeline(py::module_& m) {
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
             py::arg("inputs"), "Input string, or list of string or encoded tokens",
@@ -174,7 +180,7 @@ void init_llm_pipeline(py::module_& m) {
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
-            ) {
+            ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
             py::arg("inputs"), "Input string, or list of string or encoded tokens",
@@ -187,7 +193,7 @@ void init_llm_pipeline(py::module_& m) {
         .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &LLMPipeline::set_generation_config);
+        .def("set_generation_config", &LLMPipeline::set_generation_config, py::arg("config"));
 
     py::class_<ov::Any>(m, "draft_model", py::module_local(), "This class is used to enable Speculative Decoding")
         .def(py::init([](
@@ -195,6 +201,7 @@ void init_llm_pipeline(py::module_& m) {
             const std::string& device,
             const py::kwargs& kwargs
         ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return draft_model(models_path, device, pyutils::kwargs_to_any_map(kwargs)).second;
         }),
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",

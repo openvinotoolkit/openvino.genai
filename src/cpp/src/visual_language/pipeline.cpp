@@ -5,6 +5,7 @@
 #include <random>
 
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
 #include "visual_language/vlm_config.hpp"
@@ -14,6 +15,7 @@
 #include "sampler.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
+#include "lm_encoding.hpp"
 
 using namespace ov::genai;
 
@@ -24,120 +26,19 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr size_t BATCH_SIZE = 1;
 
-EncodedGenerationResult get_lm_encoded_results(
-    ov::InferRequest& language,
-    EmbeddingsModel& embeding,
-    const ov::Tensor& inputs_embeds,
-    const std::shared_ptr<StreamerBase>& streamer_ptr,
-    Sampler& sampler,
-    std::vector<SequenceGroup::Ptr> requests
-) {
-    SequenceGroup::Ptr request = requests.back();
-    GenerationHandle generation = std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), request->get_sampling_parameters());
+} // namespace
 
-    language.set_tensor("inputs_embeds", inputs_embeds);
+namespace ov::genai {
 
-    size_t history_len = language.get_tensor("attention_mask").get_shape().at(1);
-    language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
-    std::fill_n(language.get_tensor("attention_mask").data<int64_t>(), language.get_tensor("attention_mask").get_size(), 1);
-
-    language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
-    std::iota(language.get_tensor("position_ids").data<int64_t>(), language.get_tensor("position_ids").data<int64_t>() + language.get_tensor("position_ids").get_size(), history_len);
-
-    language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
-    language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-
-    language.infer();
-
-    int64_t sequence_len = language.get_tensor("logits").get_shape().at(1);
-    request->schedule_tokens(sequence_len);
-
-    sampler.sample(requests, language.get_tensor("logits"));
-
-    auto hidden_size = inputs_embeds.get_shape()[2];
-    language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, hidden_size});
-    language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
-
-    while (!request->has_finished()) {
-        request->schedule_tokens(1);
-        size_t num_sequences = request->num_running_seqs();
-        size_t total_num_tokens = request->get_num_scheduled_tokens() * num_sequences;
-
-        ov::Tensor
-            input_ids(ov::element::i64, {total_num_tokens, 1}),
-            position_ids(ov::element::i64, {total_num_tokens, 1}),
-            beam_idx(ov::element::i32, { total_num_tokens });
-
-        int64_t
-            * input_ids_data = input_ids.data<int64_t>(),
-            * position_ids_data = position_ids.data<int64_t>();
-
-        size_t num_scheduled_tokens = request->get_num_scheduled_tokens();
-        size_t group_position_id = request->get_num_processed_tokens();
-        for (Sequence::Ptr& sequence : request->get_running_sequences()) {
-            for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id) {
-                // compute token for current sequence
-                input_ids_data[token_id] = position_id < request->get_prompt_len() ?
-                    request->get_prompt_ids()[position_id] :
-                    sequence->get_generated_ids()[position_id - request->get_prompt_len()];
-
-                position_ids_data[token_id] = position_id;
-            }
-            // apply strides to shift to a next sequence
-            input_ids_data += num_scheduled_tokens;
-            position_ids_data += num_scheduled_tokens;
-        }
-        
-        const ov::Tensor& embed_prompt_tensor = embeding.infer(input_ids);
-
-        language.set_tensor("inputs_embeds", embed_prompt_tensor);
-
-        language.get_tensor("attention_mask").set_shape({ total_num_tokens, language.get_tensor("attention_mask").get_shape()[1] + 1 });
-        std::fill_n(language.get_tensor("attention_mask").data<int64_t>(), language.get_tensor("attention_mask").get_size(), 1);
-
-        language.set_tensor("position_ids", position_ids);
-
-        std::vector<int32_t> beam_idxs = sampler.get_beam_idxs(request);
-        int32_t *beam_idx_data = beam_idx.data<int32_t>();
-        copy(beam_idxs.begin(), beam_idxs.end(), beam_idx_data);
-        language.set_tensor("beam_idx", beam_idx);
-
-        language.infer();
-
-        if (streamer_ptr) {
-            // first sequence
-            int64_t out_token = request.get()->operator[](0)->get_generated_ids().back();
-            if (streamer_ptr->put(out_token)) {
-                break;
-            }
-        }
-
-        sampler.sample(requests, language.get_tensor("logits"));
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
     }
-
-    if (streamer_ptr) {
-        streamer_ptr->end();
-    }
-
-    EncodedGenerationResult result;
-    result.m_request_id = 1;
-    std::vector<GenerationOutput> generation_outputs = generation->read_all();
-    std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
-        return r1.score > r2.score;
-    });
-
-    auto num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, generation_outputs.size());
-    for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-        const auto& generation_output = generation_outputs[generation_output_idx];
-        result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
-        result.m_scores.push_back(generation_output.score);
-    }
-    result.m_status = generation->get_status();
-
-    return result;
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
-} // namespace
+}
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
 public:
@@ -161,6 +62,10 @@ public:
     bool m_is_chat_conversation;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    // Load pipeline time
+    float m_load_time_ms = 0;
+    // Axis num in kv cache from m_language model, which contains information about history len
+    size_t m_kv_cache_seq_length_axis = 2;
 
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -168,8 +73,13 @@ public:
         const ov::AnyMap& properties
     ) :
         m_vlm_config{
-            utils::from_config_json_if_exists<ov::genai::VLMConfig>(
+            utils::from_config_json_if_exists<VLMConfig>(
                 models_dir, "config.json"
+            )
+        },
+        m_generation_config{
+            utils::from_config_json_if_exists<GenerationConfig>(
+                models_dir, "generation_config.json"
             )
         },
         m_is_chat_conversation{false} {
@@ -179,25 +89,79 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        m_language = utils::singleton_core().compile_model(
+        auto compiled_language_model = utils::singleton_core().compile_model(
             models_dir / "openvino_language_model.xml", device, properties
+        );
+        ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
+        auto language_model = compiled_language_model.get_runtime_model();
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
+
+        m_language = compiled_language_model.create_infer_request();
+
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
+    }
+
+    VLMPipelineImpl(
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config
+    ) :
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(
+                config_dir_path, "config.json"
+            )
+        },
+        m_generation_config{generation_config},
+        m_is_chat_conversation{false} {
+        
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(
+            m_vlm_config, models_map, tokenizer, config_dir_path, device, properties);
+
+        m_tokenizer = m_inputs_embedder->get_tokenizer();
+        m_embedding = m_inputs_embedder->get_embedding_model();
+
+        auto m_language_pair = get_model_weights_pair(models_map, "language");
+        m_language = utils::singleton_core().compile_model(
+            m_language_pair.first, m_language_pair.second, device, properties
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
     }
 
-    DecodedResults generate(
+    VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& rgbs,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) {
-        // If eos_token_id was not provided, take value
-        if (generation_config.eos_token_id == -1) {
-            generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        }
+        auto generate_start_time = std::chrono::steady_clock::now();
+        VLMPerfMetrics perf_metrics;
+        auto& raw_counters = perf_metrics.raw_metrics;
+        auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (generation_config.eos_token_id == -1)
+            generation_config.set_eos_token_id(m_generation_config.eos_token_id);
+        generation_config.validate();
 
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs);
+        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+
+        auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
+        ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
 
         Sampler sampler = Sampler(m_tokenizer);
 
@@ -205,13 +169,15 @@ public:
         size_t request_id = 0;
         size_t block_size = 1; // not used
         bool enable_prefix_caching = false;
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
+
+        auto tokenized_chat_history = m_inputs_embedder->get_tokenized_chat_history();
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
-        sequence_group->update_processed_tokens_num(history_size);
         sequence_group->set_sequence_group_ptr(sequence_group);
         requests.push_back(sequence_group);
 
@@ -232,13 +198,24 @@ public:
         OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
                         "Currently streaming is possible only for greedy or multinomial decoding");
 
-        EncodedGenerationResult encoded_result = get_lm_encoded_results(m_language, m_embedding, inputs_embeds, streamer_ptr, sampler, requests);
+        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
+        std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        DecodedResults decoded;
-        for (size_t idx = 0; idx < encoded_result.m_generation_ids.size(); ++idx) {
-            decoded.texts.push_back(m_tokenizer.decode(encoded_result.m_generation_ids.at(idx)));
-            decoded.scores.push_back(encoded_result.m_scores.at(idx));
+        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
+        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
+
+        ov::genai::EncodedResults encoded_result;
+        int32_t m_selected_beam = 0;
+        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
+                                                                                      position_ids, m_embedding, std::nullopt);
+
+        auto decode_start_time = std::chrono::steady_clock::now();
+        VLMDecodedResults decoded;
+        for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
+            decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
+            decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
@@ -247,10 +224,31 @@ public:
             m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
+
+        auto generate_end_time = std::chrono::steady_clock::now();
+        decoded.perf_metrics = encoded_result.perf_metrics;
+
+        // Common perf metrics
+        auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
+        decoded.perf_metrics.num_input_tokens = prompt_ids.get_size();
+        decoded.perf_metrics.load_time = m_load_time_ms;
+        res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
+        res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
+        
+        // VLM specific perf metrics
+        decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+
+        // Evaluate statistics
+        decoded.perf_metrics.m_evaluated = false;
+        decoded.perf_metrics.evaluate_statistics(generate_start_time);
+
+        m_inputs_embedder->update_tokenized_chat_history(encoded_result.tokens[0]);
+
         return decoded;
     }
 
-    DecodedResults generate(
+    VLMDecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
     ) {
@@ -320,11 +318,30 @@ VLMPipeline::VLMPipeline(
     const std::filesystem::path& models_dir,
     const std::string& device,
     const ov::AnyMap& properties
-) : m_pimpl{std::make_unique<VLMPipelineImpl>(models_dir, device, properties)} {}
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
+
+VLMPipeline::VLMPipeline(
+    const ModelsMap& models_map,
+    const Tokenizer& tokenizer,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;
 
-DecodedResults VLMPipeline::generate(
+VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& rgbs,
     const GenerationConfig& generation_config,
@@ -333,7 +350,16 @@ DecodedResults VLMPipeline::generate(
     return m_pimpl->generate(prompt, rgbs, generation_config, streamer);
 }
 
-DecodedResults VLMPipeline::generate(
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const ov::Tensor& rgb,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const ov::AnyMap& config_map
 ) {

@@ -19,12 +19,21 @@ class DeviceConfig {
     size_t m_cache_size = 0;
     std::string m_device;
 
+    size_t get_block_size_by_device(const std::string& device) const {
+        const size_t cpu_block_size = 32;
+        const size_t gpu_block_size = 16;
+
+        bool is_gpu = device.find("GPU") != std::string::npos;
+
+        return is_gpu ? gpu_block_size : cpu_block_size;
+    }
+
 public:
     DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
         m_device = device;
 
         // keep information about blocsk
-        m_block_size = scheduling_config.block_size;
+        m_block_size = get_block_size_by_device(device);
 
         if (m_device == "CPU") {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
@@ -139,6 +148,10 @@ public:
 
     size_t get_num_kv_blocks() const {
         return m_num_kv_blocks;
+    }
+
+    size_t get_block_size() const {
+        return m_block_size;
     }
 };
 }

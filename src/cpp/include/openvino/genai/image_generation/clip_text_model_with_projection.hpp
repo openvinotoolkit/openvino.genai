@@ -22,8 +22,7 @@ class OPENVINO_GENAI_EXPORTS CLIPTextModelWithProjection {
 public:
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t max_position_embeddings = 77;
-        size_t hidden_size = 512;
-        size_t num_hidden_layers = 33;
+        size_t num_hidden_layers = 32;
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -34,12 +33,39 @@ public:
                                 const std::string& device,
                                 const ov::AnyMap& properties = {});
 
+    CLIPTextModelWithProjection(const std::string& model,
+                                const Tensor& weights,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer);
+
+    CLIPTextModelWithProjection(const std::string& model,
+                                const Tensor& weights,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer,
+                                const std::string& device,
+                                const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     CLIPTextModelWithProjection(const std::filesystem::path& root_dir,
                                 const std::string& device,
                                 Properties&&... properties)
         : CLIPTextModelWithProjection(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModelWithProjection(const std::string& model,
+                                const Tensor& weights,
+                                const Config& config,
+                                const Tokenizer& clip_tokenizer,
+                                const std::string& device,
+                                Properties&&... properties)
+        : CLIPTextModelWithProjection(model,
+                                      weights,
+                                      config,
+                                      clip_tokenizer,
+                                      device,
+                                      ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     CLIPTextModelWithProjection(const CLIPTextModelWithProjection&);
 

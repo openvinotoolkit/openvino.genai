@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241028_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/l_openvino_toolkit_ubuntu22_2024.5.0.dev20241028_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/m_openvino_toolkit_macos_12_6_2024.5.0.dev20241028_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-17180-08365f6fddc/w_openvino_toolkit_windows_2024.5.0.dev20241028_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/l_openvino_toolkit_ubuntu20_2025.0.0.dev20241205_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241205_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241205_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17539-6abe2e39391/w_openvino_toolkit_windows_2025.0.0.dev20241205_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -46,8 +46,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
           wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
@@ -63,13 +63,13 @@ jobs:
           PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-          | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+          && timeout 25s ./build/samples/cpp/text_generation/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+          | diff <(timeout 25s samples/python/text_generation/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
         env:
           PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && samples/python/greedy_causal_lm/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
+          && samples/python/text_generation/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
         env:
           PYTHONPATH: "./build"
 
@@ -105,8 +105,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
         env:
@@ -118,7 +118,7 @@ jobs:
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('Why is the Sun yellow?', return_tensors='pt')
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
@@ -134,7 +134,7 @@ jobs:
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('69', return_tensors='pt')
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
@@ -150,7 +150,7 @@ jobs:
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('Hi', return_tensors='pt')
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
@@ -166,7 +166,7 @@ jobs:
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('return 0', return_tensors='pt')
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
@@ -182,7 +182,7 @@ jobs:
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
@@ -198,7 +198,7 @@ jobs:
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           prompts = [
             'Alan Turing was a',
             'return 0',
@@ -241,15 +241,15 @@ jobs:
       - name: Download and convert model
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
           curl -o adapter_model.safetensors -s -L https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
-          && .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
+          && .\build\samples\cpp\text_generation\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
       - run: |
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
@@ -266,13 +266,13 @@ jobs:
           set PATH=.\build\openvino_genai\;%PATH%
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+          && python samples\python\text_generation\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && python samples\python\greedy_causal_lm\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
+          && python samples\python\text_generation\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -299,12 +299,12 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
       - run: >
           . ./ov/setupvars.sh
-          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
+          && timeout 2m ./build/samples/cpp/text_generation/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/text_generation/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
         env:
           PYTHONPATH: "./build"
 
@@ -333,8 +333,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
       - run: >
           . ./ov/setupvars.sh
@@ -368,8 +368,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
       - run: >
           . ./ov/setupvars.sh
@@ -403,8 +403,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
       - run: >
           . ./ov/setupvars.sh
@@ -438,15 +438,15 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
           ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
           python ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
@@ -488,8 +488,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
       - name: run and compare
@@ -504,7 +504,7 @@ jobs:
           A:' > ./prompt.txt
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -525,7 +525,7 @@ jobs:
           A:' > ./prompt.txt
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
+          ./build/samples/cpp/text_generation/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -560,13 +560,13 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 50s ./build/samples/cpp/text_generation/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
       - name: Compare
         run: |
           python -c "
@@ -585,13 +585,13 @@ jobs:
           echo Phi-1_5 passed
       - run: >
           . ./ov/setupvars.sh
-          && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
+          && timeout 50s samples/python/text_generation/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
         env:
           PYTHONPATH: "./build"
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-20.04-4-cores
+    runs-on: ubuntu-20.04-8-cores
     defaults:
       run:
         shell: bash
@@ -615,13 +615,13 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./redpajama-3b-chat/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 50s ./build/samples/cpp/text_generation/greedy_causal_lm ./redpajama-3b-chat/ "Alan Turing was a" > ./pred_greedy.txt
       - name: Compare
         run: |
           python -c "
@@ -640,7 +640,7 @@ jobs:
           echo "Alan Turing was a" passed
       - run: >
           . ./ov/setupvars.sh
-          && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
+          && timeout 50s samples/python/text_generation/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
         env:
           PYTHONPATH: "./build"
@@ -670,8 +670,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Compare
         env:
@@ -681,9 +681,9 @@ jobs:
           printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
           timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
           python -c "
-          from transformers import LlamaTokenizer, AutoModelForCausalLM
+          from transformers import AutoTokenizer, AutoModelForCausalLM
           model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
-          tokenizer = LlamaTokenizer.from_pretrained(model_id)
+          tokenizer = AutoTokenizer.from_pretrained(model_id)
           model = AutoModelForCausalLM.from_pretrained(model_id)
           prompts = ['What is 2 + 2?', 'What is the previous answer?', 'Add 1 to it.', 'Subtract 5 from it.', 'Why is the sun yellow?', 'What was my first question?']
           def gen_prompt(prompt):
@@ -713,7 +713,7 @@ jobs:
           echo "Chat sample python" passed
 
 
-  visual_language_chat_sample-ubuntu:
+  visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -722,118 +722,134 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat py_openvino_genai -j
-      - name: Install dependencies
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat benchmark_vlm py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
+      - name: Download and convert tiny-random-minicpmv-2_6 model and an image
         run: |
           source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt opencv-python
-      - name: Download and convert MiniCPM-V-2_6 model and an image
-        run: |
-          python -m pip install git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
-          python -m pip install -U "optimum<1.23" --no-dependencies
-          source ./ov/setupvars.sh
-          optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
+          optimum-cli export openvino -m katuni4ka/tiny-random-minicpmv-2_6 tiny-random-minicpmv-2_6 --trust-remote-code --task image-text-to-text
           mkdir images
-      - name: Generate reference - MiniCPM-V-2_6
+      - name: Generate images - tiny-random-minicpmv-2_6
         shell: python
         run: |
-          from optimum.intel.openvino import OVModelForVisualCausalLM
-          from transformers import AutoProcessor
           from PIL import Image
-          import cv2
           import numpy as np
           import requests
-          res = 448, 448
+          res = 28, 28
           lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
           lines = lines.reshape([*res, 3])
-          cv2.imwrite("images/lines.png", lines)
+          lines_image = Image.fromarray(lines)
+          lines_image.save("images/lines.png")
           cat = Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw).convert('RGB')
-          shrunk_cat = cat.resize((448, 448))  # Resize is different in C++ impl, there's also sin and cos calc in double but it has smaller effect.
-          shrunk_cat.save("images/shrunk_cat.png")
-          lines = Image.open("images/lines.png").convert('RGB')
-          model_id = "openbmb/MiniCPM-V-2_6"
-          processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-          prompt = processor.tokenizer.apply_chat_template([{"role": "user", "content": "(<image>./</image>)\n(<image>./</image>)\nDescribe the images?"}], tokenize=False, add_generation_prompt=True)
-          inputs = processor([prompt], [lines, shrunk_cat], return_tensors="pt")
-          model = OVModelForVisualCausalLM.from_pretrained("MiniCPM-V-2_6", device="CPU", trust_remote_code=True)
-          result = model.generate(**inputs, max_new_tokens=99)
-          decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
-          print(decoded)
-          with open("ref.txt", "w") as f:
-              f.write(f"question:\n{decoded}\n----------\nquestion:\n")
-
-      - name: Run visual_language_chat C++ sample - MiniCPM-V-2_6
+          cat.save("images/cat.png")
+      - name: Run visual_language_chat C++ sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ ./images/
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee cpp.txt
         timeout-minutes: 2
-      - run: diff cpp.txt ref.txt
-      - name: Run visual_language_chat Python sample - MiniCPM-V-2_6
+      - name: Run benchmark_vlm C++ sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./images/
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/benchmark_vlm  -m ./tiny-random-minicpmv-2_6/ -i ./images/cat.png -n 3
+        timeout-minutes: 2
+      - name: Run visual_language_chat Python sample - tiny-random-minicpmv-2_6
+        run: >
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/
           <<< $'Describe the images?' | tee py.txt
         env:
           PYTHONPATH: "./build/"
-      - run: diff py.txt ref.txt
-      - name: Run visual_language_chat C++ sample with 2 prompts - MiniCPM-V-2_6
+      - name: Run benchmark_vlm Python sample - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ ./cat.jpg
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/benchmark_vlm.py -m ./tiny-random-minicpmv-2_6/ -i ./images/cat.png -n 3
+        env:
+          PYTHONPATH: "./build/"
+      - name: Encode cpp.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
+      - run: diff cpp.txt py.txt
+      - name: Run visual_language_chat C++ sample with 2 prompts - tiny-random-minicpmv-2_6
+        run: >
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./tiny-random-minicpmv-2_6/ ./images/cat.png
           <<< $'What is unusual on this image?\nGo on.' | tee cpp2.txt
         timeout-minutes: 2
-      - name: Run visual_language_chat Python sample with 2 prompts - MiniCPM-V-2_6
+      - name: Run visual_language_chat Python sample with 2 prompts - tiny-random-minicpmv-2_6
         run: >
-          source ./ov/setupvars.sh
-          && ./samples/python/visual_language_chat/visual_language_chat.py ./MiniCPM-V-2_6/ ./cat.jpg
+          set -o pipefail
+          && source ./ov/setupvars.sh
+          && ./samples/python/visual_language_chat/visual_language_chat.py ./tiny-random-minicpmv-2_6/ ./images/cat.png
           <<< $'What is unusual on this image?\nGo on.' | tee py2.txt
         env:
           PYTHONPATH: "./build/"
+      - name: Encode cpp2.txt with Python encoding instead of terminal one
+        shell: python
+        run: |
+          with open("cpp2.txt", "rb") as f:
+            content = f.read().decode("utf-8", "replace")
+          with open("cpp2.txt", "wb") as f:
+            f.write(content.encode("utf-8"))
       - run: diff cpp2.txt py2.txt
-      - name: Download and convert LLaVa 1.5 model and an image
-        run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
-          wget https://llava-vl.github.io/static/images/monalisa.jpg
-      - name: Run visual_language_chat C++ sample - LLaVa 1.5
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
-      - name: Download and convert LLaVa-Next model
-        run: |
-          source ./ov/setupvars.sh
-          optimum-cli export openvino --model llava-hf/llava-v1.6-mistral-7b-hf ./llava_v1_6_mistral_7b_ov/
-      - name: Run visual_language_chat C++ sample - LLaVa-Next
-        run: >
-          source ./ov/setupvars.sh
-          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_v1_6_mistral_7b_ov/ monalisa.jpg
-          <<< $'Who drew this painting?\nWhen did the painter live?'
-        timeout-minutes: 4
+
+  visual_language_chat_sample-ubuntu-llava_1_5:
+    uses: ./.github/workflows/job_vlm_sample_llava.yml
+    with:
+      model_id: llava-hf/llava-1.5-7b-hf
+      model_dir: llava_1_5_7b_ov
+
+  visual_language_chat_sample-ubuntu-llava_next:
+    uses: ./.github/workflows/job_vlm_sample_llava.yml
+    with:
+      model_id: llava-hf/llava-v1.6-mistral-7b-hf
+      model_dir: llava_v1_6_mistral_7b_ov
+
+  visual_language_chat_sample-ubuntu-internvl2:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
       - name: Download and convert InternVL2 model
         run: |
+          # Lowering transformers version, workaround for https://huggingface.co/OpenGVLab/InternVL2-1B/discussions/7
+          python -m pip install -U "transformers<4.45.0"
           source ./ov/setupvars.sh
           optimum-cli export openvino --model OpenGVLab/InternVL2-4B ./internvl2_4b_ov/ --trust-remote-code
+      - name: Download images
+        run: |
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat C++ sample - InternVL2
         run: >
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
-
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -860,8 +876,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Run gtests
         run: |
@@ -906,8 +922,8 @@ jobs:
       - name: Download and convert and model
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Run gtests
         run: |
@@ -927,7 +943,7 @@ jobs:
           .\build\tools\continuous_batching\benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-macos:
-    runs-on: macos-12
+    runs-on: macos-13
     defaults:
       run:
         shell: bash
@@ -951,8 +967,8 @@ jobs:
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - name: Run gtests
         run: |
@@ -974,7 +990,7 @@ jobs:
             cpp-greedy_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
             cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
             cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
-            visual_language_chat_sample-ubuntu,
+            visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest

@@ -8,8 +8,8 @@
 - 'src/cpp/src/tokenizers_path.hpp'
 - 'src/cpp/src/circular_buffer_queue.hpp'
 - 'src/cpp/src/synchronized_queue.hpp'
-- 'src/cpp/src/make_combine_segments_stateful.cpp'
-- 'src/cpp/src/make_combine_segments_stateful.hpp'
+- 'src/cpp/src/make_tokenizer_stateful.cpp'
+- 'src/cpp/src/make_tokenizer_stateful.hpp'
 - 'src/python/py_tokenizer.cpp'
 - 'thirdparty/openvino_tokenizers'
 - 'tests/python_tests/tokenizer_configs.py'
@@ -17,9 +17,7 @@
 'category: LLM':
 - 'src/cpp/include/openvino/genai/llm_pipeline.hpp'
 - 'src/cpp/src/llm_pipeline.cpp'
-- 'src/cpp/src/greedy_decoding.cpp'
-- 'src/cpp/src/group_beam_searcher.cpp'
-- 'src/cpp/src/multinomial_decoding.cpp'
+- 'src/cpp/src/lm_encoding.cpp'
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
@@ -38,7 +36,7 @@
 - 'tests/cpp/generate_config.cpp'
 - 'tests/cpp/sampler.cpp'
 
-- 'category: LoRA':
+'category: LoRA':
 - 'src/cpp/include/openvino/genai/lora_adapter.hpp'
 - 'src/cpp/src/lora_adapter.cpp'
 - 'src/cpp/src/lora_helper.cpp'

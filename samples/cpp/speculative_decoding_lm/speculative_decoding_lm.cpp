@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) try {
     // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5;
     // add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
-    // config.assistant_confidence_threshold = 0.4
+    // config.assistant_confidence_threshold = 0.4;
 
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
@@ -24,25 +24,17 @@ int main(int argc, char* argv[]) try {
     
     // User can run main and draft model on different devices.
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
-    std::string main_device = "CPU", draft_device = main_device;
-
-    // Perform the inference
-    auto get_default_block_size = [](const std::string& device) {
-        const size_t cpu_block_size = 32;
-        const size_t gpu_block_size = 16;
-
-        bool is_gpu = device.find("GPU") != std::string::npos;
-
-        return is_gpu ? gpu_block_size : cpu_block_size;
-    };
+    std::string main_device = "CPU", draft_device = "CPU";
 
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.cache_size = 5;
-    scheduler_config.block_size = get_default_block_size(main_device);
 
-    // Example to run main_model on GPU and draft_model on CPU:
-    // ov::genai::LLMPipeline pipe(main_model_path, "GPU", ov::genai::draft_model(draft_model_path, "CPU"), ov::genai::scheduler_config(scheduler_config));
-    ov::genai::LLMPipeline pipe(main_model_path, main_device, ov::genai::draft_model(draft_model_path, draft_device), ov::genai::scheduler_config(scheduler_config));
+    // Different devices require different block sizes, so different scheduler configs need to be set.
+    ov::genai::LLMPipeline pipe(
+        main_model_path,
+        main_device,
+        ov::genai::draft_model(draft_model_path, draft_device),
+        ov::genai::scheduler_config(scheduler_config));
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;

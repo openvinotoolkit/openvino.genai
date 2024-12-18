@@ -13,6 +13,8 @@ file(DOWNLOAD
     ${CMAKE_BINARY_DIR}/stb_image.h
     EXPECTED_HASH MD5=27932e6fb3a2f26aee2fc33f2cb4e696)
 
+# create main sample executable
+
 add_executable(visual_language_chat visual_language_chat.cpp load_image.cpp)
 target_include_directories(visual_language_chat PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(visual_language_chat PRIVATE openvino::genai)
@@ -23,6 +25,21 @@ set_target_properties(visual_language_chat PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS visual_language_chat
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# create benchmark executable
+
+add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp)
+target_include_directories(benchmark_vlm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_link_libraries(benchmark_vlm PRIVATE openvino::genai cxxopts::cxxopts)
+set_target_properties(benchmark_vlm PROPERTIES
+    COMPILE_PDB_NAME benchmark_vlm
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS benchmark_vlm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

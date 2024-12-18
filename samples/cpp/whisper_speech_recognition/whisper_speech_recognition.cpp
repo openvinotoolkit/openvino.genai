@@ -11,17 +11,18 @@ int main(int argc, char* argv[]) try {
 
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = "CPU";  // GPU can be used as well
+    std::string device = "CPU";  // GPU, NPU can be used as well
 
     ov::genai::WhisperPipeline pipeline(models_path, device);
 
-    ov::genai::WhisperGenerationConfig config(models_path / "generation_config.json");
+    ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
     config.max_new_tokens = 100;  // increase this based on your speech length
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
     config.return_timestamps = true;
 
+    // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
     auto result = pipeline.generate(raw_speech, config);
 

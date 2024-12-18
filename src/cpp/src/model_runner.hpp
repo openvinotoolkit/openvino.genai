@@ -29,9 +29,8 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
  */
 class ModelRunner {
     ov::InferRequest m_request;
-    SchedulerConfig m_scheduler_config;
     AttentionScoresForEachSubsequence m_last_attention_scores;
-    size_t m_num_decoder_layers;
+    size_t m_num_decoder_layers, m_block_size;
     bool m_collect_attention_scores;
     ManualTimer m_infer_timer = ManualTimer("pure generate inference");
 public:
@@ -43,9 +42,9 @@ public:
      * @param collect_attention_scores If true, then after each `forward` call the ModelRunner will collect and make available the per-token attention
      * scores for each decoder layer, so that these can be used in per-step cache optimizations (such as cache eviction algorithm).
      */
-    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config, size_t num_decoder_layers = 1, bool collect_attention_scores = false) :
+    ModelRunner(ov::InferRequest request, size_t block_size, size_t num_decoder_layers = 1, bool collect_attention_scores = false) :
         m_request(std::move(request)),
-        m_scheduler_config(scheduler_config),
+        m_block_size(block_size),
         m_num_decoder_layers(num_decoder_layers),
         m_collect_attention_scores(collect_attention_scores) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
@@ -152,7 +151,7 @@ public:
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
 
-                size_t num_blocks = (sequence_group->get_context_len()  - sequence_group->get_num_evicted_tokens() +  m_scheduler_config.block_size - 1) / m_scheduler_config.block_size;
+                size_t num_blocks = (sequence_group->get_context_len()  - sequence_group->get_num_evicted_tokens() +  m_block_size - 1) / m_block_size;
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
 
                 // apply strides to shift to a next sequence
@@ -192,7 +191,7 @@ public:
             m_infer_timer.end();
         }
 
-        if (m_collect_attention_scores && m_scheduler_config.use_cache_eviction) {
+        if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
 
@@ -206,7 +205,7 @@ private:
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         std::vector<std::string> tensor_names = {"block_indices"};
 
-        if (m_scheduler_config.use_cache_eviction) {
+        if (m_collect_attention_scores) {
             tensor_names.resize(m_num_decoder_layers);
             for (size_t i = 0; i < tensor_names.size(); i++) {
                 tensor_names[i] = std::string("block_indices.") + std::to_string(i);
@@ -227,7 +226,7 @@ private:
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
                 Sequence::CPtr sequence = running_sequences[seq_id];
 
-                size_t num_blocks = (sequence_group->get_context_len()  - sequence_group->get_num_evicted_tokens() +  m_scheduler_config.block_size - 1) / m_scheduler_config.block_size;
+                size_t num_blocks = (sequence_group->get_context_len()  - sequence_group->get_num_evicted_tokens() +  m_block_size - 1) / m_block_size;
                 const auto & kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
 
                 for (size_t layer_idx = 0; layer_idx < tensor_names.size(); layer_idx++) {
