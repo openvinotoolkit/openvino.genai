@@ -104,8 +104,8 @@ std::vector<int64_t> encode_and_process_string(const std::string& stop_string, o
 
 struct MatchStopStringResult {
     size_t to_remove = 0;
-    int64_t last_token_id = 0;
-    bool is_to_update_last_token = false;
+    // int64_t last_token_id = 0;
+    // bool is_to_update_last_token = false;
     bool is_matched = false;
 };
 
@@ -126,19 +126,19 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
 
                 auto stop_string_len = is_include_to_output ? stop_string.length() : 0;
                 decoded_buffer = decoded_buffer.substr(0, pos + stop_string_len);
-
-                auto encoded_buffer = encode_and_process_string(decoded_buffer, tokenizer);
-                if (buffer == encoded_buffer) {
+                if (decoded_buffer.empty()) {
+                    result.to_remove = buffer.size();
                     return result;
-                } else if (encoded_buffer.size() > 0) {
-                    result.last_token_id = encoded_buffer.back();
-                    result.is_to_update_last_token = 0;
-                    encoded_buffer.pop_back();
                 }
 
-                result.to_remove = buffer.size() - encoded_buffer.size();
-                buffer = TokenIds(buffer.begin(), buffer.begin() + encoded_buffer.size());
-                OPENVINO_ASSERT(buffer == encoded_buffer);
+                // find token cnt to be removed from sequence by decoding token by token
+                std::string decoded_partially_string = "";
+                for (size_t i = 0; i < buffer.size(); ++i) {
+                    decoded_partially_string += tokenizer.decode(TokenIds{buffer[i]});
+                    if (decoded_partially_string.find(decoded_buffer) != std::string::npos) {
+                        result.to_remove = buffer.size() - i - 1;
+                    }
+                }
                 return result;
             }
         }
@@ -393,7 +393,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
                     // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
                     candidate.m_sequence->remove_last_tokens(match_result.to_remove);
 
-                    candidate.m_token_id = match_result.last_token_id;
+                    // candidate.m_token_id = match_result.last_token_id;
 
                     // try to finish candidate
                     try_to_finish_candidate(group, candidate);
@@ -572,14 +572,7 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
             auto match_result = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), stop_strings, sampling_params.include_stop_str_in_output);
             if (match_result.is_matched) {
                 if (match_result.to_remove > 0) {
-                    if (match_result.to_remove > 1) {
-                        running_sequence->remove_last_tokens(match_result.to_remove - 1);
-                    }
-                    auto log_prob = running_sequence->get_generated_log_probs().back();
-                    running_sequence->remove_last_tokens(1);
-                    if (match_result.is_to_update_last_token) {
-                        running_sequence->append_token(match_result.last_token_id, log_prob);
-                    }
+                    running_sequence->remove_last_tokens(match_result.to_remove);
                 }
 
                 running_sequence->set_status(SequenceStatus::FINISHED);
