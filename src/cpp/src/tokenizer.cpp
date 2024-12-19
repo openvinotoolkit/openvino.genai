@@ -194,10 +194,16 @@ public:
 
     void setupTokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,  const ov::AnyMap& properties) {
         auto [ov_tokenizer, ov_detokenizer] = models;
+        OPENVINO_ASSERT(ov_tokenizer || ov_detokenizer, "Neither tokenizer nor detokenzier models were provided");
 
-        m_older_than_24_5 = ov_tokenizer->get_rt_info().count("openvino_tokenizers_version") != 1;
         auto core = get_core_singleton();
         std::string device = "CPU"; // only CPU is supported for now
+        
+        std::string version_str;
+        utils::read_rt_info(ov_tokenizer != nullptr ? ov_tokenizer: ov_detokenizer , "openvino_tokenizers_version", version_str);
+        // Saving IR version was added only in 24.5, so if it's empty, then it's older than 24.5
+        m_older_than_24_5 = version_str.empty();
+
         if (ov_tokenizer) {
             ov::pass::Manager manager;
             manager.register_pass<MakeCombineSegmentsSatateful>();
@@ -230,7 +236,8 @@ public:
         if (m_tokenizer) {
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             encode("non empty string").input_ids;
-        if (m_detokenizer)
+        }
+        if (m_detokenizer) {
             decode({1, 33, 199, 42, 42});
         }
 
@@ -377,6 +384,9 @@ public:
     }
 
     TokenizedInputs encode(std::string prompt, const ov::AnyMap& tokenization_params = {}) {
+        OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                                                "Tokenizer::encode is not available");
+
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         set_state_if_necessary(infer_request_guard, tokenization_params);
         size_t batch_size = 1;
@@ -390,6 +400,8 @@ public:
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {
+        OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                                                "Tokenizer::encode is not available");
         TokenizedInputs unpadded;
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
