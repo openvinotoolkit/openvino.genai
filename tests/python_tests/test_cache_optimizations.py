@@ -5,7 +5,9 @@ from pathlib import Path
 import sys
 from typing import Dict, List, Optional
 
+import datasets
 import pytest
+from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
 
@@ -16,6 +18,7 @@ from openvino import serialize
 from transformers import AutoTokenizer
 
 from common import TESTS_ROOT
+from utils_longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -68,6 +71,7 @@ class CacheOptTestStruct:
 
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
 
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform in ("win32", "darwin"), reason="doesn't work on win due to optimum-intel export bug, segfault on mac")
@@ -145,3 +149,83 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     del model_cb_noopt
 
 
+@pytest.fixture(scope='module')
+def qwen2_converted_model(tmp_path_factory):
+    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
+    model.save_pretrained(models_path)
+    ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
+    serialize(ov_tokenizer, models_path / "openvino_tokenizer.xml")
+    serialize(ov_detokenizer, models_path / "openvino_detokenizer.xml")
+    qwen2_converted_model = ConvertedModel(model, tokenizer, models_path)
+    yield qwen2_converted_model
+    del qwen2_converted_model
+    del model
+
+
+@dataclass
+class LongBenchTestData:
+    subset: str
+    ref_score: float
+    max_cache_usage: float
+    avg_cache_usage: float
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("test_struct", [
+    LongBenchTestData("samsum", 36.78, 14, 9.596),
+    LongBenchTestData("trec", 28.12, 11.8, 7.721),
+    LongBenchTestData("qasper", 21.68, 18.4, 12.706),
+])
+def test_unoptimized_generation_longbench(qwen2_converted_model, test_struct):
+    seqs_per_request = 32
+    num_kv_blocks = 1000
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+    models_path = qwen2_converted_model.models_path
+    model_name = "/".join(models_path.parts[-2:])
+    subset = test_struct.subset
+    max_new_tokens = dataset2maxlen[subset]
+    tokenizer = qwen2_converted_model.tokenizer
+
+    generation_config = GenerationConfig()  # expecting default greedy sampling
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = max_new_tokens
+    generation_config.eos_token_id = tokenizer.eos_token_id
+
+    scheduler_config.use_cache_eviction = True
+    if scheduler_config.use_cache_eviction:
+        scheduler_config.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    model_cb_opt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
+    data = datasets.load_dataset('THUDM/LongBench', subset, split=f'test[:{seqs_per_request}]')
+
+    with tqdm(total=len(data)) as progress_bar:
+        batch = []
+        answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = preprocess_prompt(data_sample, subset, model_name)
+            progress_bar.update(1)
+            batch.append(prompt)
+            answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+
+            if len(batch) == seqs_per_request or p_idx == len(data) - 1:
+                ans_batch = model_cb_opt.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                for i, output in enumerate(ans_batch, start=p_idx-len(batch)+1):
+                    pred = post_process_pred(output.m_generation_ids[0], subset, model_name)
+                    answers[i]["pred"] = pred
+                batch.clear()
+
+    score = evaluate(answers, subset)
+    print(f"Score: {score}")
+
+    pipeline_noopt_metrics = model_cb_opt.get_metrics()
+    print(f"Opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+
+    assert abs(test_struct.ref_score - score) < 1
+    assert abs(test_struct.max_cache_usage - pipeline_noopt_metrics.max_cache_usage) < 1
+    assert abs(test_struct.avg_cache_usage - pipeline_noopt_metrics.avg_cache_usage) < 1
+    del model_cb_opt
