@@ -798,6 +798,12 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
     assert mean_ttft > 0 and mean_ttft < 1000.0
 
+    raw_metrics = perf_metrics.raw_metrics
+    durations = np.array(raw_metrics.m_durations) / 1000
+    # Check that prefill is not included in durations for TPOT calculation.
+    # For the very long prompt prefill is slow and TTFT is much larger than any other token genration duration.
+    assert np.all(mean_ttft > durations * 10)
+
     mean_tpot, std_tpot = perf_metrics.get_tpot()
     assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
     assert mean_tpot > 0 and mean_ttft < 1000.0
@@ -822,7 +828,9 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     assert std_detok_duration == 0
     
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
-    raw_metrics = perf_metrics.raw_metrics
+    assert np.allclose(mean_tpot, np.mean(durations))
+    assert np.allclose(std_tpot, np.std(durations))
+
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
     assert np.allclose(std_gen_duration, np.std(raw_dur))
