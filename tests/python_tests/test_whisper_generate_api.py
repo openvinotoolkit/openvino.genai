@@ -25,7 +25,9 @@ def run_gc_after_test():
     yield
     gc.collect()
 
-@functools.lru_cache(1)
+# used whisper models are relatively small
+# cache them in memory to speedup tests
+@functools.lru_cache(3)
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
