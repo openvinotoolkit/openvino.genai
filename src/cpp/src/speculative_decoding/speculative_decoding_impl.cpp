@@ -59,6 +59,18 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
         main_scheduler_config_updated.cache_size = main_cache_size;
         draft_scheduler_config.cache_size = draft_cache_size;
+
+        // set batched_tokens_num to max_seq in scheduler config accorsing speculative processing scheduling logic
+        // should work with sequences instead of batched_tokens in continuous batching scenario
+        auto default_sheduler_config = SchedulerConfig();
+        if (main_scheduler_config.max_num_seqs == default_sheduler_config.max_num_seqs) {
+            main_scheduler_config_updated.max_num_seqs == main_scheduler_config_updated.max_num_batched_tokens;
+            draft_scheduler_config.max_num_seqs == draft_scheduler_config.max_num_batched_tokens;
+
+            main_scheduler_config_updated.max_num_batched_tokens = std::numeric_limits<size_t>::max();
+            draft_scheduler_config.max_num_batched_tokens = std::numeric_limits<size_t>::max();
+        }
+
     }
 
     ov::AnyMap draft_properties = draft_model_desc.properties == ov::AnyMap{} ? compile_properties : draft_model_desc.properties;
