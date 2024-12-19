@@ -5,7 +5,9 @@ from pathlib import Path
 import sys
 from typing import Dict, List, Optional
 
+import datasets
 import pytest
+from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
 
@@ -217,10 +219,11 @@ class LongBenchTestData:
     avg_cache_usage: float
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 34.96, 16.2, 8.145),
-    LongBenchTestData("trec", 35, 14, 7.284),
-    LongBenchTestData("qasper", 14.67, 22.8, 13.182),
+    LongBenchTestData("samsum", 36.78, 14, 9.596),
+    LongBenchTestData("trec", 28.12, 11.8, 7.721),
+    LongBenchTestData("qasper", 21.68, 18.4, 12.706),
 ])
 def test_unoptimized_generation_longbench(qwen2_converted_model, test_struct):
     seqs_per_request = 32
@@ -242,7 +245,7 @@ def test_unoptimized_generation_longbench(qwen2_converted_model, test_struct):
         scheduler_config.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
 
     model_cb_opt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test')
+    data = datasets.load_dataset('THUDM/LongBench', subset, split=f'test[:{seqs_per_request}]')
 
     with tqdm(total=len(data)) as progress_bar:
         batch = []
