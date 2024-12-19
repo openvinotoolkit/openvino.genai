@@ -48,7 +48,7 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_me
     auto device = m_device_config->get_device();
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
     auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
-    auto device_type = core.get_property(device, ov::device::type.name(), {}).as<std::string>();
+    auto device_type = core.get_property(device, ov::device::type);
 
     // sum up all used device memory
     std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
@@ -57,7 +57,7 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_me
         used_device_mem += memory_statistics[mem_type];
     }
 
-    if (device_type == "INTEGRATED") {
+    if (device_type == ov::device::Type::INTEGRATED) {
         used_device_mem += memory_statistics["usm_host"];
     }
 
@@ -67,6 +67,7 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_me
     float used_memory_threshold = 1.1;
     used_device_mem *= used_memory_threshold;
 
+    // total device memory in bytes
     auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
 
     return total_device_memory - used_device_mem;
@@ -75,24 +76,49 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_me
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reallocate_kv_cache_if_needed(std::vector<SequenceGroup::Ptr>& sequence_groups) {
     float eps = 1e-5;
     auto device = m_device_config->get_device();
+    size_t block_size = m_device_config->get_block_size();
+    size_t current_num_of_kv_blocks = m_scheduler->get_block_manager().get_total_number_of_kv_blocks();
 
     if (!m_scheduler->get_block_manager().block_allocator_initialized()) {
+        // initial kv-blocks allocation
         size_t seq_length_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
-            seq_length_sum += sequence_groups[idx]->get_prompt_len() + m_generation_config.get_max_new_tokens();
+            auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
+            seq_length_sum += std::min(seq_length, m_generation_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len()));;
         }
         m_scheduler->get_block_manager().increase_kv_blocks_number(seq_length_sum);
         m_dynamic_memory_allocation = true;
     }
-    else if (m_dynamic_memory_allocation && (m_scheduler->get_block_manager().get_used_percentage() + eps) > m_precentage_threshold_for_cache_increase) {
-        size_t new_cache_size = (size_t)(m_scheduler->get_block_manager().get_total_number_of_kv_blocks() * m_cache_growth_factor);
+    else if (m_dynamic_memory_allocation && (m_scheduler->get_block_manager().get_used_percentage() + eps) > m_percentage_threshold_for_cache_increase) {
+        // get the expected number of kv blocks, considering that generated length will increase by m_cache_growth_factor
+        size_t expected_logical_kv_blocks_num = 0;
+        for (auto idx = 0; idx < sequence_groups.size(); idx++) {
+            auto num_blocks = sequence_groups[idx]->get_prompt_len() / block_size;
+            for (auto seq: sequence_groups[idx]->get_sequences()) {
+                num_blocks += std::min((size_t)(seq->get_generated_len() * m_cache_growth_factor), m_generation_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len())) / block_size;
+            }
+            expected_logical_kv_blocks_num += num_blocks;
+        }
+
+        // get the expected number of physical kv-blocks 
+        size_t expected_physical_blocks_num = (size_t)(current_num_of_kv_blocks * m_cache_growth_factor);
+
+        size_t new_blocks_num = std::min(expected_logical_kv_blocks_num, expected_physical_blocks_num);
+
+        // increase kv-cache
         if (device.find("GPU") == std::string::npos) {
-            m_scheduler->get_block_manager().increase_kv_blocks_number(new_cache_size);
+            m_scheduler->get_block_manager().increase_kv_blocks_number(new_blocks_num);
         }
         else {
-            size_t available_gpu_memory_size = _get_available_gpu_memory();
-            if (new_cache_size <= available_gpu_memory_size) {
-                m_scheduler->get_block_manager().increase_kv_blocks_number(new_cache_size);
+            size_t available_gpu_memory = _get_available_gpu_memory();
+            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * m_device_config->get_block_size_in_bytes();
+            if (required_memory <= available_gpu_memory) {
+                m_scheduler->get_block_manager().increase_kv_blocks_number(new_blocks_num);
+            } else {
+                size_t possible_blocks_to_add = available_gpu_memory / m_device_config->get_block_size_in_bytes();
+                if (possible_blocks_to_add > 0) {
+                    m_scheduler->get_block_manager().increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
+                }
             }
         }
     }

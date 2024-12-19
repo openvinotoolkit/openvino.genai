@@ -151,5 +151,9 @@ public:
     size_t get_block_size() const {
         return m_block_size;
     }
+
+    size_t get_block_size_in_bytes() const {
+        return m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * get_cache_precision().size();
+    }
 };
 }

@@ -34,7 +34,7 @@ protected:
     // dynamic kv-cache allocation params
     const size_t m_kv_blocks_initial_multiplier = 2;
     const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
-    const float m_precentage_threshold_for_cache_increase = 100;
+    const float m_percentage_threshold_for_cache_increase = 100;
 
     bool m_dynamic_memory_allocation = false;
 
