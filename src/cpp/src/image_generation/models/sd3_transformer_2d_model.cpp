@@ -28,7 +28,7 @@ SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) 
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
-    m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
     m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
@@ -44,8 +44,7 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
                                              const Config& config,
                                              const size_t vae_scale_factor) :
     m_config(config), m_vae_scale_factor(vae_scale_factor) {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model(model, weights);
+    m_model = utils::singleton_core().read_model(model, weights);
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,

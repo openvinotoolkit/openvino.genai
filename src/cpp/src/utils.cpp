@@ -201,27 +201,6 @@ ProcessorConfig from_any_map(
 }
 
 /**
- * Split config by core and compile configs
- * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
- * Move this options to `core.set_property` config
- */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
-    const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
-    ov::AnyMap core_properties;
-    ov::AnyMap compile_properties{properties};
-
-    for (const auto option : unsupported_by_compile_properties) {
-        auto iter = properties.find(option);
-        if (iter != properties.end()) {
-            core_properties[option] = iter->second;
-            compile_properties.erase(option);
-        }
-    }
-
-    return {core_properties, compile_properties};
-};
-
-/**
  * scheduler_config is a separate config for continuous batching pipeline. 
  * This routine splits scheduler_config from plugin_config.
  */
@@ -235,14 +214,6 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
     }
     return {plugin_config, scheduler_config};
 };
-
-std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-    auto [core_properties, compile_properties] = split_core_compile_config(properties);
-    ov::Core core;
-    core.set_property(core_properties);
-    std::filesystem::path openvino_model_name = "openvino_model.xml";
-    return core.read_model((models_path / openvino_model_name).string());
-}
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
