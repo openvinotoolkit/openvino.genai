@@ -206,10 +206,8 @@ public:
 
         Sampler sampler = Sampler(m_tokenizer);
 
-        ov::genai::EncodedResults encoded_result;
-        int32_t m_selected_beam = 0;
-        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
-                                                                                      position_ids, m_embedding, std::nullopt);
+        ov::genai::EncodedResults encoded_result = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
+                                                                                     position_ids, m_embedding);
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -218,6 +216,9 @@ public:
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
         auto decode_end_time = std::chrono::steady_clock::now();
+
+        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH,
+                                                    generation_config.is_beam_search(), m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
@@ -244,8 +245,6 @@ public:
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
-
-        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH);
 
         return decoded;
     }
