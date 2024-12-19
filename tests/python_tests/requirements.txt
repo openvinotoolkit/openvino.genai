@@ -32,3 +32,4 @@ sacremoses
 librosa
 soundfile
 datasets
+rouge
