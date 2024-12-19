@@ -84,7 +84,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reallocate_kv_cache_if
         size_t seq_length_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
-            seq_length_sum += std::min(seq_length, m_generation_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len()));;
+            seq_length_sum += std::min(seq_length, sequence_groups[idx]->get_prompt_len() + m_generation_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len()));;
         }
         m_scheduler->get_block_manager().increase_kv_blocks_number(seq_length_sum);
         m_dynamic_memory_allocation = true;
