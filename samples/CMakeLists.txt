@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# Samples do not need to be built for NPM package
+if(CPACK_GENERATOR STREQUAL "NPM")
+    return()
+endif()
+
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/benchmark_genai)
 add_subdirectory(cpp/chat_sample)
