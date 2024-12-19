@@ -11,6 +11,7 @@
 #include "image_generation/schedulers/euler_discrete.hpp"
 #include "image_generation/schedulers/flow_match_euler_discrete.hpp"
 #include "image_generation/schedulers/pndm.hpp"
+#include "image_generation/schedulers/euler_ancestral_discrete.hpp"
 
 namespace ov {
 namespace genai {
@@ -41,6 +42,8 @@ std::shared_ptr<Scheduler> Scheduler::from_config(const std::filesystem::path& s
         scheduler = std::make_shared<FlowMatchEulerDiscreteScheduler>(scheduler_config_path);
     } else if (scheduler_type == Scheduler::Type::PNDM) {
         scheduler = std::make_shared<PNDMScheduler>(scheduler_config_path);
+    } else if (scheduler_type == Scheduler::Type::EULER_ANCESTRAL_DISCRETE) {
+        scheduler = std::make_shared<EulerAncestralDiscreteScheduler>(scheduler_config_path);
     } else {
         OPENVINO_THROW("Unsupported scheduler type '", scheduler_type, ". Please, manually create scheduler via supported one");
     }

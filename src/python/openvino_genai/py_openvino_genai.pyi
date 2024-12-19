@@ -575,6 +575,7 @@ class GenerationConfig:
     logprobs: int
     max_length: int
     max_new_tokens: int
+    max_ngram_size: int
     min_new_tokens: int
     no_repeat_ngram_size: int
     num_assistant_tokens: int
@@ -598,11 +599,13 @@ class GenerationConfig:
     @typing.overload
     def __init__(self, **kwargs) -> None:
         ...
+    def is_assisting_generation(self) -> bool:
+        ...
     def is_beam_search(self) -> bool:
         ...
     def is_greedy_decoding(self) -> bool:
         ...
-    def is_speculative_decoding(self) -> bool:
+    def is_prompt_lookup(self) -> bool:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
@@ -1338,14 +1341,20 @@ class Scheduler:
           EULER_DISCRETE
         
           FLOW_MATCH_EULER_DISCRETE
+        
+          PNDM
+        
+          EULER_ANCESTRAL_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
         DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
         EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
         FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
         LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>}
+        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -2119,11 +2128,7 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-class draft_model:
+def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
-    This class is used to enable Speculative Decoding
+    device on which inference will be performed
     """
-    def __init__(self, models_path: os.PathLike, device: str = '', **kwargs) -> None:
-        """
-        device on which inference will be performed
-        """
