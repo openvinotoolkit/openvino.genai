@@ -89,7 +89,7 @@ public:
         }
     }
 
-    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override {
+    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, RawPerfMetrics& raw_metrics) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
 
@@ -105,6 +105,8 @@ public:
 
         auto bs1_sample_shape = sample.get_shape();
         bs1_sample_shape[0] = 1;
+
+        const auto infer_start = std::chrono::steady_clock::now();
 
         for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i].set_tensor("timestep", timestep);
@@ -133,6 +135,8 @@ public:
             // wait for infer to complete.
             m_requests[i].wait();
         }
+        const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+        raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
         return out_sample;
     }
