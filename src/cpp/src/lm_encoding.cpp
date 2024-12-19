@@ -247,6 +247,9 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         // next_selected_beam = sampler.last_selected_beam(request);
     }
 
+    for (SequenceGroup::Ptr sequence_group : sequence_groups)
+        sampler.clear_request_info(sequence_group->get_request_id());
+
     return {results, next_selected_beam};
 }
 
