@@ -13,7 +13,13 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::LLMPipeline pipe(models_path, device);
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 100;
+    config.max_new_tokens = 30;
+    
+    config.stop_strings = { "machines", "manage" };
+    // anag
+    config.include_stop_str_in_output = false;
+
+
     std::string result = pipe.generate(prompt, config);
     std::cout << result << std::endl;
 } catch (const std::exception& error) {
