@@ -125,6 +125,34 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config.include_stop_str_in_output = True
     return generation_config
 
+def get_greedy_stop_strings_exclude_from_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines" }
+    generation_config.include_stop_str_in_output = False
+    return generation_config
+
+def get_greedy_stop_strings_include_to_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines" }
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_greedy_n_stop_strings_exclude_from_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines", "anag" }
+    generation_config.include_stop_str_in_output = False
+    return generation_config
+
+def get_greedy_n_stop_strings_include_to_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines", "anag" }
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
 def get_multinomial_temperature() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True

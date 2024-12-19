@@ -126,6 +126,10 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
 
                 auto stop_string_len = is_include_to_output ? stop_string.length() : 0;
                 decoded_buffer = decoded_buffer.substr(0, pos + stop_string_len);
+                // to remove word splitting symbols from tail
+                while (decoded_buffer.back() == ' ' || decoded_buffer.back() == '\n') {
+                    decoded_buffer.pop_back();
+                }
                 if (decoded_buffer.empty()) {
                     result.to_remove = buffer.size();
                     return result;
@@ -137,6 +141,7 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                     decoded_partially_string += tokenizer.decode(TokenIds{buffer[i]});
                     if (decoded_partially_string.find(decoded_buffer) != std::string::npos) {
                         result.to_remove = buffer.size() - i - 1;
+                        break;
                     }
                 }
                 return result;
