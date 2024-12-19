@@ -42,11 +42,12 @@ protected:
     std::string m_templated_chat_history;
     // Tokenized chat history
     std::vector<int64_t> m_tokenized_history;
-    // The number of elements, which need to remove from the end of KV cache
-    // removed elements will be added to inputs_ids
-    size_t m_to_remove_from_hist = 0;
     // Tail of previous output for LM in chat mode is missing in KV cache.
     std::optional<int64_t> m_last_disappeared_token = std::nullopt;
+    // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
+    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
+    // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
+    ov::genai::utils::HistoryRemoveManager m_to_remove_from_hist = {0, 0};
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
@@ -64,21 +65,28 @@ public:
     }
 
     size_t get_amount_to_remove_from_hist() const {
-        return m_to_remove_from_hist;
+        return m_to_remove_from_hist.num_token_to_remove_from_kv_cache;
     }
 
-    void update_tokenized_history(std::vector<int64_t> encoded_result, bool token_will_disappear) {
-        std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
-        m_to_remove_from_hist = 0;
-        if (token_will_disappear)
+    void update_tokenized_history(std::vector<int64_t> encoded_result, bool is_last_token_disappear, bool is_beam_search, size_t last_answer_len) {
+        if (is_beam_search) {
+            m_to_remove_from_hist.last_hist_token_to_unchange = m_tokenized_history.size();
+            m_to_remove_from_hist.num_token_to_remove_from_kv_cache = last_answer_len;
+        } else {
+            m_to_remove_from_hist.reset();
+        }
+
+        if (is_last_token_disappear)
             m_last_disappeared_token = encoded_result.back();
         else
             m_last_disappeared_token = std::nullopt;
+        
+        std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
     }
 
     virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
-        m_to_remove_from_hist = 0;
+        m_to_remove_from_hist.reset();
         if (!m_tokenized_history.empty()) {
             m_history.clear();
             m_templated_chat_history.clear();
@@ -101,7 +109,7 @@ public:
 
     virtual void finish_chat() {
         m_is_chat_conversation = false;
-        m_to_remove_from_hist = 0;
+        m_to_remove_from_hist.reset();
 
         m_history.clear();
         m_templated_chat_history.clear();
@@ -179,10 +187,18 @@ protected:
 
             if (m_tokenized_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
-            } else if (last_same_hist_token != SIZE_MAX) {
-                m_to_remove_from_hist = m_tokenized_history.size() - last_same_hist_token;
-                // if prev generation was finished because of max len was reached, kv cache is missed one last token, let's keep it
-                m_to_remove_from_hist -= m_last_disappeared_token.has_value() ? 1 : 0;
+
+            } else if (last_same_hist_token != SIZE_MAX || m_to_remove_from_hist.is_kv_cache_need_to_update()) {
+                // is_kv_cache_need_to_update will be true here if beam search is activated
+                // in beam search mode we want to remove all history about last model answer from kv cache and add best answer directly
+                // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_to_remove_from_hist
+                if (m_to_remove_from_hist.is_kv_cache_need_to_update()) {
+                    last_same_hist_token = m_to_remove_from_hist.last_hist_token_to_unchange;
+                } else {
+                    m_to_remove_from_hist.num_token_to_remove_from_kv_cache = m_tokenized_history.size() - last_same_hist_token;
+                    // if prev generation was finished because of max len was reached, kv cache is missed one last token, let's keep it
+                    m_to_remove_from_hist.num_token_to_remove_from_kv_cache -= m_last_disappeared_token.has_value() ? 1 : 0;
+                }
 
                 ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
                                                    {1, new_chat_tokens.get_shape().at(1) - last_same_hist_token},
@@ -1192,8 +1208,8 @@ std::vector<int64_t> InputsEmbedder::get_tokenized_history() const {
     return m_impl->get_tokenized_history();
 }
 
-void InputsEmbedder::update_tokenized_history(std::vector<int64_t> encoded_result, bool token_will_disappear) {
-    return m_impl->update_tokenized_history(encoded_result, token_will_disappear);
+void InputsEmbedder::update_tokenized_history(std::vector<int64_t> encoded_result, bool is_last_token_disappear, bool is_beam_search, size_t last_answer_len) {
+    return m_impl->update_tokenized_history(encoded_result, is_last_token_disappear, is_beam_search, last_answer_len);
 }
 
 size_t InputsEmbedder::get_amount_to_remove_from_hist() const {
