@@ -198,7 +198,8 @@ void init_image_generation_pipelines(py::module_& m) {
         .value("DDIM", ov::genai::Scheduler::Type::DDIM)
         .value("EULER_DISCRETE", ov::genai::Scheduler::Type::EULER_DISCRETE)
         .value("FLOW_MATCH_EULER_DISCRETE", ov::genai::Scheduler::Type::FLOW_MATCH_EULER_DISCRETE)
-        .value("PNDM", ov::genai::Scheduler::Type::PNDM);
+        .value("PNDM", ov::genai::Scheduler::Type::PNDM)
+        .value("EULER_ANCESTRAL_DISCRETE", ov::genai::Scheduler::Type::EULER_ANCESTRAL_DISCRETE);
     image_generation_scheduler.def_static("from_config",
         &ov::genai::Scheduler::from_config,
         py::arg("scheduler_config_path"),

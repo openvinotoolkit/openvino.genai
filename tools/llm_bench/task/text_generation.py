@@ -302,6 +302,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     ).tolist()
 
     tm_list = np.array([first_token_time] + second_tokens_durations) / 1000
+    inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     iter_data = gen_output_data.gen_iterate_data(
@@ -323,7 +324,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         num,
         iter_data,
         tm_list.tolist(),
-        None,
+        inference_durations.tolist(),
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,

@@ -381,6 +381,14 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
     }
 }
 
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front) {
+    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
+    auto new_tensor_data = new_tensor.data<int64_t>();
+    new_tensor_data[0] = add_to_front;
+    std::copy_n(base_tensor.data<int64_t>(), base_tensor.get_size(), new_tensor_data + 1);
+    return new_tensor;
+}
+
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
