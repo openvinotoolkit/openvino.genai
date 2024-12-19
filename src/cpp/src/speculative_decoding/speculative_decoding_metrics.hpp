@@ -41,6 +41,7 @@ public:
     std::vector<int64_t> get_requests_id();
 
     void print_acceptance_rates();
+    void print(bool is_printing_per_request = false);
 
     void clean_up();
 };

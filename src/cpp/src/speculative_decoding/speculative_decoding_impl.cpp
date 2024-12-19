@@ -59,6 +59,18 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
         main_scheduler_config_updated.cache_size = main_cache_size;
         draft_scheduler_config.cache_size = draft_cache_size;
+
+        // set batched_tokens_num to max_seq in scheduler config accorsing speculative processing scheduling logic
+        // should work with sequences instead of batched_tokens in continuous batching scenario
+        auto default_sheduler_config = SchedulerConfig();
+        if (main_scheduler_config.max_num_seqs == default_sheduler_config.max_num_seqs) {
+            main_scheduler_config_updated.max_num_seqs == main_scheduler_config_updated.max_num_batched_tokens;
+            draft_scheduler_config.max_num_seqs == draft_scheduler_config.max_num_batched_tokens;
+
+            main_scheduler_config_updated.max_num_batched_tokens = std::numeric_limits<size_t>::max();
+            draft_scheduler_config.max_num_batched_tokens = std::numeric_limits<size_t>::max();
+        }
+
     }
 
     ov::AnyMap draft_properties = draft_model_desc.properties == ov::AnyMap{} ? compile_properties : draft_model_desc.properties;
@@ -184,29 +196,9 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
-    step_timer.end();
-    m_sd_metrics.total_duration += step_timer.get_duration();
 
     if (main_generated_requests.empty() && 0) {
-            std::cout << "\n=============================== " << std::endl;
-            std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
-            std::cout << "Draft model duration, ms: " << m_sd_metrics.draft_duration << std::endl;
-            std::cout << "Main model duration, ms: " << m_sd_metrics.main_duration << std::endl;
-            std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
-            std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
-            std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(-1) << std::endl;
-            std::cout << "=============================== " << std::endl;
-        for (const auto& i : m_sd_metrics.get_requests_id()) {
-            std::cout << "REQUEST_ID: " << i << std::endl;
-            std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(i) << std::endl;
-            std::cout << "Token per sec: " << float(m_sd_metrics.get_generated_len(i)) / m_sd_metrics.total_duration << std::endl;
-            std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(i) << std::endl;
-            std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(i) << std::endl;
-            std::cout << "Generated tokens: " << m_sd_metrics.get_generated_len(i) << std::endl;
-            std::cout << "Accepted token rate, %: " << m_sd_metrics.get_draft_accepted_tokens_percentage(i) << std::endl;
-            std::cout << "=============================== " << std::endl;
-        }
-        m_sd_metrics.print_acceptance_rates();
+        m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
 }
@@ -292,6 +284,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
+    generate_timer.end();
     return results;
 }
 

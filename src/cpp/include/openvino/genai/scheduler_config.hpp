@@ -11,7 +11,7 @@ struct SchedulerConfig {
     // a maximum number of tokens to batch
     // (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
     // TODO: benchmark this value and understand a required value to ensure inference is not memory bound
-    std::size_t max_num_batched_tokens = std::numeric_limits<size_t>::max();
+    std::size_t max_num_batched_tokens = 256;
 
     // total number of KV blocks available to scheduler logic
     std::size_t num_kv_blocks = 0;

@@ -901,7 +901,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             auto min_processed_tokens = sequence_group->get_prompt_len() + min_generated_len - 1;
             sequence_group->update_processed_tokens_num(min_processed_tokens);
             logit_processor.update_generated_len(min_processed_tokens);
-            sequence_group->set_num_validated_tokens(updated_validated_tokens);
         }
         if (updated_validation_len) {
             sequence_group->set_num_validated_tokens(updated_validation_len);
