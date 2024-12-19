@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
+#include "openvino/op/concat.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
@@ -40,7 +41,6 @@ TEST(TestScheduler, general_test) {
                                                                                 ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx2 = (*sequence_group3)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
-                                                                        
         
         // schedule 3 sequence groups that use 6 kv blocks 
         Scheduler scheduler = Scheduler(4, scheduler_config);
@@ -405,8 +405,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                                 ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
-        std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
-                                                                        
+        std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};                                                
         
         // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
         Scheduler scheduler = Scheduler(4, scheduler_config);
@@ -873,7 +872,6 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     scheduler_config.max_num_seqs = 5;
     scheduler_config.use_cache_eviction = true;
     scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(2, 2, 6, ov::genai::AggregationMode::NORM_SUM);
-
 
     std::vector<uint64_t> tokens1 = {0, 1};  // 1 full block
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0,

@@ -25,13 +25,9 @@ def main():
     main_device = 'CPU'  # GPU can be used as well
     draft_device = 'CPU'
 
-    scheduler_config = openvino_genai.SchedulerConfig()
-    # cache params
-    scheduler_config.cache_size = 2
-
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
 
-    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, scheduler_config=scheduler_config, draft_model=draft_model)
+    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100

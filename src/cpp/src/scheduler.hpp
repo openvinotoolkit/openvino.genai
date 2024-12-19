@@ -107,6 +107,10 @@ public:
         m_block_manager.free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
     }
 
+    BlockManager& get_block_manager() {
+        return m_block_manager;
+    }
+
 private:
     static size_t _num_running_sequence_groups(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t num_running = 0;

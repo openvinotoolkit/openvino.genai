@@ -12,7 +12,7 @@
 namespace ov::genai {
 class DeviceConfig {
     ov::element::Type m_kv_cache_type;
-    ov::Shape m_key_cache_shape, m_value_cache_shape;
+    ov::PartialShape m_key_cache_shape, m_value_cache_shape;
     ov::Shape::value_type m_num_kv_heads, m_head_size, m_num_decoder_layers;
     size_t m_num_kv_blocks = 0;
     size_t m_block_size = 0;
@@ -80,11 +80,10 @@ public:
             OPENVINO_THROW(m_device, " is not supported by OpenVINO Continuous Batching");
         }
 
-        OPENVINO_ASSERT(scheduling_config.num_kv_blocks > 0 || scheduling_config.cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
         if (scheduling_config.num_kv_blocks > 0) {
             m_num_kv_blocks = scheduling_config.num_kv_blocks;
         }
-        else {
+        else if (scheduling_config.cache_size > 0) {
             m_cache_size = scheduling_config.cache_size;
         }
     }
@@ -104,23 +103,22 @@ public:
                 m_head_size += 8;
         }
 
-        if (m_num_kv_blocks == 0) {
-            OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
+        if (m_num_kv_blocks == 0 && m_cache_size > 0) {
             size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024;
             m_num_kv_blocks = size_in_bytes / (m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * m_kv_cache_type.size());
         }
 
-        m_key_cache_shape = m_value_cache_shape = ov::Shape{m_num_kv_blocks,
-                                                            m_num_kv_heads,
-                                                            m_block_size,
-                                                            m_head_size};
+        m_key_cache_shape = m_value_cache_shape = ov::PartialShape{ov::Dimension::dynamic(),
+                                                                   ov::Dimension(m_num_kv_heads),
+                                                                   ov::Dimension(m_block_size),
+                                                                   ov::Dimension(m_head_size)};
 
         if (m_device.find("GPU") != std::string::npos) {
             // Update key shape, as the key's shape is different from the value's shape
-            m_key_cache_shape = ov::Shape{m_num_kv_blocks,
-                                          m_num_kv_heads,
-                                          m_head_size,
-                                          m_block_size};
+            m_key_cache_shape = ov::PartialShape{ov::Dimension::dynamic(),
+                                                 ov::Dimension(m_num_kv_heads),
+                                                 ov::Dimension(m_head_size),
+                                                 ov::Dimension(m_block_size)};
         }
     }
 
@@ -136,13 +134,13 @@ public:
         return m_num_decoder_layers;
     }
 
-    ov::Shape get_key_cache_shape() const {
-        OPENVINO_ASSERT(!m_key_cache_shape.empty());
+    ov::PartialShape get_key_cache_shape() const {
+        OPENVINO_ASSERT(m_key_cache_shape.size());
         return m_key_cache_shape;
     }
 
-    ov::Shape get_value_cache_shape() const {
-        OPENVINO_ASSERT(!m_value_cache_shape.empty());
+    ov::PartialShape get_value_cache_shape() const {
+        OPENVINO_ASSERT(m_value_cache_shape.size());
         return m_value_cache_shape;
     }
 
@@ -152,6 +150,10 @@ public:
 
     size_t get_block_size() const {
         return m_block_size;
+    }
+
+    size_t get_block_size_in_bytes() const {
+        return m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * get_cache_precision().size();
     }
 };
 }
