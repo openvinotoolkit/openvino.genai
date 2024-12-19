@@ -18,6 +18,7 @@
 #include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
+#include "whisper_utils.hpp"
 
 using ov::genai::MicroSeconds;
 
@@ -79,17 +80,6 @@ void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
     }
 }
 
-void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics) {
-    const auto infer_start = std::chrono::steady_clock::now();
-    request.infer();
-    const auto infer_end = std::chrono::steady_clock::now();
-    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
-    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
-    raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
-    raw_metrics.m_new_token_times.emplace_back(infer_end);
-    raw_metrics.m_batch_sizes.emplace_back(1);
-}
-
 int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
                std::vector<int64_t>& input_ids,
@@ -102,7 +92,7 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
     decoder.set_tensor("input_ids", input_ids_tensor);
 
-    infer_with_perf_metrics(decoder, raw_metrics);
+    ov::genai::utils::infer_with_perf_metrics(decoder, raw_metrics);
 
     auto output_tensor = decoder.get_tensor("logits");
 
@@ -138,7 +128,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
     cache_position_tensor.set_shape({1});
     cache_position_tensor.data<int64_t>()[0] = cache_position;
 
-    infer_with_perf_metrics(decoder_with_past, raw_metrics);
+    ov::genai::utils::infer_with_perf_metrics(decoder_with_past, raw_metrics);
 
     auto output_tensor = decoder_with_past.get_tensor("logits");
 
@@ -265,25 +255,6 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     return {false, output_tokens};
 }
 
-template <typename T>
-void filter_by_ranges(std::vector<T>& value, size_t offset, std::vector<std::pair<size_t, size_t>>& ranges) {
-    OPENVINO_ASSERT(ranges.empty() || value.size() >= (offset + ranges.back().second));
-    std::vector<T> result{value.begin(), value.begin() + offset};
-    for (auto [start, end] : ranges) {
-        result.insert(result.end(), value.begin() + offset + start, value.begin() + offset + end);
-    }
-
-    value = result;
-}
-
-void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
-                                size_t offset,
-                                std::vector<std::pair<size_t, size_t>>& ranges) {
-    filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
-    filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
-    filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
-}
-
 }  // namespace
 
 namespace ov {
@@ -362,7 +333,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                                   feature_extractor.nb_max_frames,
                                                                   time_precision);
 
-            filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
+            ov::genai::utils::filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 
