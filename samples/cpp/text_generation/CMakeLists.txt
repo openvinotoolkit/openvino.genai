@@ -8,7 +8,6 @@ find_package(OpenVINOGenAI REQUIRED
     NO_CMAKE_FIND_ROOT_PATH
 )
 
-
 # greedy_causal_lm
 add_executable(greedy_causal_lm greedy_causal_lm.cpp)
 target_link_libraries(greedy_causal_lm PRIVATE openvino::genai)
@@ -87,7 +86,6 @@ set_target_properties(multinomial_causal_lm PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_features(multinomial_causal_lm PRIVATE cxx_std_11)
-
 install(TARGETS multinomial_causal_lm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
@@ -97,7 +95,6 @@ install(TARGETS multinomial_causal_lm
 # prompt_lookup_decoding_lm
 add_executable(prompt_lookup_decoding_lm prompt_lookup_decoding_lm.cpp)
 target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::genai)
-
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES
     COMPILE_PDB_NAME prompt_lookup_decoding_lm
     # Ensure out of box LC_RPATH on macOS with SIP
@@ -112,12 +109,10 @@ set_target_properties(prompt_lookup_decoding_lm PROPERTIES
 # speculative_decoding_lm
 add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
 target_link_libraries(speculative_decoding_lm PRIVATE openvino::genai)
-
 set_target_properties(speculative_decoding_lm PROPERTIES
     COMPILE_PDB_NAME speculative_decoding_lm
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-
 install(TARGETS speculative_decoding_lm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
