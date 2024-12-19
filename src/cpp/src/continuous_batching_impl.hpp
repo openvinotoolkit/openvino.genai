@@ -37,6 +37,7 @@ protected:
     const float m_percentage_threshold_for_cache_increase = 100;
 
     bool m_dynamic_memory_allocation = false;
+    std::shared_ptr<Core> m_core;
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;

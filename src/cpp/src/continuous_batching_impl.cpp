@@ -33,6 +33,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    m_core = std::make_shared<Core>(core);
 
     init(model, scheduler_config, compile_properties, device_config, core);
 }
@@ -44,11 +45,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
 }
 
 size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_memory() {
-    ov::Core core = utils::singleton_core();
     auto device = m_device_config->get_device();
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-    auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
-    auto device_type = core.get_property(device, ov::device::type);
+    auto memory_statistics = m_core->get_property(device, ov::intel_gpu::memory_statistics);
+    auto device_type = m_core->get_property(device, ov::device::type);
 
     // sum up all used device memory
     std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
@@ -68,7 +68,7 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_me
     used_device_mem *= used_memory_threshold;
 
     // total device memory in bytes
-    auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+    auto total_device_memory = m_core->get_property(device, ov::intel_gpu::device_total_mem_size);
 
     return total_device_memory - used_device_mem;
 }
