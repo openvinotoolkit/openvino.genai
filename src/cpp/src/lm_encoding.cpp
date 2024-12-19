@@ -219,24 +219,15 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         auto request = sequence_groups[i];
         std::vector<GenerationOutput> generation_outputs;
         auto sampling_params = request->get_sampling_parameters();
+        const auto& sequences = request->get_finished_sequences();
+        size_t num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, sequences.size());
 
-        for (auto sequence : request->get_sequences()) {
-            GenerationOutput output;
-            output.generated_ids = sequence->get_generated_ids();
-            output.score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
-
-            generation_outputs.push_back(output);
-        }
-
-        std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
-            return r1.score > r2.score;
-        });
-
-        auto num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, generation_outputs.size());
         for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-            const auto& generation_output = generation_outputs[generation_output_idx];
-            results.tokens.push_back(std::move(generation_output.generated_ids));
-            results.scores.push_back(generation_output.score);
+            const auto & sequence = sequences[i];
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
+
+            results.tokens.push_back(sequence->get_generated_ids());
+            results.scores.push_back(score);
         }
         // next_selected_beam = sampler.last_selected_beam(request);
     }

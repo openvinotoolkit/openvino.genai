@@ -22,7 +22,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    
+
     ov::Core core;
 
     auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
@@ -316,25 +316,22 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
         const auto& request = all_requests[request_id];
         auto sampling_params = request->get_sampling_parameters();
-        const auto& sequences = request->get_sequences();
-
-        std::vector<GenerationOutput> generation_outputs(sequences.size());
-        for (size_t i = 0; i < sequences.size(); ++i) {
-            generation_outputs[i].generated_ids = sequences[i]->get_generated_ids();
-            generation_outputs[i].score = sampling_params.is_beam_search() ? sequences[i]->get_beam_search_score(sampling_params) : sequences[i]->get_cumulative_log_probs();
-        }
-
-        std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
-            return r1.score > r2.score;
-        });
-
-        size_t num_outputs = std::min(sampling_params.num_return_sequences, generation_outputs.size());
+        const auto& sequences = request->get_finished_sequences();
+        size_t num_outputs = std::min(sampling_params.num_return_sequences, sequences.size());
 
         EncodedGenerationResult result;
         result.m_request_id = request_id;
+        result.m_generation_ids.resize(num_outputs);
+
         for (size_t i = 0; i < num_outputs; ++i) {
-            result.m_generation_ids.push_back(std::move(generation_outputs[i].generated_ids));
-            result.m_scores.push_back(generation_outputs[i].score);
+            const auto & sequence = sequences[i];
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
+            const auto & generated_ids = sequence->get_generated_ids();
+
+            if (sampling_params.echo)
+                result.m_generation_ids[i] = request->get_prompt_ids();
+            std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
+            result.m_scores.push_back(score);
         }
 
         result.m_status = generations[request_id]->get_status();
@@ -429,7 +426,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         // requests not scheduled, in decoding phase or not echoing are not processed
-        if (!sequence_group->is_scheduled() || sequence_group->get_context_len() > sequence_group->get_prompt_len() || 
+        if (!sequence_group->is_scheduled() || sequence_group->get_context_len() > sequence_group->get_prompt_len() ||
             !sequence_group->get_sampling_parameters().echo)
             continue;
 
@@ -442,10 +439,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
 
         size_t num_prompt_tokens_processed = sequence_group->get_num_processed_tokens();
         OPENVINO_ASSERT(num_prompt_tokens_processed + actual_seq_len <= sequence_group->get_prompt_len());
-        
+
         // if we processed the whole prompt we don't include last logprob as it will be processed by the sampler (it's already completion)
-        // otherwise we include it as it will be used in the next part of the prompt 
-        int exclude_last_logprob = 1; 
+        // otherwise we include it as it will be used in the next part of the prompt
+        int exclude_last_logprob = 1;
         if (num_prompt_tokens_processed + actual_seq_len < sequence_group->get_prompt_len())
             exclude_last_logprob = 0;
 
@@ -456,7 +453,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         for (int token_logits_offset = 0, token_id_offset = num_prompt_tokens_processed + 1;
              token_logits_offset < actual_seq_len - exclude_last_logprob;
              token_logits_offset++, token_id_offset++) {
-            
+
             const float* token_logits = (sequence_group_logits_data + token_logits_offset * vocab_size);
             int64_t token_id = sequence_group->get_prompt_ids()[token_id_offset];
             float token_logit = token_logits[token_id];
