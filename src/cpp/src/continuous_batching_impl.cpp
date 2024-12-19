@@ -5,6 +5,7 @@
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
 #include "utils/paged_attention_transformations.hpp"
+#include "openvino/runtime/intel_gpu/properties.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -42,20 +43,58 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
     m_awaiting_requests.clear();
 }
 
+size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_memory() {
+    ov::Core core = utils::singleton_core();
+    auto device = m_device_config->get_device();
+    OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
+    auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+    auto device_type = core.get_property(device, ov::device::type.name(), {}).as<std::string>();
+
+    // sum up all used device memory
+    std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
+    size_t used_device_mem = 0;
+    for (auto mem_type: device_memory_types) {
+        used_device_mem += memory_statistics[mem_type];
+    }
+
+    if (device_type == "INTEGRATED") {
+        used_device_mem += memory_statistics["usm_host"];
+    }
+
+    // there could be unaccounted extra memory reserved by kernels, kept
+    // in memory pools, etc
+    // therefore, add a threshold to account for this
+    float used_memory_threshold = 1.1;
+    used_device_mem *= used_memory_threshold;
+
+    auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+
+    return total_device_memory - used_device_mem;
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reallocate_kv_cache_if_needed(std::vector<SequenceGroup::Ptr>& sequence_groups) {
     float eps = 1e-5;
+    auto device = m_device_config->get_device();
+
     if (!m_scheduler->get_block_manager().block_allocator_initialized()) {
-        size_t prompt_sum_size = 0;
+        size_t seq_length_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
-            prompt_sum_size += sequence_groups[idx]->get_prompt_len();
+            seq_length_sum += sequence_groups[idx]->get_prompt_len() + m_generation_config.get_max_new_tokens();
         }
-        size_t initial_kv_cache_size = prompt_sum_size * m_kv_blocks_initial_multiplier;
-        m_scheduler->get_block_manager().increase_kv_blocks_number(initial_kv_cache_size);
+        m_scheduler->get_block_manager().increase_kv_blocks_number(seq_length_sum);
         m_dynamic_memory_allocation = true;
     }
     else if (m_dynamic_memory_allocation && (m_scheduler->get_block_manager().get_used_percentage() + eps) > m_precentage_threshold_for_cache_increase) {
         size_t new_cache_size = (size_t)(m_scheduler->get_block_manager().get_total_number_of_kv_blocks() * m_cache_growth_factor);
-        m_scheduler->get_block_manager().increase_kv_blocks_number(new_cache_size);
+        if (device.find("GPU") == std::string::npos) {
+            m_scheduler->get_block_manager().increase_kv_blocks_number(new_cache_size);
+        }
+        else {
+            size_t available_gpu_memory_size = _get_available_gpu_memory();
+            if (new_cache_size <= available_gpu_memory_size) {
+                m_scheduler->get_block_manager().increase_kv_blocks_number(new_cache_size);
+            }
+        }
     }
     m_cache_manager->allocate_cache_if_needed(m_scheduler->get_block_manager().get_total_number_of_kv_blocks());
 }
@@ -96,6 +135,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    
+    m_device_config = std::make_shared<DeviceConfig>(device_config);
 };
 
 

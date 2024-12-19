@@ -282,4 +282,5 @@ def load_pipe(configs: List[Tuple], temp_path):
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
-    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU')
+    scheduler_config = ov_genai.SchedulerConfig()
+    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', **{"scheduler_config": scheduler_config})

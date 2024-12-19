@@ -14,6 +14,7 @@ protected:
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+    std::shared_ptr<DeviceConfig> m_device_config;
 
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
@@ -49,6 +50,7 @@ protected:
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
     void _reallocate_kv_cache_if_needed(std::vector<SequenceGroup::Ptr>& sequence_groups);
+    void _get_available_gpu_memory(std::vector<SequenceGroup::Ptr>& sequence_groups);
     void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
 
     void init(std::shared_ptr<ov::Model> model,

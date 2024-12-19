@@ -59,7 +59,10 @@ public:
                 ov::Tensor key_cache(m_device_config.get_cache_precision(), key_cache_shape);
                 ov::Tensor value_cache(m_device_config.get_cache_precision(), value_cache_shape);
 
-                // force allocation
+                // Some optimizations like AVX2, AVX512, AMX require a minimal shape and 
+                // perform multiplying by zero on the excess data. Uninitialized tensor data contain NAN's, 
+                // so NAN * 0 returns non-zero invalid data.
+                // So we need to set zeros to all newly allocated tensors data.
                 std::memset(key_cache.data(), 0, key_cache.get_byte_size());
                 std::memset(value_cache.data(), 0, value_cache.get_byte_size());
 
@@ -107,7 +110,10 @@ public:
                 m_key_cache[decoder_layer_id].copy_to(dst_key_roi);
                 m_value_cache[decoder_layer_id].copy_to(dst_value_roi);
 
-                // force allocation on the added cache data
+                // Some optimizations like AVX2, AVX512, AMX require a minimal shape and 
+                // perform multiplying by zero on the excess data. Uninitialized tensor data contain NAN's, 
+                // so NAN * 0 returns non-zero invalid data.
+                // So we need to set zeros to all newly allocated tensors data.
                 auto key_cache_roi_end = static_cast<unsigned char*>(key_cache.data()) + dst_key_roi.get_byte_size();
                 auto value_cache_roi_end = static_cast<unsigned char*>(value_cache.data()) + dst_value_roi.get_byte_size();
                 std::memset(key_cache_roi_end, 0, key_cache.get_byte_size() - dst_key_roi.get_byte_size());
