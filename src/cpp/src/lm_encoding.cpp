@@ -208,8 +208,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         stream_generated_tokens();
     }
 
-    // to push streamer's cache
-    if (streamer_ptr) {
+    if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
 

@@ -255,18 +255,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
     }, streamer);
 
-    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
-        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
-
-    std::vector<GenerationHandle> generations;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
-    }
-
-    std::vector<EncodedGenerationResult> results;
-    results.reserve(m_awaiting_requests.size());
-
     auto drop_requests = [&] () {
         for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
             for (const auto& sequence: request->get_sequences()) {
@@ -279,26 +267,43 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         m_requests.clear();
     };
 
+    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
+        (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
+        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
+
+    std::vector<GenerationHandle> generations;
+    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
+        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+    }
+    auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
+
+    std::vector<EncodedGenerationResult> results;
+    results.reserve(all_requests.size());
+
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
             step();
         } catch (...) {
-            drop_requests();
+            drop_requests(); // remove all requests from pipeline state in case of exception
             throw;
         }
-        if (streamer_ptr && generations.at(0)->can_read()) {
-            std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
+
+        auto & generation = generations.at(0);
+        if (streamer_ptr && generation->can_read()) {
+            std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 continue_generation = !streamer_ptr->put(gen_token);
                 if (!continue_generation) {
+                    generation->drop();
                     break;
                 }
             }
         }
     }
 
-    if (streamer_ptr) {
+    if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
 
@@ -308,16 +313,31 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
     }
 
-    for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
-        const auto& generation = generations[generation_idx];
-        EncodedGenerationResult result;
-        result.m_request_id = 1;
-        std::vector<GenerationOutput> generation_outputs = generation->read_all();
-        for (const auto& generation_output : generation_outputs) {
-            result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
-            result.m_scores.push_back(generation_output.score);
+    for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
+        const auto& request = all_requests[request_id];
+        auto sampling_params = request->get_sampling_parameters();
+        const auto& sequences = request->get_sequences();
+
+        std::vector<GenerationOutput> generation_outputs(sequences.size());
+        for (size_t i = 0; i < sequences.size(); ++i) {
+            generation_outputs[i].generated_ids = sequences[i]->get_generated_ids();
+            generation_outputs[i].score = sampling_params.is_beam_search() ? sequences[i]->get_beam_search_score(sampling_params) : sequences[i]->get_cumulative_log_probs();
         }
-        result.m_status = generation->get_status();
+
+        std::sort(generation_outputs.begin(), generation_outputs.end(), [] (const GenerationOutput& r1, const GenerationOutput& r2) {
+            return r1.score > r2.score;
+        });
+
+        size_t num_outputs = std::min(sampling_params.num_return_sequences, generation_outputs.size());
+
+        EncodedGenerationResult result;
+        result.m_request_id = request_id;
+        for (size_t i = 0; i < num_outputs; ++i) {
+            result.m_generation_ids.push_back(std::move(generation_outputs[i].generated_ids));
+            result.m_scores.push_back(generation_outputs[i].score);
+        }
+
+        result.m_status = generations[request_id]->get_status();
         results.push_back(std::move(result));
     }
 
