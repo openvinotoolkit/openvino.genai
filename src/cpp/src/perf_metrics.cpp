@@ -105,7 +105,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
 
         auto ttft = tok_times[0] - start_time_val;
         raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
-        raw_metrics.m_times_to_first_token.emplace_back(ttft / batch_sizes[0]);
+        raw_metrics.m_times_to_first_token.emplace_back(ttft);
         num_generated_tokens = batch_sizes[0];
         
         // The very first infer request (prefill stage) is slower than subsequent ones since we process a sequence of tokens.
