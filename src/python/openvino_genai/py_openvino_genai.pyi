@@ -1343,15 +1343,18 @@ class Scheduler:
           FLOW_MATCH_EULER_DISCRETE
         
           PNDM
+        
+          EULER_ANCESTRAL_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
         DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
         EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
         FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
         LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
         PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>}
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -1945,6 +1948,9 @@ class WhisperGenerationConfig:
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
     
+        :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+        :type prev_sot_token_id: int
+    
         :param is_multilingual:
         :type is_multilingual: bool
     
@@ -1973,10 +1979,34 @@ class WhisperGenerationConfig:
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
+    
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+        window. Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+        Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type hotwords: Optional[str]
     """
     begin_suppress_tokens: list[int]
     decoder_start_token_id: int
     eos_token_id: int
+    hotwords: str | None
+    initial_prompt: str | None
     is_multilingual: bool
     lang_to_id: dict[str, int]
     language: str | None
@@ -1985,6 +2015,7 @@ class WhisperGenerationConfig:
     max_new_tokens: int
     no_timestamps_token_id: int
     pad_token_id: int
+    prev_sot_token_id: int
     return_timestamps: bool
     suppress_tokens: list[int]
     task: str | None
@@ -2077,6 +2108,9 @@ class WhisperPipeline:
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
         
+            :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+            :type prev_sot_token_id: int
+        
             :param is_multilingual:
             :type is_multilingual: bool
         
@@ -2105,6 +2139,28 @@ class WhisperPipeline:
                                then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
+        
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+            window. Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+            Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type hotwords: Optional[str]
         """
     def get_generation_config(self) -> WhisperGenerationConfig:
         ...

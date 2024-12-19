@@ -8,6 +8,7 @@
 #include <regex>
 #include <thread>
 
+#include "context_tokens.hpp"
 #include "logit_processor.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
@@ -175,11 +176,11 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
-                                      ov::InferRequest decoder,
-                                      const ov::genai::WhisperGenerationConfig& config,
-                                      const bool return_timestamps,
-                                      ov::genai::RawPerfMetrics& raw_metrics) {
+std::vector<int64_t> prepare_init_tokens(ov::Tensor& encoder_hidden_state,
+                                         ov::InferRequest decoder,
+                                         const ov::genai::WhisperGenerationConfig& config,
+                                         const bool return_timestamps,
+                                         ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
         if (return_timestamps) {
             return std::vector<int64_t>{config.decoder_start_token_id};
@@ -290,6 +291,7 @@ namespace genai {
 
 WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                        const ov::genai::WhisperConfig& model_config,
+                                       const WhisperContextTokens& context_tokens,
                                        const RawSpeechInput& raw_speech,
                                        ov::genai::WhisperInitializedModels& models,
                                        WhisperFeatureExtractor& feature_extractor,
@@ -313,7 +315,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
-    std::vector<int64_t> init_ids;
+    std::vector<int64_t> init_tokens;
     std::vector<int64_t>& output_tokens = result.output_tokens;
     std::vector<Segment> segments;
 
@@ -335,14 +337,18 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 raw_metrics);
 
         // prepare init_ids just once for whole input
-        if (init_ids.empty()) {
-            init_ids = prepare_init_ids(hidden_state_tensor, models.decoder, config, return_timestamps, raw_metrics);
+        if (init_tokens.empty()) {
+            init_tokens =
+                prepare_init_tokens(hidden_state_tensor, models.decoder, config, return_timestamps, raw_metrics);
         }
+
+        std::vector<int64_t> chunk_init_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
+        chunk_init_tokens.insert(chunk_init_tokens.end(), init_tokens.begin(), init_tokens.end());
 
         auto [cancelled, chunk_output_tokens] = full_decode(hidden_state_tensor,
                                                             config,
                                                             models,
-                                                            init_ids,
+                                                            chunk_init_tokens,
                                                             max_new_tokens - output_tokens.size(),
                                                             return_timestamps,
                                                             raw_metrics,
