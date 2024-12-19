@@ -222,8 +222,8 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         const auto& sequences = request->get_finished_sequences();
         size_t num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, sequences.size());
 
-        for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-            const auto & sequence = sequences[i];
+        for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
+            const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
 
             results.tokens.push_back(sequence->get_generated_ids());
