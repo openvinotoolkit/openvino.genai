@@ -225,7 +225,7 @@ class LongBenchTestData:
     LongBenchTestData("trec", 28.12, 11.8, 7.721),
     LongBenchTestData("qasper", 21.68, 18.4, 12.706),
 ])
-def test_unoptimized_generation_longbench(qwen2_converted_model, test_struct):
+def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
     seqs_per_request = 32
     num_kv_blocks = 1000
     scheduler_config = get_scheduler_config(num_kv_blocks)
