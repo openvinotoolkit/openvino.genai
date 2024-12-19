@@ -21,6 +21,8 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     get_beam_search, get_beam_search_min_and_max_tokens, get_beam_search_with_single_stop_string, \
     get_beam_search_with_multiple_stop_strings, get_beam_search_with_multiple_stop_strings_no_match, get_multinomial_max_and_min_token, \
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
+    get_greedy_stop_strings_exclude_from_output, get_greedy_stop_strings_include_to_output, \
+    get_greedy_n_stop_strings_exclude_from_output, get_greedy_n_stop_strings_include_to_output, \
     generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config, \
     run_continuous_batching
 
@@ -77,7 +79,9 @@ def test_eos_greedy(tmp_path):
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config", [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_greedy_with_single_stop_string(),
                                                get_greedy_with_multiple_stop_strings(), get_greedy_with_multiple_stop_strings_no_match(), 
-                                               get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(), ],
+                                               get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(),
+                                               get_greedy_stop_strings_exclude_from_output(), get_greedy_stop_strings_include_to_output(),
+                                               get_greedy_n_stop_strings_exclude_from_output(), get_greedy_n_stop_strings_include_to_output() ],
         ids=[
             "greedy",
             "greedy_with_min_and_max_tokens",
@@ -88,6 +92,10 @@ def test_eos_greedy(tmp_path):
             "beam",
             "beam_search_min_and_max_tokens",
             "beam_search_with_multiple_stop_strings_no_match",
+            "get_greedy_stop_strings_exclude_from_output",
+            "get_greedy_stop_strings_include_to_output",
+            "get_greedy_n_stop_strings_exclude_from_output",
+            "get_greedy_n_stop_strings_include_to_output"
             ])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
     prompts = [
