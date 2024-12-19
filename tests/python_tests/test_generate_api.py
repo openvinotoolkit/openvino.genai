@@ -828,7 +828,9 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     assert std_detok_duration == 0
     
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
-    raw_metrics = perf_metrics.raw_metrics
+    assert np.allclose(mean_tpot, np.mean(durations))
+    assert np.allclose(std_tpot, np.std(durations))
+
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
     assert np.allclose(std_gen_duration, np.std(raw_dur))
