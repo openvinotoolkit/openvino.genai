@@ -1,31 +1,17 @@
 
-# OpenVINO Generative AI Text Generation Samples
+# OpenVINO AI Text Generation Samples
 
 These samples showcase the use of OpenVINO's inference capabilities for text generation tasks, including different decoding strategies such as beam search, multinomial sampling, and speculative decoding. Each sample has a specific focus and demonstrates a unique aspect of text generation.
-There is also a Jupyter notebook that provides an example of LLM-powered text generation in Python.
+The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
+There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) that provides an example of LLM-powered text generation in Python.
 
 ## Table of Contents
-1. [Setup Instructions](#setup-instructions)
-2. [Download and Convert the Model and Tokenizers](#download-and-convert-the-model-and-tokenizers)
-3. [Running the Samples](#running-the-samples)
-4. [Using encrypted models](#using-encrypted-models)
-5. [Sample Descriptions](#sample-descriptions)
-6. [Troubleshooting](#troubleshooting)
-7. [Support and Contribution](#support-and-contribution)
-
-## Setup Instructions
-1. **Install OpenVINO Toolkit:** Follow the [OpenVINO installation guide](https://docs.openvino.ai/latest/openvino_docs_install_guides.html).
-2. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/openvinotoolkit/openvino.genai.git
-   cd openvino.genai/samples/cpp
-   ```
-3. **Build the Samples:**
-   ```bash
-   mkdir build && cd build
-   cmake ..
-   make
-   ```
+1. [Download and Convert the Model and Tokenizers](#download-and-convert-the-model-and-tokenizers)
+2. [Running the Samples](#running-the-samples)
+3. [Using encrypted models](#using-encrypted-models)
+4. [Sample Descriptions](#sample-descriptions)
+5. [Troubleshooting](#troubleshooting)
+6. [Support and Contribution](#support-and-contribution)
 
 ## Download and convert the model and tokenizers
 
@@ -49,25 +35,14 @@ Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
 
-## Using encrypted models
-LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
-The following code snippet demonstrates how to load the model from the memory buffer:
-
-```cpp
-auto [model_str, weights_tensor] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
-ov::genai::Tokenizer tokenizer(models_path);
-ov::genai::LLMPipeline pipe(model_str, weights_tensor, tokenizer, device);
-```
-For the sake of brevity the code above does not include Tokenizer decryption. For more details look to encrypted_model_causal_lm sample.
-
 ## Sample Descriptions
 
-### 1. Text Generation (`text_generation`)
+### 1. Greedy Causal LM (`greedy_causal_lm`)
 - **Description:** Basic text generation using a causal language model.
 - **Main Feature:** Demonstrates simple text continuation.
 - **Run Command:**
   ```bash
-  ./text_generation -m <model> -i "Hello, how are you?" -d CPU
+  ./greedy_causal_lm <model_path> <prompt>
   ```
 
 ### 2. Beam Search Causal LM (`beam_search_causal_lm`)
@@ -75,7 +50,7 @@ For the sake of brevity the code above does not include Tokenizer decryption. Fo
 - **Main Feature:** Improves text quality with beam search.
 - **Run Command:**
   ```bash
-  ./beam_search_causal_lm -m <model> -i "Once upon a time" -d CPU
+  ./beam_search_causal_lm <model_path> <prompt>
   ```
 
 ### 3. Chat Sample (`chat_sample`)
@@ -83,7 +58,7 @@ For the sake of brevity the code above does not include Tokenizer decryption. Fo
 - **Main Feature:** Real-time chat-like text generation.
 - **Run Command:**
   ```bash
-  ./chat_sample -m <model> -d CPU
+  ./chat_sample <model_path>
   ```
 #### Missing chat template
 If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model.
@@ -98,7 +73,7 @@ The following template can be used as a default, but it may not work properly wi
 - **Main Feature:** Introduces randomness for creative outputs.
 - **Run Command:**
   ```bash
-  ./multinomial_causal_lm -m <model> -i "Imagine a world" -d CPU
+  ./multinomial_causal_lm <model_path> <prompt>
   ```
 
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
@@ -107,7 +82,7 @@ The following template can be used as a default, but it may not work properly wi
 - **Main Feature:** Specialized prompt-based inference.
 - **Run Command:**
   ```bash
-  ./prompt_lookup_decoding_lm -m <model> -i "The future of AI" -d CPU
+  ./prompt_lookup_decoding_lm <model_path> <prompt>
   ```
 
 ### 6. Speculative Decoding LM (`speculative_decoding_lm`)
@@ -120,7 +95,23 @@ This approach reduces the need for multiple infer requests to the main model, en
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash
-  ./speculative_decoding_lm -m <model> -i "Breaking news:" -d CPU
+  ./speculative_decoding_lm <main_model_path> <draft_model_path> <prompt>
+  ```
+
+### 7. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
+- **Description:** 
+LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
+The following code snippet demonstrates how to load the model from the memory buffer:
+```cpp
+auto [model_str, weights_tensor] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
+ov::genai::Tokenizer tokenizer(models_path);
+ov::genai::LLMPipeline pipe(model_str, weights_tensor, tokenizer, device);
+```
+For the sake of brevity the code above does not include Tokenizer decryption. For more details look to encrypted_model_causal_lm sample.
+- **Main Feature:** Read model directly from memory buffer
+- **Run Command:**
+  ```bash
+  ./encrypted_model_causal_lm <model_path> <prompt>
   ```
 
 ## Troubleshooting
