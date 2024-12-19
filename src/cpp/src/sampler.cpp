@@ -87,18 +87,11 @@ std::string clean_wrapped_text(const std::string& wrapped_text, const std::strin
 
 std::vector<int64_t> encode_and_process_string(const std::string& stop_string, ov::genai::Tokenizer& tokenizer) {
     // encode stop_string
-    ov::Tensor ov_encoded_stop_string = tokenizer.encode(stop_string).input_ids;
+    std::string stop_string_copy = stop_string;
+    ov::Tensor ov_encoded_stop_string = tokenizer.encode(stop_string_copy, ov::genai::add_special_tokens(false)).input_ids;
     size_t tensor_size = ov_encoded_stop_string.get_size();
-    std::vector<int64_t> source_encoded_stop_string(tensor_size), encoded_stop_string;
-    std::copy_n(ov_encoded_stop_string.data<int64_t>(), tensor_size, source_encoded_stop_string.begin());
-    // remove special symbols
-    for (const auto& token_id : source_encoded_stop_string) {
-        if (token_id != tokenizer.get_bos_token_id() &&
-            token_id != tokenizer.get_eos_token_id() &&
-            token_id != tokenizer.get_pad_token_id()) {
-            encoded_stop_string.push_back(token_id);
-        }
-    }
+    std::vector<int64_t> encoded_stop_string(tensor_size);
+    std::copy_n(ov_encoded_stop_string.data<int64_t>(), tensor_size, encoded_stop_string.begin());
     return encoded_stop_string;
 }
 
