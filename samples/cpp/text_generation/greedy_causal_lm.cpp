@@ -20,8 +20,11 @@ int main(int argc, char* argv[]) try {
         std::cout << result.texts << std::endl;
         iter++;
         std::cout << "\n pipeline generate finish iter:" << iter << std::endl;
-        std::cout << "generate duration:" << result.perf_metrics.get_generate_duration() * 0.001 << std::endl;
-        std::cout << "inference duration:" << result.perf_metrics.get_inference_duration() * 0.001 << std::endl;
+        std::cout << "generate duration s:" << result.perf_metrics.get_generate_duration().mean * 0.001 << std::endl;
+        std::cout << "inference duration s:" << result.perf_metrics.get_inference_duration().mean * 0.001 << std::endl;
+        std::cout << "first token time s:" << result.perf_metrics.ttft.mean * 0.001 << std::endl;
+        std::cout << "output token size:" << result.perf_metrics.raw_metrics.m_token_infer_durations.size()
+                  << std::endl;
     }
 } catch (const std::exception& error) {
     try {
