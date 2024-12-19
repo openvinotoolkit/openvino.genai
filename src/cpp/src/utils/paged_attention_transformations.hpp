@@ -23,7 +23,7 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control = false);
 
-size_t get_kv_cache_size(const std::shared_ptr<ov::Model> model);
+size_t get_hidden_size(const std::shared_ptr<ov::Model> model);
 
 void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 

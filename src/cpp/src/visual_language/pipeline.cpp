@@ -17,6 +17,7 @@
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
+
 using namespace ov::genai;
 
 namespace {
@@ -64,6 +65,8 @@ public:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Load pipeline time
     float m_load_time_ms = 0;
+    // Axis num in kv cache from m_language model, which contains information about history len
+    size_t m_kv_cache_seq_length_axis = 2;
 
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -87,9 +90,14 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        m_language = utils::singleton_core().compile_model(
+        auto compiled_language_model = utils::singleton_core().compile_model(
             models_dir / "openvino_language_model.xml", device, properties
-        ).create_infer_request();
+        );
+        ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
+        auto language_model = compiled_language_model.get_runtime_model();
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
+
+        m_language = compiled_language_model.create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
@@ -153,16 +161,21 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        Sampler sampler = Sampler(m_tokenizer);
+        auto to_remove_from_hist = m_inputs_embedder->get_amount_to_remove_from_hist();
+        ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
         bool enable_prefix_caching = false;
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1);
+
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+
+        auto tokenized_history = m_inputs_embedder->get_tokenized_history();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
-        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), 0);
+        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
+        std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
         sequence_group->set_sequence_group_ptr(sequence_group);
@@ -185,11 +198,13 @@ public:
         OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
                         "Currently streaming is possible only for greedy or multinomial decoding");
 
-        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds.get_shape()[1] }};
+        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds.get_shape()[1] }};
+        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
+
+        Sampler sampler = Sampler(m_tokenizer);
 
         ov::genai::EncodedResults encoded_result;
         int32_t m_selected_beam = 0;
@@ -211,6 +226,7 @@ public:
             m_language.reset_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
+
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
 
@@ -228,6 +244,9 @@ public:
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
+
+        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH);
+
         return decoded;
     }
 

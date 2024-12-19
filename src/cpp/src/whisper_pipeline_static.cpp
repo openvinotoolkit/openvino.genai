@@ -555,9 +555,16 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_decoder(decoder_model);
     preprocess_decoder(decoder_with_past_model);
 
-    m_models.encoder = core.compile_model(encoder_model, "NPU").create_infer_request();
-    m_models.decoder = core.compile_model(decoder_model, "NPU").create_infer_request();
-    m_models.decoder_with_past = core.compile_model(decoder_with_past_model, "NPU").create_infer_request();
+    ov::CompiledModel compiled_model;
+    compiled_model = core.compile_model(encoder_model, "NPU");
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
+    m_models.encoder = compiled_model.create_infer_request();
+    compiled_model = core.compile_model(decoder_model, "NPU");
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder model");
+    m_models.decoder = compiled_model.create_infer_request();
+    compiled_model = core.compile_model(decoder_with_past_model, "NPU");
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder with past model");
+    m_models.decoder_with_past = compiled_model.create_infer_request();
 
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1) {
@@ -571,6 +578,9 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     ChunkStreamerVariant streamer) {
     WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     config.validate();
+
+    OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
+    OPENVINO_ASSERT(!config.hotwords.has_value(), "'hotwords' parameter is not supported on NPU device.");
 
     std::shared_ptr<ChunkStreamerBase> streamer_ptr;
     if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {

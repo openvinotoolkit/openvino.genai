@@ -18,12 +18,17 @@
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/t5_encoder_model.hpp"
+#include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 
 namespace ov {
 namespace genai {
 
 // forward declaration
 class DiffusionPipeline;
+class Text2ImagePipeline;
+class Image2ImagePipeline;
 
 //
 // Inpainting pipeline
@@ -41,6 +46,8 @@ public:
                        const std::string& device,
                        Properties&&... properties)
         : InpaintingPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    InpaintingPipeline(const Image2ImagePipeline& pipe);
 
     // creates either LCM or SD pipeline from building blocks
     static InpaintingPipeline stable_diffusion(
@@ -82,7 +89,14 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
+    /**
+     * Inpaints an initial image within an area defined by mask and conditioned on prompt
+     * @param positive_prompt Prompt to generate image(s) from
+     * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
+     * @param mask_image RGB/BGR or GRAY/BINARY image of [1, height, width, 3 or 1] shape used as a mask
+     * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     */
     ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
@@ -100,6 +114,10 @@ private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
     explicit InpaintingPipeline(const std::shared_ptr<DiffusionPipeline>& impl);
+
+    // to create other pipelines from inpainting
+    friend class Text2ImagePipeline;
+    friend class Image2ImagePipeline;
 };
 
 } // namespace genai

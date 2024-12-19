@@ -3,27 +3,10 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-#include <random>
-#include <filesystem>
-
-#include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
-
-#include "openvino/genai/image_generation/scheduler.hpp"
-#include "openvino/genai/image_generation/generation_config.hpp"
-
-#include "openvino/genai/image_generation/clip_text_model.hpp"
-#include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
-#include "openvino/genai/image_generation/unet2d_condition_model.hpp"
-#include "openvino/genai/image_generation/autoencoder_kl.hpp"
+#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
 
 namespace ov {
 namespace genai {
-
-// forward declaration
-class DiffusionPipeline;
 
 //
 // Image to image pipeline
@@ -41,6 +24,8 @@ public:
                         const std::string& device,
                         Properties&&... properties)
         : Image2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    Image2ImagePipeline(const InpaintingPipeline& pipe);
 
     // creates either LCM or SD pipeline from building blocks
     static Image2ImagePipeline stable_diffusion(
@@ -82,7 +67,14 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    // Returns a tensor with the following dimensions [num_images_per_prompt, height, width, 3]
+    /**
+     * Peforms initial image editing conditioned on a text prompt.
+     * @param positive_prompt Prompt to generate image(s) from
+     * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
+     * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     * @note Output image size is the same as initial image size, but rounded down to be divisible by VAE scale factor (usually, 8)
+     */
     ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
@@ -99,6 +91,10 @@ private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
     explicit Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
+
+    // to create other pipelines from image to image
+    friend class Text2ImagePipeline;
+    friend class InpaintingPipeline;
 };
 
 } // namespace genai

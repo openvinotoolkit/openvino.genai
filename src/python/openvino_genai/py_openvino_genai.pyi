@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -398,6 +398,8 @@ class CppStdGenerator(Generator):
         ...
     def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
         ...
+    def seed(self, new_seed: int) -> None:
+        ...
 class DecodedResults:
     """
     
@@ -573,6 +575,7 @@ class GenerationConfig:
     logprobs: int
     max_length: int
     max_new_tokens: int
+    max_ngram_size: int
     min_new_tokens: int
     no_repeat_ngram_size: int
     num_assistant_tokens: int
@@ -596,11 +599,13 @@ class GenerationConfig:
     @typing.overload
     def __init__(self, **kwargs) -> None:
         ...
+    def is_assisting_generation(self) -> bool:
+        ...
     def is_beam_search(self) -> bool:
         ...
     def is_greedy_decoding(self) -> bool:
         ...
-    def is_speculative_decoding(self) -> bool:
+    def is_prompt_lookup(self) -> bool:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
@@ -772,6 +777,9 @@ class Image2ImagePipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Image2ImagePipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: InpaintingPipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -801,7 +809,8 @@ class Image2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
-            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
@@ -833,6 +842,7 @@ class ImageGenerationConfig:
     num_inference_steps: int
     prompt_2: str | None
     prompt_3: str | None
+    rng_seed: int
     strength: float
     width: int
     def __init__(self) -> None:
@@ -868,6 +878,9 @@ class InpaintingPipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: InpaintingPipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: Image2ImagePipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -897,7 +910,8 @@ class InpaintingPipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
-            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
@@ -1327,14 +1341,20 @@ class Scheduler:
           EULER_DISCRETE
         
           FLOW_MATCH_EULER_DISCRETE
+        
+          PNDM
+        
+          EULER_ANCESTRAL_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
         DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
         EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
         FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
         LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>}
+        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -1535,6 +1555,12 @@ class Text2ImagePipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Text2ImagePipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: Image2ImagePipeline) -> None:
+        ...
+    @typing.overload
+    def __init__(self, pipe: InpaintingPipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -1564,7 +1590,8 @@ class Text2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
-            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
@@ -1637,6 +1664,18 @@ class Tokenizer:
         """
         Override a chat_template read from tokenizer_config.json.
         """
+class TorchGenerator(CppStdGenerator):
+    """
+    This class provides OpenVINO GenAI Generator wrapper for torch.Generator
+    """
+    def __init__(self, seed: int) -> None:
+        ...
+    def next(self) -> float:
+        ...
+    def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
+        ...
+    def seed(self, new_seed: int) -> None:
+        ...
 class UNet2DConditionModel:
     """
     UNet2DConditionModel class.
@@ -1909,6 +1948,9 @@ class WhisperGenerationConfig:
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
     
+        :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+        :type prev_sot_token_id: int
+    
         :param is_multilingual:
         :type is_multilingual: bool
     
@@ -1937,10 +1979,34 @@ class WhisperGenerationConfig:
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
+    
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+        window. Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+        Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type hotwords: Optional[str]
     """
     begin_suppress_tokens: list[int]
     decoder_start_token_id: int
     eos_token_id: int
+    hotwords: str | None
+    initial_prompt: str | None
     is_multilingual: bool
     lang_to_id: dict[str, int]
     language: str | None
@@ -1949,6 +2015,7 @@ class WhisperGenerationConfig:
     max_new_tokens: int
     no_timestamps_token_id: int
     pad_token_id: int
+    prev_sot_token_id: int
     return_timestamps: bool
     suppress_tokens: list[int]
     task: str | None
@@ -2041,6 +2108,9 @@ class WhisperPipeline:
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
         
+            :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+            :type prev_sot_token_id: int
+        
             :param is_multilingual:
             :type is_multilingual: bool
         
@@ -2069,6 +2139,28 @@ class WhisperPipeline:
                                then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
+        
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+            window. Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+            Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type hotwords: Optional[str]
         """
     def get_generation_config(self) -> WhisperGenerationConfig:
         ...
@@ -2089,11 +2181,7 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-class draft_model:
+def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
-    This class is used to enable Speculative Decoding
+    device on which inference will be performed
     """
-    def __init__(self, models_path: os.PathLike, device: str = '', **kwargs) -> None:
-        """
-        device on which inference will be performed
-        """

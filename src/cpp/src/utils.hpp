@@ -22,6 +22,11 @@ constexpr bool is_container<T,
     std::void_t<decltype(std::declval<T>().begin()),
                 decltype(std::declval<T>().end())>> = true;
 
+enum class GenerationChatInputsType {
+    UNDEF = 0, // Default value, type of inputs is not defined
+    STRING = 1, // Type of inputs is StringInputs
+    ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
+};
 
 Tensor init_attention_mask(const Tensor& position_ids);
 
@@ -92,6 +97,16 @@ ov::Core singleton_core();
 
 template <typename T>
 void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
+
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens);
+
+size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
+
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
+
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
 }  // namespace utils
 }  // namespace genai

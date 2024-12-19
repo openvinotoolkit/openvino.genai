@@ -185,10 +185,29 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>Supported</td>
       <td>
         <ul>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-1"><code>CompVis/stable-diffusion-v1-1</code></a></li>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-2"><code>CompVis/stable-diffusion-v1-2</code></a></li>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-3"><code>CompVis/stable-diffusion-v1-3</code></a></li>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-4"><code>CompVis/stable-diffusion-v1-4</code></a></li>
+          <li><a href="https://huggingface.co/junnyu/stable-diffusion-v1-4-paddle"><code>junnyu/stable-diffusion-v1-4-paddle</code></a></li>
+          <li><a href="https://huggingface.co/jcplus/stable-diffusion-v1-5"><code>jcplus/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5"><code>stable-diffusion-v1-5/stable-diffusion-v1-5</code></a></li>
           <li><a href="https://huggingface.co/botp/stable-diffusion-v1-5"><code>botp/stable-diffusion-v1-5</code></a></li>
           <li><a href="https://huggingface.co/dreamlike-art/dreamlike-anime-1.0"><code>dreamlike-art/dreamlike-anime-1.0</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2"><code>stabilityai/stable-diffusion-2</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-base"><code>stabilityai/stable-diffusion-2-base</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-1"><code>stabilityai/stable-diffusion-2-1</code></a></li>
+          <li><a href="https://huggingface.co/bguisard/stable-diffusion-nano-2-1"><code>bguisard/stable-diffusion-nano-2-1</code></a></li>
+          <li><a href="https://huggingface.co/justinpinkney/pokemon-stable-diffusion"><code>justinpinkney/pokemon-stable-diffusion</code></a></li>
+          <li><a href="https://huggingface.co/stablediffusionapi/architecture-tuned-model"><code>stablediffusionapi/architecture-tuned-model</code></a></li>
+          <li><a href="https://huggingface.co/IDEA-CCNL/Taiyi-Stable-Diffusion-1B-Chinese-EN-v0.1"><code>IDEA-CCNL/Taiyi-Stable-Diffusion-1B-Chinese-EN-v0.1</code></a></li>
+          <li><a href="https://huggingface.co/ZeroCool94/stable-diffusion-v1-5"><code>ZeroCool94/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/pcuenq/stable-diffusion-v1-4"><code>pcuenq/stable-diffusion-v1-4</code></a></li>
+          <li><a href="https://huggingface.co/rinna/japanese-stable-diffusion"><code>rinna/japanese-stable-diffusion</code></a></li>
+          <li><a href="https://huggingface.co/benjamin-paine/stable-diffusion-v1-5"><code>benjamin-paine/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/philschmid/stable-diffusion-v1-4-endpoints"><code>philschmid/stable-diffusion-v1-4-endpoints</code></a></li>
+          <li><a href="https://huggingface.co/naclbit/trinart_stable_diffusion_v2"><code>naclbit/trinart_stable_diffusion_v2</code></a></li>
+          <li><a href="https://huggingface.co/Fictiverse/Stable_Diffusion_PaperCut_Model"><code>Fictiverse/Stable_Diffusion_PaperCut_Model</code></a></li>
         </ul>
       </td>
     </tr>
@@ -200,6 +219,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-0.9"><code>stabilityai/stable-diffusion-xl-base-0.9</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"><code>stabilityai/stable-diffusion-xl-base-1.0</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/sdxl-turbo"><code>stabilityai/sdxl-turbo</code></a></li>
         </ul>
       </td>
     </tr>

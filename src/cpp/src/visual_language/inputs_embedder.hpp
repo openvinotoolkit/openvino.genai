@@ -40,10 +40,21 @@ public:
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
+    // returns tokenized chat history
+    std::vector<int64_t> get_tokenized_history() const;
+
+    // add new results to tokenized chat history
+    void update_tokenized_history(std::vector<int64_t> encoded_result, bool token_will_disappear);
+
+    // returns amount of elements, which need to remove from the end of the KV cache
+    size_t get_amount_to_remove_from_hist() const;
+
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
+
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results);
+
     // finishes chat and clears a chat history 
     void finish_chat();
 private:

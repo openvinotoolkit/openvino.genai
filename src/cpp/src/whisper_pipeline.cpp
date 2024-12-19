@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "utils.hpp"
+#include "whisper/context_tokens.hpp"
 #include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
@@ -56,15 +57,18 @@ public:
         auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(properties);
         core.set_property(core_properties);
 
-        m_models.encoder =
-            core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties)
-                .create_infer_request();
-        m_models.decoder =
-            core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
-                .create_infer_request();
-        m_models.decoder_with_past =
-            core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties)
-                .create_infer_request();
+        ov::CompiledModel compiled_model;
+        compiled_model =
+            core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
+        m_models.encoder = compiled_model.create_infer_request();
+        compiled_model =
+            core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
+        m_models.decoder = compiled_model.create_infer_request();
+        compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties);
+        m_models.decoder_with_past = compiled_model.create_infer_request();
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper decoder with past model");
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -88,8 +92,11 @@ public:
             streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
 
+        auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
+
         auto generate_result = ov::genai::whisper_generate(config,
                                                            m_model_config,
+                                                           context_tokens,
                                                            raw_speech_input,
                                                            m_models,
                                                            m_feature_extractor,
@@ -98,6 +105,8 @@ public:
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
 
         result.perf_metrics = generate_result.perf_metrics;
         auto& segments = generate_result.segments;

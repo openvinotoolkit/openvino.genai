@@ -28,9 +28,9 @@ protected:
 
 class ImageProcessor : public IImageProcessor {
 public:
-    explicit ImageProcessor(const std::string& device, bool do_normalize = true, bool do_binarize = false);
+    explicit ImageProcessor(const std::string& device, bool do_normalize = true, bool do_binarize = false, bool gray_scale_source = false);
 
-    static void merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize = true, bool do_binarize = false);
+    static void merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize = true, bool do_binarize = false, bool gray_scale_source = false);
 };
 
 class ImageResizer {
