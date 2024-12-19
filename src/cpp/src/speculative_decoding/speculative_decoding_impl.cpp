@@ -142,8 +142,6 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
-    ManualTimer step_timer("speculative_decoding: step()");
-    step_timer.start();
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
     m_draft_pipeline->pull_awaiting_requests(true);
