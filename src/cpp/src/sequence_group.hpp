@@ -135,9 +135,6 @@ public:
             auto generated_token_id = get_generated_ids();
             auto generated_log_probs = get_generated_log_probs();
 
-            if (get_generated_len() < token_cnt) {
-                auto a = 0;
-            }
             OPENVINO_ASSERT(get_generated_len() >= token_cnt);
             if (get_generated_len() > num_token_to_ignore) {
                 auto offset = get_generated_len() - token_cnt - num_token_to_ignore;
