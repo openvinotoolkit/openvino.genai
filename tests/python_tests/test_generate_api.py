@@ -779,7 +779,8 @@ test_cases = [
 def test_perf_metrics(model_descr, generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
+    # To check prefill exclusion we need long initial prompt.
+    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt * 1000)
     total_time = (time.perf_counter() - start_time) * 1000
     
     # Check that load time is adequate.
