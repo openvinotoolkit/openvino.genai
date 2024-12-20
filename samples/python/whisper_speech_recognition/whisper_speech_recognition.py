@@ -18,7 +18,7 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    device = "CPU"  # GPU can be used as well
+    device = "CPU"  # GPU, NPU can be used as well
     pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
 
     config = pipe.get_generation_config()
@@ -34,8 +34,9 @@ def main():
 
     print(result)
 
-    for chunk in result.chunks:
-        print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
+    if result.chunks:
+        for chunk in result.chunks:
+            print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
 
 
 if "__main__" == __name__:

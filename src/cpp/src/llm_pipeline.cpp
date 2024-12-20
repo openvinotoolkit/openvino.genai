@@ -45,6 +45,7 @@ public:
     ov::genai::utils::GenerationChatInputsType m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     size_t m_to_remove_from_hist = 0;
     size_t m_kv_cache_seq_length_axis = 2;
+    Sampler m_sampler;
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -75,7 +76,7 @@ public:
         const std::string& device,
         const ov::AnyMap& config,
         const ov::genai::GenerationConfig& generation_config
-    ) : LLMPipelineImplBase(tokenizer, generation_config) {
+    ) : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
         ov::Core core;
         ov::CompiledModel compiled_model;
         auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
@@ -96,6 +97,8 @@ public:
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     StatefulLLMPipeline(
@@ -281,10 +284,9 @@ public:
         }
 
         auto batch_size = input_ids.get_shape().at(0);
-        if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
-            OPENVINO_THROW("Currently streaming is possible only with batch size=1 and "
-                            "only for greedy or multinomial decoding");
-        }
+        OPENVINO_ASSERT(streamer_ptr == nullptr || batch_size == 1 && config.num_return_sequences == 1 &&
+            (config.is_greedy_decoding() || config.is_multinomial()),
+            "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
         auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
         OPENVINO_ASSERT(num_inputs == 4 || num_inputs == 3, "Model should have 3 or 4 inputs: "
@@ -358,9 +360,12 @@ public:
                 requests.push_back(sequence_group);
             }
 
-            Sampler sampler = Sampler(m_tokenizer);
+            if (m_sampler.get_seed() != config.rng_seed) {
+                m_sampler.set_seed(config.rng_seed);
+            }
+
             std::tie(result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr,
-                                                                                  sampler, requests, position_ids, std::nullopt, m_selected_beam);
+                                                                                  m_sampler, requests, position_ids, std::nullopt, m_selected_beam);
         }
 
         if (is_chat_conversation) {
@@ -581,9 +586,7 @@ public:
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
         for (GenerationResult& res : generated) {
-            if (GenerationStatus::FINISHED != res.m_status) {
-                OPENVINO_THROW("Got unfinished GenerationStatus");
-            }
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::DROPPED_BY_HANDLE, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
@@ -639,9 +642,7 @@ public:
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
-            if (GenerationStatus::FINISHED != res.m_status) {
-                OPENVINO_THROW("Got unfinished GenerationStatus");
-            }
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::DROPPED_BY_HANDLE, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }

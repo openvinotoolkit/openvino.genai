@@ -67,6 +67,8 @@ public:
     float m_load_time_ms = 0;
     // Axis num in kv cache from m_language model, which contains information about history len
     size_t m_kv_cache_seq_length_axis = 2;
+    // Component for applying sampling to lm outputs
+    Sampler m_sampler;
 
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -105,6 +107,9 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     VLMPipelineImpl(
@@ -140,6 +145,9 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     VLMDecodedResults generate(
@@ -195,8 +203,9 @@ public:
             },
         }, streamer);
 
-        OPENVINO_ASSERT((generation_config.is_greedy_decoding() || generation_config.is_multinomial() || !streamer_ptr),
-                        "Currently streaming is possible only for greedy or multinomial decoding");
+        OPENVINO_ASSERT(streamer_ptr == nullptr || generation_config.num_return_sequences == 1 &&
+            (generation_config.is_greedy_decoding() || generation_config.is_multinomial()),
+            "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
@@ -204,11 +213,13 @@ public:
         ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
 
-        Sampler sampler = Sampler(m_tokenizer);
+        if (m_sampler.get_seed() != generation_config.rng_seed) {
+            m_sampler.set_seed(generation_config.rng_seed);
+        }
 
         ov::genai::EncodedResults encoded_result;
         int32_t m_selected_beam = 0;
-        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, sampler, requests,
+        std::tie(encoded_result, m_selected_beam) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
                                                                                       position_ids, m_embedding, std::nullopt);
 
         auto decode_start_time = std::chrono::steady_clock::now();
