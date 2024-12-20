@@ -572,6 +572,15 @@ void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pa
     }
 }
 
+void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
+    if (config.count(old_key) == 0) {
+        return;
+    } else {
+        auto opt_value = pop_option(config, old_key);
+        config[new_key] = opt_value.value();
+    }
+}
+
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
     ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
     start_shape[dim] = start_pos;
@@ -644,6 +653,10 @@ SMStaticLLMPipeline::SMStaticLLMPipeline(
     update_config(properties, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(properties, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
     update_config(properties, {"NPUW_LLM_GENERATE_HINT", generate_hint});
+    update_config(properties, {"NPUW_LLM_PAD_TOKEN_ID", m_tokenizer.get_pad_token_id()});
+
+    rename_key(properties, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(properties, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
 
     // FIXME: Support CACHE_DIR in future
     drop_cache_dir(properties);
@@ -674,14 +687,27 @@ DecodedResults SMStaticLLMPipeline::generate(
     }
 
     ov::genai::TokenizedInputs tokenized_input;
-    // FIXME: Support chat conversation.
-    tokenized_input = m_tokenizer.encode(prompt);
+    if (m_is_chat_conversation) {
+        m_history.push_back({{"role", "user"}, {"content", prompt}});
+        constexpr bool add_generation_prompt = true;
+        prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
+        tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
+    } else {
+        tokenized_input = m_tokenizer.encode(prompt);
+    }
+
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
     auto decode_stop_time =  std::chrono::steady_clock::now();
+
+    if (m_is_chat_conversation) {
+        auto answer = decoded_results.texts[0];
+        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+    }
 
     // generate_durations
     decoded_results.perf_metrics = encoded_results.perf_metrics;
@@ -797,14 +823,16 @@ EncodedResults SMStaticLLMPipeline::generate(
 }
 
 void SMStaticLLMPipeline::start_chat(const std::string& system_message) {
-    // FIXME: Implement later.
-    return;
-}
+    if (!system_message.empty()) {
+        m_history.push_back({{"role", "system"}, {"content", system_message}});
+    }
+    m_is_chat_conversation = true;
+};
 
 void SMStaticLLMPipeline::finish_chat() {
-    // FIXME: Implement later.
-    return;
-}
+    m_is_chat_conversation = false;
+    m_history.clear();
+};
 
 std::unique_ptr<LLMPipelineImplBase>
 StaticLLMPipelineFactory::create(const std::filesystem::path& models_path,

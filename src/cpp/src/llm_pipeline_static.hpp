@@ -47,6 +47,8 @@ public:
 
 private:
     ov::InferRequest m_request;
+    bool m_is_chat_conversation = false;
+    ChatHistory m_history;
 };
 
 class StaticLLMPipeline final : public LLMPipelineImplBase {
