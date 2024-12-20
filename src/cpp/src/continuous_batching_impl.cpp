@@ -87,7 +87,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true);
         m_rotation_deltas_stores.reserve(m_num_decoder_layers);
-        ov::Shape rotation_deltas_store_shape{m_scheduler->get_block_size() * scheduler_config.num_kv_blocks};
+        ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, m_scheduler->get_block_size()}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
         std::cout << "VSHAMPOR: memsetting and pushing delta stores" << std::endl;
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
@@ -503,8 +503,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
     for (size_t i = 0; i < m_num_decoder_layers; i++) {
         m_current_step_rotation_deltas.emplace_back(
             m_rotation_deltas_stores[i],
-            ov::Coordinate{0},
-            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i] * m_scheduler->get_block_size()});
+            ov::Coordinate{0, 0},
+            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i], m_scheduler->get_block_size()});
     }
 }
 
