@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) try {
     int iter = 0;
     while (iter < 10) {
         auto result = pipe.generate(prompt, config);
-        std::cout << result.texts << std::endl;
+        std::cout << result.texts[0] << std::endl;
         iter++;
         std::cout << "\n pipeline generate finish iter:" << iter << std::endl;
         std::cout << "generate duration s:" << result.perf_metrics.get_generate_duration().mean * 0.001 << std::endl;
