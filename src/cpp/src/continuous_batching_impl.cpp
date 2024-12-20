@@ -87,18 +87,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true);
         m_rotation_deltas_stores.reserve(m_num_decoder_layers);
-        ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, m_scheduler->get_block_size()}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
-        std::cout << "VSHAMPOR: memsetting and pushing delta stores" << std::endl;
+        ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
             std::memset(store.data(), 0, store.get_byte_size());
             m_rotation_deltas_stores.push_back(store);
         }
 
-        // const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
-        // size_t max_sequence_cache_occupation_length_in_blocks = (eviction_config.get_evictable_size() + eviction_config.get_recent_size()) / m_scheduler->get_block_size() + 1;
         size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens  + 1;
-        std::cout << "VSHAMPOR: max_sequence_occupation_length is " << max_sequence_cache_occupation_length_in_blocks << std::endl;
         size_t embedding_size = device_config.get_head_size();
         m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
             m_scheduler->get_block_size(),
@@ -489,7 +485,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
                 m_current_step_rotated_block_indices_per_sequence[layer_idx][seq_id].push_back(
                     block_rotation_data.logical_block_idx);
 
-                size_t block_offset = num_blocks_to_rotate_for_each_layer[layer_idx] * m_scheduler->get_block_size();
+                size_t block_offset = num_blocks_to_rotate_for_each_layer[layer_idx];
                 auto rotation_deltas_tensor_data =
                     m_rotation_deltas_stores[layer_idx].data<int32_t>() + block_offset;
                 for (size_t tok_idx = 0; tok_idx < m_scheduler->get_block_size(); tok_idx++) {
@@ -504,7 +500,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
         m_current_step_rotation_deltas.emplace_back(
             m_rotation_deltas_stores[i],
             ov::Coordinate{0, 0},
-            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i], m_scheduler->get_block_size()});
+            ov::Coordinate{num_blocks_to_rotate_for_each_layer[i], 1});
     }
 }
 
