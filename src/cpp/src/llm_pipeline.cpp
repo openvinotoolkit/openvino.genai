@@ -701,7 +701,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 ){
     auto start_time = std::chrono::steady_clock::now();
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+        properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, plugin_config);
     } else if (device == "NPU") {
@@ -721,7 +722,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     if (config.find(ov::genai::scheduler_config.name()) != config.end() || 
-        config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end() || 
+        config.find(ov::genai::prompt_lookup.name()) != config.end()) {
         auto [plugin_config, scheduler_config] = utils::split_scheduler_config(config);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, plugin_config);
     } else if (device == "NPU") {
@@ -745,7 +747,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     auto start_time = std::chrono::steady_clock::now();
     if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end() || 
-        plugin_config.find(utils::DRAFT_MODEL_ARG_NAME) != plugin_config.end()) {
+        plugin_config.find(utils::DRAFT_MODEL_ARG_NAME) != plugin_config.end() || 
+        plugin_config.find(ov::genai::prompt_lookup.name()) != plugin_config.end()){
 
         auto [plugin_config_, scheduler_config] = utils::split_scheduler_config(plugin_config);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
