@@ -96,7 +96,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
                 m_rotation_deltas_stores.push_back(store);
             }
 
-            size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens  + 1;
+            size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens / m_scheduler->get_block_size()  + 1;
             size_t embedding_size = device_config.get_head_size();
             m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
                 m_scheduler->get_block_size(),
