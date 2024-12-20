@@ -1102,6 +1102,11 @@ EncodedResults StaticLLMPipeline::generate(
             m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
+
+    if (streamer_ptr) {
+        streamer_ptr->end();
+    }
+
     auto stop_time = std::chrono::steady_clock::now();
     // If is called without tokenization then that stat will not be reported.
     auto& metrics = results.perf_metrics;
