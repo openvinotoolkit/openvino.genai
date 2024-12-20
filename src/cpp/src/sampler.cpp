@@ -391,8 +391,6 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
                     // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
                     candidate.m_sequence->remove_last_tokens(match_result.to_remove);
 
-                    // candidate.m_token_id = match_result.last_token_id;
-
                     // try to finish candidate
                     try_to_finish_candidate(group, candidate);
                     continue;
@@ -569,9 +567,7 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
             auto& stop_strings = m_stop_strings.at(sequence_group->get_request_id());
             auto match_result = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), stop_strings, sampling_params.include_stop_str_in_output);
             if (match_result.is_matched) {
-                if (match_result.to_remove > 0) {
-                    running_sequence->remove_last_tokens(match_result.to_remove);
-                }
+                running_sequence->remove_last_tokens(match_result.to_remove);
 
                 running_sequence->set_status(SequenceStatus::FINISHED);
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
@@ -937,6 +933,7 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
 void Sampler::clear_request_info(uint64_t request_id) { 
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
+    m_stop_strings.erase(request_id);
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
