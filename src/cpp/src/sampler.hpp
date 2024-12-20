@@ -58,6 +58,8 @@ class Sampler {
     size_t seed = rng_engine.default_seed;
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
+    // { request_id, { max_encoded_len, { stop_strings }}}
+    std::map<int64_t, std::pair<size_t, std::set<std::string>>> m_stop_strings;
 
     Tokenizer m_tokenizer;
 
@@ -120,7 +122,7 @@ class Sampler::GroupBeamSearcher {
 public:
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
 
-    void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
+    void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output, const std::pair<size_t, std::set<std::string>>& stop_strings);
     void finalize(SamplerOutput& sampler_output);
     std::map<size_t, int32_t> get_beam_idxs();
 };

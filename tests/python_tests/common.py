@@ -125,6 +125,34 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config.include_stop_str_in_output = True
     return generation_config
 
+def get_greedy_stop_strings_exclude_from_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines" }
+    generation_config.include_stop_str_in_output = False
+    return generation_config
+
+def get_greedy_stop_strings_include_to_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines" }
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_greedy_n_stop_strings_exclude_from_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines", "manage" }
+    generation_config.include_stop_str_in_output = False
+    return generation_config
+
+def get_greedy_n_stop_strings_include_to_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines", "manage" }
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
 def get_multinomial_temperature() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -358,9 +386,14 @@ def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, ge
             # Note, that for fp32 / fp16 models scores are different less than 0.001
             assert abs(hf_score - ov_score) < 0.02
 
-    assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
-    for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
-        assert hf_text == ov_text
+    if not generation_config.include_stop_str_in_output and len(generation_config.stop_strings) > 0:
+        assert len(hf_result.m_generation_ids) >= len(ov_result.m_generation_ids)
+        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
+            assert ov_text in hf_text
+    else:
+        assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
+        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
+            assert hf_text == ov_text
 
 def save_ov_model_from_optimum(model, hf_tokenizer, models_path: Path):
     model.save_pretrained(models_path)
