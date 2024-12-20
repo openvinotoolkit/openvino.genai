@@ -324,7 +324,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         num,
         iter_data,
         tm_list.tolist(),
-        inference_durations.tolist(),
+        inference_durations,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
