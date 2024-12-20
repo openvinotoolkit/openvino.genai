@@ -95,15 +95,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
             m_rotation_deltas_stores.push_back(store);
         }
 
-        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
-        size_t max_sequence_cache_occupation_length = eviction_config.get_evictable_size() + eviction_config.get_recent_size() + m_scheduler->get_block_size();
-        std::cout << "VSHAMPOR: max_sequence_occupation_length is " << max_sequence_cache_occupation_length << std::endl;
+        // const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+        // size_t max_sequence_cache_occupation_length_in_blocks = (eviction_config.get_evictable_size() + eviction_config.get_recent_size()) / m_scheduler->get_block_size() + 1;
+        size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens  + 1;
+        std::cout << "VSHAMPOR: max_sequence_occupation_length is " << max_sequence_cache_occupation_length_in_blocks << std::endl;
         size_t embedding_size = device_config.get_head_size();
         m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
             m_scheduler->get_block_size(),
-            max_sequence_cache_occupation_length,
+            max_sequence_cache_occupation_length_in_blocks,
             embedding_size);
-        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length, embedding_size});
+        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
         float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
         std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
 
@@ -111,7 +112,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
         const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
 
 
-        for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length; pos_idx++) {
+        for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
             for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
                 rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
                 rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
@@ -488,12 +489,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
                 m_current_step_rotated_block_indices_per_sequence[layer_idx][seq_id].push_back(
                     block_rotation_data.logical_block_idx);
 
-                size_t block_offset =
-                    num_blocks_to_rotate_for_each_layer[layer_idx] * m_scheduler->get_block_size();
+                size_t block_offset = num_blocks_to_rotate_for_each_layer[layer_idx] * m_scheduler->get_block_size();
                 auto rotation_deltas_tensor_data =
                     m_rotation_deltas_stores[layer_idx].data<int32_t>() + block_offset;
                 for (size_t tok_idx = 0; tok_idx < m_scheduler->get_block_size(); tok_idx++) {
-                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta;
+                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta / m_scheduler->get_block_size();
                 }
                 num_blocks_to_rotate_for_each_layer[layer_idx] += 1;
             }

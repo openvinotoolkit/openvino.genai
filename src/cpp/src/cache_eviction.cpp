@@ -269,7 +269,7 @@ namespace ov::genai {
     }
 
     CacheRotationCalculator::CacheRotationCalculator(size_t block_size,
-                                                     size_t max_context_length,
+                                                     size_t max_context_length_in_blocks,
                                                      size_t kv_head_size,
                                                      double rope_theta)
         : m_block_size(block_size),
@@ -283,20 +283,19 @@ namespace ov::genai {
         // `rotate_half` function in HF transformers. It can be shown that this form still preserves the relative
         // positioning property from the RoFormer article.
         OPENVINO_ASSERT(rope_theta > 0, "rope_theta must be positive");
-        size_t max_position_angle_multiplier = max_context_length;
         size_t num_freqs = kv_head_size / 2;
-        m_rope_sin_lut.resize(max_position_angle_multiplier);
-        m_rope_cos_lut.resize(max_position_angle_multiplier);
+        m_rope_sin_lut.resize(max_context_length_in_blocks);
+        m_rope_cos_lut.resize(max_context_length_in_blocks);
 
-        for (size_t i = 0; i < max_position_angle_multiplier; i++) {
+        for (size_t i = 0; i < max_context_length_in_blocks; i++) {
             m_rope_sin_lut[i].reserve(num_freqs);
             m_rope_cos_lut[i].reserve(num_freqs);
             for (size_t j = 0; j < num_freqs; j++) {
                 double exponent = -static_cast<double>(2 * j) / kv_head_size;
                 double base_angle = std::pow(rope_theta, exponent);
                 m_rope_sin_lut[i].push_back(
-                    -std::sin(i * base_angle));  // minus since we will be rotating by an inverse angle
-                m_rope_cos_lut[i].push_back(std::cos(i * base_angle));
+                    -std::sin(i * block_size * base_angle));  // minus since we will be rotating by an inverse angle
+                m_rope_cos_lut[i].push_back(std::cos(i * block_size * base_angle));
             }
         }
     }
@@ -313,8 +312,6 @@ namespace ov::genai {
         const std::set<size_t>& evicted_block_logical_indices,
         size_t num_logical_blocks_before_eviction,
         bool deltas_only) {
-        OPENVINO_ASSERT(num_logical_blocks_before_eviction * m_block_size < m_rope_sin_lut.size(),
-                        "num_logical_blocks_before_eviction may not correspond to less tokens than max_context_length");
 
         std::vector<BlockRotationData> retval;
         if (evicted_block_logical_indices.empty()) {
@@ -347,9 +344,9 @@ namespace ov::genai {
                         block_rotation_data.sines.reserve(m_block_size);
                         for (size_t i = 0; i < m_block_size; i++) {
                             block_rotation_data.cosines.push_back(
-                                m_rope_cos_lut[current_rotation_delta_in_blocks * m_block_size]);
+                                m_rope_cos_lut[current_rotation_delta_in_blocks]);
                             block_rotation_data.sines.push_back(
-                                m_rope_sin_lut[current_rotation_delta_in_blocks * m_block_size]);
+                                m_rope_sin_lut[current_rotation_delta_in_blocks]);
                         }
                     }
 
