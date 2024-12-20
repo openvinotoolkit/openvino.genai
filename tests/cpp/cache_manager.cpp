@@ -19,7 +19,8 @@ TEST(TestCacheManager, general_test) {
     const std::string device = "CPU";
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     size_t num_decoder_layers = 12;
-    device_config.set_model_params(12, 64, num_decoder_layers);
+    std::vector<size_t> num_kv_heads(12, 12);
+    device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
 
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, core);
 

@@ -27,8 +27,8 @@ public:
         const std::string device_name = device_config.get_device();
         if (device_name.find("GPU") == std::string::npos) {// Allocate KV caches
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
-                ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape());
-                ov::Tensor value_cache(device_config.get_cache_precision(), device_config.get_value_cache_shape());
+                ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape(decoder_layer_id));
+                ov::Tensor value_cache(device_config.get_cache_precision(), device_config.get_value_cache_shape(decoder_layer_id));
 
                 // force allocation
                 std::memset(key_cache.data(), 0, key_cache.get_byte_size());
@@ -41,9 +41,9 @@ public:
             auto remote_context = m_core.get_default_context(device_name);
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
                 ov::Tensor key_cache = remote_context.create_tensor(device_config.get_cache_precision(),
-                                                                    device_config.get_key_cache_shape());
+                                                                    device_config.get_key_cache_shape(decoder_layer_id));
                 ov::Tensor value_cache = remote_context.create_tensor(device_config.get_cache_precision(),
-                                                                      device_config.get_value_cache_shape());
+                                                                      device_config.get_value_cache_shape(decoder_layer_id));
 
                 m_key_cache.emplace_back(key_cache);
                 m_value_cache.emplace_back(value_cache);
@@ -62,8 +62,8 @@ public:
     }
 
     void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) {
-        ov::Shape key_shape = m_device_config.get_key_cache_shape();
-        ov::Shape value_shape = m_device_config.get_value_cache_shape();
+        ov::Shape key_shape = m_device_config.get_key_cache_shape(0);
+        ov::Shape value_shape = m_device_config.get_value_cache_shape(0);
 
         ov::Coordinate key_src_start_roi(key_shape.size(), 0);
         ov::Coordinate key_src_end_roi = key_shape;
