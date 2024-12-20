@@ -5,7 +5,6 @@
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
 #include "utils/paged_attention_transformations.hpp"
-#include "openvino/runtime/intel_gpu/properties.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -44,87 +43,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
     m_awaiting_requests.clear();
 }
 
-size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_available_gpu_memory() {
-    auto device = m_device_config->get_device();
-    OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-    auto memory_statistics = m_core->get_property(device, ov::intel_gpu::memory_statistics);
-    auto device_type = m_core->get_property(device, ov::device::type);
-
-    // sum up all used device memory
-    std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
-    size_t used_device_mem = 0;
-    for (auto mem_type: device_memory_types) {
-        used_device_mem += memory_statistics[mem_type];
-    }
-
-    if (device_type == ov::device::Type::INTEGRATED) {
-        used_device_mem += memory_statistics["usm_host"];
-    }
-
-    // there could be unaccounted extra memory reserved by kernels, kept
-    // in memory pools, etc
-    // therefore, add a threshold to account for this
-    float used_memory_threshold = 1.1;
-    used_device_mem *= used_memory_threshold;
-
-    // total device memory in bytes
-    auto total_device_memory = m_core->get_property(device, ov::intel_gpu::device_total_mem_size);
-
-    return total_device_memory - used_device_mem;
-}
-
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reallocate_kv_cache_if_needed(std::vector<SequenceGroup::Ptr>& sequence_groups) {
-    float eps = 1e-5;
-    auto device = m_device_config->get_device();
-    size_t block_size = m_device_config->get_block_size();
-    size_t current_num_of_kv_blocks = m_scheduler->get_block_manager().get_total_number_of_kv_blocks();
-
-    if (!m_scheduler->get_block_manager().block_allocator_initialized()) {
-        // initial kv-blocks allocation
-        size_t seq_length_sum = 0;
-        for (auto idx = 0; idx < sequence_groups.size(); idx++) {
-            auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
-            seq_length_sum += std::min(seq_length, sequence_groups[idx]->get_prompt_len() + m_generation_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len()));;
-        }
-        m_scheduler->get_block_manager().increase_kv_blocks_number(seq_length_sum);
-        m_dynamic_memory_allocation = true;
-    }
-    else if (m_dynamic_memory_allocation && (m_scheduler->get_block_manager().get_used_percentage() + eps) > m_percentage_threshold_for_cache_increase) {
-        // get the expected number of kv blocks, considering that generated length will increase by m_cache_growth_factor
-        size_t expected_logical_kv_blocks_num = 0;
-        for (auto idx = 0; idx < sequence_groups.size(); idx++) {
-            auto num_blocks = sequence_groups[idx]->get_prompt_len() / block_size;
-            for (auto seq: sequence_groups[idx]->get_sequences()) {
-                num_blocks += std::min((size_t)(seq->get_generated_len() * m_cache_growth_factor), m_generation_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len())) / block_size;
-            }
-            expected_logical_kv_blocks_num += num_blocks;
-        }
-
-        // get the expected number of physical kv-blocks 
-        size_t expected_physical_blocks_num = (size_t)(current_num_of_kv_blocks * m_cache_growth_factor);
-
-        size_t new_blocks_num = std::min(expected_logical_kv_blocks_num, expected_physical_blocks_num);
-
-        // increase kv-cache
-        if (device.find("GPU") == std::string::npos) {
-            m_scheduler->get_block_manager().increase_kv_blocks_number(new_blocks_num);
-        }
-        else {
-            size_t available_gpu_memory = _get_available_gpu_memory();
-            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * m_device_config->get_block_size_in_bytes();
-            if (required_memory <= available_gpu_memory) {
-                m_scheduler->get_block_manager().increase_kv_blocks_number(new_blocks_num);
-            } else {
-                size_t possible_blocks_to_add = available_gpu_memory / m_device_config->get_block_size_in_bytes();
-                if (possible_blocks_to_add > 0) {
-                    m_scheduler->get_block_manager().increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
-                }
-            }
-        }
-    }
-    m_cache_manager->allocate_cache_if_needed(m_scheduler->get_block_manager().get_total_number_of_kv_blocks());
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
@@ -150,8 +68,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
     }
-
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), m_cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     // and finally create model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
@@ -214,13 +131,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     _pull_awaiting_requests();
 
     m_pipeline_metrics.requests = m_requests.size();
-
     Scheduler::Output scheduler_output;
     {
         static ManualTimer timer("scheduling");
         timer.start();
         m_scheduler->clean_empty_blocks(m_requests);
-        _reallocate_kv_cache_if_needed(m_requests);
         scheduler_output = m_scheduler->schedule(m_requests);
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;

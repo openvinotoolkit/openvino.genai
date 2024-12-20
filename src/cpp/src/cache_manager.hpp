@@ -197,5 +197,13 @@ public:
             }
         }
     }
+
+    std::shared_ptr<Core> get_core() {
+        return std::make_shared<Core>(m_core);
+    }
+
+    std::shared_ptr<DeviceConfig> get_device_config() {
+        return std::make_shared<DeviceConfig>(m_device_config);
+    }
 };
 }
