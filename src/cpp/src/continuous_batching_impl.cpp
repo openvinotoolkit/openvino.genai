@@ -86,36 +86,39 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true);
-        m_rotation_deltas_stores.reserve(m_num_decoder_layers);
-        ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
-        for (size_t i = 0; i < m_num_decoder_layers; i++) {
-            ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
-            std::memset(store.data(), 0, store.get_byte_size());
-            m_rotation_deltas_stores.push_back(store);
-        }
-
-        size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens  + 1;
-        size_t embedding_size = device_config.get_head_size();
-        m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
-            m_scheduler->get_block_size(),
-            max_sequence_cache_occupation_length_in_blocks,
-            embedding_size);
-        auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
-        float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
-        std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
-
-        const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
-        const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
-
-
-        for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
-            for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
-                rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
-                rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
+        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+        if (eviction_config.apply_rotation) {
+            m_rotation_deltas_stores.reserve(m_num_decoder_layers);
+            ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
+                std::memset(store.data(), 0, store.get_byte_size());
+                m_rotation_deltas_stores.push_back(store);
             }
-        }
 
-        m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
+            size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens  + 1;
+            size_t embedding_size = device_config.get_head_size();
+            m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
+                m_scheduler->get_block_size(),
+                max_sequence_cache_occupation_length_in_blocks,
+                embedding_size);
+            auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
+            float* rotation_trig_lut_data = rotation_trig_lut.data<float>();
+            std::memset(rotation_trig_lut_data, 0, rotation_trig_lut.get_byte_size());
+
+            const auto& cos_lut = m_cache_rotation_calculator->get_cos_lut();
+            const auto& sin_lut = m_cache_rotation_calculator->get_sin_lut();
+
+
+            for (size_t pos_idx = 0; pos_idx < max_sequence_cache_occupation_length_in_blocks; pos_idx++) {
+                for (size_t embedding_pair_idx = 0; embedding_pair_idx < cos_lut[0].size(); embedding_pair_idx++) {
+                    rotation_trig_lut_data[pos_idx * embedding_size + embedding_pair_idx] = cos_lut[pos_idx][embedding_pair_idx];
+                    rotation_trig_lut_data[pos_idx * embedding_size + embedding_size / 2 + embedding_pair_idx] = sin_lut[pos_idx][embedding_pair_idx];
+                }
+            }
+
+            m_model_runner->set_cache_rotation_trig_lut(std::move(rotation_trig_lut));
+        }
     } else {
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), m_num_decoder_layers);
@@ -194,7 +197,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
 
-        if (sched_config.use_cache_eviction) {
+        if (sched_config.use_cache_eviction && sched_config.cache_eviction_config.apply_rotation) {
             _compute_cache_rotation_data(m_requests, scheduler_output);
             m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
                                                     std::move(m_current_step_rotation_deltas));
