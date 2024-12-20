@@ -14,20 +14,20 @@ def streamer(subword):
         return False
 
 def main():
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('model_dir')
-    # parser.add_argument('draft_model_dir')
-    # parser.add_argument('prompt')
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir')
+    parser.add_argument('draft_model_dir')
+    parser.add_argument('prompt')
+    args = parser.parse_args()
 
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in openvino_genai.draft_model` for draft.
     main_device = 'CPU'  # GPU can be used as well
     draft_device = 'CPU'
 
-    draft_model = openvino_genai.draft_model("/home/panas/test_models/spec_dec/tiny-llama-1.1b-chat/", draft_device)
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
 
-    pipe = openvino_genai.LLMPipeline("/home/panas/test_models/spec_dec/Llama-2-7b-chat-hf/", main_device, draft_model=draft_model)
+    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
@@ -39,7 +39,7 @@ def main():
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
-    pipe.generate("What is openvino?", config, streamer)
+    pipe.generate(args.prompt, config, streamer)
 
 if '__main__' == __name__:
     main()
