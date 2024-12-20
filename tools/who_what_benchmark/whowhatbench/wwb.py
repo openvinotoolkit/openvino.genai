@@ -1,7 +1,3 @@
-from .utils import patch_diffusers
-
-patch_diffusers()
-
 import argparse
 import difflib
 import numpy as np

@@ -25,7 +25,9 @@ def run_gc_after_test():
     yield
     gc.collect()
 
-@functools.lru_cache(1)
+# used whisper models are relatively small
+# cache them in memory to speedup tests
+@functools.lru_cache(3)
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
@@ -566,6 +568,31 @@ def test_longform_audio(model_descr, test_sample):
     assert genai_result.texts[0] == expected["text"]
 
     assert genai_result.chunks == None
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    get_samples_from_dataset(length=1),
+)
+@pytest.mark.precommit
+def test_initial_prompt_hotwords(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    result = pipe.generate(test_sample)
+
+    assert "Joel Keaton" in result.texts[0]
+    assert "Joel Kyton" not in result.texts[0]
+
+    result = pipe.generate(test_sample, initial_prompt="Joel Kyton")
+
+    assert "Joel Keaton" not in result.texts[0]
+    assert "Joel Kyton" in result.texts[0]
+
+    result = pipe.generate(test_sample, hotwords="Joel Kyton")
+
+    assert "Joel Keaton" not in result.texts[0]
+    assert "Joel Kyton" in result.texts[0]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))

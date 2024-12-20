@@ -10,7 +10,8 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-size_t get_kv_cache_size(const std::shared_ptr<ov::Model> model) {
+
+size_t get_hidden_size(const std::shared_ptr<ov::Model> model) {
     const auto& parameters = model->get_parameters();
     // extract num_kv_heads and head_size
     size_t kv_caches_inputs_offset = 2;

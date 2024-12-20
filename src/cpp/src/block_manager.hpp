@@ -915,12 +915,6 @@ public:
      * @return Whether enough KV cache blocks are available to host the sequences in the group.
      */
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
-        if (required_blocks_count(seq_group) > m_allocator.num_free_blocks(0)) {
-            std::cout << "required blocks: " << required_blocks_count(seq_group) << std::endl;
-            std::cout << "free blocks: " << m_allocator.num_free_blocks(0) << std::endl;
-            std::cout << seq_group->get_prompt_len() << " " << seq_group->get_sequences()[0]->get_generated_len() << std::endl;
-        }
-        
         return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks(0);
     }
 

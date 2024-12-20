@@ -103,6 +103,9 @@ auto whisper_generation_config_docstring = R"(
     :param no_timestamps_token_id: No timestamps token id.
     :type no_timestamps_token_id: int
 
+    :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+    :type prev_sot_token_id: int
+
     :param is_multilingual:
     :type is_multilingual: bool
 
@@ -131,6 +134,28 @@ auto whisper_generation_config_docstring = R"(
                        then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                        Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     :type return_timestamps: bool
+
+    :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+    window. Can be used to steer the model to use particular spellings or styles.
+
+    Example:
+      auto result = pipeline.generate(raw_speech);
+      //  He has gone and gone for good answered Paul Icrom who...
+
+      auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+      //  He has gone and gone for good answered Polychrome who...
+    :type initial_prompt: Optional[str]
+
+    :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+    Can be used to steer the model to use particular spellings or styles.
+
+    Example:
+      auto result = pipeline.generate(raw_speech);
+      //  He has gone and gone for good answered Paul Icrom who...
+
+      auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+      //  He has gone and gone for good answered Polychrome who...
+    :type hotwords: Optional[str]
 )";
 
 auto streamer_base_docstring = R"(
@@ -262,11 +287,14 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
         .def_readwrite("max_initial_timestamp_index", &WhisperGenerationConfig::max_initial_timestamp_index)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
+        .def_readwrite("prev_sot_token_id", &WhisperGenerationConfig::prev_sot_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
         .def_readwrite("language", &WhisperGenerationConfig::language)
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
         .def_readwrite("task", &WhisperGenerationConfig::task)
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
+        .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
+        .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"));
 
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
