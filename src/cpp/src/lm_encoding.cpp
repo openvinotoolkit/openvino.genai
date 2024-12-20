@@ -133,7 +133,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
     stream_generated_tokens();
-    
+
     // "Generation" phase
 
     while (!active_sequence_groups.empty()) {
