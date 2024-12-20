@@ -335,10 +335,10 @@ public:
             }
         }
 
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) {
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
-            const float score_1 = is_beam_search ? s1->get_cumulative_log_probs() : s1->get_beam_search_score(m_sampling_params);
-            const float score_2 = is_beam_search ? s2->get_cumulative_log_probs() : s2->get_beam_search_score(m_sampling_params);
+            const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_probs();
+            const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_probs();
             return score_1 > score_2;
         });
 

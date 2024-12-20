@@ -278,9 +278,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
 
-    std::vector<EncodedGenerationResult> results;
-    results.reserve(all_requests.size());
-
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
@@ -313,6 +310,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
     }
 
+    std::vector<EncodedGenerationResult> results;
+    results.reserve(all_requests.size());
+
     for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
         const auto& request = all_requests[request_id];
         auto sampling_params = request->get_sampling_parameters();
@@ -322,6 +322,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         EncodedGenerationResult result;
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
+        result.m_scores.resize(num_outputs);
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
@@ -331,7 +332,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             if (sampling_params.echo)
                 result.m_generation_ids[i] = request->get_prompt_ids();
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
-            result.m_scores.push_back(score);
+            result.m_scores[i] = score;
         }
 
         result.m_status = generations[request_id]->get_status();
