@@ -217,8 +217,10 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        ov::genai::EncodedResults encoded_result = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                     position_ids, m_embedding);
+        ov::genai::EncodedResults encoded_result;
+        std::optional<int64_t> last_disappeared_token;
+        std::tie(encoded_result, last_disappeared_token) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
+                                                                                             position_ids, m_embedding);
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -228,8 +230,8 @@ public:
         }
         auto decode_end_time = std::chrono::steady_clock::now();
 
-        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH,
-                                                    generation_config.is_beam_search(), m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
+        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], last_disappeared_token, generation_config.is_beam_search(),
+                                                    m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {

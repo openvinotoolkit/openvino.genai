@@ -68,7 +68,7 @@ public:
         return m_kv_history_manager.num_tokens_to_remove_from_kv_cache;
     }
 
-    void update_tokenized_history(const std::vector<int64_t>& encoded_result, bool is_last_token_disappear, bool is_beam_search, size_t last_answer_len) {
+    void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len) {
         if (is_beam_search) {
             m_kv_history_manager.trusted_history_length = m_tokenized_history.size();
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache = last_answer_len;
@@ -76,11 +76,8 @@ public:
             m_kv_history_manager.reset();
         }
 
-        if (is_last_token_disappear)
-            m_last_disappeared_token = encoded_result.back();
-        else
-            m_last_disappeared_token = std::nullopt;
-        
+        m_last_disappeared_token = last_disappeared_token;
+  
         std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
     }
 
@@ -1208,8 +1205,8 @@ std::vector<int64_t> InputsEmbedder::get_tokenized_history() const {
     return m_impl->get_tokenized_history();
 }
 
-void InputsEmbedder::update_tokenized_history(const std::vector<int64_t>& encoded_result, bool is_last_token_disappear, bool is_beam_search, size_t last_answer_len) {
-    return m_impl->update_tokenized_history(encoded_result, is_last_token_disappear, is_beam_search, last_answer_len);
+void InputsEmbedder::update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len) {
+    return m_impl->update_tokenized_history(encoded_result, last_disappeared_token, is_beam_search, last_answer_len);
 }
 
 size_t InputsEmbedder::get_num_tokens_to_remove_from_hist() const {

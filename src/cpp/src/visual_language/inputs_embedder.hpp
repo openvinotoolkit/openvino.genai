@@ -44,7 +44,7 @@ public:
     std::vector<int64_t> get_tokenized_history() const;
 
     // add new results to tokenized history
-    void update_tokenized_history(const std::vector<int64_t>& encoded_result, bool is_last_token_disappear, bool is_beam_search, size_t last_answer_len);
+    void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len);
 
     // returns amount of elements, which need to remove from the end of the KV cache
     size_t get_num_tokens_to_remove_from_hist() const;

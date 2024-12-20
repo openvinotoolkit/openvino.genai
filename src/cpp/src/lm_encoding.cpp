@@ -50,7 +50,7 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 }
 
 
-EncodedResults get_lm_encoded_results(
+std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
     const ov::Tensor& attention_mask,
@@ -107,6 +107,7 @@ EncodedResults get_lm_encoded_results(
     m_llm.set_tensor("beam_idx", beam_idx);
 
     // "Prompt" phase
+
     const auto infer_start = std::chrono::steady_clock::now();
     m_llm.infer();
     const auto infer_end = std::chrono::steady_clock::now();
@@ -210,21 +211,28 @@ EncodedResults get_lm_encoded_results(
     }
 
     for (auto& sequence_group : sequence_groups) {
-        // sequences is sorted by cumulative_log_prob with length_penalty
-        auto outputs = sequence_group->get_finished_sequences();
+        auto sampling_params = sequence_group->get_sampling_parameters();
+        const auto& sequences = sequence_group->get_finished_sequences();
+        size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
 
-        auto num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, outputs.size());
-        for (size_t output_idx = 0; output_idx < num_outputs; ++output_idx) {
-            const auto& output = outputs[output_idx];
-            results.tokens.push_back(output->get_generated_ids());
-            results.scores.push_back(output->get_beam_search_score(sequence_group->get_sampling_parameters()));
+        for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
+            const auto & sequence = sequences[seq_id];
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
+
+            results.tokens.push_back(sequence->get_generated_ids());
+            results.scores.push_back(score);
         }
     }
 
     for (SequenceGroup::Ptr sequence_group : sequence_groups)
         sampler.clear_request_info(sequence_group->get_request_id());
 
-    return results;
+    // it is not saved in KV cache, we need to add it for some cases
+    std::optional<int64_t> last_token_of_best_sequence = std::nullopt;
+    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || sequence_groups[0]->handle_dropped())
+        last_token_of_best_sequence = results.tokens[0].back();
+
+    return {results, last_token_of_best_sequence};
 }
 
 }  // namespace genai

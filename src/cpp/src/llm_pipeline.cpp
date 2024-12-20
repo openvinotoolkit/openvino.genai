@@ -372,8 +372,10 @@ public:
         if (m_sampler.get_seed() != config.rng_seed) {
             m_sampler.set_seed(config.rng_seed);
         }
-        ov::genai::EncodedResults result = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
-                                                                             streamer_ptr, m_sampler, requests, position_ids, std::nullopt);
+
+        ov::genai::EncodedResults result;
+        std::tie(result, m_last_disappeared_token) = ov::genai::get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
+                                                                                       streamer_ptr, m_sampler, requests, position_ids, std::nullopt);
 
         if (is_chat_conversation) {
             // force remove from kv_cache last answer
@@ -382,15 +384,10 @@ public:
                 m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
             }
 
-            // There's only one request in chat mode
-            if (requests[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || requests[0]->handle_dropped())
-                m_last_disappeared_token = result.tokens[0].back();
-            else
-                m_last_disappeared_token = std::nullopt;
-
             std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
         } else {
             reset_kv_state();
+            m_last_disappeared_token = std::nullopt;
         }
 
         if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
