@@ -107,6 +107,55 @@ TEST(TestScheduler, general_test) {
 
 }
 
+TEST(TestScheduler, num_running_seqs) {
+    SchedulerConfig scheduler_config;
+
+    scheduler_config.max_num_seqs = 2;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.num_kv_blocks = 50;
+
+    std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
+    SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
+    auto idx0 = (*sequence_group1)[0]->get_id();
+    SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
+    auto idx1 = (*sequence_group2)[0]->get_id();
+    SequenceGroup::Ptr sequence_group3 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), 4, scheduler_config.enable_prefix_caching);
+    auto idx2 = (*sequence_group3)[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
+                                                                    
+    
+    // schedule 3 sequence groups that use 6 kv blocks 
+    Scheduler scheduler = Scheduler(4, scheduler_config);
+    auto out1 = scheduler.schedule(requests);
+
+    std::vector<uint64_t> ref_ids1 = {0, 1};
+    EXPECT_EQ(out1.m_scheduled_sequence_groups_ids.size(), ref_ids1.size());
+    EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids1);
+
+    // pause generation
+    for (size_t i = 0; i < 2; ++i) {
+        requests[i]->pause_generation(true);
+    }
+
+    // sequence_group3 should be evicted
+    auto out2 = scheduler.schedule(requests);
+
+    std::vector<uint64_t> ref_ids2 = {2};
+    EXPECT_EQ(out2.m_scheduled_sequence_groups_ids.size(), ref_ids2.size());
+    EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids2);
+
+    // finish first sequence
+    for (size_t i = 0; i < requests.size(); ++i) {
+        auto seq = requests[i]->get_running_sequences()[0];
+        seq->set_status(SequenceStatus::FINISHED);
+        scheduler.free_sequence(seq->get_id());
+    }
+    clear_finished_sequences(requests);
+}
+
 SchedulerConfig get_scheduler_config(size_t max_num_batched_tokens,
                                      size_t num_kv_blocks,
                                      bool dynamic_split_fuse,
