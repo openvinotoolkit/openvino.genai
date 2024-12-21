@@ -368,7 +368,7 @@ def run_continuous_batching(
     return output
 
 
-def get_models_list(file_name: str):
+def get_models_list_from_path(file_name: str):
     models = []
     with open(file_name) as f:
         for model_name in f:
