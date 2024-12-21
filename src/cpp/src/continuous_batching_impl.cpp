@@ -32,6 +32,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    m_core = std::make_shared<Core>(core);
 
     init(model, scheduler_config, compile_properties, device_config, core);
 }
@@ -53,11 +54,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
-    m_cache_manager = std::make_shared<CacheManager>(device_config, core);
-    for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
-        infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
-        infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
-    }
+    m_cache_manager = std::make_shared<CacheManager>(device_config, infer_request, core);
 
     SchedulerConfig updated_config = scheduler_config;
     // update KV blocks number in scheduler config
@@ -71,8 +68,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
     }
-
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), m_cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     // and finally create model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
@@ -82,6 +78,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    
+    m_device_config = std::make_shared<DeviceConfig>(device_config);
 };
 
 
@@ -133,7 +131,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     _pull_awaiting_requests();
 
     m_pipeline_metrics.requests = m_requests.size();
-
     Scheduler::Output scheduler_output;
     {
         static ManualTimer timer("scheduling");

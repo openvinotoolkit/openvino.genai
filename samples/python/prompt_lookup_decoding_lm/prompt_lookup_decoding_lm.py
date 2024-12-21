@@ -18,11 +18,8 @@ def main():
     args = parser.parse_args()
 
     device = 'CPU'
-    scheduler_config = openvino_genai.SchedulerConfig()
-    # cache params
-    scheduler_config.cache_size = 2
 
-    pipe = openvino_genai.LLMPipeline(args.model_dir, device, scheduler_config=scheduler_config, prompt_lookup=True)
+    pipe = openvino_genai.LLMPipeline(args.model_dir, device, prompt_lookup=True)
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100

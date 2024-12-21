@@ -10,11 +10,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-inline ov::PartialShape to_partial_with_dyn_0_dim(const ov::Shape& static_shape) {
-    ov::PartialShape partial_shape = static_shape;
-    partial_shape[0] = ov::Dimension::dynamic();
-    return partial_shape;
-}
 
 size_t get_hidden_size(const std::shared_ptr<ov::Model> model) {
     const auto& parameters = model->get_parameters();
@@ -65,9 +60,8 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
     for (auto it_k = key_cache_params.begin(), it_v = value_cache_params.begin(); it_k != key_cache_params.end();++it_k, ++it_v) {
         it_k->second->set_element_type(device_config.get_cache_precision());
         it_v->second->set_element_type(device_config.get_cache_precision());
-        // TODO: CVS-145270
-        it_k->second->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_key_cache_shape()));
-        it_v->second->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_value_cache_shape()));
+        it_k->second->set_partial_shape(device_config.get_key_cache_shape());
+        it_v->second->set_partial_shape(device_config.get_value_cache_shape());
     }
 
     model->validate_nodes_and_infer_types();
