@@ -546,7 +546,8 @@ public:
         tokenizer,
         scheduler_config,
         device,
-        plugin_config} {
+        plugin_config
+    } {
         m_generation_config = m_impl.get_config();
     }
 
@@ -577,7 +578,8 @@ public:
         m_tokenizer,
         scheduler_config,
         device,
-        plugin_config} {
+        plugin_config
+    } {
         m_generation_config = m_impl.get_config();
     }
 
@@ -705,6 +707,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
+    OPENVINO_THROW("Not supported");
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     auto stop_time = std::chrono::steady_clock::now();
@@ -723,6 +726,17 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, plugin_config);
     } else if (device == "NPU") {
         m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
+    } else if (true) {
+        SchedulerConfig scheduler_config;
+        scheduler_config.cache_size = 1;
+        scheduler_config.enable_prefix_caching = false;
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
+            models_path,
+            tokenizer,
+            scheduler_config,
+            device,
+            properties
+        );
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
@@ -742,6 +756,16 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, plugin_config);
     } else if (device == "NPU") {
         m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
+    } else if (true) {
+        SchedulerConfig scheduler_config;
+        scheduler_config.cache_size = 1;
+        scheduler_config.enable_prefix_caching = false;
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
+            models_path,
+            scheduler_config,
+            device,
+            config
+        );
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, config);
     }
