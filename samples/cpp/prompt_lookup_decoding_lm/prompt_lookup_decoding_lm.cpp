@@ -6,19 +6,20 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (3 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
+    if (4 != argc) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>' <GEN_LEN>");
     }
 
+    std::string model_path = argv[1];
+    std::string prompt = argv[2];
+    size_t gen_len = std::stoi(argv[3]);
+
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 100;
+    config.max_new_tokens = gen_len;
     // Define candidates number for candidate generation
     config.num_assistant_tokens = 5;
     // Define max_ngram_size
     config.max_ngram_size = 3;
-
-    std::string model_path = argv[1];
-    std::string prompt = argv[2];
     
     std::string device = "CPU";
 
