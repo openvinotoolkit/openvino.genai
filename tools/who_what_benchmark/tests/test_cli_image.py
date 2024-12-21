@@ -20,6 +20,8 @@ def run_wwb(args):
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "image-to-image", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "openvino"),
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "text-to-image", "hf"),
@@ -65,6 +67,7 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
+        ("echarlaix/tiny-random-stable-diffusion-xl", "image-to-image"),
         ("echarlaix/tiny-random-stable-diffusion-xl", "text-to-image"),
     ],
 )
@@ -81,7 +84,7 @@ def test_image_model_genai(model_id, model_type):
 
         wwb_args = [
             "--base-model",
-            MODEL_PATH,
+            model_id,
             "--num-samples",
             "1",
             "--gt-data",
@@ -90,6 +93,7 @@ def test_image_model_genai(model_id, model_type):
             "CPU",
             "--model-type",
             model_type,
+            "--hf",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -131,6 +135,7 @@ def test_image_model_genai(model_id, model_type):
             model_type,
             "--output",
             output_dir,
+            "--genai",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
