@@ -3,6 +3,9 @@
 
 #include "llm_pipeline_static.hpp"
 
+#include "logit_processor.hpp"
+#include "sampler.hpp"
+
 #include <fstream>
 #include <regex>
 
@@ -937,6 +940,21 @@ DecodedResults StaticLLMPipeline::generate(
     return decoded_results;
 }
 
+int64_t sample_next_token(const ov::Tensor& logits,
+                          const GenerationConfig& config,
+                          LogitProcessor& logit_processor) {
+    Logits logit_vector(logits.data<float>(), logits.get_shape()[2]);
+    logit_processor.apply(logit_vector);
+    int64_t last_token = -1;
+    if (config.is_greedy_decoding()) {
+        last_token = ov::genai::greedy_sample(logit_vector, config.logprobs).m_index;
+    } else {
+        OPENVINO_ASSERT(false);
+    }
+    logit_processor.register_new_generated_token(last_token);
+    return last_token;
+}
+
 EncodedResults StaticLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
@@ -973,9 +991,14 @@ EncodedResults StaticLLMPipeline::generate(
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
 
-    if (!config.is_greedy_decoding()) {
-        OPENVINO_THROW("Currently only greedy decoding is supported");
+    if (!config.is_greedy_decoding() && !config.is_multinomial()) {
+        OPENVINO_THROW("Currently only greedy and multinomial decoding are supported");
     }
+
+    std::vector<int64_t> input_ids_vec;
+    input_ids_vec.reserve(input_ids.get_size());
+    std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), std::back_inserter(input_ids_vec));
+    LogitProcessor logit_processor(config, input_ids_vec);
 
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
@@ -1015,7 +1038,8 @@ EncodedResults StaticLLMPipeline::generate(
 
     // NB: Now there are prompt_len tokens in KV-cache
     m_kvcache_desc.num_stored_tokens += static_cast<uint32_t>(prompt_len);
-    int64_t last_token = utils::argmax(m_prefill_request.get_tensor("logits"), 0);
+
+    auto last_token = sample_next_token(m_prefill_request.get_tensor("logits"), config, logit_processor);
     results.tokens[0].push_back(last_token);
     if (streamer_ptr && streamer_ptr->put(last_token)) {
         return results;
@@ -1069,7 +1093,7 @@ EncodedResults StaticLLMPipeline::generate(
         m_kvcache_request.infer();
         m_kvcache_desc.num_stored_tokens += 1;
 
-        last_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
+        last_token = sample_next_token(m_kvcache_request.get_tensor("logits"), config, logit_processor);
         results.tokens[0].push_back(last_token);
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());

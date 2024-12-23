@@ -67,6 +67,41 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
+Token greedy_sample(const Logits& logits, size_t top_logprobs) {
+    // For greedy sampling we do not expect sorting or shrinking considered tokens
+    // so we can operate directly on the data buffer
+    size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
+    std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
+    std::vector<size_t> top_indexes(m, 0);
+
+    for (size_t i = 0; i < logits.m_size; ++i) {
+        if (logits.m_data[i] > top_values.back()) {
+            top_values.back() = logits.m_data[i];
+            top_indexes.back() = i;
+
+            for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
+                std::swap(top_values[j], top_values[j - 1]);
+                std::swap(top_indexes[j], top_indexes[j - 1]);
+            }
+        }
+    }
+
+    size_t max_index = top_indexes.front();
+    float max_value = 0.0;
+
+    if (top_logprobs) {
+        // apply log softmax to max value
+        max_value = top_values.front();
+        float log_sum = std::log(std::accumulate(
+            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
+                return accumulated + std::exp(to_add - max_value);
+        }));
+        max_value = -log_sum;
+    }
+
+    return Token(max_value, max_index);
+}
+
 std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
     std::vector<int64_t> all_tokens = prefix_tokens;
     all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
@@ -493,38 +528,7 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
 }
 
 Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
-    // For greedy sampling we do not expect sorting or shrinking considered tokens
-    // so we can operate directly on the data buffer
-    size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
-    std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
-    std::vector<size_t> top_indexes(m, 0);
-
-    for (size_t i = 0; i < logits.m_size; ++i) {
-        if (logits.m_data[i] > top_values.back()) {
-            top_values.back() = logits.m_data[i];
-            top_indexes.back() = i;
-
-            for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
-                std::swap(top_values[j], top_values[j - 1]);
-                std::swap(top_indexes[j], top_indexes[j - 1]);
-            }
-        }
-    }
-
-    size_t max_index = top_indexes.front();
-    float max_value = 0.0;
-
-    if (top_logprobs) {
-        // apply log softmax to max value
-        max_value = top_values.front();
-        float log_sum = std::log(std::accumulate(
-            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
-                return accumulated + std::exp(to_add - max_value);
-        }));
-        max_value = -log_sum;
-    }
-
-    return Token(max_value, max_index);
+    return greedy_sample(logits, top_logprobs);
 }
 
 std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
