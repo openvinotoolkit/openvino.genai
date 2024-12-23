@@ -131,6 +131,7 @@ def create_image_gen_model(model_path, device, **kwargs):
             model_class = PT_MODEL_CLASSES_MAPPING[model_type]
             start = time.perf_counter()
             pipe = model_class.from_pretrained(model_path)
+            pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             from_pretrain_time = end - start
         else:
