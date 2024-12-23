@@ -11,7 +11,7 @@ describe('module', async () => {
   let pipeline = null;
 
   await before(async () => {
-    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
+    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
   });
@@ -33,7 +33,7 @@ describe('module', async () => {
 
 describe('corner cases', async () => {
   it('should throw an error if pipeline is already initialized', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
 
     await assert.rejects(
       async () => await pipeline.init(),
@@ -45,7 +45,7 @@ describe('corner cases', async () => {
   });
 
   it('should throw an error if chat is already started', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
 
@@ -59,7 +59,7 @@ describe('corner cases', async () => {
   });
 
   it('should throw an error if chat is not started', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
 
     await assert.rejects(
       () => pipeline.finishChat(),
@@ -75,7 +75,7 @@ describe('generation parameters validation', () => {
   let pipeline = null;
 
   before(async () => {
-    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
+    pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
   });
@@ -95,7 +95,7 @@ describe('generation parameters validation', () => {
   });
 
   it('should throw an error if generationCallback is not a function', async () => {
-    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'AUTO');
+    const pipeline = await Pipeline.LLMPipeline(MODEL_PATH, 'CPU');
 
     await pipeline.startChat();
 
