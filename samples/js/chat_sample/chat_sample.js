@@ -12,7 +12,7 @@ async function main() {
 
   if (!MODEL_PATH) {
     console.error('Please specify path to model directory\n'
-                  + 'Run command must be: `node app.js *path_to_model_dir*`');
+                  + 'Run command must be: `node chat_sample.js *path_to_model_dir*`');
     process.exit(1);
   }
 
