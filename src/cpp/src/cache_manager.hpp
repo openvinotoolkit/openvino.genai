@@ -131,14 +131,15 @@ public:
                 ov::Coordinate end_key(m_key_cache[decoder_layer_id].get_shape());
                 ov::Coordinate end_value(m_value_cache[decoder_layer_id].get_shape());
 
-                ov::Tensor key_cache = remote_context.create_tensor(m_device_config.get_cache_precision(), new_key_cache_shape);
-                ov::Tensor value_cache = remote_context.create_tensor(m_device_config.get_cache_precision(), new_value_cache_shape);
+                ov::RemoteTensor key_cache = remote_context.create_tensor(m_device_config.get_cache_precision(), new_key_cache_shape);
+                ov::RemoteTensor value_cache = remote_context.create_tensor(m_device_config.get_cache_precision(), new_value_cache_shape);
                 
                 // copy current cache data
-                ov::Tensor dst_key_roi(key_cache, start_key, end_key);
-                ov::Tensor dst_value_roi(value_cache, start_value, end_value);
-                m_key_cache[decoder_layer_id].copy_to(dst_key_roi);
-                m_value_cache[decoder_layer_id].copy_to(dst_value_roi);
+                ov::RemoteTensor dst_key_roi(key_cache, start_key, end_key);
+                ov::RemoteTensor dst_value_roi(value_cache, start_value, end_value);
+
+                dst_key_roi.copy_from(m_key_cache[decoder_layer_id]);
+                dst_value_roi.copy_from(m_value_cache[decoder_layer_id]);
 
                 // set new cache tensors
                 m_key_cache[decoder_layer_id] = key_cache;
