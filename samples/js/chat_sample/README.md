@@ -16,10 +16,9 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 
 ## Run:
 
-Create `bin` folder in [../../../src/js](../../../src/js).
-Compile GenAI JavaScript bindings archive first. Put its content into `bin` directory.
+Compile GenAI JavaScript bindings archive first using the instructions in [../../../src/js/README.md](../../../src/js/README.md#build-bindings).
 
-Run `npm install` in current folder and then run a sample:
+Run `npm install` in current folder and then run the sample:
 
 `node chat_sample.js TinyLlama-1.1B-Chat-v1.0`
 
