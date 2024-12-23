@@ -942,13 +942,22 @@ DecodedResults StaticLLMPipeline::generate(
 
 int64_t sample_next_token(const ov::Tensor& logits,
                           const GenerationConfig& config,
+                          std::mt19937& rng_engine,
                           LogitProcessor& logit_processor) {
-    Logits logit_vector(logits.data<float>(), logits.get_shape()[2]);
+    const size_t vocab_size = logits.get_shape()[2];
+    const size_t seq_len_size = logits.get_shape()[1];
+    const size_t offset = (seq_len_size - 1) * vocab_size;
+    // NB: Slice out and take probabilities only for the last token
+    Logits logit_vector(logits.data<float>() + offset, vocab_size);
     logit_processor.apply(logit_vector);
     int64_t last_token = -1;
     if (config.is_greedy_decoding()) {
         last_token = ov::genai::greedy_sample(logit_vector, config.logprobs).m_index;
+    } else if (config.is_multinomial()) {
+        last_token = ov::genai::multinomial_sample(logit_vector, 1u, rng_engine)[0].m_index;
     } else {
+        // NB: Only greedy and multinomial supported,
+        // the appropriate check is performed before
         OPENVINO_ASSERT(false);
     }
     logit_processor.register_new_generated_token(last_token);
@@ -1039,7 +1048,8 @@ EncodedResults StaticLLMPipeline::generate(
     // NB: Now there are prompt_len tokens in KV-cache
     m_kvcache_desc.num_stored_tokens += static_cast<uint32_t>(prompt_len);
 
-    auto last_token = sample_next_token(m_prefill_request.get_tensor("logits"), config, logit_processor);
+    auto last_token = sample_next_token(
+        m_prefill_request.get_tensor("logits"), config, m_rng_engine, logit_processor);
     results.tokens[0].push_back(last_token);
     if (streamer_ptr && streamer_ptr->put(last_token)) {
         return results;
@@ -1093,7 +1103,8 @@ EncodedResults StaticLLMPipeline::generate(
         m_kvcache_request.infer();
         m_kvcache_desc.num_stored_tokens += 1;
 
-        last_token = sample_next_token(m_kvcache_request.get_tensor("logits"), config, logit_processor);
+        last_token = sample_next_token(
+            m_kvcache_request.get_tensor("logits"), config, m_rng_engine, logit_processor);
         results.tokens[0].push_back(last_token);
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());

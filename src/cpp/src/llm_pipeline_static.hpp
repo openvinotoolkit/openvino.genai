@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <random>
 
 #include "llm_pipeline_base.hpp"
 
@@ -83,6 +84,9 @@ private:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
+
+    // NB: For multinomial sampling
+    std::mt19937 m_rng_engine;
 };
 
 }  // namespace genai

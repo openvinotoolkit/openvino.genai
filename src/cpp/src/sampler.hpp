@@ -31,7 +31,12 @@ inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t
 }
 
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
+
 Token greedy_sample(const Logits& logits, size_t top_logprobs);
+
+std::vector<Token> multinomial_sample(const Logits& logits,
+                                      size_t num_tokens_per_sequence,
+                                      std::mt19937& rng_engine);
 
 struct SamplerOutput {
     // IDs of sequences that need to be dropped

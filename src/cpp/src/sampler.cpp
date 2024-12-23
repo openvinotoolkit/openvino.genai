@@ -102,6 +102,36 @@ Token greedy_sample(const Logits& logits, size_t top_logprobs) {
     return Token(max_value, max_index);
 }
 
+std::vector<Token> multinomial_sample(const Logits& logits,
+                                      size_t num_tokens_per_sequence,
+                                      std::mt19937& rng_engine) {
+    // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
+    std::vector<float> multinomial_weights;
+    multinomial_weights.reserve(logits.m_size);
+    if (logits.is_vector_initialized())
+        for (auto& logit: logits.m_vector) multinomial_weights.emplace_back(logit.m_log_prob);
+    else
+        multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
+
+    // std::discrete_distribution returns corrupted results when applied to log probabilities
+    // which result returning NAN only logprobs.
+    // so log() is applied after this line
+    auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
+
+    std::vector<Token> out_tokens;
+    for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+        size_t element_to_pick = dist(rng_engine);
+        if (logits.is_vector_initialized()) {
+            auto logit = logits.m_vector[element_to_pick];
+            logit.m_log_prob = std::log(logit.m_log_prob);
+            out_tokens.push_back(logit);
+        }
+        else
+            out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
+    }
+    return out_tokens;
+}
+
 std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
     std::vector<int64_t> all_tokens = prefix_tokens;
     all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
@@ -532,31 +562,7 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
 }
 
 std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
-    // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
-    std::vector<float> multinomial_weights;
-    multinomial_weights.reserve(logits.m_size);
-    if (logits.is_vector_initialized())
-        for (auto& logit: logits.m_vector) multinomial_weights.emplace_back(logit.m_log_prob);
-    else
-        multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
-
-    // std::discrete_distribution returns corrupted results when applied to log probabilities
-    // which result returning NAN only logprobs.
-    // so log() is applied after this line
-    auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-
-    std::vector<Token> out_tokens;
-    for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-        size_t element_to_pick = dist(rng_engine);
-        if (logits.is_vector_initialized()) {
-            auto logit = logits.m_vector[element_to_pick];
-            logit.m_log_prob = std::log(logit.m_log_prob);
-            out_tokens.push_back(logit);
-        }
-        else
-            out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
-    }
-    return out_tokens;
+    return multinomial_sample(logits, num_tokens_per_sequence, rng_engine);
 }
 
 std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequence_group) {
@@ -763,7 +769,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
-
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
