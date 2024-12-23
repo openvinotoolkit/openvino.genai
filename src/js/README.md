@@ -1,4 +1,4 @@
-# OpenVINO™ GenAI Node.js bindings (preview)
+we# OpenVINO™ GenAI Node.js bindings (preview)
 
 ## DISCLAIMER
 
@@ -35,26 +35,22 @@ OpenVINO GenAI Node.js bindings can be built as an extra module during the OpenV
    cmake --build ./build --target package -j
    ```
 
-1. In `build` folder you will find `genai_nodejs_bindings.tar.gz`.
-   Create `bin` directory by path `src/js/` and unpack archive content to it.
+1. Put Node.js bindings into npm package `bin` directory and install dependencies:
    ```sh
-   tar -xzf genai_nodejs_bindings.tar.gz
+   mkdir ./src/js/bin/
+   tar -xvf ./build/genai_nodejs_bindings.tar.gz --directory ./src/js/bin/
+   cd ./src/js/
+   npm install
    ```
 1. Run tests to be sure that everything works:
-   `npm test`
-
-### Perform Test Run
-
-- To run sample you should have prepared model.
-  Use this instruction [to download model](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/chat_sample/README.md#download-and-convert-the-model-and-tokenizers)
-- Go to [samples/js/chat_sample/](../../samples/js/chat_sample/)
-- Read [README.md](../../samples/js/chat_sample/README.md) and follow steps there
-  to run **chat sample**.
+   ```sh
+   npm test
+   ```
 
 ### Using as npm Dependency
 
-To use this package locally use `npm link` in this directory
-and `npm link genai-node` in the folder where you want add this package as dependency
+To use this package locally use `npm link` in `src/js/` directory
+and `npm link genai-node` in the folder where you want to add this package as a dependency
 
 To extract this package and use it as distributed npm package run `npm package`.
 This command creates archive that you may use in your projects.
