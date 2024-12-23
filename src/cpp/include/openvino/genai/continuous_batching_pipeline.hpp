@@ -55,10 +55,14 @@ protected:
     class ImplInterface;
     class ContinuousBatchingImpl;
     class ContinuousBatchingForSpeculativeDecodingImpl;
+    class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
+    class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
+    friend class ContinuousBatchingForPromptLookupImpl;
     friend class SpeculativeDecodingImpl;
+    friend class PromptLookupImpl;
 
     std::shared_ptr<ImplInterface> m_impl;
 

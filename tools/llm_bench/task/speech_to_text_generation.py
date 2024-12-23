@@ -57,7 +57,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             - np.array(perf_metrics.raw_metrics.m_new_token_times[:-1])
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
-        tm_infer_list = None
+        tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
         result_text = result_text.texts[0]
     else:
         start = time.perf_counter()
