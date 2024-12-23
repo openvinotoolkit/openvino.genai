@@ -526,12 +526,8 @@ jobs:
         run: npm run test_setup
         working-directory: ${{ env.JS_SRC_DIR }}
 
-      - name: Link genai-node package
-        run: npm link
-        working-directory: ${{ env.JS_SRC_DIR }}
-
-      - name: Install genai-node package to samples
-        run: npm link genai-node
+      - name: Install genai-node samples dependencies
+        run: npm install
         working-directory: ${{ env.JS_SAMPLES_DIR }}
 
       - name: Run tests
