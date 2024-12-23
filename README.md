@@ -336,7 +336,7 @@ NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling
 #Download and convert to OpenVINO whisper-base model
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 
-#Download, convert and apply int8 quantization to whisper-base model
+#Download, convert and apply int8 static quantization to whisper-base model
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base \
 --quant-mode int8 --dataset librispeech --num-samples 32 whisper-base-int8
 ```
