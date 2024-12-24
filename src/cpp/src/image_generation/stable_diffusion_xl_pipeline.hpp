@@ -320,7 +320,7 @@ private:
             } else if (m_pipeline_type == PipelineType::INPAINTING) {
                 m_generation_config.guidance_scale = 7.5f;
                 m_generation_config.num_inference_steps = 50;
-                m_generation_config.strength == 0.9999f;
+                m_generation_config.strength = 0.9999f;
             }
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
