@@ -60,7 +60,7 @@ def collects_input_args(image_param, model_type, model_name, infer_count=None, h
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["infer_count"], args.get("height"), args.get("width"))
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"], args.get("height"), args.get("width"))
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
