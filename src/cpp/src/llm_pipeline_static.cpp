@@ -410,7 +410,8 @@ ov::genai::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& 
     if (config_data.contains("_name_or_path")) {
         desc.name_or_path = config_data["_name_or_path"].get<std::string>();
     }
-    desc.num_key_value_heads = config_data["num_key_value_heads"].get<int>();
+    desc.num_key_value_heads = config_data.contains("num_key_value_heads")
+        ? config_data["num_key_value_heads"].get<int>() : -1;
     return desc;
 }
 
@@ -1137,6 +1138,11 @@ EncodedResults StaticLLMPipeline::generate(
             m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
+
+    if (streamer_ptr) {
+        streamer_ptr->end();
+    }
+
     auto stop_time = std::chrono::steady_clock::now();
     // If is called without tokenization then that stat will not be reported.
     auto& metrics = results.perf_metrics;
