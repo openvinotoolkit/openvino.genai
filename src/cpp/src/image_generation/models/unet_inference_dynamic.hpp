@@ -12,11 +12,8 @@ namespace genai {
 
 
 class UNet2DConditionModel::UNetInferenceDynamic : public UNet2DConditionModel::UNetInference {
-
 public:
-
-    virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override
-    {
+    virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
         ov::Core core = utils::singleton_core();
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
@@ -24,20 +21,17 @@ public:
         m_request = compiled_model.create_infer_request();
     }
 
-    virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override
-    {
+    virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first");
         m_request.set_tensor(tensor_name, encoder_hidden_states);
     }
 
-    virtual void set_adapters(AdapterController &adapter_controller, const AdapterConfig& adapters) override
-    {
+    virtual void set_adapters(AdapterController &adapter_controller, const AdapterConfig& adapters) override {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first");
         adapter_controller.apply(m_request, adapters);
     }
 
-    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override
-    {
+    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first. Cannot infer non-compiled model");
 
         m_request.set_tensor("sample", sample);
@@ -49,10 +43,8 @@ public:
     }
 
 private:
-
     ov::InferRequest m_request;
 };
-
 
 }  // namespace genai
 }  // namespace ov

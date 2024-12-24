@@ -28,6 +28,21 @@ enum class GenerationChatInputsType {
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
 };
 
+struct HistoryRemoveManager
+{
+    size_t num_tokens_to_remove_from_kv_cache = 0;
+    size_t trusted_history_length = 0;
+
+    bool does_kv_cache_need_to_update() {
+        return (trusted_history_length > 0 || num_tokens_to_remove_from_kv_cache > 0);
+    }
+
+    void reset() {
+        num_tokens_to_remove_from_kv_cache = 0;
+        trusted_history_length = 0;
+    }
+};
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);

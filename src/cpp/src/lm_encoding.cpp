@@ -9,12 +9,11 @@
 #include <regex>
 #include <vector>
 
+#include "utils.hpp"
+#include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
-#include "debug_utils.hpp"
-
-#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -51,7 +50,7 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 }
 
 
-std::pair<EncodedResults, int32_t> get_lm_encoded_results(
+std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
     const ov::Tensor& attention_mask,
@@ -59,8 +58,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
-    std::optional<EmbeddingsModel> m_embedding,
-    std::optional<int32_t> selected_beam_idx
+    std::optional<EmbeddingsModel> m_embedding
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -105,7 +103,7 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         m_llm.set_tensor("position_ids", *position_ids);
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
-    std::fill_n(beam_idx.data<int32_t>(), batch_size, selected_beam_idx.has_value() ? *selected_beam_idx : 0);
+    std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
     m_llm.set_tensor("beam_idx", beam_idx);
 
     // "Prompt" phase
@@ -171,13 +169,13 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
 
-                // for different sequences iteration of beams started from 0, but we collect it to one input_ids#
+                // for different sequences iteration of beams started from 0, but we collect it to one input_ids
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
             }
         }
 
-        for (size_t i = 0; i < sequence_groups.size(); i++) {
-            beam_offets[sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (sequence_groups.at(i - 1)->num_running_seqs() + beam_offets[i - 1]);
+        for (size_t i = 0; i < active_sequence_groups.size(); i++) {
+            beam_offets[active_sequence_groups.at(i)->get_request_id()] = i == 0 ? 0 : (active_sequence_groups.at(i - 1)->num_running_seqs() + beam_offets[i - 1]);
         }
 
         if (m_embedding.has_value()) {
@@ -212,15 +210,10 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
         streamer_ptr->end();
     }
 
-    // Collect results
-
-    size_t next_selected_beam = 0;
-    for (size_t i = 0; i < sequence_groups.size(); i++) {
-        auto request = sequence_groups[i];
-        std::vector<GenerationOutput> generation_outputs;
-        auto sampling_params = request->get_sampling_parameters();
-        const auto& sequences = request->get_finished_sequences();
-        size_t num_outputs = std::min(request->get_sampling_parameters().num_return_sequences, sequences.size());
+    for (auto& sequence_group : sequence_groups) {
+        auto sampling_params = sequence_group->get_sampling_parameters();
+        const auto& sequences = sequence_group->get_finished_sequences();
+        size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
@@ -229,13 +222,17 @@ std::pair<EncodedResults, int32_t> get_lm_encoded_results(
             results.tokens.push_back(sequence->get_generated_ids());
             results.scores.push_back(score);
         }
-        // next_selected_beam = sampler.last_selected_beam(request);
     }
 
     for (SequenceGroup::Ptr sequence_group : sequence_groups)
         sampler.clear_request_info(sequence_group->get_request_id());
 
-    return {results, next_selected_beam};
+    // it is not saved in KV cache, we need to add it for some cases
+    std::optional<int64_t> last_token_of_best_sequence = std::nullopt;
+    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || sequence_groups[0]->handle_dropped())
+        last_token_of_best_sequence = results.tokens[0].back();
+
+    return {results, last_token_of_best_sequence};
 }
 
 }  // namespace genai
