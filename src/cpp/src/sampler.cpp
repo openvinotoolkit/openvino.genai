@@ -771,6 +771,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
