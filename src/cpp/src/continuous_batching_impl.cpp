@@ -32,7 +32,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
-    m_core = std::make_shared<Core>(core);
 
     init(model, scheduler_config, compile_properties, device_config, core);
 }
@@ -78,8 +77,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-    
-    m_device_config = std::make_shared<DeviceConfig>(device_config);
 };
 
 

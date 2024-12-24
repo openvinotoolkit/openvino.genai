@@ -59,7 +59,6 @@ TEST(TestCacheManager, test_cache_size_param) {
     ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
-    OPENVINO_ASSERT(block_manager.block_allocator_initialized());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
     
     ASSERT_EQ(get_total_allocated_bytes(cache_manager, num_decoder_layers), 2146959360);
@@ -82,7 +81,6 @@ TEST(TestCacheManager, test_kv_blocks_param) {
     ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
-    OPENVINO_ASSERT(block_manager.block_allocator_initialized());
     OPENVINO_ASSERT(block_manager.get_total_number_of_kv_blocks(), scheduler_config.num_kv_blocks);
 }
 
@@ -107,11 +105,9 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
-    OPENVINO_ASSERT(!block_manager.block_allocator_initialized());
 
     // check initial cache allocation
     block_manager.increase_kv_blocks_number(100);
-    OPENVINO_ASSERT(block_manager.block_allocator_initialized());
     OPENVINO_ASSERT(block_manager.get_total_number_of_kv_blocks(), 100);
 
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
@@ -120,7 +116,6 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
 
     // check cache increase
     block_manager.increase_kv_blocks_number(200);
-    OPENVINO_ASSERT(block_manager.block_allocator_initialized());
     OPENVINO_ASSERT(block_manager.get_total_number_of_kv_blocks(), 200);
 
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());

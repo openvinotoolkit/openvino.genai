@@ -14,7 +14,6 @@ protected:
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
-    std::shared_ptr<DeviceConfig> m_device_config;
 
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
@@ -30,14 +29,6 @@ protected:
     
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
-
-    // dynamic kv-cache allocation params
-    const size_t m_kv_blocks_initial_multiplier = 2;
-    const float m_cache_growth_factor = 2; // commmon values 1.5 or 2
-    const float m_percentage_threshold_for_cache_increase = 100;
-
-    bool m_dynamic_memory_allocation = false;
-    std::shared_ptr<Core> m_core;
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;

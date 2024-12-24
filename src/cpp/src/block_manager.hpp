@@ -195,7 +195,6 @@ class BlockAllocator {
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
-    bool m_initialized = false;
 public:
     /**
      * Constructs the BlockAllocator.
@@ -216,7 +215,9 @@ public:
                     per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
                 }
             }
-            m_initialized = true;
+        }
+        else {
+            m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
@@ -227,10 +228,6 @@ public:
 
     void increase_kv_blocks_number(size_t new_kv_blocks_count) {
         OPENVINO_ASSERT(new_kv_blocks_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
-        if (!m_initialized) {
-            m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
-            m_initialized = true;
-        }
         size_t added_blocks = new_kv_blocks_count - m_total_num_blocks;
         for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
             m_free_blocks_num[idx] += added_blocks;
@@ -243,9 +240,6 @@ public:
         m_total_num_blocks = new_kv_blocks_count;
     }
 
-    bool is_inilialized() const {
-        return m_initialized;
-    }
 
     /**
      * Returns the number of free blocks for a given layer.
@@ -663,10 +657,6 @@ public:
      */
     size_t num_free_blocks() const {
         return m_allocator.num_free_blocks(0); // relying on the invariant that all layers have identical number of blocks
-    }
-
-    bool block_allocator_initialized() const {
-        return m_allocator.is_inilialized();
     }
 
     /**

@@ -51,17 +51,12 @@ public:
             m_config(config),
             m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers) {
         
-        // allocate kv-cache if the number of kv blocks is determined,
-        // otherwise cache will be allocated dynamically
-        if (m_block_manager.block_allocator_initialized()) {
-            m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
-        }
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
-        if (!m_block_manager.block_allocator_initialized()) {
+        if (m_block_manager.get_total_number_of_kv_blocks() == 0) {
             _initialize_cache(sequence_groups);
         }
 
@@ -83,6 +78,7 @@ public:
             }
         }
 
+        m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager.get_used_percentage();
         return scheduler_output;
@@ -255,8 +251,10 @@ private:
                 size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
                        required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
                 size_t num_required_blocks = (required_slots + block_size - 1) / block_size, num_free_blocks = m_block_manager.num_free_blocks();
-                if (num_free_blocks == 0) {
-                    _try_increase_cache();
+                while (num_required_blocks > num_free_blocks) {
+                    if (!_try_increase_cache()) {
+                        break;
+                    }
                 }
                 size_t num_scheduled_blocks = std::min(num_required_blocks, num_free_blocks);
                 // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
@@ -310,15 +308,18 @@ private:
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
+                while (!m_block_manager.can_append_slots(sequence_group)){
+                    if (!_try_increase_cache()) {
+                        break;
+                    }
+                }
+
                 _apply_preemption(sequence_group_id, sequence_groups);
 
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
-                if (!m_block_manager.can_append_slots(sequence_group)){
-                    _try_increase_cache();
-                    if (!m_block_manager.can_append_slots(sequence_group)) {
-                        sequence_group->clear_scheduled_tokens();
-                        continue;
-                    }
+                if (!m_block_manager.can_append_slots(sequence_group)) {
+                    sequence_group->clear_scheduled_tokens();
+                    continue;
                 }
 
                 // allocate new slots
@@ -394,11 +395,13 @@ private:
                 // apply KV cache limitations
                 size_t block_size = get_block_size();
                 const size_t num_required_blocks = (sequence_len + block_size - 1) / block_size;
-                if (!m_block_manager.can_allocate_blocks(num_required_blocks)) {
-                    _try_increase_cache();
-                    if (!m_block_manager.can_allocate_blocks(num_required_blocks))
+                while (!m_block_manager.can_allocate_blocks(num_required_blocks)){
+                    if (!_try_increase_cache()) {
                         break;
+                    }
                 }
+                if (!m_block_manager.can_allocate_blocks(num_required_blocks))
+                    break;
 
                 // add scheduling information
                 {
@@ -465,25 +468,26 @@ private:
     }
 
     void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
-        size_t seq_length_sum = 0;
+        size_t blocks_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             auto gen_config = sequence_groups[idx]->get_sampling_parameters();
             seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + gen_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len()));
-            if (sequence_groups[idx]->get_sampling_parameters().is_beam_search()) {
-
-                seq_length *= sequence_groups[idx]->get_sampling_parameters().num_beams;
+            size_t blocks_num = std::ceil((float)seq_length / m_block_manager.get_block_size());
+            if (gen_config.do_sample && gen_config.is_beam_search()) {
+                blocks_num *= gen_config.num_beams;
+            } else if (gen_config.do_sample && gen_config.is_multinomial()) {
+                blocks_num *= gen_config.num_return_sequences;
             }
-            seq_length_sum += seq_length;
+            blocks_sum  += blocks_num;
         }
-        m_block_manager.increase_kv_blocks_number(seq_length_sum);
-        m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
+        m_block_manager.increase_kv_blocks_number(blocks_sum);
         m_dynamic_memory_allocation = true;
     }
 
-    void _try_increase_cache() {
+    bool _try_increase_cache() {
         if (!m_dynamic_memory_allocation) {
-            return;
+            return false;
         }
         auto device_config = m_cache_manager->get_device_config();
         auto device = device_config->get_device();
@@ -503,9 +507,12 @@ private:
                 if (possible_blocks_to_add > 0) {
                     m_block_manager.increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
                 }
+                else {
+                    return false;
+                }
             }
         }
-        m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
+        return true;
     }
 
 };
