@@ -6,6 +6,7 @@ from openvino.runtime import Core
 import pytest
 import sys
 from ov_genai_test_utils import (
+    read_model,
     get_models_list,
     get_chat_models_list,
 )
