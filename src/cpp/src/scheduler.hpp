@@ -476,7 +476,7 @@ private:
             size_t blocks_num = std::ceil((float)seq_length / m_block_manager.get_block_size());
             if (gen_config.is_beam_search()) {
                 blocks_num *= gen_config.num_beams;
-            } else if (gen_config.do_sample && gen_config.is_multinomial()) {
+            } else if (gen_config.is_multinomial()) {
                 blocks_num *= gen_config.num_return_sequences;
             }
             blocks_sum  += blocks_num;
