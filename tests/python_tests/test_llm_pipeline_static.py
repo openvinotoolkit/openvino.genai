@@ -144,10 +144,10 @@ def test_chat_generation():
     ]
 
     model_descr = get_chat_models_list()[0]
-    _, model_path, _, _ = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
+    model_info = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", { }, questions)
-    chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
+    chat_history_stateful = generate_chat_history(model_info[1], "CPU", { }, questions)
+    chat_history_static   = generate_chat_history(model_info[1], "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')
     print('cpu chat: \n{chat_history_stateful}')
