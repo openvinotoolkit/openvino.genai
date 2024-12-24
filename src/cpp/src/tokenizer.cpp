@@ -235,7 +235,7 @@ public:
         // Initialize tokenizer's cache to save time later.
         if (m_tokenizer) {
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-            encode("non empty string").input_ids;
+            encode("non empty string");
         }
         if (m_detokenizer) {
             decode({1, 33, 199, 42, 42});
