@@ -114,14 +114,14 @@ jobs:
       - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux Optimum Intel
         run: |
           huggingface-cli download OpenVINO/LCM_Dreamshaper_v7-int8-ov --local-dir ov_models/lcm_dreamshaper_v7
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum -ic 4
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum --num_steps 4
       - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux with GenAI
         run: |
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 -ic 4
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --num_steps 4
       - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux with GenAI and LoRA
         run: |
           wget -O ./ov_models/soulcard.safetensors https://civitai.com/api/download/models/72591
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 -ic 4
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
           rm -rf ./ov_models/lcm_dreamshaper_v7/
       - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Deconding mode on Linux
         run: |
