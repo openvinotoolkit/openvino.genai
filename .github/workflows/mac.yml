@@ -83,7 +83,7 @@ jobs:
       #
 
       - name: Install build dependencies
-        run: brew install coreutils ninja
+        run: brew install coreutils ninja scons
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -211,7 +211,7 @@ jobs:
           popd
 
       - name: Install build dependencies
-        run: brew install coreutils ninja scons
+        run: brew install coreutils ninja
 
       - name: Build genai
         run: |
