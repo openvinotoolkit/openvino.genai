@@ -1009,6 +1009,7 @@ EncodedResults StaticLLMPipeline::generate(
     input_ids_vec.reserve(input_ids.get_size());
     std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), std::back_inserter(input_ids_vec));
     LogitProcessor logit_processor(config, input_ids_vec);
+    m_rng_engine.seed(config.rng_seed);
 
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
