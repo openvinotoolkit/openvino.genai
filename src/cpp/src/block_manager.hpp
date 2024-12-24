@@ -205,13 +205,19 @@ public:
      * Blocks returned will be vectors with this size, each vector entry to be associated with a separate layer's KV cache.
      */
     BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
-            m_free_blocks_num(num_layers, num_blocks), m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
+            m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
         m_free_blocks.resize(m_num_layers);
-        for (auto& per_layer_block_list : m_free_blocks) {
-            for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+        if (num_blocks > 0) {
+            m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
+            for (auto& per_layer_block_list : m_free_blocks) {
+                for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
+                    per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                }
             }
+        }
+        else {
+            m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
@@ -219,6 +225,21 @@ public:
         // sanity check to validate that all blocks are freed
         // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
     }
+
+    void increase_kv_blocks_number(size_t new_kv_blocks_count) {
+        OPENVINO_ASSERT(new_kv_blocks_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
+        size_t added_blocks = new_kv_blocks_count - m_total_num_blocks;
+        for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
+            m_free_blocks_num[idx] += added_blocks;
+        }
+        for (auto& per_layer_block_list : m_free_blocks) {
+            for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
+                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+            }
+        }
+        m_total_num_blocks = new_kv_blocks_count;
+    }
+
 
     /**
      * Returns the number of free blocks for a given layer.
@@ -458,6 +479,13 @@ public:
         size_t sum = 0;
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) sum += num_free_blocks(layer_idx);
         return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / (m_num_layers * m_total_num_blocks) * 100;
+    }
+
+    /**
+     * @return The total number of KV blocks .
+     */
+    size_t get_total_number_of_kv_blocks() const {
+        return m_total_num_blocks;
     }
 };
 
@@ -711,6 +739,21 @@ public:
      */
     float get_used_percentage() const {
         return m_allocator.get_used_percentage();
+    }
+
+    /**
+     * Increases the number of KV blocks.
+     * @param num_blocks The new number of KV-blocks.
+     */
+    void increase_kv_blocks_number(size_t num_blocks) {
+        m_allocator.increase_kv_blocks_number(num_blocks);
+    }
+
+    /**
+     * @return The total number of KV blocks .
+     */
+    size_t get_total_number_of_kv_blocks() const {
+        return m_allocator.get_total_number_of_kv_blocks();
     }
 
     /**

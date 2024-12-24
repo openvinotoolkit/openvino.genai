@@ -52,8 +52,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
         size_t main_cache_size = std::ceil(main_scheduler_config.cache_size * (1.f - k)),
                draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
-        OPENVINO_ASSERT(main_cache_size > 0, "KV cache model cache size should be > 0");
-        if (draft_cache_size == 0) {
+        if (draft_cache_size == 0 && main_cache_size > 0) {
             main_cache_size -= (main_cache_size > 1 ? 1 : 0);
             draft_cache_size = 1;
         }
