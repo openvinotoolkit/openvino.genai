@@ -251,7 +251,7 @@ private:
                 size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
                        required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
                 size_t num_required_blocks = (required_slots + block_size - 1) / block_size, num_free_blocks = m_block_manager.num_free_blocks();
-                while (num_required_blocks > num_free_blocks) {
+                while (num_required_blocks > m_block_manager.num_free_blocks()) {
                     if (!_try_increase_cache()) {
                         break;
                     }
