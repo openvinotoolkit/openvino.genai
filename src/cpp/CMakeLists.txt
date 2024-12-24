@@ -71,7 +71,7 @@ target_include_directories(${TARGET_NAME}
 
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
@@ -94,6 +94,21 @@ else()
     set_target_properties(${TARGET_NAME} PROPERTIES
         VERSION ${OpenVINOGenAI_VERSION}
         SOVERSION ${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH})
+endif()
+
+if(OpenVINODeveloperPackage_FOUND)
+    # must be called after all target_link_libraries
+    # ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
+
+    ov_ncc_naming_style(FOR_TARGET ${TARGET_NAME}
+                        SOURCE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+    # TODO: override versions as currently they come from OpenVINO
+    # ov_add_vs_version_file(NAME ${TARGET_NAME}
+    #                        FILEDESCRIPTION "OpenVINO GenAI library")
+
+    # TODO: commit changes separately
+    # ov_add_clang_format_target(${TARGET_NAME}_clang FOR_TARGETS ${TARGET_NAME})
 endif()
 
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`

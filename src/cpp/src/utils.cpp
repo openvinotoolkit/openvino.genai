@@ -13,6 +13,8 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 
+#include "sampler.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -203,7 +205,7 @@ ProcessorConfig from_any_map(
  * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
  * Move this options to `core.set_property` config
  */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties) {
+std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
     const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
     ov::AnyMap core_properties;
     ov::AnyMap compile_properties{properties};
@@ -218,6 +220,29 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& p
 
     return {core_properties, compile_properties};
 };
+
+/**
+ * scheduler_config is a separate config for continuous batching pipeline. 
+ * This routine splits scheduler_config from plugin_config.
+ */
+std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    }
+    return {plugin_config, scheduler_config};
+};
+
+std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+    auto [core_properties, compile_properties] = split_core_compile_config(properties);
+    ov::Core core;
+    core.set_property(core_properties);
+    std::filesystem::path openvino_model_name = "openvino_model.xml";
+    return core.read_model((models_path / openvino_model_name).string());
+}
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
@@ -235,9 +260,10 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 }
 
 void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
-    ov::Node* matmul = nullptr;
     auto last_node = model->output(0).get_node()->input_value(0).get_node();
-    if (matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node)) {
+    ov::Node* matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node);
+    if (matmul) {
+        // we have found matmul, do nothing
     } else if(auto add = dynamic_cast<ov::op::v1::Add*>(last_node)) {
         matmul = dynamic_cast<ov::op::v0::MatMul*>(add->input_value(0).get_node());
     } else if (auto transpose = dynamic_cast<ov::op::v1::Transpose*>(last_node)) {
@@ -260,9 +286,144 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
     }
 }
 
+template <typename T>
+void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
+    if (!model)
+        return;
+    if (model->get_rt_info().count(name) == 0)
+        return;
+    auto str_value = model->get_rt_info().at(name).as<std::string>();
+    if constexpr (std::is_same<T, int64_t>::value) {
+        value = std::stoll(str_value);
+    } else if constexpr (std::is_same<T, std::string>::value) {
+        value = str_value;
+    }
+}
+
+template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
+template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
+
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
+}
+
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+    size_t idx = 0;
+    auto encoded_history_data = encoded_history.data<int64_t>();
+    while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
+        if (encoded_history_data[idx] != tokenized_history[idx])
+            break;
+        idx++;
+    }
+
+    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
+    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
+        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
+        return SIZE_MAX;
+    else
+        return idx;
+}
+
+size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // therefore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
+
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        // check input size, as in LoRA adapters case it could be 0
+        if (op->get_type_name() != kv_node_type_name || op->get_input_size() < 1) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller) {
+    // nothing to trim in this case
+    if (remove_from_end == 0)
+        return;
+
+    auto states = request.query_state();
+    for (auto& state : states) {
+        if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
+            continue;
+
+        ov::Tensor old_tensor = state.get_state();
+        // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+        auto shape = old_tensor.get_shape();
+        shape[seq_length_axis] -= remove_from_end;
+
+        ov::Coordinate new_shape_begin{0, 0, 0, 0};
+        ov::Coordinate new_shape_end{shape};
+
+        auto trimmed_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+
+        ov::Tensor new_tensor(old_tensor.get_element_type(), shape);
+        trimmed_tensor.copy_to(new_tensor);
+
+        state.set_state(new_tensor);
+    }
+}
+
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front) {
+    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
+    auto new_tensor_data = new_tensor.data<int64_t>();
+    new_tensor_data[0] = add_to_front;
+    std::copy_n(base_tensor.data<int64_t>(), base_tensor.get_size(), new_tensor_data + 1);
+    return new_tensor;
+}
+
+void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
+    // Specify the name of the environment variable
+    const char* env_var_name = "OPENVINO_LOG_LEVEL";
+    const char* env_var_value = std::getenv(env_var_name);
+
+    // Check if the environment variable was found
+    if (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING)) {
+        // output of the actual settings that the device selected
+        auto supported_properties = compiled_Model.get_property(ov::supported_properties);
+        std::cout << "Model: " << model_title << std::endl;
+        for (const auto& cfg : supported_properties) {
+            if (cfg == ov::supported_properties)
+                continue;
+            auto prop = compiled_Model.get_property(cfg);
+            if (cfg == ov::device::properties) {
+                auto devices_properties = prop.as<ov::AnyMap>();
+                for (auto& item : devices_properties) {
+                    std::cout << "  " << item.first << ": " << std::endl;
+                    for (auto& item2 : item.second.as<ov::AnyMap>()) {
+                        std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
+                    }
+                }
+            } else {
+                std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
+            }
+        }
+
+        ov::Core core;
+        std::vector<std::string> exeTargets;
+        exeTargets = compiled_Model.get_property(ov::execution_devices);
+        std::cout << "EXECUTION_DEVICES:" << std::endl;
+        for (const auto& device : exeTargets) {
+            std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+        }
+    }
 }
 
 }  // namespace utils

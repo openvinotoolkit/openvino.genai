@@ -28,7 +28,7 @@ py::list handle_utf8(const std::vector<std::string>& decoded_res);
 
 py::str handle_utf8(const std::string& text);
 
-ov::Any py_object_to_any(const py::object& py_obj);
+ov::Any py_object_to_any(const py::object& py_obj, std::string property_name);
 
 bool py_object_is_any_map(const py::object& py_obj);
 
@@ -43,5 +43,16 @@ std::string ov_tokenizers_module_path();
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
+
+template <typename T, typename U>
+std::vector<float> get_ms(const T& instance, U T::*member) {
+    // Converts c++ duration to float so that it can be used in Python.
+    std::vector<float> res;
+    const auto& durations = instance.*member;
+    res.reserve(durations.size());
+    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
+                   [](const auto& duration) { return duration.count(); });
+    return res;
+}
 
 }  // namespace ov::genai::pybind::utils

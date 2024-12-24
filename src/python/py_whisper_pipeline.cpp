@@ -7,14 +7,18 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/stl_bind.h>
 
+#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizers_path.hpp"
 
 namespace py = pybind11;
+using ov::genai::ChunkStreamerBase;
+using ov::genai::ChunkStreamerVariant;
 using ov::genai::DecodedResults;
 using ov::genai::OptionalWhisperGenerationConfig;
+using ov::genai::PerfMetrics;
 using ov::genai::RawSpeechInput;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
@@ -22,7 +26,11 @@ using ov::genai::Tokenizer;
 using ov::genai::WhisperDecodedResultChunk;
 using ov::genai::WhisperDecodedResults;
 using ov::genai::WhisperGenerationConfig;
+using ov::genai::WhisperPerfMetrics;
 using ov::genai::WhisperPipeline;
+using ov::genai::WhisperRawPerfMetrics;
+using PyBindChunkStreamerVariant =
+    std::variant<std::function<bool(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -44,19 +52,18 @@ auto whisper_generate_docstring = R"(
     :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
     :type : Dict
 
-    :return: return results in encoded, or decoded form depending on inputs type
-    :rtype: DecodedResults
+    :return: return results in decoded form
+    :rtype: WhisperDecodedResults
 )";
 
 auto whisper_decoded_results_docstring = R"(
-    Structure to store resulting batched text outputs and scores for each batch.
-    The first num_return_sequences elements correspond to the first batch element.
+    Structure to store resulting text outputs and scores.
 
     Parameters:
     texts:      vector of resulting sequences.
     scores:     scores for each sequence.
     metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-    shunks:     chunk of resulting sequences with timestamps
+    shunks:     optional chunks of resulting sequences with timestamps
 )";
 
 auto whisper_decoded_result_chunk = R"(
@@ -96,6 +103,9 @@ auto whisper_generation_config_docstring = R"(
     :param no_timestamps_token_id: No timestamps token id.
     :type no_timestamps_token_id: int
 
+    :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+    :type prev_sot_token_id: int
+
     :param is_multilingual:
     :type is_multilingual: bool
 
@@ -124,6 +134,49 @@ auto whisper_generation_config_docstring = R"(
                        then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                        Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     :type return_timestamps: bool
+
+    :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+    window. Can be used to steer the model to use particular spellings or styles.
+
+    Example:
+      auto result = pipeline.generate(raw_speech);
+      //  He has gone and gone for good answered Paul Icrom who...
+
+      auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+      //  He has gone and gone for good answered Polychrome who...
+    :type initial_prompt: Optional[str]
+
+    :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+    Can be used to steer the model to use particular spellings or styles.
+
+    Example:
+      auto result = pipeline.generate(raw_speech);
+      //  He has gone and gone for good answered Paul Icrom who...
+
+      auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+      //  He has gone and gone for good answered Polychrome who...
+    :type hotwords: Optional[str]
+)";
+
+auto streamer_base_docstring = R"(
+    Base class for chunk streamers. In order to use inherit from from this class.
+)";
+
+auto raw_perf_metrics_docstring = R"(
+    Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
+
+    :param features_extraction_durations: Duration for each features extraction call.
+    :type features_extraction_durations: List[MicroSeconds]
+)";
+
+auto perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
+    :type get_features_extraction_duration: MeanStdPair
+
+    :param whisper_raw_metrics: Whisper specific raw metrics
+    :type WhisperRawPerfMetrics:
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -134,67 +187,54 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     WhisperGenerationConfig res_config;
     if (config.has_value())
         res_config = *config;
-
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (item.second.is_none()) {
-            // Even if argument key name does not fit GenerationConfig name
-            // it's not an error if it's not defined.
-            // Some HF configs can have parameters for methods currently unsupported in ov_genai
-            // but if their values are not set / None, then this should not block
-            // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
-            return res_config;
-        }
-
-        if (key == "max_new_tokens") {
-            res_config.max_new_tokens = py::cast<int>(item.second);
-        } else if (key == "max_length") {
-            res_config.max_length = py::cast<int>(item.second);
-        } else if (key == "decoder_start_token_id") {
-            res_config.decoder_start_token_id = py::cast<int>(item.second);
-        } else if (key == "pad_token_id") {
-            res_config.pad_token_id = py::cast<int>(item.second);
-        } else if (key == "translate_token_id") {
-            res_config.translate_token_id = py::cast<int>(item.second);
-        } else if (key == "transcribe_token_id") {
-            res_config.transcribe_token_id = py::cast<int>(item.second);
-        } else if (key == "no_timestamps_token_id") {
-            res_config.no_timestamps_token_id = py::cast<int>(item.second);
-        } else if (key == "max_initial_timestamp_index") {
-            res_config.max_initial_timestamp_index = py::cast<size_t>(item.second);
-        } else if (key == "begin_suppress_tokens") {
-            res_config.begin_suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
-        } else if (key == "suppress_tokens") {
-            res_config.suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
-        } else if (key == "is_multilingual") {
-            res_config.is_multilingual = py::cast<bool>(item.second);
-        } else if (key == "language") {
-            res_config.language = py::cast<std::string>(item.second);
-        } else if (key == "lang_to_id") {
-            res_config.lang_to_id = py::cast<std::map<std::string, int64_t>>(item.second);
-        } else if (key == "task") {
-            res_config.task = py::cast<std::string>(item.second);
-        } else if (key == "return_timestamps") {
-            res_config.return_timestamps = py::cast<bool>(item.second);
-        } else if (key == "eos_token_id") {
-            res_config.set_eos_token_id(py::cast<int>(item.second));
-        } else {
-            throw(std::invalid_argument(
-                "'" + key +
-                "' is incorrect WhisperGenerationConfig parameter name. "
-                "Use help(openvino_genai.WhisperGenerationConfig) to get list of acceptable parameters."));
-        }
-    }
-
+    res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
     return res_config;
+}
+
+class ConstructableChunkStreamer : public ChunkStreamerBase {
+    bool put(int64_t token) override {
+        PYBIND11_OVERRIDE_PURE(bool,               // Return type
+                               ChunkStreamerBase,  // Parent class
+                               put,                // Name of function in C++ (must match Python name)
+                               token               // Argument(s)
+        );
+    }
+    bool put_chunk(std::vector<int64_t> tokens) override {
+        PYBIND11_OVERRIDE_PURE(bool,               // Return type
+                               ChunkStreamerBase,  // Parent class
+                               put_chunk,          // Name of function in C++ (must match Python name)
+                               tokens              // Argument(s)
+        );
+    }
+    void end() override {
+        PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
+    }
+};
+
+ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
+    return std::visit(
+        pyutils::overloaded{[](const std::function<bool(py::str)>& py_callback) {
+                                // Wrap python streamer with manual utf-8 decoding. Do not rely
+                                // on pybind automatic decoding since it raises exceptions on incomplete
+                                // strings.
+                                return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> bool {
+                                    auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                                    return py_callback(py::reinterpret_borrow<py::str>(py_str));
+                                });
+                            },
+                            [](std::shared_ptr<ChunkStreamerBase> streamer_cls) {
+                                return static_cast<ChunkStreamerVariant>(streamer_cls);
+                            },
+                            [](std::monostate none) {
+                                return static_cast<ChunkStreamerVariant>(none);
+                            }},
+        py_streamer);
 }
 
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
                                         const OptionalWhisperGenerationConfig& config,
-                                        const pyutils::PyBindStreamerVariant& py_streamer,
+                                        const PyBindChunkStreamerVariant& py_streamer,
                                         const py::kwargs& kwargs) {
     // whisper config should initialized from generation_config.json in case of only kwargs provided
     // otherwise it would be initialized with default values which is unexpected for kwargs use case
@@ -203,7 +243,7 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
 }
@@ -212,6 +252,23 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
 void init_whisper_pipeline(py::module_& m) {
     m.doc() = "Pybind11 binding for Whisper Pipeline";
+
+    py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>>(
+        m,
+        "ChunkStreamerBase",
+        streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
+        .def(py::init<>())
+        .def("put",
+             &ChunkStreamerBase::put,
+             "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
+             "should be stopped, if return true generation stops")
+        .def("put_chunk",
+             &ChunkStreamerBase::put_chunk,
+             "Put is called every time new token chunk is generated. Returns a bool flag to indicate whether "
+             "generation should be stopped, if return true generation stops")
+        .def("end",
+             &ChunkStreamerBase::end,
+             "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig>(m, "WhisperGenerationConfig", whisper_generation_config_docstring)
@@ -230,12 +287,26 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
         .def_readwrite("max_initial_timestamp_index", &WhisperGenerationConfig::max_initial_timestamp_index)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
+        .def_readwrite("prev_sot_token_id", &WhisperGenerationConfig::prev_sot_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
         .def_readwrite("language", &WhisperGenerationConfig::language)
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
         .def_readwrite("task", &WhisperGenerationConfig::task)
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
-        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
+        .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
+        .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
+        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"));
+
+    py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
+            return pyutils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+        });
+
+    py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
+        .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
         .def(py::init<>())
@@ -245,24 +316,42 @@ void init_whisper_pipeline(py::module_& m) {
             return pyutils::handle_utf8(chunk.text);
         });
 
-    py::class_<WhisperDecodedResults, DecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
-        .def_readonly("chunks", &WhisperDecodedResults::chunks);
+    py::class_<WhisperDecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
+        .def_property_readonly("texts",
+                               [](const WhisperDecodedResults& dr) -> py::typing::List<py::str> {
+                                   return pyutils::handle_utf8((std::vector<std::string>)dr);
+                               })
+        .def_readonly("scores", &WhisperDecodedResults::scores)
+        .def_readonly("chunks", &WhisperDecodedResults::chunks)
+        .def_readonly("perf_metrics", &WhisperDecodedResults::perf_metrics)
+        .def("__str__", [](const WhisperDecodedResults& dr) -> py::str {
+            auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
+            py::str res;
+            if (valid_utf8_strings.size() == 1)
+                return valid_utf8_strings[0];
+
+            for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
+                res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
+            }
+            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") +
+                   valid_utf8_strings[valid_utf8_strings.size() - 1];
+            return res;
+        });
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline", "Automatic speech recognition pipeline")
-        .def(py::init([](const std::filesystem::path& models_path,
-                         const std::string& device,
-                         const py::kwargs& kwargs) {
-                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<WhisperPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
-             }),
-             py::arg("models_path"),
-             "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
-             py::arg("device"),
-             "device on which inference will be done",
-             "openvino.properties map",
-             R"(
+        .def(
+            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                return std::make_unique<WhisperPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+            }),
+            py::arg("models_path"),
+            "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
+            py::arg("device"),
+            "device on which inference will be done",
+            "openvino.properties map",
+            R"(
             WhisperPipeline class constructor.
-            models_path (str): Path to the model file.
+            models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
         )")
 
@@ -271,8 +360,8 @@ void init_whisper_pipeline(py::module_& m) {
             [](WhisperPipeline& pipe,
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer,
-               const py::kwargs& kwargs) {
+               const PyBindChunkStreamerVariant& streamer,
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::WhisperDecodedResults> {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },
             py::arg("raw_speech_input"),
@@ -286,5 +375,5 @@ void init_whisper_pipeline(py::module_& m) {
 
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &WhisperPipeline::set_generation_config);
+        .def("set_generation_config", &WhisperPipeline::set_generation_config, py::arg("config"));
 }

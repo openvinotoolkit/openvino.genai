@@ -8,8 +8,9 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
+#include "whisper/context_tokens.hpp"
+#include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
@@ -25,6 +26,20 @@ ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap&
         return std::nullopt;
     }
 }
+
+ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::ChunkStreamerVariant streamer = std::monostate();
+
+    if (config_map.count(ov::genai::utils::STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(ov::genai::utils::STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::ChunkStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
+        } else if (any_val.is<std::function<bool(std::string)>>()) {
+            streamer = any_val.as<std::function<bool(std::string)>>();
+        }
+    }
+    return streamer;
+}
 }  // namespace
 
 namespace ov {
@@ -39,18 +54,21 @@ public:
                                 const ov::AnyMap& properties)
         : WhisperPipelineImplBase{models_path} {
         ov::Core core = utils::singleton_core();
-        auto [core_properties, compile_properties] = ov::genai::utils::split_core_complile_config(properties);
+        auto [core_properties, compile_properties] = ov::genai::utils::split_core_compile_config(properties);
         core.set_property(core_properties);
 
-        m_models.encoder =
-            core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties)
-                .create_infer_request();
-        m_models.decoder =
-            core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties)
-                .create_infer_request();
-        m_models.decoder_with_past =
-            core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties)
-                .create_infer_request();
+        ov::CompiledModel compiled_model;
+        compiled_model =
+            core.compile_model((models_path / "openvino_encoder_model.xml").string(), device, compile_properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
+        m_models.encoder = compiled_model.create_infer_request();
+        compiled_model =
+            core.compile_model((models_path / "openvino_decoder_model.xml").string(), device, compile_properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
+        m_models.decoder = compiled_model.create_infer_request();
+        compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, compile_properties);
+        m_models.decoder_with_past = compiled_model.create_infer_request();
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper decoder with past model");
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -60,22 +78,25 @@ public:
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
-                                   StreamerVariant streamer) override {
+                                   ChunkStreamerVariant streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         config.validate();
 
-        std::shared_ptr<StreamerBase> streamer_ptr;
+        std::shared_ptr<ChunkStreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
             streamer_ptr = nullptr;
-        } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+        } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
             streamer_ptr = *streamer_obj;
         } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-            streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
+
+        auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 
         auto generate_result = ov::genai::whisper_generate(config,
                                                            m_model_config,
+                                                           context_tokens,
                                                            raw_speech_input,
                                                            m_models,
                                                            m_feature_extractor,
@@ -84,6 +105,8 @@ public:
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
 
         result.perf_metrics = generate_result.perf_metrics;
         auto& segments = generate_result.segments;
@@ -114,6 +137,19 @@ public:
     }
 };
 
+std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {
+    if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(*streamer_obj)};
+    } else {
+        auto callback = std::get<std::function<bool(std::string)>>(func);
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
+    }
+}
+
+std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
+    return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
+}
+
 }  // namespace genai
 }  // namespace ov
 
@@ -132,7 +168,7 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
 
 ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
                                                                       OptionalWhisperGenerationConfig generation_config,
-                                                                      StreamerVariant streamer) {
+                                                                      ChunkStreamerVariant streamer) {
     return m_impl->generate(raw_speech_input, generation_config, streamer);
 }
 
@@ -142,7 +178,7 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    return m_impl->generate(raw_speech_input, config, utils::get_streamer_from_map(config_map));
+    return m_impl->generate(raw_speech_input, config, get_chunk_streamer_from_map(config_map));
 }
 
 ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {
@@ -158,7 +194,7 @@ void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationCo
     m_impl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
-        m_impl->m_generation_config.eos_token_id = default_eos_token_id;
+        m_impl->m_generation_config.set_eos_token_id(default_eos_token_id);
 
     m_impl->m_generation_config.validate();
 }

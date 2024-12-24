@@ -11,12 +11,7 @@ def streamer(subword):
         print(subword, end='', flush=True) 
         # Return flag corresponds whether generation should be stopped. 
         # False means continue generation. 
-        return False 
-
-def get_block_size(device):
-     if -1 != device.find('GPU'):
-          return 16
-     return 32
+        return False
 
 def main():
     parser = argparse.ArgumentParser()
@@ -33,14 +28,8 @@ def main():
     scheduler_config = openvino_genai.SchedulerConfig()
     # cache params
     scheduler_config.cache_size = 2
-    scheduler_config.block_size = get_block_size(main_device)
 
-    draft_scheduler_config = openvino_genai.SchedulerConfig()
-    # cache params
-    draft_scheduler_config.cache_size = 2
-    draft_scheduler_config.block_size = get_block_size(draft_device)
-
-    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, scheduler_config=draft_scheduler_config)
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
 
     pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, scheduler_config=scheduler_config, draft_model=draft_model)
     

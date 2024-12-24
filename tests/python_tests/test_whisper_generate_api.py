@@ -10,12 +10,24 @@ from ov_genai_test_utils import get_whisper_models_list
 import datasets
 from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+import gc
 import json
 import time
 import typing
+import numpy as np
 
+@pytest.fixture(scope="class", autouse=True)
+def run_gc_after_test():
+    """
+    Fixture to run garbage collection after each test class.
+    This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
+    """
+    yield
+    gc.collect()
 
-@functools.lru_cache(1)
+# used whisper models are relatively small
+# cache them in memory to speedup tests
+@functools.lru_cache(3)
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
@@ -81,16 +93,11 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
     for ds_row in ds:
         audio_sample = ds_row["audio"]
 
-        streamer_result = ""
-
-        def streamer(word: str) -> bool:
-            nonlocal streamer_result
-            streamer_result += word
-            return False
+        streamer_result = []
 
         start = time.time()
         genai_result = genai_pipe.generate(
-            audio_sample["array"].tolist(), streamer=streamer
+            audio_sample["array"].tolist(), streamer=lambda x: streamer_result.append(x)
         )
         genai_infer_time += time.time() - start
 
@@ -99,7 +106,7 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
         opt_infer_time += time.time() - start
 
         assert genai_result.texts[0] == result["text"]
-        assert streamer_result == result["text"]
+        assert "".join(streamer_result) == result["text"]
 
     print(f"Inference time\nOpt: {opt_infer_time}\nGenAI: {genai_infer_time}")
 
@@ -480,12 +487,16 @@ def test_longform_audio_return_timestamps_multilingual(model_descr, test_sample)
         return_timestamps=True,
     )
 
+    streamer_result = []
+
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
+        streamer=lambda x: streamer_result.append(x),
     )
 
     assert genai_result.texts[0] == expected["text"]
+    assert "".join(streamer_result) == expected["text"]
 
     assert len(genai_result.chunks) == len(expected["chunks"])
 
@@ -515,12 +526,16 @@ def test_longform_audio_return_timestamps_en(model_descr, test_sample):
         return_timestamps=True,
     )
 
+    streamer_result = []
+
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
+        streamer=lambda x: streamer_result.append(x),
     )
 
     assert genai_result.texts[0] == expected["text"]
+    assert "".join(streamer_result) == expected["text"]
 
     assert len(genai_result.chunks) == len(expected["chunks"])
 
@@ -558,6 +573,31 @@ def test_longform_audio(model_descr, test_sample):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
     "test_sample",
+    get_samples_from_dataset(length=1),
+)
+@pytest.mark.precommit
+def test_initial_prompt_hotwords(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    result = pipe.generate(test_sample)
+
+    assert "Joel Keaton" in result.texts[0]
+    assert "Joel Kyton" not in result.texts[0]
+
+    result = pipe.generate(test_sample, initial_prompt="Joel Kyton")
+
+    assert "Joel Keaton" not in result.texts[0]
+    assert "Joel Kyton" in result.texts[0]
+
+    result = pipe.generate(test_sample, hotwords="Joel Kyton")
+
+    assert "Joel Keaton" not in result.texts[0]
+    assert "Joel Kyton" in result.texts[0]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
     [
         *get_samples_from_dataset(language="en", length=1),
     ],
@@ -583,3 +623,13 @@ def test_perf_metrics(model_descr, test_sample):
     assert perf_metrics.get_generate_duration().mean > 0
     assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_detokenization_duration().mean > 0
+    assert perf_metrics.get_features_extraction_duration().mean > 0
+
+    # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
+    whisper_raw_metrics = perf_metrics.whisper_raw_metrics
+
+    raw_dur = np.array(whisper_raw_metrics.features_extraction_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
+    assert np.allclose(mean_dur, np.mean(raw_dur))
+    assert np.allclose(std_dur, np.std(raw_dur))

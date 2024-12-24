@@ -99,7 +99,7 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     assert(skipping_step >= 1 && "The combination of `original_steps x strength` is smaller than `num_inference_steps`");
 
     // LCM Inference Steps Schedule
-    std::reverse(lcm_origin_timesteps.begin(),lcm_origin_timesteps.end());
+    std::reverse(lcm_origin_timesteps.begin(), lcm_origin_timesteps.end());
 
     using numpy_utils::linspace;
     // v1. based on https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
@@ -204,10 +204,6 @@ std::vector<int64_t> LCMScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
-std::vector<float> LCMScheduler::get_float_timesteps() const {
-    OPENVINO_THROW("LCMScheduler doesn't support float timesteps");
-}
-
 float LCMScheduler::get_init_noise_sigma() const {
     return 1.0f;
 }
@@ -247,19 +243,15 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     return thresholded_sample;
 }
 
-void LCMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
-    int64_t latent_timestep = m_timesteps.front();
-
+void LCMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
-    ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
-
     float * init_latent_data = init_latent.data<float>();
-    const float * rand_tensor_data = rand_tensor.data<float>();
+    const float * noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
     }
 }
 

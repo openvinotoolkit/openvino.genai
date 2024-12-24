@@ -126,23 +126,28 @@ public:
         }
     }
 
-    GenerationOutput get_last_generation_output(size_t token_cnt = 1) {
+    GenerationOutput get_last_generation_output(size_t token_cnt = 1, size_t num_token_to_ignore = 0) {
         GenerationOutput output;
-        OPENVINO_ASSERT(m_generated_ids.size());
-        output.score = get_cumulative_log_probs();
+        if (token_cnt > 0) {
+            OPENVINO_ASSERT(m_generated_ids.size());
+            output.score = get_cumulative_log_probs();
 
-        auto generated_token_id = get_generated_ids();
-        auto generated_log_probs = get_generated_log_probs();
+            auto generated_token_id = get_generated_ids();
+            auto generated_log_probs = get_generated_log_probs();
 
-        OPENVINO_ASSERT(get_generated_len() >= token_cnt);
-        auto offset = get_generated_len() - token_cnt;
+            OPENVINO_ASSERT(get_generated_len() >= token_cnt);
+            if (get_generated_len() > num_token_to_ignore) {
+                auto offset = get_generated_len() - token_cnt - num_token_to_ignore;
+                auto offset_back = get_generated_len() - num_token_to_ignore;
 
-        std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
-        std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
+                std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.begin() + offset_back);
+                std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.begin() + offset_back);
 
-        output.generated_ids = token_id;
-        output.generated_log_probs = log_probs;
-        output.finish_reason = get_finish_reason();
+                output.generated_ids = token_id;
+                output.generated_log_probs = log_probs;
+                output.finish_reason = get_finish_reason();
+            }
+        }
         return output;
     }
 
@@ -172,8 +177,6 @@ public:
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
     }
-
-
 
     // Each KV block can be uniquely identified by
     void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
@@ -220,6 +223,8 @@ class SequenceGroup {
     size_t m_num_validation_tokens = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
+
+    size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
@@ -332,14 +337,16 @@ public:
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_dropped()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
-        // do we need to sort sequences here or sampler can handle it for us?
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) {
-            return s1->get_beam_search_score(m_sampling_params) > s2->get_beam_search_score(m_sampling_params);
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
+            bool is_beam_search = m_sampling_params.is_beam_search();
+            const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_probs();
+            const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_probs();
+            return score_1 > score_2;
         });
 
         return finished_seqs;
@@ -454,6 +461,10 @@ public:
     size_t get_num_tokens_to_validate() {
         return m_num_validation_tokens;
     }
+    
+    void set_stream_window_size(size_t k) {
+        m_stream_window_size = k;
+    }
 
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
@@ -477,6 +488,9 @@ public:
     }
 
     void clear_waiting_sequences() {
+        if (!is_waiting())
+            return;
+
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 m_sequences[seq_id]->set_status(SequenceStatus::RUNNING);
@@ -568,7 +582,7 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
-    bool handle_dropped() {
+    bool handle_dropped() const {
         return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 
@@ -598,7 +612,7 @@ public:
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
-            auto output = sequence->get_last_generation_output(token_cnt);
+            auto output = sequence->get_last_generation_output(token_cnt, m_stream_window_size);
             if (m_sampling_params.echo && !m_has_echoed) {
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
@@ -609,24 +623,36 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void notify_handle(size_t num_output_token_to_push = 0) {
+    void notify_handle() {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
             set_generation_status(GenerationStatus::FINISHED);
         }
         // For beam search streaming is not available, so we notify only upon finishing
-        if(m_sampling_params.is_beam_search()) {
+        if (m_sampling_params.is_beam_search()) {
             if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
-            if (num_total_seqs() == 1 &&
-                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
-                if (num_output_token_to_push)
-                    push_partial_outputs(num_output_token_to_push);
+            if (num_total_seqs() == 1) {
+                const auto generated_len = m_sequences.front()->get_generated_len();
+                if (has_finished()) {
+                    m_stream_window_size = 0;
+                }
+                if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    return;
+                }
+                // speculative decoding draft handling
+                if (generated_len < m_num_streamed_tokens) {
+                    m_num_streamed_tokens = generated_len;
+                }
+                OPENVINO_ASSERT(generated_len >= (m_num_streamed_tokens + m_stream_window_size));
+                size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
+                push_partial_outputs(num_output_token_to_push);
+                m_num_streamed_tokens += (num_output_token_to_push);
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }

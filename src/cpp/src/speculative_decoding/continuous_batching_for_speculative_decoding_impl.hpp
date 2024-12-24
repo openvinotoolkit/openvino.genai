@@ -16,6 +16,7 @@ public:
     ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
                                                  const std::shared_ptr<ov::Model>& model,
                                                  const Tokenizer& tokenizer,
+                                                 const GenerationConfig& generation_config,
                                                  const DeviceConfig& device_config,
                                                  const SchedulerConfig& scheduler_config,
                                                  const std::string& device,
@@ -25,7 +26,7 @@ public:
     void multistep();
 
     void finish_request(int64_t request_id = -1);
-    void pull_awaiting_requests();
+    void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
 

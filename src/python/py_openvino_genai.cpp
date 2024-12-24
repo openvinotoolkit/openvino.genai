@@ -8,6 +8,7 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
+#include <pybind11/typing.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
 
@@ -20,7 +21,6 @@ using ov::genai::DecodedResults;
 using ov::genai::EncodedResults;
 using ov::genai::StreamerBase;
 using ov::genai::StringInputs;
-using ov::genai::draft_model;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -82,9 +82,10 @@ class ConstructableStreamer: public StreamerBase {
 PYBIND11_MODULE(py_openvino_genai, m) {
     m.doc() = "Pybind11 binding for OpenVINO GenAI library";
 
+    init_perf_metrics(m);
     py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)
         .def(py::init<>())
-        .def_property_readonly("texts", [](const DecodedResults &dr) { return pyutils::handle_utf8((std::vector<std::string>)dr); })
+        .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
@@ -107,13 +108,12 @@ PYBIND11_MODULE(py_openvino_genai, m) {
 
     py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
-        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops")
+        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"))
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     init_tokenizer(m);
-    init_perf_metrics(m);
-    init_generation_config(m);
     init_lora_adapter(m);
+    init_generation_config(m);
 
     init_continuous_batching_pipeline(m);
     init_llm_pipeline(m);
