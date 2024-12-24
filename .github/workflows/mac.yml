@@ -58,7 +58,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: 'macos-14-xlarge'
+    runs-on: 'macos-14-xlarge-xlarge'
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
       CMAKE_BUILD_TYPE: 'Release'
@@ -180,7 +180,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-14-xlarge
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -245,7 +245,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-14-xlarge
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -313,7 +313,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-14-xlarge
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
