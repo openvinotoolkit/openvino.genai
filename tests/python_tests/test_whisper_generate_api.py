@@ -6,7 +6,6 @@ import functools
 import pytest
 import openvino_tokenizers
 import openvino
-from ov_genai_test_utils import get_whisper_models_list
 import datasets
 from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
@@ -15,6 +14,8 @@ import json
 import time
 import typing
 import numpy as np
+import os
+import pathlib
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -24,6 +25,34 @@ def run_gc_after_test():
     """
     yield
     gc.collect()
+
+
+def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
+    precommit_models = [
+        "openai/whisper-tiny",
+        "openai/whisper-tiny.en",
+        "distil-whisper/distil-small.en",
+    ]
+    if multilingual:
+        precommit_models = ["openai/whisper-tiny"]
+    if en_only:
+        precommit_models = ["openai/whisper-tiny.en", "distil-whisper/distil-small.en"]
+    if tiny_only:
+        precommit_models = ["openai/whisper-tiny"]
+
+    nightly_models = []
+
+    if pytest.run_marker == "precommit":
+        model_ids = precommit_models
+    else:
+        model_ids = nightly_models
+
+    if pytest.selected_model_ids:
+        model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
+
+    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
+    return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
+
 
 # used whisper models are relatively small
 # cache them in memory to speedup tests

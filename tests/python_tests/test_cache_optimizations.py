@@ -112,8 +112,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
     models_path = converted_model.models_path
-    model_cb_noopt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
-    model_cb_opt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU")
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU")
 
     tokenizer = converted_model.tokenizer
 
