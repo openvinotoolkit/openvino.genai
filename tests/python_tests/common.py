@@ -42,13 +42,6 @@ def get_greedy_with_penalties() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
-def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
-    generation_config = GenerationConfig()
-    generation_config.num_return_sequences = 1
-    generation_config.min_new_tokens = 15
-    generation_config.max_new_tokens = 30
-    return generation_config
-
 def get_greedy_with_single_stop_string() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
@@ -360,14 +353,14 @@ def run_continuous_batching(
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {}, {})
+    pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU")
     output = pipe.generate(prompts, generation_configs)
     del pipe
     shutil.rmtree(models_path)
     return output
 
 
-def get_models_list(file_name: str):
+def read_models_list(file_name: str):
     models = []
     with open(file_name) as f:
         for model_name in f:

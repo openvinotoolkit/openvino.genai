@@ -4,7 +4,6 @@
 import openvino_genai as ov_genai
 from openvino_genai import StopCriteria
 import pytest
-import transformers
 from typing import Union, List, Dict, Optional
 import numpy as np
 import openvino as ov
@@ -16,7 +15,6 @@ from ov_genai_test_utils import (
     get_models_list, 
     read_model, 
     load_pipe,
-    load_tok, 
     model_tmp_path, 
     STOP_CRITERIA_MAP, 
     get_continuous_batching,
@@ -167,60 +165,6 @@ input_tensors_list = [
 @pytest.mark.nightly
 def test_ov_tensors(model_descr, inputs):
     hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
-
-
-prompts = [
-    'table is made of',
-    '你好！ 你好嗎？',
-    'Alan Turing was a',
-    'The Sun is yellow because',
-    ['The Sun is yellow because', 'Alan Turing was a', 'Alan Turing was a']
-]
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_genai_tokenizer_encode(model_descr, prompt):
-    model_id, path, tokenizer, model, pipe = read_model(model_descr)
-    tok = pipe.get_tokenizer()
-    
-    encoded_ov = tok.encode(prompt).input_ids.data
-    if isinstance(prompt, list):
-        encoded_hf = tokenizer.batch_encode_plus(prompt)['input_ids']
-        for tokens_ov, tokens_hf in zip(encoded_ov, encoded_hf):
-            assert np.all(tokens_ov == tokens_hf)
-    else:
-        encoded_hf = tokenizer.encode(prompt)
-        assert np.all(encoded_hf == encoded_ov[0])
-
-encoded_prompts = [
-    [1, 1591, 338, 1754, 310],
-    [1, 17102,   323,  3864,   471,   263],
-    
-    # chineze characters
-    [1, 29871, 30919, 31076, 30584, 29871, 30919, 31076, 232, 154, 145, 30882],
-
-    # On meta-llama/Meta-Llama-3-8B-Instruct this becomes longer  after removing the last token
-    [3113, 264, 364, 267],
-
-    # batched tokens
-    [[1, 1591, 338, 1754, 310], [1, 1591, 338, 1754, 310], [1, 17102,   323,  3864,   471,   263]]
-]
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.parametrize("encoded_prompt", encoded_prompts)
-@pytest.mark.precommit
-def test_genai_tokenizer_decode(model_descr, encoded_prompt):
-    model_id, path, tokenizer, model, pipe = read_model(model_descr)
-    tok = pipe.get_tokenizer()
-    decoded_ov = tok.decode(encoded_prompt)
-    
-    if isinstance(encoded_prompt[0], list):
-        decoded_hf = tokenizer.batch_decode(encoded_prompt, skip_special_tokens=True)
-        for tokens_ov, tokens_hf in zip(decoded_ov, decoded_hf):
-            assert np.all(tokens_ov == tokens_hf)
-    else:
-        decoded_hf = tokenizer.decode(encoded_prompt, skip_special_tokens=True)
-        assert decoded_hf == decoded_ov
 
 
 test_configs = [
@@ -475,133 +419,6 @@ def test_operator_with_streamer_kwargs_batch_fail():
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe('', num_beams=2, streamer=printer)
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_load_special_tokens_ids_1(model_tmp_path):
-    # test when there is an available config.json
-    config_json = { 
-        "pad_token_id": 422,
-        "bos_token_id": 42, 
-        "eos_token_id": 37,
-    }
-    tok = load_tok([(config_json, "config.json")], model_tmp_path[1])
-    assert tok.get_pad_token_id() == config_json['pad_token_id']
-    assert tok.get_bos_token_id() == config_json['bos_token_id']
-    assert tok.get_eos_token_id() == config_json['eos_token_id']
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_load_special_tokens_str_2(model_tmp_path):
-    # test with special_tokens_map
-    special_tokens_map_json = { 
-        "pad_token": {"content": "<custom_pad>"},
-        "bos_token": {"content": "<custom_bos>"},
-        "eos_token": {"content": "<custom_eos>"},
-    }
-    tok = load_tok([(special_tokens_map_json, "special_tokens_map.json")], model_tmp_path[1])
-    assert tok.get_pad_token() == special_tokens_map_json['pad_token']["content"]
-    assert tok.get_bos_token() == special_tokens_map_json['bos_token']["content"]
-    assert tok.get_eos_token() == special_tokens_map_json['eos_token']["content"]
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-@pytest.mark.skip(reason="CVS-158682 - RTInfo is not modified in tests for unknown reasons")
-def test_load_special_tokens_3_(model_tokenizers_path_tmp_path):
-    # special_tokens_map is not available 
-    # but tokenize_config.json exists
-    # will load both string and integer representations
-    tok_config_json = {
-        "added_tokens_decoder": {
-            "422": {"content": "<pad>"},
-            "37": {"content": "<s>"},
-            "42": {"content": "</s>"},
-        },
-        "pad_token": "<pad>",
-        "bos_token": "<s>",
-        "eos_token": "</s>",
-    }
-
-    tok = load_tok([(tok_config_json, "tokenizer_config.json")], model_tokenizers_path_tmp_path[1])
-    assert tok.get_pad_token() == tok_config_json['pad_token']
-    assert tok.get_bos_token() == tok_config_json['bos_token']
-    assert tok.get_eos_token() == tok_config_json['eos_token']
-
-    assert tok.get_pad_token_id() == 422
-    assert tok.get_bos_token_id() == 37
-    assert tok.get_eos_token_id() == 42
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_load_special_tokens_3(model_tmp_path):
-    # both config.json is available and tokenizer_config.json available
-    # check that it does not read int values from tokenizer_config.json if they are in config.json
-    tok_config_json = {
-    "added_tokens_decoder": {
-        # integers differ from config.json to check they don't override config.json
-        "777": {"content": "<pad>"},
-        "888": {"content": "<s>"},
-        "656": {"content": "</s>"},
-    },
-    "pad_token": "<pad>",
-    "bos_token": "<s>",
-    "eos_token": "</s>",
-    }
-    config_json = { 
-        "pad_token_id": 422,
-        "bos_token_id": 42, 
-        "eos_token_id": 37,
-    }
-    configs = [
-        (tok_config_json, "tokenizer_config.json"),
-        (config_json, "config.json")
-    ]
-    tok = load_tok(configs, model_tmp_path[1])
-    assert tok.get_pad_token_id() == config_json['pad_token_id']
-    assert tok.get_bos_token_id() == config_json['bos_token_id']
-    assert tok.get_eos_token_id() == config_json['eos_token_id']
-
-    assert tok.get_pad_token() == tok_config_json['pad_token']
-    assert tok.get_bos_token() == tok_config_json['bos_token']
-    assert tok.get_eos_token() == tok_config_json['eos_token']
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-@pytest.mark.xfail(
-    raises=AssertionError, 
-    reason="CVS-143410 ov tokenizer should be aligned with hf",
-    strict=False,
-)
-def test_load_special_tokens_4(model_tmp_path):
-    # only string representation is provided, find token integers by inference
-    model_id, temp_path = model_tmp_path
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    
-    special_tokens_map_json = {}
-    token_str_int_map = {}
-    special_token_names = ['pad_token', 'bos_token', 'eos_token']
-    for token_str in special_token_names:
-        if hasattr(tokenizer, token_str):
-            token_val = getattr(tokenizer, token_str)
-            special_tokens_map_json.update({token_str: {"content": token_val}})
-            token_id = tokenizer(token_val, add_special_tokens=False)['input_ids'][0]
-            token_str_int_map.update({token_str: token_id})
-
-    # since only string representations are present in the json will try to get by inference
-    tok = load_tok([(special_tokens_map_json, "special_tokens_map.json")], temp_path)
-
-    # check ids inferred correctly for special tokens existing if HF tokenizer
-    if 'pad_token' in token_str_int_map:
-        assert tok.get_pad_token_id() == token_str_int_map['pad_token']
-    if 'bos_token' in token_str_int_map:
-        assert tok.get_bos_token_id() == token_str_int_map['bos_token']
-    if 'eos_token' in token_str_int_map:
-        assert tok.get_eos_token_id() == token_str_int_map['eos_token']
 
 
 invalid_configs = [

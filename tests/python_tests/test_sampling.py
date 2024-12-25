@@ -10,7 +10,7 @@ from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
 from typing import List, TypedDict
 
-from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
+from common import run_test_pipeline, read_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
     generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
     get_greedy_with_penalties, get_multinomial_temperature, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
@@ -28,18 +28,18 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
 def test_sampling_precommit(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
 def test_sampling_nightly(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
 @pytest.mark.real_models
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
 def test_real_models(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
