@@ -245,7 +245,7 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_vlm_api.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -301,7 +301,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k test_smoke
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
@@ -310,7 +310,7 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/test_whisper_generate_api.py -k "not test_smoke"
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "not test_smoke"
 
   genai_python_lib_vlm:
     name: OpenVINO genai VLM tests (cmake + wheel)

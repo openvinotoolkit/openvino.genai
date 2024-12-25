@@ -1,15 +1,128 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import pytest
+from typing import Dict
 
-from openvino_genai import GenerationConfig
+from pathlib import Path
+from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
+
 from common import get_hugging_face_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \
-    get_scheduler_config, run_test_pipeline, get_beam_search, get_greedy, \
+    get_scheduler_config, get_greedy, run_continuous_batching_pipeline_test, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
+from ov_genai_test_utils import (
+    get_chat_models_list,
+    read_model,
+    get_continuous_batching,
+)
+
+def read_models_list(file_name: str):
+    models = []
+    with open(file_name) as f:
+        for model_name in f:
+            model_name = model_name.strip()
+            # skip comment in model scope file
+            if model_name.startswith('#'):
+                continue
+            models.append(model_name)
+    return models
+
+#
+# e2e tests on random and real models
+#
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
+def test_e2e_precommit(tmp_path, model_id):
+    run_continuous_batching_pipeline_test(tmp_path, model_id)
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
+def test_e2e_nightly(tmp_path, model_id):
+    run_continuous_batching_pipeline_test(tmp_path, model_id)
+
+
+@pytest.mark.real_models
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
+def test_e2e_real_models(tmp_path, model_id):
+    run_continuous_batching_pipeline_test(tmp_path, model_id)
+
+#
+# Chat scenario
+#
+
+generation_configs = [
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+]
+
+questions = [
+    '1+1=',
+    'What is the previous answer?',
+    'Why is the Sun yellow?',
+    'What was my first question?'
+]
+
+@pytest.mark.parametrize("generation_config", generation_configs[1:])
+@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.precommit
+def test_chat_scenario_vs_stateful(model_descr, generation_config: Dict):
+    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    cb_pipe = get_continuous_batching(path)
+
+    ov_pipe.start_chat()
+    cb_pipe.start_chat()
+
+    for question in questions:
+        generated = cb_pipe.generate(question, **generation_config)
+        reference = ov_pipe.generate(question, **generation_config)
+        assert generated == reference
+
+    # Test that finish_chat() doesn't fail just in case.
+    cb_pipe.finish_chat()
+
+
+#
+# Stress tests to check OOM case
+#
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()],
+                         ids=["greedy", "beam_search", "multinomial_all_parameters"])
+def test_post_oom_health(tmp_path, sampling_config):
+    generation_config = sampling_config
+    generation_config.ignore_eos = True
+    generation_config.max_new_tokens = 1000000
+
+    scheduler_config = get_scheduler_config()
+    scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
+
+    model_id : str = "facebook/opt-125m"
+    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+
+    models_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(opt_model, hf_tokenizer, models_path)
+
+    cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU")
+
+    # First run should return incomplete response
+    output = cb_pipe.generate(["What is OpenVINO?"], [generation_config])
+    assert (len(output))
+    assert (len(output[0].m_generation_ids))
+
+    # Same for the second run, here we want to make sure the cleanup works and we have free blocks after recent OOM
+    output = cb_pipe.generate(["What is OpenVINO?"], [generation_config])
+    assert (len(output))
+    assert (len(output[0].m_generation_ids))
+
+#
+# Pre-emption
+#
 
 def get_greedy_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -36,7 +149,7 @@ scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_preemption(tmp_path, params):
-    run_test_pipeline(tmp_path, "facebook/opt-125m", params[0], params[1])
+    run_continuous_batching_pipeline_test(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
 
 
 multinomial_params = RandomSamplingTestStruct(

@@ -105,7 +105,7 @@ def read_model(params, **tokenizer_kwargs):
         opt_model.generation_config.save_pretrained(path)
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
-    
+
     return (
         model_id,
         path,
