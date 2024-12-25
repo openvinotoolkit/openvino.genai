@@ -97,6 +97,9 @@ def analyze_args(args):
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
     model_args['infer_count'] = args.infer_count
+    model_args["num_steps"] = args.num_steps
+    model_args["height"] = args.height
+    model_args["width"] = args.width
     model_args['images'] = args.images
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
