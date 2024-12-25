@@ -170,7 +170,7 @@ def model_tokenizers_path_tmp_path(tmpdir_factory):
     yield model_id, Path(temp_path)
 
 
-def load_genai_pipe_with_configsconfigs: List[Tuple], temp_path):
+def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     # Load LLMPipeline where all configs are cleared.
     # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):

@@ -396,8 +396,8 @@ public:
         infer_request_guard.get().start_async();
         infer_request_guard.get().wait();
         return get_copied_results(
-            infer_request_guard.get().get_tensor("input_ids"),
-            infer_request_guard.get().get_tensor("attention_mask")
+            infer_request_guard.get().get_output_tensor(0),
+            infer_request_guard.get().get_output_tensor(1)
         );
     }
 
@@ -414,8 +414,8 @@ public:
             infer_request_guard.get().wait();
 
             unpadded = get_copied_results(
-                infer_request_guard.get().get_tensor("input_ids"),
-                infer_request_guard.get().get_tensor("attention_mask")
+                infer_request_guard.get().get_output_tensor(0),
+                infer_request_guard.get().get_output_tensor(1)
             );
         }
         return pad_left(unpadded.input_ids, unpadded.attention_mask);
