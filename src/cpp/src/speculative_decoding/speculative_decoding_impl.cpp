@@ -238,7 +238,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     bool get_first_token = false;
     float first_token_time = 0;
     int first_tokens_num = 0;
-    m_sd_metrics.clean_up();
     m_draft_pipeline->reset_infer_duration();
     m_main_pipeline->reset_infer_duration();
     while (has_non_finished_requests() && continue_generation) {
