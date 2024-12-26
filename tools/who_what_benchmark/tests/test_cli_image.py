@@ -99,7 +99,7 @@ def test_image_model_genai(model_id, model_type):
         assert result.returncode == 0
         assert os.path.exists(GT_FILE)
         assert os.path.exists(os.path.join(temp_dir, "reference"))
-    
+
         wwb_args = [
             "--target-model",
             MODEL_PATH,
