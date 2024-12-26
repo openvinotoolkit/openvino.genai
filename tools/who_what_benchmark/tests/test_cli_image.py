@@ -67,7 +67,7 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("echarlaix/tiny-random-stable-diffusion-xl", "image-to-image"),
+        ("dreamlike-art/dreamlike-anime-1.0", "image-to-image"),
         ("echarlaix/tiny-random-stable-diffusion-xl", "text-to-image"),
     ],
 )
@@ -99,7 +99,7 @@ def test_image_model_genai(model_id, model_type):
         assert result.returncode == 0
         assert os.path.exists(GT_FILE)
         assert os.path.exists(os.path.join(temp_dir, "reference"))
-
+    
         wwb_args = [
             "--target-model",
             MODEL_PATH,
