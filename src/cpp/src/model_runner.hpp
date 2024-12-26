@@ -232,8 +232,8 @@ public:
                              myfile << std::endl;
                          }
                      }*//*
-*/
-                }
+
+                }*/
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
