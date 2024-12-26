@@ -44,7 +44,7 @@ std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_confi
     size_t num_decoder_layers = 12;
     ov::InferRequest request = core.compile_model(get_model(num_decoder_layers)).create_infer_request();
     size_t head_size = 64, head_size_u8 = head_size + 8;
-    size_t num_kv_heads = 12;
+    std::vector<size_t> num_kv_heads(12, 12);
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     device_config.set_model_params(num_kv_heads, head_size_u8, num_decoder_layers);
     return std::make_shared<CacheManager>(device_config, request, core);  

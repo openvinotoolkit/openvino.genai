@@ -54,7 +54,8 @@ TEST(TestCacheManager, test_cache_size_param) {
     const std::string device = "CPU";
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     size_t num_decoder_layers = 12;
-    device_config.set_model_params(12, 64, num_decoder_layers);
+    std::vector<size_t> num_kv_heads(12, 12);
+    device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
@@ -76,7 +77,8 @@ TEST(TestCacheManager, test_kv_blocks_param) {
     const std::string device = "CPU";
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     size_t num_decoder_layers = 12;
-    device_config.set_model_params(12, 64, num_decoder_layers);
+    std::vector<size_t> num_kv_heads(12, 12);
+    device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
@@ -97,9 +99,12 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     size_t num_decoder_layers = 12;
     size_t head_size = 64;
-    size_t num_kv_heads = 12;
+    std::vector<size_t> num_kv_heads(12, 12);
     device_config.set_model_params(num_kv_heads, head_size, num_decoder_layers);
-    size_t block_size_in_bytes = num_decoder_layers * 2 * num_kv_heads * device_config.get_block_size() * head_size * device_config.get_cache_precision().size();
+    size_t block_size_in_bytes = 0;
+    for (size_t layer_id = 0; layer_id < num_decoder_layers; layer_id++) {
+        block_size_in_bytes += 2 * num_kv_heads[layer_id] * device_config.get_block_size() * head_size * device_config.get_cache_precision().size();
+    }
 
 
     ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
