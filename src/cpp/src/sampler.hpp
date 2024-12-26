@@ -55,8 +55,11 @@ class Sampler {
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
     std::mt19937 rng_engine;
+    size_t seed = rng_engine.default_seed;
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
+    // { request_id, { max_encoded_len, { stop_strings }}}
+    std::map<int64_t, std::pair<size_t, std::set<std::string>>> m_stop_strings;
 
     Tokenizer m_tokenizer;
 
@@ -65,7 +68,11 @@ public:
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
-    void set_seed(size_t seed) { rng_engine.seed(seed); }
+    void set_seed(size_t new_seed) {
+        rng_engine.seed(new_seed);
+        seed = new_seed;
+    }
+    size_t get_seed() { return seed; }
 
     void clear_request_info(uint64_t request_id);
 
@@ -115,7 +122,7 @@ class Sampler::GroupBeamSearcher {
 public:
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
 
-    void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
+    void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output, const std::pair<size_t, std::set<std::string>>& stop_strings);
     void finalize(SamplerOutput& sampler_output);
     std::map<size_t, int32_t> get_beam_idxs();
 };

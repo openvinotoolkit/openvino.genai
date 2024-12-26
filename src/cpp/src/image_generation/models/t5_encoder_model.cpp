@@ -80,8 +80,13 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
         ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
         size_t min_length = std::min(input_ids.get_size(), input_ids_token.get_size());
 
-        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-        std::copy_n(input_ids_token.data<std::int64_t>(), min_length, input_ids.data<std::int32_t>());
+        if (input_ids.get_element_type() == ov::element::i32) {
+            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int32_t>());
+        } else {
+            std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int64_t>());
+        }
     };
 
     ov::Tensor input_ids = m_request.get_input_tensor();
@@ -114,7 +119,6 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
                                                {current_batch_idx + 1, input_ids.get_shape()[1]}));
 
     // text embeddings
-    m_request.set_tensor("input_ids", input_ids);
     m_request.infer();
 
     return m_request.get_output_tensor(0);
