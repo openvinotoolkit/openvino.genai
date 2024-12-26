@@ -3,6 +3,7 @@
 
 import os
 import pytest
+import math
 from typing import Dict
 
 from pathlib import Path
@@ -53,21 +54,65 @@ def test_e2e_real_models(tmp_path, model_id):
     run_continuous_batching_pipeline_test(tmp_path, model_id)
 
 #
-# Chat scenario
+# Comparison with stateful
+# TODO: remove these tests once test_llm_pipeline.py are generalized and parametrized to test both Stateful and PA paths
 #
+
+test_configs = [
+    dict(max_new_tokens=20),
+    dict(max_new_tokens=200, ignore_eos=True),
+    dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
+]
+batched_prompts = [
+    ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
+    ['hello', 'Here is the longest nowel ever: '],
+    ['Alan Turing was a', 'return 0', '你好！ 你好嗎？'],
+    ['table is made', 'table is made [force left pad tokens]']
+]
+@pytest.mark.parametrize("generation_config", test_configs)
+@pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
+@pytest.mark.precommit
+def test_continuous_batching_vs_stateful(prompt, generation_config):
+    model_id, path, tokenizer, model, stateful = read_model((
+        "facebook/opt-125m",
+        Path("opt-125m")
+    ))
+    cb = get_continuous_batching(path)
+    generated = cb.generate(prompt, **generation_config)
+    reference = stateful.generate(prompt, **generation_config)
+    assert generated.texts == reference.texts
+    if 1 != generation_config.get("num_return_sequences", 1):
+        # Stateful puts zeroes to generated.scores. Don't compare them.
+        for gen, ref in zip(generated.scores, reference.scores):
+            assert math.isclose(gen, ref, abs_tol=0.0003)
+
+
+prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is that', 'table is made of']
+@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.precommit
+def test_cb_streamer_vs_return_vs_stateful(prompt):
+    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((
+        "facebook/opt-125m",
+        Path("opt-125m")
+    ))
+    cb_pipe = get_continuous_batching(path)
+    streamed = []
+    generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
+    reference = ov_pipe.generate(prompt, max_new_tokens=20)
+    assert generated == "".join(streamed)
+    assert "".join(streamed) == reference
+
 
 generation_configs = [
     dict(do_sample=False, max_new_tokens=20),
     dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
 ]
-
 questions = [
     '1+1=',
     'What is the previous answer?',
     'Why is the Sun yellow?',
     'What was my first question?'
 ]
-
 @pytest.mark.parametrize("generation_config", generation_configs[1:])
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
@@ -85,7 +130,6 @@ def test_chat_scenario_vs_stateful(model_descr, generation_config: Dict):
 
     # Test that finish_chat() doesn't fail just in case.
     cb_pipe.finish_chat()
-
 
 #
 # Stress tests to check OOM case

@@ -270,7 +270,7 @@ jobs:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py'
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py -k "not Qwen2-0.5B-Instruct"' # Skip failed tests Qwen2-0.5B-Instruct
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py'
     defaults:
       run:
         shell: bash

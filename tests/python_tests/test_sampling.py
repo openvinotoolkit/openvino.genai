@@ -336,9 +336,9 @@ def test_echo_with_generation_phase(tmp_path, get_generation_config, max_num_bat
     save_ov_model_from_optimum(opt_model, hf_tokenizer, model_path)
 
     cb_pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
-
     outputs = cb_pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(outputs))
+
     for output in outputs:
         assert(len(output.m_generation_ids))
         for sequence in output.m_generation_ids:
