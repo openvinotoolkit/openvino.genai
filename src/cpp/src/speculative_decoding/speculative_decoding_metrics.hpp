@@ -22,6 +22,7 @@ public:
     float draft_infer_duration = 0, main_infer_duration = 0;
     float first_token_duration = 0;
     float draft_infer_for_first_token = 0, main_infer_for_first_token = 0;
+    int draft_infer_num = 0, main_infer_num = 0;
 
     float get_avg_acceptance_rate(int64_t request_id);
     void update_acceptance_rate(int64_t request_id, float acceptance_rate);
@@ -31,6 +32,7 @@ public:
     void update_draft_accepted_tokens(int64_t request_id, size_t num_matches);
 
     void set_generated_len(int64_t request_id, size_t generated_len);
+    size_t get_generated_len(int64_t request_id);
 
     size_t get_iteration_number(int64_t request_id);
 
@@ -39,5 +41,11 @@ public:
     float get_inference_duration_percentage();
     void reset();
 
+    std::vector<int64_t> get_requests_id();
+
+    void print_acceptance_rates();
+    void print(bool is_printing_per_request = false);
+
+    void clean_up();
 };
 }
