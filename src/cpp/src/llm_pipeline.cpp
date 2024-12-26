@@ -76,6 +76,31 @@ public:
         ov::CompiledModel compiled_model;
         auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
         utils::slice_matmul_statefull_model(model);
+
+            int idx = 0;
+            for (const auto& op : model->get_ordered_ops()) {
+                if (idx == 0) {
+                    if (std::string(op->get_type_name()) == "ScaledDotProductAttention") {
+                        std::cout << "SDPA name " << op->get_friendly_name() << std::endl;
+                        int j = 0;
+                        auto get_out = [](const ov::Output<ov::Node>& out) {
+                            auto out_before = out;
+                            std::cout << "sdpa " << out_before.get_node_shared_ptr()->get_type_info().name << std::endl;
+                            std::cout << "sdpa " << out_before.get_node_shared_ptr()->get_friendly_name() << std::endl;
+                            return out_before;
+                        };
+                        for (auto& in : op->input_values()) {
+                                in.add_names({"sdpa_in_" + std::to_string(j++)});
+                                model->add_output(in);
+                        }
+                        // std::cout << "XXXXX name " << op << std::endl;
+                        // std::cout << "XXXX sdpa_" + std::to_string(idx) << std::endl;
+                        op->output(0).add_names({"sdpa_" + std::to_string(idx++)});
+                        model->add_output(op->output(0));
+                    }
+                }
+            }
+
         m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {

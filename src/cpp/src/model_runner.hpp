@@ -14,7 +14,7 @@
 #include "timer.hpp"
 
 #include "attention_output.hpp"
-
+static int i_init = 0;
 namespace ov::genai {
 
 inline std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
@@ -184,6 +184,56 @@ public:
             timer.end();
         }
 
+ /*       // write PA results data to the file; only for the prompt initialization inference
+                if (i_init == 0) {
+                    i_init++;
+                    std::ofstream myfile;
+                    myfile.open("pa_outs.txt");
+
+                    // Outputs:
+                    for (int i = 0; i < 1; ++i) {
+                        //myfile<< i << ": ";
+                        std::cout << "XXXXXX " << "print PA out " << std::endl;
+                        auto tensor = m_request.get_tensor("pa_" + std::to_string(i));
+                        const auto& data = tensor.data<float>();
+                        std::cout << "XXXXXX Out tensor size: " << tensor.get_size() << std::endl;
+                        for (int j = 0; j < tensor.get_size(); ++j) {
+                            myfile << data[j] << " ";
+                        }
+                        myfile << std::endl;
+                    }
+                    // INPUTS:
+                    *//* for (int i = 0; i < 13; ++i) {
+                         auto tensor = m_request.get_tensor("pa_in_" + std::to_string(i));
+                         std::cout << "PA in " << i << " " << tensor.get_shape() << std::endl;
+                         if (tensor.get_element_type() == ov::element::i32) {
+                             const auto& data = tensor.data<int>();
+                             for (int j = 0; j < tensor.get_size(); ++j) {
+                                 myfile << data[j] << " ";
+                             }
+                             myfile << std::endl;
+                         } else if (tensor.get_element_type() == ov::element::i64) {
+                             const auto& data = tensor.data<int64_t>();
+                             for (int j = 0; j < tensor.get_size(); ++j) {
+                                 myfile << data[j] << " ";
+                             }
+                             myfile << std::endl;
+                         } else if (tensor.get_element_type() == ov::element::f16){
+                                 const auto& data = tensor.data<ov::float16>();
+                                 for (int j = 0; j < tensor.get_size(); ++j) {
+                                     myfile << data[j] << " ";
+                                 }
+                                 myfile << std::endl;
+                             }else {
+                             const auto& data = tensor.data<float>();
+                             for (int j = 0; j < tensor.get_size(); ++j) {
+                                 myfile << data[j] << " ";
+                             }
+                             myfile << std::endl;
+                         }
+                     }*//*
+*/
+                }
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }

@@ -48,6 +48,32 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
     const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
+
+    /*int idx = 0; // only for the 1st PagedAttention
+    for (const auto& op : model->get_ordered_ops()) {
+        if (idx == 0) {
+            if (std::string(op->get_type_name()) == "PagedAttentionExtension") {
+                std::cout << "PA name " << op->get_friendly_name() << std::endl;
+
+                int j = 0;
+                for (auto& in : op->input_values()) {
+                    {
+                        in.add_names({"pa_in_" + std::to_string(j++)});
+                        model->add_output(in);
+                    }
+
+                }
+
+                auto transpose_out = op->output(0)
+                                         .get_target_inputs()
+                                         .begin()
+                                         ->get_node()
+                                         ->output(0);
+                transpose_out.add_names({"pa_" + std::to_string(idx++)});
+                model->add_output(transpose_out);
+            }
+        }
+    }*/
     auto compiled_model = core.compile_model(model, device_config.get_device(), properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
