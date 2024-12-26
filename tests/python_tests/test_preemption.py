@@ -4,7 +4,7 @@
 import pytest
 
 from openvino_genai import GenerationConfig
-from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \
+from common import get_hugging_face_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \
     get_scheduler_config, run_test_pipeline, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
@@ -87,7 +87,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
         config.rng_seed = 0
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
 
     models_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
@@ -168,7 +168,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     for config in generation_configs:
         config.rng_seed = 0
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
 
     models_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
