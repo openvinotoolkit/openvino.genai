@@ -605,11 +605,12 @@ def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: st
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = 1.0 # 1.0 means no penalty
+
     return ov_pipe.generate([prompt], **config).perf_metrics
 
 
 test_cases = [
-    (dict(max_new_tokens=20), 'table is made of'),
+    (dict(max_new_tokens=20), 'table is made of' * 20),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", get_models_list())
@@ -639,7 +640,7 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     raw_metrics = perf_metrics.raw_metrics
     durations = np.array(raw_metrics.m_durations) / 1000
     # Check that prefill is not included in durations for TPOT calculation.
-    # For the very long prompt prefill is slow and TTFT is much larger than any other token genration duration.
+    # For the very long prompt prefill is slow and TTFT is much larger than any other token generation duration.
     assert np.all(mean_ttft > durations * 2)
 
     mean_tpot, std_tpot = perf_metrics.get_tpot()
