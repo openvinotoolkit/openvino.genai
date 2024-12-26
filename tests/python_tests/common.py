@@ -42,13 +42,6 @@ def get_greedy_with_penalties() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
-def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
-    generation_config = GenerationConfig()
-    generation_config.num_return_sequences = 1
-    generation_config.min_new_tokens = 15
-    generation_config.max_new_tokens = 30
-    return generation_config
-
 def get_greedy_with_single_stop_string() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
@@ -122,6 +115,34 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_greedy_stop_strings_exclude_from_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines" }
+    generation_config.include_stop_str_in_output = False
+    return generation_config
+
+def get_greedy_stop_strings_include_to_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines" }
+    generation_config.include_stop_str_in_output = True
+    return generation_config
+
+def get_greedy_n_stop_strings_exclude_from_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines", "manage" }
+    generation_config.include_stop_str_in_output = False
+    return generation_config
+
+def get_greedy_n_stop_strings_include_to_output() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 30
+    generation_config.stop_strings = { "machines", "manage" }
     generation_config.include_stop_str_in_output = True
     return generation_config
 
@@ -238,7 +259,6 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
 
 def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
-    scheduler_config.cache_size = 1
     if scheduler_params is None:
         scheduler_config.dynamic_split_fuse = True
         # vLLM specific
@@ -269,10 +289,12 @@ def convert_to_hf(
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
     kwargs['max_new_tokens'] = generation_config.max_new_tokens
+    kwargs['min_new_tokens'] = generation_config.min_new_tokens
     if generation_config.stop_strings:
         kwargs['stop_strings'] = generation_config.stop_strings
 
     # copy default parameters
+    kwargs['bos_token_id'] = default_generation_config.bos_token_id
     kwargs['eos_token_id'] = default_generation_config.eos_token_id
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
@@ -281,11 +303,12 @@ def convert_to_hf(
         # beam search case
         kwargs['num_beam_groups'] = generation_config.num_beam_groups
         kwargs['num_beams'] = generation_config.num_beams
-        kwargs['diversity_penalty'] = generation_config.diversity_penalty
         kwargs['length_penalty'] = generation_config.length_penalty
         kwargs['no_repeat_ngram_size'] = generation_config.no_repeat_ngram_size
         kwargs['num_return_sequences'] = generation_config.num_return_sequences
         kwargs['output_scores'] = True
+        if generation_config.num_beam_groups > 1:
+            kwargs['diversity_penalty'] = generation_config.diversity_penalty
     elif generation_config.do_sample:
         # mulitinomial
         kwargs['temperature'] = generation_config.temperature
@@ -301,7 +324,7 @@ def convert_to_hf(
 
 
 def run_hugging_face(
-    model,
+    opt_model,
     hf_tokenizer,
     prompts: List[str],
     generation_configs: List[GenerationConfig],
@@ -310,8 +333,9 @@ def run_hugging_face(
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = inputs['input_ids'].numel()
-        generate_outputs = model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'], generation_config=convert_to_hf(model.generation_config, generation_config),
-                                        return_dict_in_generate=True, tokenizer=hf_tokenizer)
+        generate_outputs = opt_model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'],
+                                              generation_config=convert_to_hf(opt_model.generation_config, generation_config),
+                                              return_dict_in_generate=True, tokenizer=hf_tokenizer)
         all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
         generation_result = GenerationResult()
@@ -322,7 +346,7 @@ def run_hugging_face(
         generation_results.append(generation_result)
 
     del hf_tokenizer
-    del model
+    del opt_model
 
     return generation_results
 
@@ -333,14 +357,14 @@ def run_continuous_batching(
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {}, {})
+    pipe = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU")
     output = pipe.generate(prompts, generation_configs)
     del pipe
     shutil.rmtree(models_path)
     return output
 
 
-def get_models_list(file_name: str):
+def read_models_list(file_name: str):
     models = []
     with open(file_name) as f:
         for model_name in f:
@@ -359,9 +383,22 @@ def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, ge
             # Note, that for fp32 / fp16 models scores are different less than 0.001
             assert abs(hf_score - ov_score) < 0.02
 
-    assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
-    for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
-        assert hf_text == ov_text
+    if not generation_config.include_stop_str_in_output and len(generation_config.stop_strings) > 0:
+        assert len(hf_result.m_generation_ids) >= len(ov_result.m_generation_ids)
+        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
+            assert ov_text in hf_text
+    else:
+        assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
+        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
+            assert hf_text == ov_text
+
+
+def get_hugging_face_model_and_tokenizer(model_id: str, use_optimum = True):
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True) if use_optimum else \
+                AutoModelForCausalLM.from_pretrained(model_id)
+    return opt_model, hf_tokenizer
+
 
 def save_ov_model_from_optimum(model, hf_tokenizer, models_path: Path):
     model.save_pretrained(models_path)
@@ -371,23 +408,6 @@ def save_ov_model_from_optimum(model, hf_tokenizer, models_path: Path):
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, skip_special_tokens=True)
     serialize(tokenizer, models_path / "openvino_tokenizer.xml")
     serialize(detokenizer, models_path / "openvino_detokenizer.xml")
-
-def get_model_and_tokenizer(model_id: str, use_optimum = True):
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True) if use_optimum else \
-            AutoModelForCausalLM.from_pretrained(model_id)
-    return model, hf_tokenizer
-
-def generate_and_compare_with_hf(model_id: str, prompts: List[str], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig, tmp_path: Path):
-    use_optimum = True
-    models_path : Path = tmp_path / model_id
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum)
-
-    if use_optimum:
-        save_ov_model_from_optimum(model, hf_tokenizer, models_path)
-
-    hf_results = run_hugging_face(model=model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
-    _generate_and_compare_with_reference_results(models_path, prompts, hf_results, generation_configs, scheduler_config)
 
 
 def _generate_and_compare_with_reference_results(models_path: Path, prompts: List[str], reference_results: List[GenerationResult], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
@@ -401,18 +421,31 @@ def _generate_and_compare_with_reference_results(models_path: Path, prompts: Lis
         compare_results(ref_result, ov_result, generation_config)
 
 
+def generate_and_compare_with_hf(model_id: str, prompts: List[str], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig, tmp_path: Path):
+    use_optimum = True
+    models_path : Path = tmp_path / model_id
+    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum)
+
+    if use_optimum:
+        save_ov_model_from_optimum(opt_model, hf_tokenizer, models_path)
+
+    hf_results = run_hugging_face(opt_model=opt_model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
+    _generate_and_compare_with_reference_results(models_path, prompts, hf_results, generation_configs, scheduler_config)
+
+
 def generate_and_compare_with_reference_text(models_path: Path, prompts: List[str], reference_texts_per_prompt: List[List[str]], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
     ov_results : List[GenerationResult] = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     assert len(prompts) == len(reference_texts_per_prompt)
     assert len(prompts) == len(ov_results)
 
-    for prompt, ref_texts_for_this_prompt, ov_result, generation_config in zip(prompts, reference_texts_per_prompt, ov_results, generation_configs):
+    for prompt, ref_texts_for_this_prompt, ov_result in zip(prompts, reference_texts_per_prompt, ov_results):
         print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
 
         assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
             assert ref_text == ov_text
+
 
 def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
     prompts, generation_configs = get_test_dataset()

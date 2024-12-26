@@ -10,7 +10,7 @@ from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
 from typing import List, TypedDict
 
-from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
+from common import run_test_pipeline, read_models_list, get_hugging_face_model_and_tokenizer, save_ov_model_from_optimum, \
     generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
     get_greedy_with_penalties, get_multinomial_temperature, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
@@ -21,23 +21,25 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     get_beam_search, get_beam_search_min_and_max_tokens, get_beam_search_with_single_stop_string, \
     get_beam_search_with_multiple_stop_strings, get_beam_search_with_multiple_stop_strings_no_match, get_multinomial_max_and_min_token, \
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
+    get_greedy_stop_strings_exclude_from_output, get_greedy_stop_strings_include_to_output, \
+    get_greedy_n_stop_strings_exclude_from_output, get_greedy_n_stop_strings_include_to_output, \
     generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config, \
     run_continuous_batching
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
 def test_sampling_precommit(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
 def test_sampling_nightly(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
 @pytest.mark.real_models
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
 def test_real_models(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
@@ -77,7 +79,9 @@ def test_eos_greedy(tmp_path):
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config", [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_greedy_with_single_stop_string(),
                                                get_greedy_with_multiple_stop_strings(), get_greedy_with_multiple_stop_strings_no_match(), 
-                                               get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(), ],
+                                               get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(),
+                                               get_greedy_stop_strings_exclude_from_output(), get_greedy_stop_strings_include_to_output(),
+                                               get_greedy_n_stop_strings_exclude_from_output(), get_greedy_n_stop_strings_include_to_output() ],
         ids=[
             "greedy",
             "greedy_with_min_and_max_tokens",
@@ -88,6 +92,10 @@ def test_eos_greedy(tmp_path):
             "beam",
             "beam_search_min_and_max_tokens",
             "beam_search_with_multiple_stop_strings_no_match",
+            "get_greedy_stop_strings_exclude_from_output",
+            "get_greedy_stop_strings_include_to_output",
+            "get_greedy_n_stop_strings_exclude_from_output",
+            "get_greedy_n_stop_strings_include_to_output"
             ])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
     prompts = [
@@ -305,7 +313,7 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     generation_config.rng_seed = 0
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
 
     models_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
@@ -329,12 +337,12 @@ def test_echo_without_completion(tmp_path, get_generation_config, max_num_batche
     scheduler_config.max_num_batched_tokens = max_num_batched_tokens
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix()), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
 
     outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(outputs))
@@ -356,12 +364,12 @@ def test_echo_with_completion(tmp_path, get_generation_config, max_num_batched_t
     scheduler_config.max_num_batched_tokens = max_num_batched_tokens
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix()), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
 
     outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(outputs))
@@ -384,12 +392,12 @@ def test_post_oom_health(tmp_path, sampling_config):
     scheduler_config.num_kv_blocks = 10
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
 
     models_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, models_path)
 
-    pipe = ContinuousBatchingPipeline(models_path.absolute().as_posix(), Tokenizer(models_path.absolute().as_posix()), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU")
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert (len(output))

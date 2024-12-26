@@ -28,6 +28,21 @@ enum class GenerationChatInputsType {
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
 };
 
+struct HistoryRemoveManager
+{
+    size_t num_tokens_to_remove_from_kv_cache = 0;
+    size_t trusted_history_length = 0;
+
+    bool does_kv_cache_need_to_update() {
+        return (trusted_history_length > 0 || num_tokens_to_remove_from_kv_cache > 0);
+    }
+
+    void reset() {
+        num_tokens_to_remove_from_kv_cache = 0;
+        trusted_history_length = 0;
+    }
+};
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);
@@ -103,6 +118,8 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);
 
 void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
+
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 

@@ -45,6 +45,10 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param logprobs number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
  *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
  *
+ * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
+ * @param presence_penalty reduces absolute log prob if the token was generated at least once.
+ * @param frequency_penalty reduces absolute log prob as many times as the token was generated.
+ *
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
  * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -61,15 +65,13 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  *        "HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
  *        "NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
  *
- * Random sampling parameters:
+ * Random (or multinomial) sampling parameters:
+ * @param do_sample whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
  * @param temperature the value used to modulate token probabilities for random sampling.
  * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
- * @param do_sample whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
- * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
- * @param presence_penalty reduces absolute log prob if the token was generated at least once.
- * @param frequency_penalty reduces absolute log prob as many times as the token was generated.
  * @param rng_seed initializes random generator.
+ * @param num_return_sequences the number of sequences to generate from a single prompt.
  *
  * Assisting generation parameters:
  * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case of dynamic strategy candidates number update.
@@ -90,7 +92,7 @@ public:
     size_t min_new_tokens = 0;
     bool echo = false;
     size_t logprobs = 0;
-    
+
     std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
     bool include_stop_str_in_output = false;
