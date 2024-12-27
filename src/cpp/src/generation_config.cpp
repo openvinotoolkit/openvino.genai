@@ -33,8 +33,14 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "stop_strings", stop_strings);
     // note that include_stop_str_in_output is not present in HF GenerationConfig
     read_json_param(data, "include_stop_str_in_output", include_stop_str_in_output);
-    // note that stop_token_ids is not present in HF GenerationConfig
-    read_json_param(data, "stop_token_ids", stop_token_ids);
+    // note that stop_token_ids is not present in HF GenerationConfig, but some generation_config.json define
+    // multiple eos_token_id (e.g. https://huggingface.co/OpenGVLab/InternVL2-4B/blob/main/generation_config.json)
+    // so, we need to read them as 'stop_token_ids'
+    read_json_param(data, "eos_token_id", stop_token_ids);
+
+    if (eos_token_id == -1 && !stop_token_ids.empty()) {
+        eos_token_id = *stop_token_ids.begin();
+    }
 
     // note that echo is not present in HF GenerationConfig
     read_json_param(data, "echo", echo);
@@ -195,7 +201,7 @@ void GenerationConfig::validate() const {
                     "ignore_eos is true, in this case either 'max_new_tokens', or 'max_length' should be defined.");
 
     OPENVINO_ASSERT(eos_token_id != -1 || !stop_token_ids.empty() || !stop_strings.empty() || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
-                    "Either 'eos_token_id', or 'stop_token_ids', or ''stop_strings'', or 'max_new_tokens', or 'max_length' should be defined.");
+                    "Either 'eos_token_id', or 'stop_token_ids', or 'stop_strings', or 'max_new_tokens', or 'max_length' should be defined.");
 
     OPENVINO_ASSERT(max_new_tokens > 0 || (max_new_tokens == 0 && echo), "'max_new_tokens' must be greater than 0, if `echo` is set, 0 is also accepted");
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
@@ -217,8 +223,8 @@ void GenerationConfig::validate() const {
     }
 
     if (is_multinomial()) {
-        OPENVINO_ASSERT(top_k > 0, "When 'do_sample' is true, top_k must be a strictly positive, but got ", top_k);
-        OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0 and < 1, but got ", top_p);
+        OPENVINO_ASSERT(top_k >= 0, "When 'do_sample' is true, top_k must be a non-negative, but got ", top_k);
+        OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
         OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
     } else {
         // parameters requiring multinomial
@@ -246,8 +252,8 @@ void GenerationConfig::validate() const {
         // parameters requiring beam search
         OPENVINO_ASSERT(num_beam_groups == 1, "'num_beam_groups' is supported by beam search only and should be 1 otherwise, but got ", num_beam_groups);
         OPENVINO_ASSERT(no_repeat_ngram_size == std::numeric_limits<size_t>::max(), "'no_repeat_ngram_size' is supported only by beam search, otherwise should be set to max of size_t, but got ", no_repeat_ngram_size);
-        OPENVINO_ASSERT(diversity_penalty == 0.0f, "'diversity_penalty' is set to non default value 0.0f, but got ", diversity_penalty, ", which is supported only by beam search sampling, but 'num_beams' is set to 1");
-        OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to non default value 1.0f, but got ", length_penalty, ", which is supported only by beam search sampling, but 'num_beams' is set to 1");
+        OPENVINO_ASSERT(diversity_penalty == 0.0f, "'diversity_penalty' is set to ", diversity_penalty, " (default is 0.0f), which is supported only by beam search sampling");
+        OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, " (default is 1.0f), which is supported only by beam search sampling");
     }
 
     // assistant generation

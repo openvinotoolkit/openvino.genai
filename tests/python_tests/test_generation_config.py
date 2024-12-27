@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from openvino_genai import GenerationConfig
+from typing import Tuple, List
+import json
+import os
 import pytest
 
 configs = [
@@ -94,3 +97,38 @@ def test_invalid_generation_configs_throws(generation_config):
     config = GenerationConfig()
     with pytest.raises(RuntimeError):
         config.update_generation_config(**generation_config)
+
+
+def load_genai_generation_config_from_file(configs: List[Tuple], temp_path):
+    for json_file in temp_path.glob("*.json"):
+        json_file.unlink()
+
+    for config_json, config_name in configs:
+        with (temp_path / config_name).open('w') as f:
+            json.dump(config_json, f)
+
+    ov_generation_config = GenerationConfig(temp_path / "generation_config.json")
+
+    for _, config_name in configs:
+        os.remove(temp_path / config_name)
+
+    return ov_generation_config
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_multiple_eos_are_read_as_stop_token_ids(tmp_path):
+    generation_config_json = {
+        "eos_token_id": [
+            2,
+            32000,
+            32007
+        ]
+    }
+    configs = [
+        (generation_config_json, "generation_config.json"),
+    ]
+
+    generation_config = load_genai_generation_config_from_file(configs, tmp_path)
+
+    assert generation_config.eos_token_id == 2
+    assert generation_config.stop_token_ids == { 2, 32000, 32007 }

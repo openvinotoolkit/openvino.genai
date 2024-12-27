@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import pytest
 import numpy as np
 from transformers import AutoTokenizer
@@ -17,15 +18,19 @@ from ov_genai_test_utils import (
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
-    # load Tokenizer where all configs are cleared.
-    # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return openvino_genai.Tokenizer(temp_path)
+
+    ov_tokenizer = openvino_genai.Tokenizer(temp_path)
+
+    for _, config_name in configs:
+        os.remove(temp_path / config_name)
+
+    return ov_tokenizer
 
 
 def get_chat_templates():
@@ -181,7 +186,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.nightly
 def test_set_chat_template():
     model_descr = get_chat_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
 
     prompt = "how are you?"
     dummy_conversation = [

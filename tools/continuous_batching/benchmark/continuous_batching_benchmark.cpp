@@ -123,11 +123,6 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
         greedy_search.ignore_eos = true;
-        greedy_search.repetition_penalty = 1.0;
-        greedy_search.frequency_penalty = 0.0;
-        greedy_search.presence_penalty = 0.0;
-        greedy_search.diversity_penalty = 0.0;
-        greedy_search.length_penalty = 0.0;
 
         dataset.push_data(human_question, greedy_search);
         dataset.push_lens(input_len, output_len);

@@ -118,6 +118,7 @@ void init_generation_config(py::module_& m) {
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
         .def("is_beam_search", &GenerationConfig::is_beam_search)
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)
+        .def("is_multinomial", &GenerationConfig::is_multinomial)
         .def("is_assisting_generation", &GenerationConfig::is_assisting_generation)
         .def("is_prompt_lookup", &GenerationConfig::is_prompt_lookup)
         .def("validate", &GenerationConfig::validate)

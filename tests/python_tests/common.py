@@ -299,7 +299,7 @@ def convert_to_hf(
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
-    if generation_config.num_beams > 1:
+    if generation_config.is_beam_search():
         # beam search case
         kwargs['num_beam_groups'] = generation_config.num_beam_groups
         kwargs['num_beams'] = generation_config.num_beams
@@ -309,7 +309,7 @@ def convert_to_hf(
         kwargs['output_scores'] = True
         if generation_config.num_beam_groups > 1:
             kwargs['diversity_penalty'] = generation_config.diversity_penalty
-    elif generation_config.do_sample:
+    elif generation_config.is_multinomial():
         # mulitinomial
         kwargs['temperature'] = generation_config.temperature
         kwargs['top_k'] = generation_config.top_k
