@@ -53,15 +53,21 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
     OPENVINO_ASSERT(key_cache_params.count(key_cache_param_name) != 0, "key_cache.0 tensor not found among model parameters");
     ov::PartialShape k_shape = key_cache_params[key_cache_param_name]->get_partial_shape();
     OPENVINO_ASSERT(k_shape.rank().get_length() == 3, "KV cache shape is expected to have rank 3, while shape is ", k_shape);
-    size_t num_kv_heads = k_shape[1].get_length(), head_size = k_shape[2].get_length();
-
+    size_t head_size = k_shape[2].get_length();
+    std::vector<size_t> num_kv_heads(num_layers);
+    for (size_t idx = 0; idx < num_layers; idx++) {
+        size_t num_heads = key_cache_params[std::string("key_cache.") + std::to_string(idx)]->get_partial_shape()[1].get_length();
+        num_kv_heads[idx] = num_heads;
+    }
     device_config.set_model_params(num_kv_heads, head_size, num_layers);
 
-    for (auto it_k = key_cache_params.begin(), it_v = value_cache_params.begin(); it_k != key_cache_params.end();++it_k, ++it_v) {
-        it_k->second->set_element_type(device_config.get_cache_precision());
-        it_v->second->set_element_type(device_config.get_cache_precision());
-        it_k->second->set_partial_shape(device_config.get_key_cache_shape());
-        it_v->second->set_partial_shape(device_config.get_value_cache_shape());
+    for (size_t idx = 0; idx < num_layers; idx++) {
+        auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
+        auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
+        k->set_element_type(device_config.get_cache_precision());
+        v->set_element_type(device_config.get_cache_precision());
+        k->set_partial_shape(device_config.get_key_cache_shape(idx));
+        v->set_partial_shape(device_config.get_value_cache_shape(idx));
     }
 
     model->validate_nodes_and_infer_types();
