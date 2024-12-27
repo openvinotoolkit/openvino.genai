@@ -262,6 +262,10 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(!is_beam_search() && num_return_sequences == 1, "Beam search and parallel sampling are not compatible with assistant generation");
         OPENVINO_ASSERT(assistant_confidence_threshold == 0.0f || num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
     }
+
+    if (num_assistant_tokens == 0) {
+        OPENVINO_ASSERT(max_ngram_size == 0, "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
+    }
 }
 
 GenerationConfig beam_search() {
