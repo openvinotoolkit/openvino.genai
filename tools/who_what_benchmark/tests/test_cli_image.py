@@ -20,6 +20,8 @@ def run_wwb(args):
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "image-to-image", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "openvino"),
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "text-to-image", "hf"),
@@ -40,6 +42,8 @@ def test_image_model_types(model_id, model_type, backend):
         "CPU",
         "--model-type",
         model_type,
+        "--num-inference-steps",
+        "2",
     ]
     if backend == "hf":
         wwb_args.append("--hf")
@@ -65,7 +69,8 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("echarlaix/tiny-random-stable-diffusion-xl", "text-to-image"),
+        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-to-image"),
+        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "text-to-image"),
     ],
 )
 def test_image_model_genai(model_id, model_type):
@@ -73,15 +78,15 @@ def test_image_model_genai(model_id, model_type):
         GT_FILE = os.path.join(temp_dir, "gt.csv")
         MODEL_PATH = os.path.join(temp_dir, model_id.replace("/", "--"))
 
-        result = subprocess.run(["optimum-cli", "export",
-                                 "openvino", "-m", model_id,
+        result = subprocess.run(["huggingface-cli", "download",
+                                 model_id, "--local-dir",
                                  MODEL_PATH],
                                 capture_output=True, text=True)
         assert result.returncode == 0
 
         wwb_args = [
             "--base-model",
-            MODEL_PATH,
+            model_id,
             "--num-samples",
             "1",
             "--gt-data",
@@ -90,6 +95,8 @@ def test_image_model_genai(model_id, model_type):
             "CPU",
             "--model-type",
             model_type,
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -108,6 +115,8 @@ def test_image_model_genai(model_id, model_type):
             "--model-type",
             model_type,
             "--genai",
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
 
@@ -131,6 +140,9 @@ def test_image_model_genai(model_id, model_type):
             model_type,
             "--output",
             output_dir,
+            "--genai",
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -149,6 +161,8 @@ def test_image_model_genai(model_id, model_type):
             "CPU",
             "--model-type",
             model_type,
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -182,6 +196,8 @@ def test_image_custom_dataset(model_id, model_type, backend):
         "google-research-datasets/conceptual_captions",
         "--dataset-field",
         "caption",
+        "--num-inference-steps",
+        "2",
     ]
     if backend == "hf":
         wwb_args.append("--hf")
