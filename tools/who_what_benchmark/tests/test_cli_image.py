@@ -69,7 +69,7 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("dreamlike-art/dreamlike-anime-1.0", "image-to-image"),
+        ("katuni4ka/lcm-tiny-sd", "image-to-image"),
         ("echarlaix/tiny-random-stable-diffusion-xl", "text-to-image"),
     ],
 )
