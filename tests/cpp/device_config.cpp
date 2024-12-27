@@ -18,7 +18,7 @@ TEST(TestDeviceConfig, kv_cache_precision_u8) {
     const std::string device = "CPU";
     size_t num_decoder_layers = 12;
     size_t head_size = 64, head_size_u8 = head_size + 8;
-    size_t num_kv_heads = 12;
+    std::vector<size_t> num_kv_heads(12, 12);
 
     ov::genai::DeviceConfig device_config_default(core, scheduler_config, "CPU");
     device_config_default.set_model_params(num_kv_heads, head_size_u8, num_decoder_layers);

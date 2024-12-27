@@ -25,7 +25,7 @@ common_config = {
 def generate_chat_history(model_path, device, pipeline_config, questions):
     pipe = ov_genai.LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
-    chat_history = [ pipe.generate(question, max_new_tokens=50) for question in questions ]
+    chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
     pipe.finish_chat()
     return chat_history
 
