@@ -151,8 +151,8 @@ jobs:
           rm -rf ./ov_models/internvl2-1B
       - name: WWB Tests
         run: |
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git
+          python -m pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
   stateful:
     defaults:
@@ -189,9 +189,9 @@ jobs:
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |
-          pip install pytest
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pip install pytest
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git
+          python -m pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
 
   Overall_Status:

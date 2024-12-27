@@ -65,7 +65,10 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
+        ("echarlaix/tiny-random-latent-consistency", "text-to-image"),
         ("echarlaix/tiny-random-stable-diffusion-xl", "text-to-image"),
+        ("yujiepan/stable-diffusion-3-tiny-random", "text-to-image"),
+        ("katuni4ka/tiny-random-flux", "text-to-image"),
     ],
 )
 def test_image_model_genai(model_id, model_type):
