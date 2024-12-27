@@ -259,7 +259,7 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
     return {new_input_ids, new_attention_mask};
 }
 
-void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
+void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
     auto last_node = model->output(0).get_node()->input_value(0).get_node();
     ov::Node* matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node);
     if (matmul) {
