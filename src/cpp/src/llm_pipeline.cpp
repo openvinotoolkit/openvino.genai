@@ -703,8 +703,7 @@ std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::An
 ov::genai::LLMPipeline::LLMPipeline(
     const ov::InferRequest& request,
     const ov::genai::Tokenizer& tokenizer,
-    OptionalGenerationConfig generation_config
-) {
+    OptionalGenerationConfig generation_config) {
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     auto stop_time = std::chrono::steady_clock::now();
@@ -715,8 +714,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& properties
-){
+    const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
         properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
@@ -735,8 +733,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& config
-){
+    const ov::AnyMap& config) {
     auto start_time = std::chrono::steady_clock::now();
 
     if (config.find(ov::genai::scheduler_config.name()) != config.end() || 
@@ -759,8 +756,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& config,
-    const ov::genai::GenerationConfig& generation_config
-){
+    const ov::genai::GenerationConfig& generation_config) {
     auto [core_properties, plugin_config] = ov::genai::utils::split_core_compile_config(config);
 
     auto start_time = std::chrono::steady_clock::now();
