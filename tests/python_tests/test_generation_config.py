@@ -88,7 +88,7 @@ invalid_configs = [
     dict(max_new_tokens=1, assistant_confidence_threshold=1.0, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
     dict(max_new_tokens=1, num_assistant_tokens=2, num_beams=2), # beam search is not compatible with assistant generation
     dict(max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2), # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
-    dict(max_new_tokens=1, max_ngram_size=1),
+    dict(max_new_tokens=1, max_ngram_size=1), # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config", invalid_configs)

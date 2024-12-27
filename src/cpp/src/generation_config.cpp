@@ -36,10 +36,15 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // note that stop_token_ids is not present in HF GenerationConfig, but some generation_config.json define
     // multiple eos_token_id (e.g. https://huggingface.co/OpenGVLab/InternVL2-4B/blob/main/generation_config.json)
     // so, we need to read them as 'stop_token_ids'
-    read_json_param(data, "eos_token_id", stop_token_ids);
+    std::vector<int64_t> ordered_stop_token_ids;
+    read_json_param(data, "eos_token_id", ordered_stop_token_ids);
 
-    if (eos_token_id == -1 && !stop_token_ids.empty()) {
-        eos_token_id = *stop_token_ids.begin();
+    if (!ordered_stop_token_ids.empty()) {
+        std::copy(ordered_stop_token_ids.begin(), ordered_stop_token_ids.end(), std::back_inserter(stop_token_ids));
+
+        if (eos_token_id == -1) {
+            eos_token_id = ordered_stop_token_ids[0];
+        }
     }
 
     // note that echo is not present in HF GenerationConfig

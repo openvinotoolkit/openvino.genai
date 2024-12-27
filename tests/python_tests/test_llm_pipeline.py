@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_genai as ov_genai
-from openvino_genai import StopCriteria
+from openvino_genai import StopCriteria, GenerationConfig
 import pytest
 from typing import Union, List, Dict, Optional
 import numpy as np
@@ -298,10 +298,9 @@ def test_batch_size_switch():
 #
 
 generation_configs = [
-    dict(do_sample=False, max_new_tokens=20),
-    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+    dict(max_new_tokens=20),
+    dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0)
 ]
-
 
 questions = [
     '1+1=',
@@ -310,18 +309,21 @@ questions = [
     'What was my first question?'
 ]
 
-
-@pytest.mark.parametrize("generation_config", generation_configs)
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_compare_with_HF(model_descr, generation_config: Dict):
+def test_chat_compare_with_HF(model_descr, generation_config_kwargs: Dict):
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
 
     # Will set add_special_tokens=False inside pipeline when start_chat() is called.
     model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+
+    from transformers import GenerationConfig as HFGenerationConfig
+    hf_generation_config = HFGenerationConfig(**generation_config_kwargs)
+    ov_generation_config = GenerationConfig(**generation_config_kwargs)
 
     ov_pipe.start_chat()
     for prompt in questions:
@@ -331,11 +333,11 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
 
-        answer = opt_model.generate(**tokenized, **generation_config)
+        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
-        answer_ov = ov_pipe.generate(prompt, **generation_config)
+        answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
         chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
     ov_pipe.finish_chat()
