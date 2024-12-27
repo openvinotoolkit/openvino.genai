@@ -73,6 +73,7 @@ def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
     generation_config.num_return_sequences = generation_config.num_beams
@@ -82,6 +83,7 @@ def get_beam_search_min_and_max_tokens() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.min_new_tokens = 15
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
@@ -92,6 +94,7 @@ def get_beam_search_with_single_stop_string() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {"open sour"}  # expected match on "open source"
@@ -102,6 +105,7 @@ def get_beam_search_with_multiple_stop_strings() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {".", "software", "Intel"}
@@ -112,6 +116,7 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
