@@ -69,8 +69,8 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("katuni4ka/lcm-tiny-sd", "image-to-image"),
-        ("echarlaix/tiny-random-stable-diffusion-xl", "text-to-image"),
+        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-to-image"),
+        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "text-to-image"),
     ],
 )
 def test_image_model_genai(model_id, model_type):
@@ -78,8 +78,8 @@ def test_image_model_genai(model_id, model_type):
         GT_FILE = os.path.join(temp_dir, "gt.csv")
         MODEL_PATH = os.path.join(temp_dir, model_id.replace("/", "--"))
 
-        result = subprocess.run(["optimum-cli", "export",
-                                 "openvino", "-m", model_id,
+        result = subprocess.run(["huggingface-cli", "download",
+                                 model_id, "--local-dir",
                                  MODEL_PATH],
                                 capture_output=True, text=True)
         assert result.returncode == 0
@@ -95,7 +95,6 @@ def test_image_model_genai(model_id, model_type):
             "CPU",
             "--model-type",
             model_type,
-            "--hf",
             "--num-inference-steps",
             "2",
         ]
