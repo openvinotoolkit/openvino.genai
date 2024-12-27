@@ -72,7 +72,7 @@ public:
         const ov::AnyMap& config,
         const ov::genai::GenerationConfig& generation_config
     ) : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
-        ov::Core core;
+        ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model;
         auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
         utils::slice_matmul_statefull_model(model);
