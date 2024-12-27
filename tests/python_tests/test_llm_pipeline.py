@@ -12,11 +12,12 @@ from pathlib import Path
 import torch
 import math
 from ov_genai_test_utils import (
-    get_models_list, 
-    read_model, 
+    get_models_list,
+    read_model,
     load_genai_pipe_with_configs,
-    model_tmp_path, 
-    STOP_CRITERIA_MAP, 
+    get_chat_models_list,
+    model_tmp_path,
+    STOP_CRITERIA_MAP,
     get_continuous_batching,
 )
 
@@ -26,12 +27,12 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     config = generation_config.copy()  # to avoid side effects
     num_beams = config['num_beams'] if 'num_beams' in config else 1
     config['num_return_sequences'] = num_beams
-    
+
     if not isinstance(prompts, list):
         prompts = [prompts]
 
     if 'do_sample' not in config:
-        # Some HF models have default do_sample = True, and if we set beam search generation config 
+        # Some HF models have default do_sample = True, and if we set beam search generation config
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
@@ -72,7 +73,7 @@ def run_hf_ov_genai_comparison_text_inputs(model_descr, generation_config: Dict,
     config = generation_config.copy()  # to avoid side effects
 
     if 'do_sample' not in config:
-        # Some HF models have default do_sample = True, and if we set beam search generation config 
+        # Some HF models have default do_sample = True, and if we set beam search generation config
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
@@ -101,9 +102,9 @@ def run_hf_ov_genai_comparison_text_inputs(model_descr, generation_config: Dict,
 
 
 def run_hf_ov_genai_comparison_encoded_inputs(
-        model_descr, 
-        generation_config: Dict, 
-        input_ids: np.ndarray, 
+        model_descr,
+        generation_config: Dict,
+        input_ids: np.ndarray,
         attention_mask: Optional[np.array] = None
     ):
     device = 'CPU'
@@ -112,18 +113,18 @@ def run_hf_ov_genai_comparison_encoded_inputs(
     config = generation_config.copy()  # to avoid side effects
 
     if 'do_sample' not in config:
-        # Some HF models have default do_sample = True, and if we set beam search generation config 
+        # Some HF models have default do_sample = True, and if we set beam search generation config
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = 1.0 # 1.0 means no penalty
-    
+
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
         generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
-    
+
     if attention_mask is not None:
         inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
         inputs_hf = dict(inputs=torch.tensor(input_ids), attention_mask=torch.tensor(attention_mask))
@@ -138,6 +139,9 @@ def run_hf_ov_genai_comparison_encoded_inputs(
     ov_res = np.array(ov_output.tokens, dtype=np.int64)
     assert np.all(ov_res == hf_res)
 
+#
+# e2e work
+#
 
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
@@ -197,14 +201,13 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
-                              max_new_tokens, diversity_penalty, prompt):
+def test_beam_search_decoding(model_descr, num_beam_groups, group_size, max_new_tokens, diversity_penalty, prompt):
     generation_config = dict(
-        num_beam_groups=num_beam_groups, 
-        num_beams=num_beam_groups * group_size, 
-        diversity_penalty=diversity_penalty, 
-        num_return_sequences=num_beam_groups * group_size, 
-        max_new_tokens=max_new_tokens, 
+        num_beam_groups=num_beam_groups,
+        num_beams=num_beam_groups * group_size,
+        diversity_penalty=diversity_penalty,
+        num_return_sequences=num_beam_groups * group_size,
+        max_new_tokens=max_new_tokens,
     )
     run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
 
@@ -215,17 +218,17 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
+def test_beam_search_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     # todo: with EARLY stop_criteria looks like HF return invalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
     if (stop_criteria == StopCriteria.EARLY):
         pytest.skip()
     generation_config = dict(
-        num_beam_groups=2, 
-        num_beams=2 * 3, 
-        diversity_penalty=1.0, 
-        num_return_sequences=2 * 3, 
-        max_new_tokens=max_new_tokens, 
+        num_beam_groups=2,
+        num_beams=2 * 3,
+        diversity_penalty=1.0,
+        num_return_sequences=2 * 3,
+        max_new_tokens=max_new_tokens,
         stop_criteria=stop_criteria,
     )
     run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
@@ -241,11 +244,11 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
 def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
                                     max_new_tokens, prompt):
     generation_config = dict(
-        num_beam_groups=num_beam_groups, 
-        num_beams=num_beam_groups * group_size, 
-        diversity_penalty=1.0, 
-        num_return_sequences=num_beam_groups * group_size, 
-        max_new_tokens=max_new_tokens, 
+        num_beam_groups=num_beam_groups,
+        num_beams=num_beam_groups * group_size,
+        diversity_penalty=1.0,
+        num_return_sequences=num_beam_groups * group_size,
+        max_new_tokens=max_new_tokens,
     )
     run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
 
@@ -282,6 +285,72 @@ def test_greedy_repetition_penalty(model_descr, prompt):
 
     assert(len(set(ov_output.split(' '))) > len(set(ov_output_half_penalty.split(' '))))
 
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_batch_size_switch():
+    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    ov_pipe.generate(["a"], max_new_tokens=2)
+    ov_pipe.generate(["1", "2"], max_new_tokens=2)
+    ov_pipe.generate(["a"], max_new_tokens=2)
+
+#
+# Chat scenario
+#
+
+generation_configs = [
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+]
+
+
+questions = [
+    '1+1=',
+    'What is the previous answer?',
+    'Why is the Sun yellow?',
+    'What was my first question?'
+]
+
+
+@pytest.mark.parametrize("generation_config", generation_configs)
+@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_chat_compare_with_HF(model_descr, generation_config: Dict):
+    chat_history_hf = []
+    chat_history_ov = []
+    chat_prompt = ''
+
+    # Will set add_special_tokens=False inside pipeline when start_chat() is called.
+    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+
+    ov_pipe.start_chat()
+    for prompt in questions:
+        chat_history_hf.append({'role': 'user', 'content': prompt})
+        chat_history_ov.append({'role': 'user', 'content': prompt})
+
+        chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+        tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+
+        answer = opt_model.generate(**tokenized, **generation_config)
+        answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
+        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
+
+        answer_ov = ov_pipe.generate(prompt, **generation_config)
+        chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+
+    ov_pipe.finish_chat()
+
+    if chat_history_ov != chat_history_hf:
+        print(f'hf_output: {chat_history_hf}')
+        print(f'ov_output: {chat_history_ov}')
+
+    assert chat_history_ov == chat_history_hf
+
+
+#
+# Streaming with callback
+#
 
 def user_defined_callback(subword):
     print(subword)
@@ -422,11 +491,14 @@ def test_operator_with_streamer_kwargs_batch_throws():
     with pytest.raises(RuntimeError):
         ov_pipe('', num_beams=2, streamer=printer)
 
+#
+# Tests on generation configs (invalid cases and handling within LLMPipeline)
+#
 
 invalid_configs = [
     dict(num_beam_groups=3, num_beams=15, do_sample=True),
     # TODO: CVS-158682 eos_token_id is still read from tiny-random-phi3 and we cannot modify RTInfo in tests
-    # dict(do_sample=True),  # no eos_token_id no max_new_tokens, no max_len 
+    # dict(do_sample=True),  # no eos_token_id no max_new_tokens, no max_len
     dict(eos_token_id=42, ignore_eos=True),  # no max_new_tokens, no max_len with ignore_eos
     dict(repetition_penalty=-1.0, eos_token_id=42, max_new_tokens=20), # invalid penalty
     dict(temperature=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid temp
@@ -446,13 +518,15 @@ def test_invalid_generation_configs_throws(model_tmp_path, generation_config):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_valid_configs(model_tmp_path):
+def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     model_id, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
 
     config = ov_genai.GenerationConfig()
     config.do_sample = True  # no eos_token_id but it's loaded from config.json
     ov_pipe.set_generation_config(config)
+
+    assert 37 == ov_pipe.get_generation_config().eos_token_id
 
 
 invalid_py_configs = [
@@ -478,6 +552,9 @@ def test_python_generation_config_validation_throws(model_tmp_path, generation_c
     with pytest.raises(return_exception_type):
         ov_pipe.set_generation_config(ov_genai.GenerationConfig(**generation_config))
 
+#
+# Work with Unicode in Python API
+#
 
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -512,7 +589,137 @@ def test_unicode_pybind_decoding_one_string_streamer():
     ov_pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
     assert '�' == res_str[-1]
 
+#
+# Perf metrics
+#
 
+def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: str) -> ov_genai.PerfMetrics:
+    model_id, path, hf_tokenizer, opt_model, ov_pipe = model_descr
+
+    config = generation_config.copy()  # to avoid side effects
+
+    if 'do_sample' not in config:
+        # Some HF models have default do_sample = True, and if we set beam search generation config
+        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
+        # Do not apply 'repetition_penalty' if sampling is not used.
+        config['do_sample'] = False
+        config['repetition_penalty'] = 1.0 # 1.0 means no penalty
+
+    return ov_pipe.generate([prompt], **config).perf_metrics
+
+
+test_cases = [
+    (dict(max_new_tokens=20), 'table is made of'),
+]
+@pytest.mark.parametrize("generation_config,prompt", test_cases)
+@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.skip(reason="load_time + mean_gen_duration < total_time fails in https://github.com/openvinotoolkit/openvino.genai/actions/runs/12503590506/job/34884840100?pr=1440.")
+def test_perf_metrics(model_descr, generation_config, prompt):
+    import time
+    start_time = time.perf_counter()
+    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
+    total_time = (time.perf_counter() - start_time) * 1000
+
+    # Check that load time is adequate.
+    load_time = perf_metrics.get_load_time()
+    assert load_time > 0 and load_time < 1000.0
+
+    # Check that num input and generated tokens are adequate.
+    num_generated_tokens = perf_metrics.get_num_generated_tokens()
+    assert num_generated_tokens > 0 and num_generated_tokens <= generation_config['max_new_tokens']
+
+    num_input_tokens = perf_metrics.get_num_input_tokens()
+    assert num_input_tokens > 0 and num_input_tokens <= len(prompt)
+
+    mean_ttft, std_ttft = perf_metrics.get_ttft()
+    assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
+    assert mean_ttft > 0 and mean_ttft < 1000.0
+
+    raw_metrics = perf_metrics.raw_metrics
+    durations = np.array(raw_metrics.m_durations) / 1000
+    # Check that prefill is not included in durations for TPOT calculation.
+    # For the very long prompt prefill is slow and TTFT is much larger than any other token generation duration.
+    assert np.all(mean_ttft > durations * 2)
+
+    mean_tpot, std_tpot = perf_metrics.get_tpot()
+    assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
+    assert mean_tpot > 0 and mean_ttft < 1000.0
+
+    mean_throughput, std_throughput = perf_metrics.get_throughput()
+    assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
+    assert mean_throughput > 0 and mean_throughput < 20000.0
+
+    mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
+    assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
+    assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
+    assert std_gen_duration == 0
+
+    mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
+    assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
+    assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
+    assert std_tok_duration == 0
+
+    mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
+    assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
+    assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
+    assert std_detok_duration == 0
+
+    # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
+    assert np.allclose(mean_tpot, np.mean(durations))
+    assert np.allclose(std_tpot, np.std(durations))
+
+    raw_dur = np.array(raw_metrics.generate_durations) / 1000
+    assert np.allclose(mean_gen_duration, np.mean(raw_dur))
+    assert np.allclose(std_gen_duration, np.std(raw_dur))
+
+    raw_dur = np.array(raw_metrics.tokenization_durations) / 1000
+    assert np.allclose(mean_tok_duration, np.mean(raw_dur))
+    assert np.allclose(std_tok_duration, np.std(raw_dur))
+
+    raw_dur = np.array(raw_metrics.detokenization_durations) / 1000
+    assert np.allclose(mean_detok_duration, np.mean(raw_dur))
+    assert np.allclose(std_detok_duration, np.std(raw_dur))
+
+    assert len(raw_metrics.m_times_to_first_token) > 0
+    assert len(raw_metrics.m_batch_sizes) > 0
+    assert len(raw_metrics.m_durations) > 0
+
+#
+# Misc
+#
+
+# TODO: move to test_sampling.py
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_stop_token_ids():
+    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    res = ov_pipe.generate(
+        ov.Tensor([(1,)]),
+        max_new_tokens=3,
+        stop_token_ids={-1, 9935, ov_pipe.get_tokenizer().get_eos_token_id()},
+        include_stop_str_in_output=False
+    )
+    assert 2 == len(res.tokens[0])
+    assert 9935 in res.tokens[0]
+
+
+# TODO: move to test_sampling.py
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_stop_strings():
+    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    res = ov_pipe.generate(
+        "",
+        max_new_tokens=5,
+        stop_strings={"ignored", "боль"}
+    )
+    assert "боль" not in res
+
+
+# TODO: move this test to test_tokenizer.py
 @pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -541,163 +748,3 @@ def test_left_pad():
 
     models[2].pad_token = models[2].eos_token
     run_hf_ov_genai_comparison_batched(models, config, prompts)
-
-
-@pytest.mark.parametrize("generation_config", test_configs)
-@pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
-@pytest.mark.precommit
-def test_continuous_batching_vs_stateful(prompt, generation_config):
-    model_id, path, tokenizer, model, stateful = read_model((
-        "facebook/opt-125m",
-        Path("opt-125m")
-    ))
-    cb = get_continuous_batching(path)
-    generated = cb.generate(prompt, **generation_config)
-    reference = stateful.generate(prompt, **generation_config)
-    assert generated.texts == reference.texts
-    if 1 != generation_config.get("num_return_sequences", 1):
-        # Stateful puts zeroes to generated.scores. Don't compare them.
-        for gen, ref in zip(generated.scores, reference.scores):
-            assert math.isclose(gen, ref, abs_tol=0.0003)
-
-
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.precommit
-def test_cb_streamer_vs_return_vs_stateful(prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((
-        "facebook/opt-125m",
-        Path("opt-125m")
-    ))
-    cb_pipe = get_continuous_batching(path)
-    streamed = []
-    generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
-    reference = ov_pipe.generate(prompt, max_new_tokens=20)
-    assert generated == "".join(streamed)
-    assert "".join(streamed) == reference
-
-
-def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: str) -> ov_genai.PerfMetrics:
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = model_descr
-
-    config = generation_config.copy()  # to avoid side effects
-
-    if 'do_sample' not in config:
-        # Some HF models have default do_sample = True, and if we set beam search generation config 
-        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set explicitly to False, but only if test arguments omitted this arg.
-        # Do not apply 'repetition_penalty' if sampling is not used.
-        config['do_sample'] = False
-        config['repetition_penalty'] = 1.0 # 1.0 means no penalty
-    return ov_pipe.generate([prompt], **config).perf_metrics
-
-
-test_cases = [
-    (dict(max_new_tokens=20), 'table is made of'),
-]
-@pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_perf_metrics(model_descr, generation_config, prompt):
-    import time
-    start_time = time.perf_counter()
-    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
-    total_time = (time.perf_counter() - start_time) * 1000
-    
-    # Check that load time is adequate.
-    load_time = perf_metrics.get_load_time()
-    assert load_time > 0 and load_time < 1000.0  
-    
-    # Check that num input and generated tokens are adequate.
-    num_generated_tokens = perf_metrics.get_num_generated_tokens()
-    assert num_generated_tokens > 0 and num_generated_tokens <= generation_config['max_new_tokens']  
-    
-    num_input_tokens = perf_metrics.get_num_input_tokens()
-    assert num_input_tokens > 0 and num_input_tokens <= len(prompt)
-
-    mean_ttft, std_ttft = perf_metrics.get_ttft()
-    assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
-    assert mean_ttft > 0 and mean_ttft < 1000.0
-
-    raw_metrics = perf_metrics.raw_metrics
-    durations = np.array(raw_metrics.m_durations) / 1000
-    # Check that prefill is not included in durations for TPOT calculation.
-    # For the very long prompt prefill is slow and TTFT is much larger than any other token genration duration.
-    assert np.all(mean_ttft > durations * 2)
-
-    mean_tpot, std_tpot = perf_metrics.get_tpot()
-    assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
-    assert mean_tpot > 0 and mean_ttft < 1000.0
-
-    mean_throughput, std_throughput = perf_metrics.get_throughput()
-    assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
-    assert mean_throughput > 0 and mean_throughput < 20000.0
-    
-    mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
-    assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
-    assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
-    assert std_gen_duration == 0
-
-    mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
-    assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
-    assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
-    assert std_tok_duration == 0
-
-    mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
-    assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
-    assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
-    assert std_detok_duration == 0
-    
-    # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
-    assert np.allclose(mean_tpot, np.mean(durations))
-    assert np.allclose(std_tpot, np.std(durations))
-
-    raw_dur = np.array(raw_metrics.generate_durations) / 1000
-    assert np.allclose(mean_gen_duration, np.mean(raw_dur))
-    assert np.allclose(std_gen_duration, np.std(raw_dur))
-
-    raw_dur = np.array(raw_metrics.tokenization_durations) / 1000
-    assert np.allclose(mean_tok_duration, np.mean(raw_dur))
-    assert np.allclose(std_tok_duration, np.std(raw_dur))
-
-    raw_dur = np.array(raw_metrics.detokenization_durations) / 1000
-    assert np.allclose(mean_detok_duration, np.mean(raw_dur))
-    assert np.allclose(std_detok_duration, np.std(raw_dur))
-
-    assert len(raw_metrics.m_times_to_first_token) > 0
-    assert len(raw_metrics.m_batch_sizes) > 0
-    assert len(raw_metrics.m_durations) > 0
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_batch_switch():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
-    ov_pipe.generate(["a"], max_new_tokens=2)
-    ov_pipe.generate(["1", "2"], max_new_tokens=2)
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_stop_token_ids():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
-    res = ov_pipe.generate(
-        ov.Tensor([(1,)]),
-        max_new_tokens=3,
-        stop_token_ids={-1, 9935, ov_pipe.get_tokenizer().get_eos_token_id()},
-        include_stop_str_in_output=False
-    )
-    assert 2 == len(res.tokens[0])
-    assert 9935 in res.tokens[0]
-
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_stop_strings():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
-    res = ov_pipe.generate(
-        "",
-        max_new_tokens=5,
-        stop_strings={"ignored", "боль"}
-    )
-    assert "боль" not in res
