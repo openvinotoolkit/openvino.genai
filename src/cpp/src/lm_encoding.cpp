@@ -117,6 +117,50 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     raw_perf_counters.m_new_token_times.emplace_back(infer_end);
     raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
+    // write SDPA results data to the file; only for the prompt initialization inference
+    std::ofstream myfile;
+    myfile.open("sdpa_outs.txt");
+
+    // Outputs:
+    for (int i = 0; i < 1; ++i) {
+        //myfile << i << ": ";
+        std::cout << "XXXXXX " << "print sdpa out " << std::endl;
+        auto tensor = m_llm.get_tensor("sdpa_" + std::to_string(i));
+        const auto& data = tensor.data<float>();
+        std::cout << "XXXXXX Out tensor size: " << tensor.get_size() << std::endl;
+        for (int j = 0; j < tensor.get_size(); ++j) {
+            myfile << data[j] << " ";
+        }
+        myfile << std::endl;
+    }
+    /*
+
+     // INPUTS:
+    for (int i = 0; i < 4; ++i) {
+        auto tensor = m_llm.get_tensor("sdpa_in_" + std::to_string(i));
+        std::cout << "SDPA in " << i << " " << tensor.get_shape() << std::endl;
+        if (tensor.get_element_type() == ov::element::i32) {
+            const auto& data = tensor.data<int>();
+            for (int j = 0; j < tensor.get_size(); ++j) {
+                myfile << data[j] << " ";
+            }
+            myfile << std::endl;
+        } else if (tensor.get_element_type() == ov::element::i64) {
+            const auto& data = tensor.data<int64_t>();
+            for (int j = 0; j < tensor.get_size(); ++j) {
+                myfile << data[j] << " ";
+            }
+            myfile << std::endl;
+        } else {
+            const auto& data = tensor.data<float>();
+            for (int j = 0; j < tensor.get_size(); ++j) {
+                myfile << data[j] << " ";
+            }
+            myfile << std::endl;
+        }
+    }
+    */
+
     auto logits = m_llm.get_tensor("logits");
 
     int64_t sequence_len = logits.get_shape().at(1);
