@@ -40,7 +40,8 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "eos_token_id", ordered_stop_token_ids);
 
     if (!ordered_stop_token_ids.empty()) {
-        std::copy(ordered_stop_token_ids.begin(), ordered_stop_token_ids.end(), std::back_inserter(stop_token_ids));
+        for (int64_t stop_token_id : ordered_stop_token_ids)
+            stop_token_ids.insert(stop_token_id);
 
         if (eos_token_id == -1) {
             eos_token_id = ordered_stop_token_ids[0];
