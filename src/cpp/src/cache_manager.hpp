@@ -46,8 +46,6 @@ public:
         }
         OPENVINO_ASSERT(m_key_cache.size() == m_value_cache.size());
         m_num_allocated_kv_blocks = num_kv_blocks;
-        ov::Shape value_cache_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(), num_kv_blocks);
-        ov::Shape key_cache_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(), num_kv_blocks);
 
         const std::string device_name = m_device_config.get_device();
 
@@ -56,6 +54,8 @@ public:
 
         if (device_name.find("GPU") == std::string::npos) {// Allocate KV caches
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
+                ov::Shape value_cache_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(decoder_layer_id), num_kv_blocks);
+                ov::Shape key_cache_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(decoder_layer_id), num_kv_blocks);
                 ov::Tensor key_cache(m_device_config.get_cache_precision(), key_cache_shape);
                 ov::Tensor value_cache(m_device_config.get_cache_precision(), value_cache_shape);
 
@@ -104,6 +104,8 @@ public:
         } else {
             auto remote_context = m_core.get_default_context(device_name);
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
+                ov::Shape value_cache_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(decoder_layer_id), num_kv_blocks);
+                ov::Shape key_cache_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(decoder_layer_id), num_kv_blocks);
                 ov::Tensor key_cache = remote_context.create_tensor(m_device_config.get_cache_precision(),
                                                                     key_cache_shape);
                 ov::Tensor value_cache = remote_context.create_tensor(m_device_config.get_cache_precision(),
@@ -142,30 +144,27 @@ public:
     }
 
     void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) {
-        ov::Shape key_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(), m_num_allocated_kv_blocks);
-        ov::Shape value_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(), m_num_allocated_kv_blocks);
-
-        ov::Coordinate key_src_start_roi(key_shape.size(), 0);
-        ov::Coordinate key_src_end_roi = key_shape;
-        ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
-        ov::Coordinate key_dst_end_roi = key_shape;
-
-        ov::Coordinate value_src_start_roi(value_shape.size(), 0);
-        ov::Coordinate value_src_end_roi = value_shape;
-        ov::Coordinate value_dst_start_roi(value_shape.size(), 0);
-        ov::Coordinate value_dst_end_roi = value_shape;
-
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first;
-            key_src_end_roi[0] = (key_src_start_roi[0] = src_block_id) + 1;
-            value_src_end_roi[0] = (value_src_start_roi[0] = src_block_id) + 1;
-
             const std::list<size_t>& dst_block_ids = blocks_pair.second;
             for (size_t dst_block_id : dst_block_ids) {
-                key_dst_end_roi[0] = (key_dst_start_roi[0] = dst_block_id) + 1;
-                value_dst_end_roi[0] = (value_dst_start_roi[0] = dst_block_id) + 1;
-
                 for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
+                    ov::Shape key_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(decoder_layer_id), m_num_allocated_kv_blocks);
+                    ov::Shape value_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(decoder_layer_id), m_num_allocated_kv_blocks);
+                    ov::Coordinate key_src_start_roi(key_shape.size(), 0);
+                    ov::Coordinate key_src_end_roi = key_shape;
+                    ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
+                    ov::Coordinate key_dst_end_roi = key_shape;
+            
+                    ov::Coordinate value_src_start_roi(value_shape.size(), 0);
+                    ov::Coordinate value_src_end_roi = value_shape;
+                    ov::Coordinate value_dst_start_roi(value_shape.size(), 0);
+                    ov::Coordinate value_dst_end_roi = value_shape;
+                    key_src_end_roi[0] = (key_src_start_roi[0] = src_block_id) + 1;
+                    value_src_end_roi[0] = (value_src_start_roi[0] = src_block_id) + 1;
+                    key_dst_end_roi[0] = (key_dst_start_roi[0] = dst_block_id) + 1;
+                    value_dst_end_roi[0] = (value_dst_start_roi[0] = dst_block_id) + 1;
+
                     ov::Tensor key_src_cache_roi(m_key_cache[decoder_layer_id], key_src_start_roi, key_src_end_roi);
                     ov::Tensor key_dst_cache_roi(m_key_cache[decoder_layer_id], key_dst_start_roi, key_dst_end_roi);
 
