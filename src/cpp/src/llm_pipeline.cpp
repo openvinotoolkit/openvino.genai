@@ -703,8 +703,7 @@ std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::An
 ov::genai::LLMPipeline::LLMPipeline(
     const ov::InferRequest& request,
     const ov::genai::Tokenizer& tokenizer,
-    OptionalGenerationConfig generation_config
-) {
+    OptionalGenerationConfig generation_config) {
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     auto stop_time = std::chrono::steady_clock::now();
@@ -715,10 +714,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& properties
-){
+    const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+        properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, plugin_config);
     } else if (device == "NPU") {
@@ -733,11 +733,12 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& config
-){
+    const ov::AnyMap& config) {
     auto start_time = std::chrono::steady_clock::now();
 
-    if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
+    if (config.find(ov::genai::scheduler_config.name()) != config.end() || 
+        config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end() || 
+        config.find(ov::genai::prompt_lookup.name()) != config.end()) {
         auto [plugin_config, scheduler_config] = utils::split_scheduler_config(config);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, plugin_config);
     } else if (device == "NPU") {
@@ -755,12 +756,14 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& config,
-    const ov::genai::GenerationConfig& generation_config
-){
+    const ov::genai::GenerationConfig& generation_config) {
     auto [core_properties, plugin_config] = ov::genai::utils::split_core_compile_config(config);
 
     auto start_time = std::chrono::steady_clock::now();
-    if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end()) {
+    if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end() || 
+        plugin_config.find(utils::DRAFT_MODEL_ARG_NAME) != plugin_config.end() || 
+        plugin_config.find(ov::genai::prompt_lookup.name()) != plugin_config.end()){
+
         auto [plugin_config_, scheduler_config] = utils::split_scheduler_config(plugin_config);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, plugin_config_, generation_config);

@@ -185,6 +185,9 @@ void GenerationConfig::validate() const {
                     "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
     if (is_beam_search()) {
         OPENVINO_ASSERT(no_repeat_ngram_size > 0, "no_repeat_ngram_size must be positive");
+        if (num_beam_groups > 1) {
+            OPENVINO_ASSERT(diversity_penalty != 0.0f, "For grouped beam search 'diversity_penalty' should not be zero, it it fallbacks to non-grouped beam search");
+        }
     } else {
         OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "frequence_penalty penalty must be a [-2; +2]");
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
