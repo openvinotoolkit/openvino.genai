@@ -120,5 +120,10 @@ void init_generation_config(py::module_& m) {
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)
         .def("is_assisting_generation", &GenerationConfig::is_assisting_generation)
         .def("is_prompt_lookup", &GenerationConfig::is_prompt_lookup)
-        .def("update_generation_config", static_cast<void (GenerationConfig::*)(const ov::AnyMap&)>(&ov::genai::GenerationConfig::update_generation_config), py::arg("config_map"));
+        .def("validate", &GenerationConfig::validate)
+        .def("update_generation_config", [](
+            ov::genai::GenerationConfig config,
+            const py::kwargs& kwargs) {
+            config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
+        });
    }

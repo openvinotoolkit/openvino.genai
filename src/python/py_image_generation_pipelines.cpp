@@ -255,8 +255,8 @@ void init_image_generation_pipelines(py::module_& m) {
             device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Text2ImagePipeline properties
         )")
-        .def("get_generation_config", &ov::genai::Text2ImagePipeline::get_generation_config)
-        .def("set_generation_config", &ov::genai::Text2ImagePipeline::set_generation_config, py::arg("generation_config"))
+        .def("get_generation_config", &ov::genai::Text2ImagePipeline::get_generation_config, py::return_value_policy::copy)
+        .def("set_generation_config", &ov::genai::Text2ImagePipeline::set_generation_config, py::arg("config"))
         .def("set_scheduler", &ov::genai::Text2ImagePipeline::set_scheduler, py::arg("scheduler"))
         .def("reshape", &ov::genai::Text2ImagePipeline::reshape, py::arg("num_images_per_prompt"), py::arg("height"), py::arg("width"), py::arg("guidance_scale"))
         .def_static("stable_diffusion", &ov::genai::Text2ImagePipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
@@ -323,8 +323,8 @@ void init_image_generation_pipelines(py::module_& m) {
             device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: Image2ImagePipeline properties
         )")
-        .def("get_generation_config", &ov::genai::Image2ImagePipeline::get_generation_config)
-        .def("set_generation_config", &ov::genai::Image2ImagePipeline::set_generation_config, py::arg("generation_config"))
+        .def("get_generation_config", &ov::genai::Image2ImagePipeline::get_generation_config, py::return_value_policy::copy)
+        .def("set_generation_config", &ov::genai::Image2ImagePipeline::set_generation_config, py::arg("config"))
         .def("set_scheduler", &ov::genai::Image2ImagePipeline::set_scheduler, py::arg("scheduler"))
         .def("reshape", &ov::genai::Image2ImagePipeline::reshape, py::arg("num_images_per_prompt"), py::arg("height"), py::arg("width"), py::arg("guidance_scale"))
         .def_static("stable_diffusion", &ov::genai::Image2ImagePipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
@@ -386,8 +386,8 @@ void init_image_generation_pipelines(py::module_& m) {
             device (str): Device to run the model on (e.g., CPU, GPU).
             kwargs: InpaintingPipeline properties
         )")
-        .def("get_generation_config", &ov::genai::InpaintingPipeline::get_generation_config)
-        .def("set_generation_config", &ov::genai::InpaintingPipeline::set_generation_config, py::arg("generation_config"))
+        .def("get_generation_config", &ov::genai::InpaintingPipeline::get_generation_config, py::return_value_policy::copy)
+        .def("set_generation_config", &ov::genai::InpaintingPipeline::set_generation_config, py::arg("config"))
         .def("set_scheduler", &ov::genai::InpaintingPipeline::set_scheduler, py::arg("scheduler"))
         .def("reshape", &ov::genai::InpaintingPipeline::reshape, py::arg("num_images_per_prompt"), py::arg("height"), py::arg("width"), py::arg("guidance_scale"))
         .def_static("stable_diffusion", &ov::genai::InpaintingPipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
