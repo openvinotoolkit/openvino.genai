@@ -74,7 +74,7 @@ public:
     ) : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
         ov::CompiledModel compiled_model;
         auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
-        utils::slice_matmul_statefull_model(model);
+        utils::slice_matmul_stateful_model(model);
         m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
         if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
