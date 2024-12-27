@@ -15,7 +15,7 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_test_pipeline
+from common import TESTS_ROOT, run_continuous_batching_pipeline_test
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -168,5 +168,5 @@ scheduler_params_list = [
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
-    run_test_pipeline(tmp_path, "facebook/opt-125m", params[0], params[1])
+    run_continuous_batching_pipeline_test(tmp_path, "facebook/opt-125m", params[0], params[1])
 

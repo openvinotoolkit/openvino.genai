@@ -364,18 +364,6 @@ def run_continuous_batching(
     return output
 
 
-def read_models_list(file_name: str):
-    models = []
-    with open(file_name) as f:
-        for model_name in f:
-            model_name = model_name.strip()
-            # skip comment in model scope file
-            if model_name.startswith('#'):
-                continue
-            models.append(model_name)
-    return models
-
-
 def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
     if generation_config.is_beam_search():
         assert len(hf_result.m_scores) == len(ov_result.m_scores)
@@ -447,7 +435,7 @@ def generate_and_compare_with_reference_text(models_path: Path, prompts: List[st
             assert ref_text == ov_text
 
 
-def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
+def run_continuous_batching_pipeline_test(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = get_scheduler_config(scheduler_params)
 
