@@ -42,6 +42,8 @@ def test_image_model_types(model_id, model_type, backend):
         "CPU",
         "--model-type",
         model_type,
+        "--num-inference-steps",
+        "2",
     ]
     if backend == "hf":
         wwb_args.append("--hf")
@@ -94,6 +96,8 @@ def test_image_model_genai(model_id, model_type):
             "--model-type",
             model_type,
             "--hf",
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -112,6 +116,8 @@ def test_image_model_genai(model_id, model_type):
             "--model-type",
             model_type,
             "--genai",
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
 
@@ -136,6 +142,8 @@ def test_image_model_genai(model_id, model_type):
             "--output",
             output_dir,
             "--genai",
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -154,6 +162,8 @@ def test_image_model_genai(model_id, model_type):
             "CPU",
             "--model-type",
             model_type,
+            "--num-inference-steps",
+            "2",
         ]
         result = run_wwb(wwb_args)
         assert result.returncode == 0
@@ -187,6 +197,8 @@ def test_image_custom_dataset(model_id, model_type, backend):
         "google-research-datasets/conceptual_captions",
         "--dataset-field",
         "caption",
+        "--num-inference-steps",
+        "2",
     ]
     if backend == "hf":
         wwb_args.append("--hf")
