@@ -187,7 +187,10 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     WhisperGenerationConfig res_config;
     if (config.has_value())
         res_config = *config;
-    res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
+
+    if (!kwargs.empty())
+        res_config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
+
     return res_config;
 }
 
@@ -295,7 +298,12 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
         .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
-        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"));
+        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
+        .def("update_generation_config", [](
+            ov::genai::WhisperGenerationConfig& config,
+            const py::kwargs& kwargs) {
+            config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
+        });;
 
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())

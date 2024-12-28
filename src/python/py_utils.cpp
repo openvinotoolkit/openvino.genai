@@ -358,7 +358,10 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
     ov::genai::GenerationConfig res_config;
     if(config.has_value())
         res_config = *config;
-    res_config.update_generation_config(kwargs_to_any_map(kwargs));
+
+    if (!kwargs.empty())
+        res_config.update_generation_config(kwargs_to_any_map(kwargs));
+
     return res_config;
 }
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_genai as ov_genai
-from openvino_genai import StopCriteria
+from openvino_genai import StopCriteria, GenerationConfig
 import pytest
 from typing import Union, List, Dict, Optional
 import numpy as np
@@ -18,7 +18,6 @@ from ov_genai_test_utils import (
     get_chat_models_list,
     model_tmp_path,
     STOP_CRITERIA_MAP,
-    get_continuous_batching,
 )
 
 
@@ -299,10 +298,9 @@ def test_batch_size_switch():
 #
 
 generation_configs = [
-    dict(do_sample=False, max_new_tokens=20),
-    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+    dict(max_new_tokens=20),
+    dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0)
 ]
-
 
 questions = [
     '1+1=',
@@ -311,18 +309,21 @@ questions = [
     'What was my first question?'
 ]
 
-
-@pytest.mark.parametrize("generation_config", generation_configs)
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_compare_with_HF(model_descr, generation_config: Dict):
+def test_chat_compare_with_HF(model_descr, generation_config_kwargs: Dict):
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
 
     # Will set add_special_tokens=False inside pipeline when start_chat() is called.
     model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+
+    from transformers import GenerationConfig as HFGenerationConfig
+    hf_generation_config = HFGenerationConfig(**generation_config_kwargs)
+    ov_generation_config = GenerationConfig(**generation_config_kwargs)
 
     ov_pipe.start_chat()
     for prompt in questions:
@@ -332,11 +333,11 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
 
-        answer = opt_model.generate(**tokenized, **generation_config)
+        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
-        answer_ov = ov_pipe.generate(prompt, **generation_config)
+        answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
         chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
     ov_pipe.finish_chat()
@@ -492,29 +493,8 @@ def test_operator_with_streamer_kwargs_batch_throws():
         ov_pipe('', num_beams=2, streamer=printer)
 
 #
-# Tests on generation configs (invalid cases and handling within LLMPipeline)
+# Tests on generation configs handling
 #
-
-invalid_configs = [
-    dict(num_beam_groups=3, num_beams=15, do_sample=True),
-    # TODO: CVS-158682 eos_token_id is still read from tiny-random-phi3 and we cannot modify RTInfo in tests
-    # dict(do_sample=True),  # no eos_token_id no max_new_tokens, no max_len
-    dict(eos_token_id=42, ignore_eos=True),  # no max_new_tokens, no max_len with ignore_eos
-    dict(repetition_penalty=-1.0, eos_token_id=42, max_new_tokens=20), # invalid penalty
-    dict(temperature=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid temp
-    dict(top_p=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_p
-    dict(top_k=0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_k
-]
-@pytest.mark.parametrize("generation_config", invalid_configs)
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_invalid_generation_configs_throws(model_tmp_path, generation_config):
-    model_id, temp_path = model_tmp_path
-    config_json = {}
-    ov_pipe = load_genai_pipe_with_configs([(config_json, "config.json")], temp_path)
-    with pytest.raises(RuntimeError):
-        ov_pipe.generate('blah blah', **generation_config)
-
 
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -529,28 +509,14 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     assert 37 == ov_pipe.get_generation_config().eos_token_id
 
 
-invalid_py_configs = [
-    dict(num_beam_groups=3, num_beams=15, do_sample=True),
-    # TODO: Currently unexpected params do not cause exceptions. Need to implement it in c++ and return this test
-  #  dict(unexisting_key_name=True),  # no eos_token_id no max_new_tokens, no max_len
-    dict(eos_token_id=42, ignore_eos=True),  # no max_new_tokens, no max_len with ignore_eos
-    dict(repetition_penalty=-1.0, eos_token_id=42, max_new_tokens=20), # invalid penalty
-    dict(temperature=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid temp
-    dict(top_p=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_p
-    dict(top_k=0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_k
-]
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("generation_config", invalid_py_configs)
-def test_python_generation_config_validation_throws(model_tmp_path, generation_config):
-    model_id, temp_path = model_tmp_path
-    ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
-
-    # 'unexisting_key_name' key validity is checked in pybind and ValueError will be returned
-    #  instead of RuntimeError, which is returned when GenerationConfig values are validated
-    return_exception_type = ValueError if 'unexisting_key_name' in generation_config else RuntimeError
-    with pytest.raises(return_exception_type):
-        ov_pipe.set_generation_config(ov_genai.GenerationConfig(**generation_config))
+def test_pipeline_validates_generation_config():
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
+    ov_pipe = read_model((model_id, path))[4]
+    invalid_generation_config = dict(num_beam_groups=3, num_beams=15, do_sample=True) # beam sample is not supported
+    with pytest.raises(RuntimeError):
+        ov_pipe.generate("dummy prompt", **invalid_generation_config)
 
 #
 # Work with Unicode in Python API
@@ -699,7 +665,7 @@ def test_stop_token_ids():
     res = ov_pipe.generate(
         ov.Tensor([(1,)]),
         max_new_tokens=3,
-        stop_token_ids={-1, 9935, ov_pipe.get_tokenizer().get_eos_token_id()},
+        stop_token_ids={9935, ov_pipe.get_tokenizer().get_eos_token_id()},
         include_stop_str_in_output=False
     )
     assert 2 == len(res.tokens[0])

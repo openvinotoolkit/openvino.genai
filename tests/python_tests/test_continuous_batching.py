@@ -105,7 +105,7 @@ def test_cb_streamer_vs_return_vs_stateful(prompt):
 
 generation_configs = [
     dict(do_sample=False, max_new_tokens=20),
-    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
+    dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0, repetition_penalty=1.0)
 ]
 questions = [
     '1+1=',
@@ -113,19 +113,22 @@ questions = [
     'Why is the Sun yellow?',
     'What was my first question?'
 ]
-@pytest.mark.parametrize("generation_config", generation_configs[1:])
+@pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
-def test_chat_scenario_vs_stateful(model_descr, generation_config: Dict):
+def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
     model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
     cb_pipe = get_continuous_batching(path)
 
     ov_pipe.start_chat()
     cb_pipe.start_chat()
 
+    generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_pipe.set_generation_config(generation_config)
+
     for question in questions:
-        generated = cb_pipe.generate(question, **generation_config)
-        reference = ov_pipe.generate(question, **generation_config)
+        generated = cb_pipe.generate(question, generation_config=generation_config)
+        reference = ov_pipe.generate(question)
         assert generated == reference
 
     # Test that finish_chat() doesn't fail just in case.
@@ -168,9 +171,13 @@ def test_post_oom_health(tmp_path, sampling_config):
 # Pre-emption
 #
 
-def get_greedy_seq_len_300() -> GenerationConfig:
+def get_parallel_sampling_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_return_sequences = 3
+    # TODO: add generation_config.generator and return parameters below
+    # generation_config.num_return_sequences = 3
+    # generation_config.do_sample = True
+    # generation_config.top_k = 10
+    # generation_config.top_p = 0.5
     generation_config.max_new_tokens = 300
     return generation_config
 
@@ -178,14 +185,15 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 300
     generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
 scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
                          ({"num_kv_blocks": 2, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
-                         ({"num_kv_blocks": 10, "dynamic_split_fuse": True}, get_greedy_seq_len_300()),
-                         ({"num_kv_blocks": 10, "dynamic_split_fuse": False}, get_greedy_seq_len_300()),
+                         ({"num_kv_blocks": 10, "dynamic_split_fuse": True}, get_parallel_sampling_seq_len_300()),
+                         ({"num_kv_blocks": 10, "dynamic_split_fuse": False}, get_parallel_sampling_seq_len_300()),
                          ({"num_kv_blocks": 34, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
                          ({"num_kv_blocks": 34, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
                          ({"num_kv_blocks": 100, "dynamic_split_fuse": True}, get_beam_search_seq_len_300()),
