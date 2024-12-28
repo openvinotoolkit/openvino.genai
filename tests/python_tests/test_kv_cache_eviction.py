@@ -15,7 +15,7 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_test_pipeline
+from common import TESTS_ROOT, run_continuous_batching_pipeline_test
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -147,7 +147,6 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 
 def get_greedy_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_return_sequences = 3
     generation_config.max_new_tokens = 300
     return generation_config
 
@@ -155,6 +154,7 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 300
     generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
@@ -168,5 +168,5 @@ scheduler_params_list = [
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
-    run_test_pipeline(tmp_path, "facebook/opt-125m", params[0], params[1])
+    run_continuous_batching_pipeline_test(tmp_path, "facebook/opt-125m", params[0], params[1])
 
