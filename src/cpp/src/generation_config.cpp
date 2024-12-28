@@ -93,8 +93,6 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // append EOS to stop_token_ids
     if (eos_token_id != -1)
         set_eos_token_id(eos_token_id);
-
-    validate();
 }
 
 void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
@@ -153,8 +151,6 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "assistant_confidence_threshold", assistant_confidence_threshold);
     read_anymap_param(properties, "num_assistant_tokens", num_assistant_tokens);
     read_anymap_param(properties, "max_ngram_size", max_ngram_size);
-
-    validate();
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {

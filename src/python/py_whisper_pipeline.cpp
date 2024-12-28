@@ -300,7 +300,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
         .def("update_generation_config", [](
-            ov::genai::WhisperGenerationConfig config,
+            ov::genai::WhisperGenerationConfig& config,
             const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });;

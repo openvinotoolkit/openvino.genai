@@ -224,7 +224,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("max_sequence_length", &ov::genai::ImageGenerationConfig::max_sequence_length)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
-            ov::genai::ImageGenerationConfig config,
+            ov::genai::ImageGenerationConfig& config,
             const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });

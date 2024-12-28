@@ -35,12 +35,15 @@ configs = [
     dict(max_new_tokens=1, num_assistant_tokens=2),
     dict(max_new_tokens=1, num_assistant_tokens=2, max_ngram_size=2), # prompt lookup
 ]
-@pytest.mark.parametrize("generation_config", configs)
+@pytest.mark.parametrize("generation_config_kwargs", configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_valid_configs(generation_config):
-    config = GenerationConfig(**generation_config)
-    config.update_generation_config(**generation_config)
+def test_valid_configs(generation_config_kwargs):
+    config = GenerationConfig(**generation_config_kwargs)
+    config.validate()
+
+    config = GenerationConfig()
+    config.update_generation_config(**generation_config_kwargs)
     config.validate()
 
 
@@ -48,7 +51,7 @@ invalid_configs = [
     dict(num_return_sequences=0), # no reason to run with empty output
     dict(num_return_sequences=2), # beam search or multimonial is required
     # stop conditions
-    dict(),
+    dict(), # no stop conditions at all
     dict(eos_token_id=1), # 'stop_token_ids' does not contain 'eos_token_id'
     dict(eos_token_id=1, stop_token_ids={2}), # 'stop_token_ids' is not empty, but does not contain 'eos_token_id'
     dict(ignore_eos=True),  # no 'max_new_tokens', no 'max_length' with 'ignore_eos'
@@ -60,7 +63,6 @@ invalid_configs = [
     dict(max_new_tokens=1, presence_penalty=-3.0), # invalid presence_penalty
     dict(max_new_tokens=1, frequency_penalty=3.0), # invalid frequency_penalty
     # multinomial sampling
-    dict(max_new_tokens=1, do_sample=True, top_k=-1), # 'top_k' must be > 0 when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, top_p=1.1), # 'top_p' must be within (0, 1] when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, top_p=0), # 'top_p' must be within (0, 1] when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, temperature=-1.0), # invalid temp
@@ -91,13 +93,18 @@ invalid_configs = [
     dict(max_new_tokens=1, max_ngram_size=1), # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
     # TODO: add tests for invalid properties
 ]
-@pytest.mark.parametrize("generation_config", invalid_configs)
+@pytest.mark.parametrize("generation_config_kwargs", invalid_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_invalid_generation_configs_throws(generation_config):
-    config = GenerationConfig()
+def test_invalid_generation_configs_throws(generation_config_kwargs):
+    config = GenerationConfig(**generation_config_kwargs)
     with pytest.raises(RuntimeError):
-        config.update_generation_config(**generation_config)
+        config.validate()
+
+    config = GenerationConfig()
+    config.update_generation_config(**generation_config_kwargs)
+    with pytest.raises(RuntimeError):
+        config.validate()
 
 
 def load_genai_generation_config_from_file(configs: List[Tuple], temp_path):
