@@ -34,8 +34,8 @@ void init_tokenizer(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             auto kwargs_properties = pyutils::kwargs_to_any_map(kwargs);
             if (properties.size()) {
-                PyErr_WarnEx(PyExc_DeprecationWarning, 
-                         "'properties' parameters is deprecated, please use kwargs to pass config properties instead.", 
+                PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "'properties' parameters is deprecated, please use kwargs to pass config properties instead.",
                          1);
                 auto map_properties = pyutils::properties_to_any_map(properties);
                 kwargs_properties.insert(map_properties.begin(), map_properties.end());

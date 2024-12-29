@@ -84,7 +84,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "num_inference_steps",
         "max_sequence_length"
     };
-    // These properties should be casted to ov::AnyMap, instead of std::map. 
+    // These properties should be casted to ov::AnyMap, instead of std::map.
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
         "PREFILL_CONFIG",

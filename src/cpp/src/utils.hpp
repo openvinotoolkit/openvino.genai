@@ -16,7 +16,7 @@ namespace utils {
 // Variable template that checks if a type has begin() and end() member functions
 template<typename, typename = void>
 constexpr bool is_container = false;
- 
+
 template<typename T>
 constexpr bool is_container<T,
     std::void_t<decltype(std::declval<T>().begin()),

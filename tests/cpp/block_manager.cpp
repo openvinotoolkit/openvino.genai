@@ -13,11 +13,11 @@ TEST(TestBlockManager, general_test) {
     ov::genai::TokenIds prompt_ids;
 
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
-        0, 
+        0,
         ov::Tensor(ov::element::i64, {
         prompt_ids.size()}, prompt_ids.data()),
         ov::genai::beam_search(),
-        4, 
+        4,
         false);
     auto sequence = sequence_group->get_not_finished_sequences()[0];
     bm.allocate(sequence, 6);
@@ -46,7 +46,7 @@ TEST(TestBlockManager, required_blocks_count) {
 
     std::vector<uint64_t> tokens = {0,1,2,3,4};
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
-        0, 
+        0,
         ov::Tensor(ov::element::i64, {
         tokens.size()}, tokens.data()),
         ov::genai::beam_search(),
@@ -62,7 +62,7 @@ TEST(TestBlockManager, required_blocks_count) {
     EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 2);
 
     sequence_group->finish_iteration();
-    auto sequence_to_fork = sequence_group->get_running_sequences()[0];    
+    auto sequence_to_fork = sequence_group->get_running_sequences()[0];
     for (size_t i = 0; i < 4; ++i) {
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
         bm.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());

@@ -27,7 +27,7 @@ from .py_openvino_genai import (
 
 # LLM pipeline
 from .py_openvino_genai import (
-    LLMPipeline, 
+    LLMPipeline,
     draft_model,
 )
 

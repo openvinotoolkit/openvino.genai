@@ -35,15 +35,15 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-  
+
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
 
     ov::genai::LLMPipeline pipe(models_path, device);
-    
+
     for (size_t i = 0; i < num_warmup; i++)
         pipe.generate(prompt, config);
-    
+
     ov::genai::DecodedResults res = pipe.generate(prompt, config);
     ov::genai::PerfMetrics metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {

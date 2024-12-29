@@ -30,7 +30,7 @@ struct ModelDesc {
         properties(properties),
         scheduler_config(scheduler_config),
         generation_config(generation_config) {}
-    
+
     ModelDesc() = default;
 };
 
@@ -41,7 +41,7 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
-    
+
 public:
     SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
 

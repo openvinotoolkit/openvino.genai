@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) try {
                 std::cout << "Partial result:" << std::endl;
                 print_generation_result(generation_result);
             }
-            break;   
+            break;
         default:
             break;
         }

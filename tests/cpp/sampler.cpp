@@ -42,7 +42,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     };
 
     // to emulate processed prompt and add next token [ 0 ]
-    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
+    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);
     sequence_groups.front()->update_processed_tokens_num(5);
 
     // append candidates [ 2, 3, 4 ]
@@ -86,7 +86,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     };
 
     // to emulate processed prompt and add next token [ 0 ]
-    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
+    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);
     sequence_groups.front()->update_processed_tokens_num(5);
 
     // append candidates [ 1, 2, 2 ]
@@ -131,7 +131,7 @@ TEST(SamplerValidationMode, gen_phase) {
     };
 
     // to emulate processed prompt and add next token [ 0 ]
-    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
+    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);
     sequence_groups.front()->update_processed_tokens_num(5);
 
     // append candidates [ 1, 2, 3 ]
