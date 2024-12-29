@@ -1949,7 +1949,7 @@ class WhisperGenerationConfig:
 
         Whisper specific parameters:
 
-        :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
+        :param decoder_start_token_id: Corresponds to the "<|startoftranscript|>" token.
         :type decoder_start_token_id: int
 
         :param pad_token_id: Padding token id.
@@ -1964,7 +1964,7 @@ class WhisperGenerationConfig:
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
 
-        :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+        :param prev_sot_token_id: Corresponds to the "<|startofprev|>" token.
         :type prev_sot_token_id: int
 
         :param is_multilingual:
@@ -1983,7 +1983,7 @@ class WhisperGenerationConfig:
         :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
         :type lang_to_id: Dict[str, int]
 
-        :param task: Task to use for generation, either “translate” or “transcribe”
+        :param task: Task to use for generation, either "translate" or "transcribe"
         :type task: int
 
         :param return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
@@ -2111,7 +2111,7 @@ class WhisperPipeline:
 
             Whisper specific parameters:
 
-            :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
+            :param decoder_start_token_id: Corresponds to the "<|startoftranscript|>" token.
             :type decoder_start_token_id: int
 
             :param pad_token_id: Padding token id.
@@ -2126,7 +2126,7 @@ class WhisperPipeline:
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
 
-            :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+            :param prev_sot_token_id: Corresponds to the "<|startofprev|>" token.
             :type prev_sot_token_id: int
 
             :param is_multilingual:
@@ -2145,7 +2145,7 @@ class WhisperPipeline:
             :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
             :type lang_to_id: Dict[str, int]
 
-            :param task: Task to use for generation, either “translate” or “transcribe”
+            :param task: Task to use for generation, either "translate" or "transcribe"
             :type task: int
 
             :param return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.

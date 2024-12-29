@@ -31,7 +31,7 @@ public:
 
     // Whisper specific
 
-    // Corresponds to the ”<|startoftranscript|>” token.
+    // Corresponds to the "<|startoftranscript|>" token.
     int64_t decoder_start_token_id = 50258;
 
     // End of stream token id.
@@ -46,7 +46,7 @@ public:
     // Transcribe token id.
     int64_t transcribe_token_id = 50359;
 
-    // Corresponds to the ”<|startofprev|>” token.
+    // Corresponds to the "<|startofprev|>" token.
     int64_t prev_sot_token_id = 50361;
 
     // No timestamps token id.
@@ -64,7 +64,7 @@ public:
     // Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
     std::map<std::string, int64_t> lang_to_id;
 
-    // Task to use for generation, either “translate” or “transcribe”.
+    // Task to use for generation, either "translate" or "transcribe".
     // Can be set for multilingual models only.
     std::optional<std::string> task = std::nullopt;
 
