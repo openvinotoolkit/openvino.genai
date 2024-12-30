@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_genai as ov_genai
-from openvino.runtime import Core
+from openvino_genai import GenerationConfig
 import pytest
 import sys
 from ov_genai_test_utils import (
@@ -10,6 +10,28 @@ from ov_genai_test_utils import (
     get_chat_models_list,
 )
 
+from common import                                      \
+    get_greedy,                                         \
+    get_greedy_with_min_and_max_tokens,                 \
+    get_greedy_with_repetition_penalty,                 \
+    get_greedy_with_penalties,                          \
+    get_greedy_with_min_and_max_tokens,                 \
+    get_greedy_with_single_stop_string,                 \
+    get_greedy_with_multiple_stop_strings,              \
+    get_greedy_with_multiple_stop_strings_no_match,     \
+    get_greedy_stop_strings_exclude_from_output,        \
+    get_greedy_stop_strings_include_to_output,          \
+    get_greedy_n_stop_strings_exclude_from_output,      \
+    get_greedy_n_stop_strings_include_to_output,        \
+    get_multinomial_temperature,                        \
+    get_multinomial_temperature_and_top_p,              \
+    get_multinomial_temperature_and_top_k,              \
+    get_multinomial_temperature_top_p_and_top_k,        \
+    get_multinomial_temperature_and_repetition_penalty, \
+    get_multinomial_temperature_and_frequence_penalty,  \
+    get_multinomial_temperature_and_presence_penalty,   \
+    get_multinomial_all_parameters,                     \
+    get_beam_search
 
 # This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
 common_config = {
@@ -29,23 +51,64 @@ def generate_chat_history(model_path, device, pipeline_config, questions):
     return chat_history
 
 
+generation_configs = [
+    get_greedy(),
+    get_greedy_with_min_and_max_tokens(),
+    get_greedy_with_repetition_penalty(),
+    get_greedy_with_penalties(),
+    get_greedy_with_min_and_max_tokens(),
+    get_greedy_with_single_stop_string(),
+    get_greedy_with_multiple_stop_strings(),
+    get_greedy_with_multiple_stop_strings_no_match(),
+    get_greedy_stop_strings_exclude_from_output(),
+    get_greedy_stop_strings_include_to_output(),
+    get_greedy_n_stop_strings_exclude_from_output(),
+    get_greedy_n_stop_strings_include_to_output()
+]
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_generation_compare_with_stateful():
-    prompt = 'The Sun is yellow because'
+@pytest.mark.parametrize("generation_config", generation_configs)
+def test_generation_compare_with_stateful(generation_config):
+    prompt = 'What is OpenVINO?'
     model_path = get_models_list()[0][1]
 
     stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU")
-    ref_out = stateful_pipe.generate(prompt, max_new_tokens=100)
+    ref_out = stateful_pipe.generate(prompt, generation_config)
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
-    actual_out = static_pipe.generate(prompt, max_new_tokens=100)
+    actual_out = static_pipe.generate(prompt, generation_config)
 
     if ref_out != actual_out:
         print(f'ref_out: {ref_out}\n')
         print(f'actual_out: {actual_out}')
     assert ref_out == actual_out
+
+
+generation_configs = [
+    get_multinomial_temperature(),
+    get_multinomial_temperature_and_top_p(),
+    get_multinomial_temperature_and_top_k(),
+    get_multinomial_temperature_top_p_and_top_k(),
+    get_multinomial_temperature_and_repetition_penalty(),
+    get_multinomial_temperature_and_frequence_penalty(),
+    get_multinomial_temperature_and_presence_penalty()
+]
+@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("generation_config", generation_configs)
+def test_multinomial_sampling(generation_config):
+	# Multinomial sampling is highly sensitive to raw logits values. For fair comparison,
+	# a reference implementation producing identical logits (e.g., from StaticLLMPipeline)
+	# would be necessary. However, the CPU in StatefulPipeline and StaticLLMPipeline may apply
+    # different optimizations due to differences in provided topologies, leading to slight
+    # variations in raw logits. Therefore, there is no reliable reference for validation,
+    # so only ensure that no exceptions are raised.
+    prompt = 'What is OpenVINO?'
+    model_path = get_models_list()[0][1]
+    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    actual_out = static_pipe.generate(prompt, generation_config)
 
 
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
@@ -100,17 +163,18 @@ def test_batch_raise_error():
 
 
 # TODO: For the further sampling support
-generation_configs = [
-    dict(num_beam_groups=3),
-    dict(do_sample=True)
+generation_config = [
+    get_beam_search(),
+    # NB: Only num_return_sequences=1 is supported!
+    get_multinomial_all_parameters()
 ]
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
-@pytest.mark.parametrize("generation_config", generation_configs)
+@pytest.mark.parametrize("generation_config", generation_config)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config):
     model_path = get_models_list()[0][1]
-    prompt = 'The Sun is yellow because'
+    prompt = 'What is OpenVINO?'
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
         pipe.generate(prompt, **generation_config)

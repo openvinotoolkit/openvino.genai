@@ -38,6 +38,21 @@ std::vector<Token> multinomial_sample(const Logits& logits,
                                       size_t num_tokens_per_sequence,
                                       std::mt19937& rng_engine);
 
+std::pair<size_t, std::set<std::string>>
+process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& tokenizer);
+
+struct MatchStopStringResult {
+    size_t to_remove = 0;
+    // int64_t last_token_id = 0;
+    // bool is_to_update_last_token = false;
+    bool is_matched = false;
+};
+
+MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
+                      const TokenIds& generated_tokens,
+                      const std::pair<size_t, std::set<std::string>>& stop_strings,
+                      bool is_include_to_output);
+
 struct SamplerOutput {
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;

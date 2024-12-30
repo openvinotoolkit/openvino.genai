@@ -238,12 +238,12 @@ enum class GenerateHint {
 
 std::string to_string(GenerateHint h) {
     switch(h) {
-        case GenerateHint::FAST_COMPILE : 
+        case GenerateHint::FAST_COMPILE :
             return "FAST_COMPILE";
-        case GenerateHint::BEST_PERF : 
+        case GenerateHint::BEST_PERF :
             return "BEST_PERF";
         default:
-            OPENVINO_THROW("Unsupported value for type GenerateHint provided");        
+            OPENVINO_THROW("Unsupported value for type GenerateHint provided");
     }
 }
 
@@ -692,7 +692,6 @@ StaticLLMPipeline::StaticLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config
 ) : LLMPipelineImplBase(tokenizer, generation_config) {
-    
     bool use_blobs = false;
     auto anyopt = get_option<bool>(properties, "USE_BLOBS");
     if (anyopt.has_value()) {
@@ -1005,11 +1004,22 @@ EncodedResults StaticLLMPipeline::generate(
         OPENVINO_THROW("Currently only greedy and multinomial decoding are supported");
     }
 
+    // FIXME:...
+    if ( streamer_ptr                &&
+        !config.stop_strings.empty() &&
+        !config.include_stop_str_in_output) {
+        OPENVINO_THROW("Static LLM pipeline doesn't support "
+                       "\"include_stop_str_in_output: false\" when a streamer is provided");
+    }
+
     std::vector<int64_t> input_ids_vec;
     input_ids_vec.reserve(input_ids.get_size());
     std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), std::back_inserter(input_ids_vec));
     LogitProcessor logit_processor(config, input_ids_vec);
     m_rng_engine.seed(config.rng_seed);
+
+    const auto processed_stop_strings =
+        process_stop_strings(config.stop_strings, m_tokenizer);
 
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
@@ -1111,11 +1121,25 @@ EncodedResults StaticLLMPipeline::generate(
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
+
+        bool met_stop_str = false;
+        if (!config.stop_strings.empty()) {
+            auto match_result = match_stop_string(m_tokenizer,
+                                                  results.tokens[0],
+                                                  processed_stop_strings,
+                                                  config.include_stop_str_in_output);
+            if (match_result.is_matched) {
+                met_stop_str = true;
+                results.tokens[0].erase(
+                    results.tokens[0].end() - match_result.to_remove, results.tokens[0].end());
+            }
+        }
+
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
         }
 
-        if (last_token == config.eos_token_id && !config.ignore_eos) {
+        if (met_stop_str || (last_token == config.eos_token_id && !config.ignore_eos)) {
             break;
         }
 

@@ -160,13 +160,6 @@ std::vector<int64_t> encode_and_process_string(const std::string& stop_string, o
     return encoded_stop_string;
 }
 
-struct MatchStopStringResult {
-    size_t to_remove = 0;
-    // int64_t last_token_id = 0;
-    // bool is_to_update_last_token = false;
-    bool is_matched = false;
-};
-
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
 MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                       const TokenIds& generated_tokens,
