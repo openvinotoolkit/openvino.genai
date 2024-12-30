@@ -52,7 +52,7 @@ public:
     /**
      * @return The ov::InferRequest this ModelRunner is handling.
      */
-    ov::InferRequest get_infer_request() const {
+    ov::InferRequest get_infer_request() {
         return m_request;
     }
 
