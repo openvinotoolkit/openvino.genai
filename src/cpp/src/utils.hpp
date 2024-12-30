@@ -82,11 +82,7 @@ const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
     auto config_file_path = models_path / config_name;
-    if (std::filesystem::exists(config_file_path)) {
-        return Config{(config_file_path).string()};
-    } else {
-        return Config{};
-    }
+    return std::filesystem::exists(config_file_path) ? Config{config_file_path} : Config{};
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
