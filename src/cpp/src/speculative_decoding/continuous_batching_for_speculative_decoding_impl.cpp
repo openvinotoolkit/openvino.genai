@@ -17,7 +17,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    init(model, scheduler_config, plugin_config, device_config, core);
+    initialize_pipeline(model, scheduler_config, plugin_config, device_config, core);
 }
 
 void
