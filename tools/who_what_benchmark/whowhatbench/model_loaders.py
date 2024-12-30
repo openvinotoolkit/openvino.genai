@@ -236,7 +236,7 @@ def load_inpainting_genai_pipeline(model_dir, device="CPU", ov_config=None):
     return GenAIModelWrapper(
         openvino_genai.InpaintingPipeline(model_dir, device, **ov_config),
         model_dir,
-        "image-to-image"
+        "image-inpainting"
     )
 
 
