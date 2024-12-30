@@ -35,7 +35,6 @@ def teardown_module():
     shutil.rmtree(MODEL_CACHE)
 
 
-
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
