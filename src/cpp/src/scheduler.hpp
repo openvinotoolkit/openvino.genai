@@ -56,6 +56,10 @@ public:
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
+
+        // free some blocks taken by non-confirmed condidates in SD / prompt look-up
+        clean_empty_blocks(sequence_groups);
+
         if (m_block_manager.get_total_number_of_kv_blocks() == 0) {
             _initialize_cache(sequence_groups);
         }
@@ -84,6 +88,10 @@ public:
         return scheduler_output;
     }
 
+    /**
+     * Some requests can contain empty blocks after prompt look-up or speculative decoding
+     * when candidates are not confirmed by main model and we need to free blocks, taken by these candidates
+     */
     void clean_empty_blocks(std::vector<SequenceGroup::Ptr>& seq_groups) {
         for (const auto& seq_group : seq_groups)
             m_block_manager.free_empty_physical_blocks(seq_group);
