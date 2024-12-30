@@ -7,6 +7,7 @@
 #include <set>
 #include <cstdlib>
 #include <string_view>
+#include <memory>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -44,6 +45,7 @@ class Sequence {
     static std::mutex m_counter_mutex;
 
     size_t _make_hash(size_t content_length);
+
 public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
@@ -58,6 +60,7 @@ public:
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob){
         OPENVINO_ASSERT(seq.m_id != m_id);
+        set_sequence_group_weak_ptr(seq.get_sequence_group_ptr());
     }
 
     static Sequence::Ptr create(const uint64_t id) {
@@ -130,7 +133,7 @@ public:
         GenerationOutput output;
         if (token_cnt > 0) {
             OPENVINO_ASSERT(m_generated_ids.size());
-            output.score = get_cumulative_log_probs();
+            output.score = get_cumulative_log_prob();
 
             auto generated_token_id = get_generated_ids();
             auto generated_log_probs = get_generated_log_probs();
@@ -163,7 +166,7 @@ public:
         return m_generated_log_probs;
     }
 
-    float get_cumulative_log_probs() const {
+    float get_cumulative_log_prob() const {
         return m_cumulative_log_prob;
     }
 
@@ -173,13 +176,13 @@ public:
     }
 
     float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
-        float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
+        float cumulative_log_prob = get_cumulative_log_prob(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
     }
 
     // Each KV block can be uniquely identified by
-    void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
+    void set_sequence_group_weak_ptr(std::weak_ptr<SequenceGroup> sequence_group) {
         m_sequence_group = sequence_group;
     }
 
@@ -198,7 +201,7 @@ public:
 // - each sequence shares the same prompt and KV-caches for promp
 // - in case of beam search each sequence also shares specific part of generic phase
 //   via reference counter mechanism on BlockManager level
-class SequenceGroup {
+class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup>  {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
     ov::genai::GenerationConfig m_sampling_params;
@@ -206,7 +209,6 @@ class SequenceGroup {
     TokenIds m_prompt_ids;
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
-    bool m_enable_prefix_caching;
     size_t m_num_evicted_tokens = 0;
     bool m_has_echoed = false;
 
@@ -227,24 +229,22 @@ class SequenceGroup {
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
 
-    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
           m_block_size(block_size),
-          m_enable_prefix_caching(enable_prefix_caching) {
-            m_generation_stream = GenerationStream::create();    
-           }
+          m_generation_stream(GenerationStream::create()) { }
 
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, enable_prefix_caching) {
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
-        : SequenceGroup(request_id, sampling_params, block_size, enable_prefix_caching) {
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+        : SequenceGroup(request_id, sampling_params, block_size) {
         add_sequence(Sequence::create(m_next_sequence_id++));
 
         m_prompt_ids.resize(input_ids.get_size());
@@ -253,6 +253,7 @@ public:
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
+        sequence->set_sequence_group_weak_ptr(shared_from_this());
         m_sequences.emplace_back(sequence);
     }
 
@@ -344,8 +345,8 @@ public:
 
         std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
-            const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_probs();
-            const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_probs();
+            const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_prob();
+            const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_prob();
             return score_1 > score_2;
         });
 
@@ -524,10 +525,10 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        auto ptr = sequence->get_sequence_group_ptr();
-        m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
-        set_sequence_group_ptr(ptr);
-        return m_sequences.back();
+        auto forked_sequence = Sequence::fork(sequence, m_next_sequence_id++);
+        forked_sequence->set_sequence_group_weak_ptr(sequence->get_sequence_group_ptr());
+        m_sequences.emplace_back(forked_sequence);
+        return forked_sequence;
     }
 
     const ov::genai::GenerationConfig& get_sampling_parameters() const {
@@ -568,12 +569,6 @@ public:
         return m_is_gen_paused;
     }
 
-    void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
-        for (auto sequence: m_sequences) {
-            sequence->set_sequence_group_ptr(sequence_group);
-        }
-    }
-
     GenerationStream::Ptr get_generation_stream() {
         return m_generation_stream;
     }
@@ -600,7 +595,7 @@ public:
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
             }
-            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
+            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_prob();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
         }

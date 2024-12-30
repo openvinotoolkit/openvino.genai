@@ -300,23 +300,21 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::vector<SequenceGroup::Ptr> requests;
     size_t block_size = 1;
-    bool enable_prefix_caching = false;
 
     for (size_t request_id = 0; request_id < batch_size; request_id++) {
         SequenceGroup::Ptr sequence_group;
         if (is_chat_conversation) {
             ov::Tensor tokenized_chat_history = ov::Tensor(ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data());
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_chat_history, config, block_size, enable_prefix_caching);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_chat_history, config, block_size);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
             const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
             std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
 
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size, enable_prefix_caching);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size);
         }
 
-        sequence_group->set_sequence_group_ptr(sequence_group);
         requests.push_back(sequence_group);
     }
 
