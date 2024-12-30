@@ -46,14 +46,14 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
                                draft_scheduler_config = is_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
     if (is_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
-        size_t main_model_cache_size = utils::get_kv_cache_size(main_model),
-            draft_model_cache_size = utils::get_kv_cache_size(draft_model);
-        auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
+        size_t main_model_hidden_size = utils::get_hidden_size(main_model),
+               draft_model_hidden_size = utils::get_hidden_size(draft_model);
+        auto k = static_cast<float>(draft_model_hidden_size) / (main_model_hidden_size + draft_model_hidden_size);
 
-        size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
+        size_t main_cache_size = std::ceil(main_scheduler_config.cache_size * (1.f - k)),
                draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
-        if (draft_cache_size == 0) {
-            main_cache_size -= main_cache_size > 1 ? 1 : 0;
+        if (draft_cache_size == 0 && main_cache_size > 0) {
+            main_cache_size -= (main_cache_size > 1 ? 1 : 0);
             draft_cache_size = 1;
         }
 
@@ -63,7 +63,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     ov::AnyMap draft_properties = draft_model_desc.properties == ov::AnyMap{} ? compile_properties : draft_model_desc.properties;
 
-    DeviceConfig main_device_config(core, main_scheduler_config, main_device, compile_properties),
+    DeviceConfig main_device_config(core, main_scheduler_config_updated, main_device, compile_properties),
                  draft_device_config(core, draft_scheduler_config, draft_device, draft_properties);
 
     utils::set_kv_cache_type_and_shape(main_model, main_device_config);
@@ -82,7 +82,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
         main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_device_config, main_scheduler_config, main_device, compile_properties, true);
+        main_device_config, main_scheduler_config_updated, main_device, compile_properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
         draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
         draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
@@ -182,6 +182,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
+
+    if (main_generated_requests.empty() && 0) {
+        m_sd_metrics.print(true);
+        m_sd_metrics.clean_up();
+    }
 }
 
 std::vector<EncodedGenerationResult>
@@ -266,24 +271,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    m_sd_metrics.total_duration = generate_timer.get_duration();
-
-    // Print Speculative decoding metrics
-    if (0) {
-        std::cout << std::endl;
-        std::cout << "Total duration, ms: " << m_sd_metrics.total_duration << std::endl;
-        std::cout << "Draft model duration, ms: " << m_sd_metrics.draft_duration << std::endl;
-        std::cout << "Main model duration, ms: " << m_sd_metrics.main_duration << std::endl;
-        std::cout << "Draft model duration, %: " << m_sd_metrics.get_draft_duration_percentage() << std::endl;
-        std::cout << "Main model duration, %: " << m_sd_metrics.get_main_duration_percentage() << std::endl;
-        std::cout << "Main model iterations: " << m_sd_metrics.get_iteration_number(0) << std::endl;
-        std::cout << "Token per sec: " << float(sampling_params[0].max_new_tokens) / m_sd_metrics.total_duration << std::endl;
-        std::cout << "AVG acceptance rate, %: " << m_sd_metrics.get_avg_acceptance_rate(0) << std::endl;
-        std::cout << "Accepted tokens by draft model: " << m_sd_metrics.get_draft_accepted_tokens_counter(0) << std::endl;
-        std::cout << "Generated tokens: " << sampling_params[0].max_new_tokens << std::endl;
-        std::cout << "Accepted token rate, %: " << m_sd_metrics.get_draft_accepted_tokens_percentage(0) << std::endl;
-    }
-
     return results;
 }
 

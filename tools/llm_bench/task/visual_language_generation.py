@@ -268,11 +268,12 @@ def run_visual_language_generation_genai(
         mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean
     )
     iter_data_list.append(iter_data)
+    inference_durations = np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000
     metrics_print.print_metrics(
         num,
         iter_data,
         tm_list.tolist(),
-        None,
+        inference_durations.tolist(),
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,

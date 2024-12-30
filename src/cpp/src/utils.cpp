@@ -259,7 +259,7 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
     return {new_input_ids, new_attention_mask};
 }
 
-void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
+void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
     auto last_node = model->output(0).get_node()->input_value(0).get_node();
     ov::Node* matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node);
     if (matmul) {
@@ -379,6 +379,14 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
 
         state.set_state(new_tensor);
     }
+}
+
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front) {
+    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
+    auto new_tensor_data = new_tensor.data<int64_t>();
+    new_tensor_data[0] = add_to_front;
+    std::copy_n(base_tensor.data<int64_t>(), base_tensor.get_size(), new_tensor_data + 1);
+    return new_tensor;
 }
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {

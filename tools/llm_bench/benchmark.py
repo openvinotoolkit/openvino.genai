@@ -158,7 +158,9 @@ def get_argprser():
     parser.add_argument('--set_torch_thread', default=0, type=num_infer_count_type, help='Set the number of Torch thread. ')
     parser.add_argument('-tl', '--tokens_len', type=int, required=False, help='The length of tokens print each time in streaming mode, chunk streaming.')
     parser.add_argument('--streaming', action='store_true', help='Set whether to use streaming mode, only applicable to LLM.')
-
+    parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
+    parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
+    parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
     return parser.parse_args()
 
 
