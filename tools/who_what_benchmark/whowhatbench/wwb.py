@@ -138,6 +138,11 @@ def parse_args():
         help="Use LLMPipeline from transformers library to instantiate the model.",
     )
     parser.add_argument(
+        "--llamacpp",
+        action="store_true",
+        help="Use llama-cpp-python to instantiate the model.",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
         default=None,
@@ -190,9 +195,13 @@ def load_prompts(args):
 def load_tokenizer(args):
     tokenizer = None
     if args.tokenizer is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer, trust_remote_code=True
-        )
+        if args.llamacpp:
+            from llama_cpp.llama_tokenizer import LlamaHFTokenizer
+            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.tokenizer, trust_remote_code=True
+            )
     elif args.base_model is not None:
         tokenizer = AutoTokenizer.from_pretrained(
             args.base_model, trust_remote_code=True
@@ -248,6 +257,16 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
     return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+
+
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
+    output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
+    return output["choices"][0]["text"]
+    # output = model.create_completion(question, max_tokens=max_new_tokens, temperature=0.0, echo=True)
+    # print(output)
+    # return output["choices"][0]["text"]#
+    # output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
+    # return output["choices"][0]["message"]["content"]
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
@@ -308,7 +327,15 @@ def create_evaluator(base_model, args):
         prompts = load_prompts(args)
 
         if task == "text":
-            tokenizer = load_tokenizer(args)
+            tokenizer = load_tokenizer(args) if not args.llamacpp else None
+
+            if args.genai:
+                gen_answer_fn = genai_gen_text
+            elif args.llamacpp:
+                gen_answer_fn = llamacpp_gen_text
+            else:
+                gen_answer_fn = None
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -317,7 +344,7 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=genai_gen_text if args.genai else None,
+                gen_answer_fn=gen_answer_fn
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -442,10 +469,11 @@ def main():
                 args.ov_config,
                 args.hf,
                 args.genai,
+                args.llamacpp
             )
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
-                evaluator.get_generation_fn() if args.genai else None,
+                evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
                 output_dir=args.output
             )
         logger.info("Metrics for model: %s", args.target_model)
