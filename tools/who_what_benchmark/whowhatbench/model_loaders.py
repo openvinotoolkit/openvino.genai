@@ -107,7 +107,7 @@ def load_text2image_model(
 
         try:
             model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError:
             config = AutoConfig.from_pretrained(
@@ -119,6 +119,7 @@ def load_text2image_model(
                 use_cache=True,
                 device=device,
                 ov_config=ov_config,
+                safety_checker=None,
             )
 
     return model
@@ -211,7 +212,7 @@ def load_imagetext2image_model(
         from optimum.intel.openvino import OVPipelineForImage2Image
         try:
             model = OVPipelineForImage2Image.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
@@ -222,6 +223,7 @@ def load_imagetext2image_model(
                 use_cache=True,
                 device=device,
                 ov_config=ov_config,
+                safety_checker=None,
             )
     return model
 
@@ -256,9 +258,10 @@ def load_inpainting_model(
         from optimum.intel.openvino import OVPipelineForInpainting
         try:
             model = OVPipelineForInpainting.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
+                model_id, trust_remote_code=True, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError:
+        except ValueError as e:
+            logger.error("Failed to load inpaiting pipeline. Details:\n", e)
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             model = OVPipelineForInpainting.from_pretrained(
                 model_id,
@@ -267,6 +270,7 @@ def load_inpainting_model(
                 use_cache=True,
                 device=device,
                 ov_config=ov_config,
+                safety_checker=None,
             )
     return model
 

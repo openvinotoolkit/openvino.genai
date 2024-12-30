@@ -71,9 +71,9 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-to-image"),
-        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "text-to-image"),
-        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-inpainting"),
+        ("OpenVINO/stable-diffusion-v1-5-int8-ov", "image-to-image"),
+        ("OpenVINO/stable-diffusion-v1-5-int8-ov", "text-to-image"),
+        ("OpenVINO/stable-diffusion-v1-5-int8-ov", "image-inpainting"),
     ],
 )
 def test_image_model_genai(model_id, model_type):
