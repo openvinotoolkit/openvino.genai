@@ -18,14 +18,17 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     });
     requests.erase(new_end, requests.end());
 }
-std::shared_ptr<ov::Model> get_model(size_t num_layers) {
+std::shared_ptr<ov::Model> get_model(ov::Core core, size_t num_layers) {
     ov::NodeVector keys;
     ov::NodeVector values;
     ov::ParameterVector params;
+    ov::element::Type inference_precision = core.get_property("CPU", ov::hint::inference_precision);
+    ov::element::Type kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
+
     auto shape = ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()});
     for (size_t i = 0; i < num_layers; i++) {
-        auto key = std::make_shared<ov::op::v0::Parameter>(ov::element::f16, shape);
-        auto value = std::make_shared<ov::op::v0::Parameter>(ov::element::f16, shape);
+        auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
+        auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
         key->get_output_tensor(0).set_names({"key_cache." + std::to_string(i)});
         value->get_output_tensor(0).set_names({"value_cache." + std::to_string(i)});
         keys.push_back(key);
@@ -42,7 +45,7 @@ std::shared_ptr<ov::Model> get_model(size_t num_layers) {
 std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_config) {
     ov::Core core = ov::Core();
     size_t num_decoder_layers = 12;
-    ov::InferRequest request = core.compile_model(get_model(num_decoder_layers)).create_infer_request();
+    ov::InferRequest request = core.compile_model(get_model(core, num_decoder_layers)).create_infer_request();
     size_t head_size = 64, head_size_u8 = head_size + 8;
     std::vector<size_t> num_kv_heads(12, 12);
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
@@ -326,6 +329,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                                 ov::genai::beam_search(), 4);
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+        EXPECT_NO_THROW(requests[0]->get_running_sequences()[0]->get_sequence_group_ptr());
 
         Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
         auto out = scheduler.schedule(requests);

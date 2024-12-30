@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vector>
+#include <cassert>
 #include <set>
 #include <cstdlib>
 #include <string_view>
@@ -41,34 +42,32 @@ class Sequence {
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
     std::vector<int64_t> m_prefix_hashes;
-    std::weak_ptr<SequenceGroup> m_sequence_group;
+    SequenceGroup* m_sequence_group = nullptr;
     static std::mutex m_counter_mutex;
 
     size_t _make_hash(size_t content_length);
+
+    explicit Sequence(const uint64_t id) : m_grouped_id(id) {}
+
+    Sequence(const Sequence& seq, const uint64_t id) :
+        m_generated_ids(seq.m_generated_ids),
+        m_grouped_id(id),
+        m_status(seq.m_status),
+        m_cumulative_log_prob(seq.m_cumulative_log_prob),
+        m_sequence_group(seq.m_sequence_group) {
+        OPENVINO_ASSERT(seq.m_id != m_id);
+    }
 
 public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
 
-    // don't use directly
-    Sequence(const uint64_t id) : m_grouped_id(id) {};
-
-    // don't use directly
-    Sequence(const Sequence& seq, const uint64_t id) :
-        m_generated_ids(seq.m_generated_ids),
-        m_grouped_id(id),
-        m_status(seq.m_status),
-        m_cumulative_log_prob(seq.m_cumulative_log_prob){
-        OPENVINO_ASSERT(seq.m_id != m_id);
-        set_sequence_group_weak_ptr(seq.get_sequence_group_ptr());
-    }
-
     static Sequence::Ptr create(const uint64_t id) {
-        return std::make_shared<Sequence>(id);
+        return Sequence::Ptr(new Sequence(id));
     }
 
     static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
-        return std::make_shared<Sequence>(*sequence, id);
+        return Sequence::Ptr(new Sequence(*sequence, id));
     }
 
     bool operator ==(const Sequence& other) const {
@@ -182,14 +181,12 @@ public:
     }
 
     // Each KV block can be uniquely identified by
-    void set_sequence_group_weak_ptr(std::weak_ptr<SequenceGroup> sequence_group) {
+    void set_sequence_group_ptr(SequenceGroup* sequence_group) {
+        assert(sequence_group != nullptr);
         m_sequence_group = sequence_group;
     }
 
-    std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const {
-        OPENVINO_ASSERT(!m_sequence_group.expired());
-        return m_sequence_group.lock();
-    }
+    std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const;
 
     // Each KV block can be uniquely identified by
     // the tokens within the block and the tokens in the prefix before the block.
@@ -201,7 +198,7 @@ public:
 // - each sequence shares the same prompt and KV-caches for promp
 // - in case of beam search each sequence also shares specific part of generic phase
 //   via reference counter mechanism on BlockManager level
-class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup>  {
+class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
     ov::genai::GenerationConfig m_sampling_params;
@@ -228,7 +225,6 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup>  {
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
-
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
@@ -245,15 +241,16 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        add_sequence(Sequence::create(m_next_sequence_id++));
-
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
         m_prompt_log_probs.reserve(m_prompt_ids.size());
+
+        // create a single sequence
+        add_sequence(Sequence::create(m_next_sequence_id++));
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
-        sequence->set_sequence_group_weak_ptr(shared_from_this());
+        sequence->set_sequence_group_ptr(this);
         m_sequences.emplace_back(sequence);
     }
 
@@ -322,7 +319,6 @@ public:
         auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {return val->get_id() == seq_id;});
         return it != m_sequences.end();
     }
-
 
     /**
      * @param seq_id Sequence identifier
@@ -410,7 +406,6 @@ public:
         m_num_evicted_tokens += num_evicted_tokens;
     }
 
-
     /**
      * Resets the eviction tracking on this sequence to the state prior to any eviction taking place.
      */
@@ -434,7 +429,6 @@ public:
     size_t get_context_len() const {
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
-
 
     bool requires_sampling() const {
         return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && m_sampling_params.max_new_tokens > 0;
@@ -514,7 +508,6 @@ public:
         return (get_context_len() - get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
     }
 
-
     // requires number of physical blocks for next generation
     size_t get_num_blocks() const {
         return get_num_logical_blocks();
@@ -526,7 +519,6 @@ public:
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
         auto forked_sequence = Sequence::fork(sequence, m_next_sequence_id++);
-        forked_sequence->set_sequence_group_weak_ptr(sequence->get_sequence_group_ptr());
         m_sequences.emplace_back(forked_sequence);
         return forked_sequence;
     }
@@ -679,4 +671,10 @@ public:
         m_generation_stream->push(std::move(outputs));
     } 
 };
+
+inline std::shared_ptr<SequenceGroup> Sequence::get_sequence_group_ptr() const {
+    assert(m_sequence_group != nullptr);
+    return m_sequence_group->shared_from_this();
+}
+
 }
