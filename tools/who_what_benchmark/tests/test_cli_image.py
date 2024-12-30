@@ -25,9 +25,8 @@ def setup_module():
     for model_id in OV_IMAGE_MODELS:
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
         subprocess.run(["huggingface-cli", "download",
-                            model_id, "--local-dir",
-                            MODEL_PATH],
-                        capture_output=True, text=True)
+                        model_id, "--local-dir",
+                        MODEL_PATH], capture_output=True, text=True)
 
 
 def teardown_module():
