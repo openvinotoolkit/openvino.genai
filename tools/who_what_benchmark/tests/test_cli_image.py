@@ -25,6 +25,8 @@ def run_wwb(args):
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "openvino"),
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "text-to-image", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "image-inpainting", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-inpainting", "hf"),
     ],
 )
 def test_image_model_types(model_id, model_type, backend):
@@ -71,6 +73,7 @@ def test_image_model_types(model_id, model_type, backend):
     [
         ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-to-image"),
         ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "text-to-image"),
+        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-inpainting"),
     ],
 )
 def test_image_model_genai(model_id, model_type):
