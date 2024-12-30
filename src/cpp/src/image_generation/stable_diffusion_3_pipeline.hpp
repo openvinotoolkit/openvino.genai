@@ -258,12 +258,13 @@ public:
         m_vae->compile(device, properties);
     }
 
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, RawPerfMetrics& raw_metrics) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& transformer_config = m_transformer->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
 
         // Input tensors for transformer model
         ov::Tensor prompt_embeds_inp, pooled_prompt_embeds_inp;
+        MicroSeconds infer_duration;
 
         // 1. Encode positive prompt:
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
@@ -278,7 +279,8 @@ public:
             m_clip_text_encoder_1->infer(positive_prompt,
                                          negative_prompt_1_str,
                                          do_classifier_free_guidance(generation_config.guidance_scale),
-                                         raw_metrics);
+                                         infer_duration);
+        m_perf_metrics.encoder_inference_duration["text_encode"] = infer_duration.count();
 
         // text_encoder_1_hidden_state - stores positive and negative prompt_embeds
         size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
@@ -289,7 +291,8 @@ public:
             m_clip_text_encoder_2->infer(prompt_2_str,
                                          negative_prompt_2_str,
                                          do_classifier_free_guidance(generation_config.guidance_scale),
-                                         raw_metrics);
+                                         infer_duration);
+        m_perf_metrics.encoder_inference_duration["text_encode_2"] = infer_duration.count();
 
         // text_encoder_2_hidden_state - stores positive and negative prompt_2_embeds
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
@@ -301,7 +304,8 @@ public:
                                                              negative_prompt_3_str,
                                                              do_classifier_free_guidance(generation_config.guidance_scale),
                                                              generation_config.max_sequence_length,
-                                                             raw_metrics);
+                                                             infer_duration);
+            m_perf_metrics.encoder_inference_duration["text_encode_3"] = infer_duration.count();
         } else {
             ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,
@@ -436,15 +440,13 @@ public:
         OPENVINO_THROW("LORA adapters are not implemented for Stable Diffusion 3 yet");
     }
 
-    ImageResults generate(const std::string& positive_prompt,
+    ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
-        ImageResults image_results;
-        RawPerfMetrics& raw_metrics = image_results.perf_metrics.raw_metrics;
-        raw_metrics.generate_durations.clear();
-        raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
         const auto gen_start = std::chrono::steady_clock::now();
+        MicroSeconds infer_duration;
+        m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
@@ -471,7 +473,7 @@ public:
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // 4 compute text encoders and set hidden states
-        compute_hidden_states(positive_prompt, generation_config, raw_metrics);
+        compute_hidden_states(positive_prompt, generation_config);
 
         // 5. Prepare latent variables
         ov::Tensor latent, processed_image, image_latent, noise;
@@ -485,6 +487,7 @@ public:
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
+            auto step_start = std::chrono::steady_clock::now();
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
                 numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
@@ -493,9 +496,9 @@ public:
                 // just assign to save memory copy
                 latent_cfg = latent;
             }
-
             ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep, raw_metrics);
+            ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep, infer_duration);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(infer_duration);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -519,22 +522,28 @@ public:
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
             if (callback && callback(inference_step, timesteps.size(), latent)) {
-                image_results.image = ov::Tensor(ov::element::u8, {});
-                const auto gen_end = std::chrono::steady_clock::now();
-                raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(gen_start - gen_end));
-                return image_results;
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+                return image;
             }
         }
 
-        image_results.image = decode(latent, raw_metrics);
-        const auto gen_end = std::chrono::steady_clock::now();
-        raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(gen_start - gen_end));
-        return image_results;
+        auto image = decode(latent, infer_duration);
+        m_perf_metrics.vae_decoder_inference_duration = infer_duration.count();
+        m_perf_metrics.generate_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+        return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent, RawPerfMetrics& raw_metrics) override {
-        return m_vae->decode(latent, raw_metrics);
+    ov::Tensor decode(const ov::Tensor latent, MicroSeconds& infer_duration) override {
+        return m_vae->decode(latent, infer_duration);
+    }
+
+    ImageGenerationPerfMetrics get_perfomance_metrics() override {
+        return m_perf_metrics;
     }
 
 private:
@@ -641,6 +650,7 @@ private:
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
     std::shared_ptr<SD3Transformer2DModel> m_transformer = nullptr;
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
+    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 }  // namespace genai

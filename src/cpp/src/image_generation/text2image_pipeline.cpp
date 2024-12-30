@@ -185,13 +185,17 @@ void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& pr
     m_impl->compile(device, properties);
 }
 
-ImageResults Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
+ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
     return m_impl->generate(positive_prompt, {}, {}, properties);
 }
 
 ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {
-    RawPerfMetrics raw_metrics;
-    return m_impl->decode(latent, raw_metrics);
+    MicroSeconds infer_duration;
+    return m_impl->decode(latent, infer_duration);
+}
+
+ImageGenerationPerfMetrics Text2ImagePipeline::get_perfomance_metrics() {
+    return m_impl->get_perfomance_metrics();
 }
 
 }  // namespace genai

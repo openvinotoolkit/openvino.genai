@@ -15,14 +15,16 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor image = utils::load_image(image_path);
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
-    auto image_results = pipe.generate(prompt, image,
+    ov::Tensor generated_image = pipe.generate(prompt, image,
         // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
         ov::genai::strength(0.8f));
 
     // writes `num_images_per_prompt` images by pattern name
-    imwrite("image_%d.bmp", image_results.image, true);
-    std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
-    std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
+    imwrite("image_%d.bmp", generated_image, true);
+    auto perf_metrics = pipe.get_perfomance_metrics();
+    std::cout << "pipeline generate duration ms:" << perf_metrics.generate_duration / 1000.0f << std::endl;
+    std::cout << "pipeline inference duration ms:" << perf_metrics.get_inference_total_duration() << std::endl;
+    std::cout << "pipeline iteration:" << perf_metrics.raw_metrics.iteration_durations.size() << std::endl;
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {

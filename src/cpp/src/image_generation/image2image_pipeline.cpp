@@ -114,14 +114,18 @@ void Image2ImagePipeline::compile(const std::string& device, const ov::AnyMap& p
     m_impl->compile(device, properties);
 }
 
-ImageResults Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
+ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to Image2ImagePipeline::generate");
     return m_impl->generate(positive_prompt, initial_image, {}, properties);
 }
 
 ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
-    ov::genai::RawPerfMetrics raw_metrics;
-    return m_impl->decode(latent, raw_metrics);
+    MicroSeconds infer_duration;
+    return m_impl->decode(latent, infer_duration);
+}
+
+ImageGenerationPerfMetrics Image2ImagePipeline::get_perfomance_metrics() {
+    return m_impl->get_perfomance_metrics();
 }
 
 }  // namespace genai

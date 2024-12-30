@@ -176,13 +176,15 @@ public:
         m_vae->compile(device, properties);
     }
 
-    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config, RawPerfMetrics& raw_metrics) override {
+    void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
+        MicroSeconds infer_duration;
 
         std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
-            batch_size_multiplier > 1, raw_metrics);
+            batch_size_multiplier > 1, infer_duration);
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration.count();
 
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
@@ -303,16 +305,14 @@ public:
         m_unet->set_adapters(adapters);
     }
 
-    ImageResults generate(const std::string& positive_prompt,
+    ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
-        ImageResults image_results;
-        RawPerfMetrics& raw_metrics = image_results.perf_metrics.raw_metrics;
-        raw_metrics.generate_durations.clear();
-        raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
         const auto gen_start = std::chrono::steady_clock::now();
+        MicroSeconds infer_duration;
         using namespace numpy_utils;
+        m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
@@ -343,7 +343,7 @@ public:
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
         // compute text encoders and set hidden states
-        compute_hidden_states(positive_prompt, generation_config, raw_metrics);
+        compute_hidden_states(positive_prompt, generation_config);
 
         // preparate initial / image latents
         ov::Tensor latent, processed_image, image_latent, noise;
@@ -362,6 +362,7 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg), denoised, noisy_residual_tensor(ov::element::f32, {}), latent_model_input;
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
+            auto step_start = std::chrono::steady_clock::now();
             numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
@@ -372,7 +373,8 @@ public:
 
             ov::Tensor latent_model_input = is_inpainting_model() ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
-            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep, raw_metrics);
+            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep, infer_duration);
+            m_perf_metrics.raw_metrics.unet_inference_durations.emplace_back(infer_duration);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -405,21 +407,29 @@ public:
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
 
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
             if (callback && callback(inference_step, timesteps.size(), denoised)) {
-                image_results.image = ov::Tensor(ov::element::u8, {});
-                const auto gen_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
-                raw_metrics.generate_durations.emplace_back(gen_ms);
-                return image_results;
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+                return image;
             }
         }
-        image_results.image = decode(denoised, raw_metrics);
-        const auto gen_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
-        raw_metrics.generate_durations.emplace_back(gen_ms);
-        return image_results;
+        auto image = decode(denoised, infer_duration);
+        m_perf_metrics.vae_decoder_inference_duration = infer_duration.count();
+        m_perf_metrics.generate_duration =
+            ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+        return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent, RawPerfMetrics& raw_metrics) override {
-        return m_vae->decode(latent, raw_metrics);
+    ov::Tensor decode(const ov::Tensor latent, MicroSeconds& infer_duration) override {
+        return m_vae->decode(latent, infer_duration);
+    }
+
+    ImageGenerationPerfMetrics get_perfomance_metrics() override {
+        return m_perf_metrics;
     }
 
 protected:
@@ -515,6 +525,7 @@ protected:
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
+    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 }  // namespace genai

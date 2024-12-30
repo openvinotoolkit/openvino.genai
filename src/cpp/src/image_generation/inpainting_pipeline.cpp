@@ -119,15 +119,19 @@ void InpaintingPipeline::compile(const std::string& device, const ov::AnyMap& pr
     m_impl->compile(device, properties);
 }
 
-ImageResults InpaintingPipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties) {
+ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(initial_image, "Initial image cannot be empty when passed to InpaintingPipeline::generate");
     OPENVINO_ASSERT(mask, "Mask image cannot be empty when passed to InpaintingPipeline::generate");
     return m_impl->generate(positive_prompt, initial_image, mask, properties);
 }
 
 ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
-    ov::genai::RawPerfMetrics raw_metrics;
-    return m_impl->decode(latent, raw_metrics);
+    MicroSeconds infer_duration;
+    return m_impl->decode(latent, infer_duration);
+}
+
+ImageGenerationPerfMetrics InpaintingPipeline::get_perfomance_metrics() {
+    return m_impl->get_perfomance_metrics();
 }
 
 }  // namespace genai

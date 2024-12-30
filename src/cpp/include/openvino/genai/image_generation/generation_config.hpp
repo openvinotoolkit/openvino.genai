@@ -252,11 +252,5 @@ static constexpr ov::Property<std::function<bool(size_t, size_t, ov::Tensor&)>> 
 OPENVINO_GENAI_EXPORTS
 std::pair<std::string, ov::Any> generation_config(const ImageGenerationConfig& generation_config);
 
-class ImageResults {
-public:
-    ov::Tensor image;
-    PerfMetrics perf_metrics;
-};
-
 } // namespace genai
 } // namespace ov

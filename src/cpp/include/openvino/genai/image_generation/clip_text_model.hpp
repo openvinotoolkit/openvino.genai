@@ -85,7 +85,7 @@ public:
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 
-    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, RawPerfMetrics& raw_metrics);
+    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, MicroSeconds& infer_duration);
 
     ov::Tensor get_output_tensor(const size_t idx);
 

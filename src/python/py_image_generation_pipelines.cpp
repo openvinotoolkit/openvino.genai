@@ -288,7 +288,7 @@ void init_image_generation_pipelines(py::module_& m) {
             [](ov::genai::Text2ImagePipeline& pipe,
                 const std::string& prompt,
                 const py::kwargs& kwargs
-            ) -> py::typing::Union<ov::genai::ImageResults> {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 return py::cast(pipe.generate(prompt, params));
             },
@@ -350,7 +350,7 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& prompt,
                 const ov::Tensor& image,
                 const py::kwargs& kwargs
-            ) -> py::typing::Union<ov::genai::ImageResults> {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 return py::cast(pipe.generate(prompt, image, params));
             },
@@ -414,7 +414,7 @@ void init_image_generation_pipelines(py::module_& m) {
                 const ov::Tensor& image,
                 const ov::Tensor& mask_image,
                 const py::kwargs& kwargs
-            ) -> py::typing::Union<ov::genai::ImageResults> {
+            ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 return py::cast(pipe.generate(prompt, image, mask_image, params));
             },

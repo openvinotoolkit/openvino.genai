@@ -70,7 +70,7 @@ public:
                      const std::string& neg_prompt,
                      bool do_classifier_free_guidance,
                      int max_sequence_length,
-                     RawPerfMetrics& raw_metrics);
+                     MicroSeconds& infer_duration);
 
     ov::Tensor get_output_tensor(const size_t idx);
 

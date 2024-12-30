@@ -78,7 +78,7 @@ public:
 
     void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
 
-    ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep, RawPerfMetrics& raw_metrics);
+    ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep, MicroSeconds& infer_duration);
 
 private:
     Config m_config;

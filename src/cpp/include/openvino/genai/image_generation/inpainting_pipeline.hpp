@@ -13,6 +13,7 @@
 
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
@@ -95,12 +96,12 @@ public:
      * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
      * @param mask_image RGB/BGR or GRAY/BINARY image of [1, height, width, 3 or 1] shape used as a mask
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
-     * @returns ImageResults includes a tensor which has dimensions [num_images_per_prompt, height, width, 3]
+     * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
-    ImageResults generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties = {});
+    ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<ImageResults, Properties...> generate(
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
             const std::string& positive_prompt,
             ov::Tensor initial_image,
             ov::Tensor mask,
@@ -110,8 +111,11 @@ public:
 
     ov::Tensor decode(const ov::Tensor latent);
 
+    ImageGenerationPerfMetrics get_perfomance_metrics();
+
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
+    ImageGenerationPerfMetrics m_perf_metrics;
 
     explicit InpaintingPipeline(const std::shared_ptr<DiffusionPipeline>& impl);
 

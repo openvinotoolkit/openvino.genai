@@ -23,25 +23,29 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::genai::Text2ImagePipeline pipe(models_path, device, ov::genai::adapters(adapter_config));
 
     std::cout << "Generating image with LoRA adapters applied, resulting image will be in lora.bmp\n";
-    auto image_results = pipe.generate(prompt,
+    ov::Tensor image = pipe.generate(prompt,
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20),
         ov::genai::rng_seed(42));
-    imwrite("lora.bmp", image_results.image, true);
-    std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
-    std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
+    imwrite("lora.bmp", image, true);
+    auto perf_metrics = pipe.get_perfomance_metrics();
+    std::cout << "pipeline generate duration ms:" << perf_metrics.generate_duration / 1000.0f << std::endl;
+    std::cout << "pipeline inference duration ms:" << perf_metrics.get_inference_total_duration() << std::endl;
+    std::cout << "pipeline iteration:" << perf_metrics.raw_metrics.iteration_durations.size() << std::endl;
 
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
-    image_results = pipe.generate(prompt,
+    image = pipe.generate(prompt,
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20),
         ov::genai::rng_seed(42));
-    imwrite("baseline.bmp", image_results.image, true);
-    std::cout << "pipeline generate duration ms:" << image_results.perf_metrics.get_generate_duration().mean << std::endl;
-    std::cout << "pipeline inference duration ms:" << image_results.perf_metrics.get_inference_duration().mean << std::endl;
+    imwrite("baseline.bmp", image, true);
+    perf_metrics = pipe.get_perfomance_metrics();
+    std::cout << "pipeline generate duration ms:" << perf_metrics.generate_duration / 1000.0f << std::endl;
+    std::cout << "pipeline inference duration ms:" << perf_metrics.get_inference_total_duration() << std::endl;
+    std::cout << "pipeline iteration:" << perf_metrics.raw_metrics.iteration_durations.size() << std::endl;
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
