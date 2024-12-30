@@ -15,7 +15,6 @@
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
-#include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
 #include "sampler.hpp"
