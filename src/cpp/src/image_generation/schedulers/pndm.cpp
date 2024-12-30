@@ -31,7 +31,7 @@ PNDMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path
     read_json_param(data, "timestep_spacing", timestep_spacing);
 }
 
-PNDMScheduler::PNDMScheduler(const std::filesystem::path& scheduler_config_path) 
+PNDMScheduler::PNDMScheduler(const std::filesystem::path& scheduler_config_path)
     : PNDMScheduler(Config(scheduler_config_path)) {
 }
 

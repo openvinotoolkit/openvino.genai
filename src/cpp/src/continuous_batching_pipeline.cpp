@@ -47,7 +47,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    
+
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
@@ -107,7 +107,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     } else {
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
-        m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);    
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     }
 }
 

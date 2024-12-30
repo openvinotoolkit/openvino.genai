@@ -18,7 +18,7 @@ public:
     /**
      * Initializes text to image generation pipeline from a folder with models.
      * Note, such pipeline is not ready to use as models are not compiled internally.
-     * 
+     *
      * Typical scenario is to initialize models using this constructor and then reshape pipeline
      * with 'reshape()' method and then perform compilation using 'compile()' method.
      * @param models_path A models path to read models and config files from
@@ -30,7 +30,7 @@ public:
      * @param models_path A models path to read models and config files from
      * @param device A single device used for all models
      * @param properties Properties to pass to 'compile_model' or other pipeline properties like LoRA adapters
-     * @note If you want to compile each model on a dedicated device or with specific properties, you can create 
+     * @note If you want to compile each model on a dedicated device or with specific properties, you can create
      * models individually and then combine a final pipeline using static methods like 'latent_consistency_model' or
      * 'stable_diffusion_3'. See 'samples/cpp/image_generation/heterogeneous_stable_diffusion.cpp' for example
      */
@@ -172,7 +172,7 @@ public:
      * @param guidance_scale A guidance scale. Note, that it's important whether guidance_scale > 1, which affects whether negative prompts
      * are used or not. For example, all values > 1 are the same for reshape perspective and may vary in subsequent 'generate()' calls.
      * @note If pipeline has been already compiled, it cannot be reshaped and an exception is thrown.
-     * 
+     *
      * Example how to reshape SD3 or Flux models for specific max sequence length:
      * @code
      *  ov::genai::Text2ImagePipeline pipe("/path");

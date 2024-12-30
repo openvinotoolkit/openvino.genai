@@ -46,8 +46,8 @@ struct SchedulerConfig {
     // Enable caching of KV-blocks.
     // When turned on all previously calculated KV-caches are kept in memory for future usages.
     // KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
-    // This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters. 
-    // When turend off only KV-cache required for batch calculation is kept in memory and 
+    // This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
+    // When turend off only KV-cache required for batch calculation is kept in memory and
     // when a sequence has finished genegartion its cache is released.
     bool enable_prefix_caching = false;
 

@@ -49,7 +49,7 @@ public:
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
                                          ov::genai::GenerationConfig sampling_params) = 0;
-    
+
     virtual bool has_non_finished_requests() = 0;
 
     virtual void step() = 0;

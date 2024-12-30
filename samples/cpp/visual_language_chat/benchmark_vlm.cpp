@@ -42,15 +42,15 @@ int main(int argc, char* argv[]) try {
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
     ov::Tensor image = utils::load_image(image_path);
-  
+
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
 
     ov::genai::VLMPipeline pipe(models_path, device);
-    
+
     for (size_t i = 0; i < num_warmup; i++)
         pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
-    
+
     auto res = pipe.generate(prompt, ov::genai::image(image), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {

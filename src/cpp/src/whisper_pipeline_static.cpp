@@ -212,7 +212,7 @@ void zero_past_key_values(ov::InferRequest& request) {
 
 void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferRequest& decoder) {
     // NB: Prepare attetion mask to be in a format [0, 0, 0, 1, 1, 1, 1, ..., 0, 1]
-    // Mask should be inverted for decoder_with_past 
+    // Mask should be inverted for decoder_with_past
     auto attention_mask = decoder_with_past.get_tensor("attention_mask");
     auto* attention_mask_ptr = attention_mask.data<ov::float16>();
     std::fill(attention_mask_ptr, attention_mask_ptr + 3u, 0);

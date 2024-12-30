@@ -97,7 +97,7 @@ SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32,
 @pytest.mark.parametrize("enable_prefix_caching", [True, False])  # prefix caching shouldn't impact similarity
 def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, test_struct, enable_prefix_caching):
     import whowhatbench
-    
+
     seqs_per_request = 32
     scheduler_config = get_scheduler_config(test_struct.num_kv_blocks)
 
@@ -169,4 +169,3 @@ scheduler_params_list = [
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
     run_continuous_batching_pipeline_test(tmp_path, "facebook/opt-125m", params[0], params[1])
-

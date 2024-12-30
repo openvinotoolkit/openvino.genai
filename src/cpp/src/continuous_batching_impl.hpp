@@ -26,7 +26,7 @@ protected:
 
     static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
     std::deque<float> m_previous_step_cache_usages;
-    
+
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 

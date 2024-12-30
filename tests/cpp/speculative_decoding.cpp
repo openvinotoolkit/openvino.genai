@@ -19,7 +19,7 @@ protected:
             sampling_params.num_assistant_tokens = 1;
 
             ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(request_id, input_ids,
-                                                                                sampling_params, 
+                                                                                sampling_params,
                                                                                 32,
                                                                                 true);
             sequence_group->set_sequence_group_ptr(sequence_group);
@@ -45,7 +45,7 @@ TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
     std::vector<int64_t> tokens = { 0, 1, 2 };
     std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
     ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
-    
+
     auto before = m_pipeline.get_generated_requests();
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
@@ -66,7 +66,7 @@ TEST_F(CBForSDTest, init_sequence_by_empty__one_sequence) {
     std::vector<int64_t> tokens = {};
     std::vector<float> log_probs = {};
     ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
-    
+
     auto before = m_pipeline.get_generated_requests();
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
@@ -87,7 +87,7 @@ TEST_F(CBForSDTest, no_updated_tokens__one_sequence) {
     std::vector<int64_t> tokens = { 0, 1, 2 };
     std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
     ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
-    
+
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -114,7 +114,7 @@ TEST_F(CBForSDTest, remove_tokens__one_sequence) {
     std::vector<int64_t> tokens = { 0, 1, 2 };
     std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
     ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
-    
+
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -143,7 +143,7 @@ TEST_F(CBForSDTest, remove_and_replace_tokens__one_sequence) {
     std::vector<int64_t> tokens = { 0, 1, 2 };
     std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
     ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
-    
+
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -172,7 +172,7 @@ TEST_F(CBForSDTest, add_tokens__one_sequence) {
     std::vector<int64_t> tokens = { 0, 1, 2 };
     std::vector<float> log_probs = { 0.1f, 0.2f, 0.3f };
     ov::genai::GeneratedSequences candidate{{ 0, ov::genai::GeneratedSequence(tokens, log_probs) }};
-    
+
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -206,7 +206,7 @@ TEST_F(CBForSDTest, update_empty_sequence_by_not_empty__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens_0, log_probs_0) },
         { 1, ov::genai::GeneratedSequence(tokens_1, log_probs_1) }
     };
-    
+
     auto before = m_pipeline.get_generated_requests();
     auto update_result = m_pipeline.update_request(0, candidate, true);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
@@ -235,7 +235,7 @@ TEST_F(CBForSDTest, init_sequence_by_not_empty__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens_0, log_probs_0) },
         { 1, ov::genai::GeneratedSequence(tokens_1, log_probs_1) }
     };
-    
+
     auto before = m_pipeline.get_generated_requests();
     auto update_result = m_pipeline.init_request_by_candidate(0, candidate);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
@@ -262,7 +262,7 @@ TEST_F(CBForSDTest, init_sequence_by_empty__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens, log_probs) },
         { 1, ov::genai::GeneratedSequence(tokens, log_probs) },
     };
-    
+
     auto before = m_pipeline.get_generated_requests();
     auto update_result = m_pipeline.init_request_by_candidate(0, candidate);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
@@ -288,7 +288,7 @@ TEST_F(CBForSDTest, no_updated_tokens__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens_0, log_probs_0) },
         { 1, ov::genai::GeneratedSequence(tokens_1, log_probs_1) },
     };
-    
+
     auto update_result = m_pipeline.init_request_by_candidate(0, candidate);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 2);
@@ -321,7 +321,7 @@ TEST_F(CBForSDTest, remove_tokens__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens, log_probs) },
         { 1, ov::genai::GeneratedSequence(tokens, log_probs) },
     };
-    
+
     auto update_result = m_pipeline.init_request_by_candidate(0, candidate);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -360,7 +360,7 @@ TEST_F(CBForSDTest, remove_and_replace_tokens__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens, log_probs) },
         { 1, ov::genai::GeneratedSequence(tokens, log_probs) },
     };
-    
+
     auto update_result = m_pipeline.init_request_by_candidate(0, candidate);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -399,7 +399,7 @@ TEST_F(CBForSDTest, add_tokens__two_sequence) {
         { 0, ov::genai::GeneratedSequence(tokens, log_probs) },
         { 1, ov::genai::GeneratedSequence(tokens, log_probs) },
     };
-    
+
     auto update_result = m_pipeline.init_request_by_candidate(0, candidate);
     ASSERT_EQ(update_result.removed_tokens_cnt, 0);
     ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
@@ -428,4 +428,3 @@ TEST_F(CBForSDTest, add_tokens__two_sequence) {
     ASSERT_EQ(after.at(0).at(1).token_ids, tokens);
     ASSERT_EQ(after.at(0).at(1).log_probs, log_probs);
 }
-

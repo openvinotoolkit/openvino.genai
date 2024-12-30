@@ -50,7 +50,7 @@ public:
             m_can_use_partial_preemption(can_use_partial_preemption),
             m_config(config),
             m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers) {
-        
+
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
 

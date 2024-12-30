@@ -45,7 +45,7 @@ protected:
     // Tail of previous output for LM in chat mode is missing in KV cache.
     std::optional<int64_t> m_last_disappeared_token = std::nullopt;
     // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
-    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
+    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
 
@@ -77,7 +77,7 @@ public:
         }
 
         m_last_disappeared_token = last_disappeared_token;
-  
+
         std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
     }
 
@@ -123,7 +123,7 @@ protected:
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
         m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
         m_tokenizer{model_dir, device_config} { }
-    
+
     IInputsEmbedder(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
@@ -616,7 +616,7 @@ public:
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
-        
+
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
         std::string formatted_prompt;
@@ -735,7 +735,7 @@ public:
         std::string formatted_prompt;
         std::vector<ov::Tensor> image_embeds;
         image_embeds.reserve(single_images.size());
-        
+
         ov::Tensor image_newline;
 
         for (const auto& image : single_images) {
@@ -1056,20 +1056,20 @@ public:
         std::string image_start_token = m_vlm_config.image_start_token;
         std::string image_context_token = m_vlm_config.image_context_token;
         std::string image_end_token = m_vlm_config.image_end_token;
-        
+
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
         std::string formatted_prompt;
         std::vector<ov::Tensor> image_embeds;
         image_embeds.reserve(single_images.size());
-        
+
         for (const auto& image : single_images) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             ov::Tensor single_image_embeds = encoded_image.resized_source;
 
             const size_t num_patches = single_image_embeds.get_shape().at(0);
             const size_t num_image_tokens = single_image_embeds.get_shape().at(1);
-            
+
             formatted_prompt += image_start_token;
             for (int i = 0; i < num_patches * num_image_tokens; ++i) {
                 formatted_prompt += image_context_token;
@@ -1140,7 +1140,7 @@ protected:
                     std::copy_n(image_embeds_data + image_context_token_idx * embed_dim,
                                 embed_dim,
                                 merged_embeds_data + offset);
-                    
+
                     ++image_context_token_idx;
 
                     if (image_context_token_idx == num_all_image_tokens) {

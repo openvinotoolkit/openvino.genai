@@ -80,7 +80,7 @@ install(TARGETS image2image
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
-        
+
 # create LoRA sample executable
 
 add_executable(inpainting inpainting.cpp load_image.cpp imwrite.cpp)

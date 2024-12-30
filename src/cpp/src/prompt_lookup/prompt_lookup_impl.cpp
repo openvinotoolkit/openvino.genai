@@ -58,7 +58,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
 
             num_matches = (present_req_len - prev_full_req_len - 1);
             acceptance_rate = static_cast<float>(num_matches) / static_cast<float>(prev_validation_len);
-        }        
+        }
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, num_matches);
     }
@@ -94,8 +94,8 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
-        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
+        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
         main_generations.push_back(m_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
     }
 

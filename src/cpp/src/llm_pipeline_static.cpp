@@ -235,12 +235,12 @@ enum class GenerateHint {
 
 std::string to_string(GenerateHint h) {
     switch(h) {
-        case GenerateHint::FAST_COMPILE : 
+        case GenerateHint::FAST_COMPILE :
             return "FAST_COMPILE";
-        case GenerateHint::BEST_PERF : 
+        case GenerateHint::BEST_PERF :
             return "BEST_PERF";
         default:
-            OPENVINO_THROW("Unsupported value for type GenerateHint provided");        
+            OPENVINO_THROW("Unsupported value for type GenerateHint provided");
     }
 }
 
@@ -689,7 +689,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config
 ) : LLMPipelineImplBase(tokenizer, generation_config) {
-    
+
     bool use_blobs = false;
     auto anyopt = get_option<bool>(properties, "USE_BLOBS");
     if (anyopt.has_value()) {

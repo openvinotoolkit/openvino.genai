@@ -15,7 +15,7 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
     std::string test_string = "Could you please tell me something about OpenVINO.GenAI?";
     ov::Tensor encoded_string_lhs = lhs.encode(test_string).input_ids,
                encoded_string_rhs = rhs.encode(test_string).input_ids;
-    
+
     ov::Shape shape_lhs = encoded_string_lhs.get_shape(),
               shape_rhs = encoded_string_rhs.get_shape();
 
@@ -23,7 +23,7 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                              const ov::genai::ModelDesc& draft_model_desc) {
     ov::Core core;
     auto [core_properties, compile_properties] = utils::split_core_compile_config(main_model_desc.properties);
@@ -76,7 +76,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
-    
+
     m_tokenizer = main_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
