@@ -1,3 +1,4 @@
+import itertools
 import subprocess  # nosec B404
 import os
 import shutil
@@ -9,12 +10,28 @@ import tempfile
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+MODEL_CACHE = tempfile.mkdtemp()
+OV_IMAGE_MODELS = ["OpenVINO/stable-diffusion-v1-5-int8-ov"]
+
 
 def run_wwb(args):
     logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
     result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
     return result
+
+
+def setup_module():
+    for model_id in OV_IMAGE_MODELS:
+        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+        subprocess.run(["huggingface-cli", "download",
+                        model_id, "--local-dir",
+                        MODEL_PATH], capture_output=True, text=True)
+
+
+def teardown_module():
+    logger.info("Remove models")
+    shutil.rmtree(MODEL_CACHE)
 
 
 @pytest.mark.parametrize(
@@ -25,6 +42,8 @@ def run_wwb(args):
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "openvino"),
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "text-to-image", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "image-inpainting", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-inpainting", "hf"),
     ],
 )
 def test_image_model_types(model_id, model_type, backend):
@@ -68,21 +87,13 @@ def test_image_model_types(model_id, model_type, backend):
 
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
-    [
-        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "image-to-image"),
-        ("OpenVINO/LCM_Dreamshaper_v7-int8-ov", "text-to-image"),
-    ],
+    list(itertools.product(OV_IMAGE_MODELS,
+                           ["image-to-image", "text-to-image", "image-inpainting"])),
 )
 def test_image_model_genai(model_id, model_type):
     with tempfile.TemporaryDirectory() as temp_dir:
         GT_FILE = os.path.join(temp_dir, "gt.csv")
-        MODEL_PATH = os.path.join(temp_dir, model_id.replace("/", "--"))
-
-        result = subprocess.run(["huggingface-cli", "download",
-                                 model_id, "--local-dir",
-                                 MODEL_PATH],
-                                capture_output=True, text=True)
-        assert result.returncode == 0
+        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
 
         wwb_args = [
             "--base-model",
@@ -169,7 +180,6 @@ def test_image_model_genai(model_id, model_type):
 
         shutil.rmtree("reference", ignore_errors=True)
         shutil.rmtree("target", ignore_errors=True)
-        shutil.rmtree(MODEL_PATH, ignore_errors=True)
         shutil.rmtree(output_dir, ignore_errors=True)
 
 
