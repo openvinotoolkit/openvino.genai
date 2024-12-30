@@ -17,7 +17,7 @@ GenerationStatus GenerationHandleImpl::get_status() {
 }
 
 bool GenerationHandleImpl::can_read() {
-    return !is_dropped() &&  m_generation_stream->can_read();
+    return !is_dropped() && m_generation_stream->can_read();
 }
 
 bool GenerationHandleImpl::is_dropped() {

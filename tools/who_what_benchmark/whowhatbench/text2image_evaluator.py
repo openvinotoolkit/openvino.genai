@@ -116,14 +116,15 @@ class Text2ImageEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
-            output = model(
-                prompt,
-                num_inference_steps=num_inference_steps,
-                output_type="pil",
-                width=self.resolution[0],
-                height=self.resolution[0],
-                generator=generator,
-            )
+            with torch.no_grad():
+                output = model(
+                    prompt,
+                    num_inference_steps=num_inference_steps,
+                    output_type="pil",
+                    width=self.resolution[0],
+                    height=self.resolution[0],
+                    generator=generator,
+                )
             return output.images[0]
 
         generation_fn = gen_image_fn or default_gen_image_fn
