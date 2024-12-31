@@ -6,6 +6,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include <openvino/runtime/auto/properties.hpp>
@@ -36,6 +37,8 @@ py::list handle_utf8(const std::vector<std::string>& decoded_res) {
     }
     return res;
 }
+
+namespace {
 
 bool py_object_is_any_map(const py::object& py_obj) {
     if (!py::isinstance<py::dict>(py_obj)) {
@@ -290,14 +293,15 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
 }
 
-std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties) {
-    std::map<std::string, ov::Any> properties_to_cpp;
+} // namespace
+
+ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
+    ov::AnyMap properties_to_cpp;
     for (const auto& property : properties) {
         properties_to_cpp[property.first] = py_object_to_any(property.second, property.first);
     }
     return properties_to_cpp;
 }
-
 
 ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
     ov::AnyMap params = {};
@@ -321,13 +325,13 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
     return params;
 }
 
-std::string ov_tokenizers_module_path() {
+std::filesystem::path ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
     std::filesystem::path from_relative = tokenizers_relative_to_genai();
     if (std::filesystem::exists(from_relative)) {
-        return from_relative.string();
+        return from_relative;
     }
-    return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
+    return py::module_::import("openvino_tokenizers").attr("_ext_path").cast<std::filesystem::path>();
 }
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer) {
@@ -356,7 +360,7 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
         return std::nullopt;
 
     ov::genai::GenerationConfig res_config;
-    if(config.has_value())
+    if (config.has_value())
         res_config = *config;
 
     if (!kwargs.empty())

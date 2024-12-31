@@ -85,7 +85,6 @@ if(MSVC AND MSVC_VERSION GREATER_EQUAL 1930 AND MSVC_VERSION LESS 1941)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
-
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples")
