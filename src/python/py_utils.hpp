@@ -28,13 +28,7 @@ py::list handle_utf8(const std::vector<std::string>& decoded_res);
 
 py::str handle_utf8(const std::string& text);
 
-ov::Any py_object_to_any(const py::object& py_obj, std::string property_name);
-
-bool py_object_is_any_map(const py::object& py_obj);
-
-ov::AnyMap py_object_to_any_map(const py::object& py_obj);
-
-std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties);
+ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties);
 
 ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs);
 
