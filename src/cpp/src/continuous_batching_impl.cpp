@@ -195,7 +195,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     step_count++;
 #endif
 
-    // process generation_config.echo parameetr
+    // process generation_config.echo parameter
     _fill_prompt_log_probs(m_requests, logits);
 
     SamplerOutput sampler_output;

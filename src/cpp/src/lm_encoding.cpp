@@ -119,7 +119,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     auto logits = m_llm.get_tensor("logits");
 
-    // since we have applied `Slice` operationto last MatMul, model output sequence lenght is 1
+    // since we have applied `Slice` operation to last MatMul, model output sequence lenght is 1
     // so, we need to update sequence groups to think that they already have processed all prompt tokens except last ones
     // and schedule only `output_sequence_len` ones
     int64_t output_sequence_len = logits.get_shape().at(1);
