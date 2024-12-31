@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "utils.hpp"
+#include "whisper/context_tokens.hpp"
 #include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
@@ -92,8 +93,11 @@ public:
             streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
 
+        auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
+
         auto generate_result = ov::genai::whisper_generate(config,
                                                            m_model_config,
+                                                           context_tokens,
                                                            raw_speech_input,
                                                            m_models,
                                                            m_feature_extractor,
@@ -102,6 +106,8 @@ public:
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
 
         result.perf_metrics = generate_result.perf_metrics;
         auto& segments = generate_result.segments;

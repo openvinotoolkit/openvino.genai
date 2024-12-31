@@ -13,12 +13,11 @@ TEST(TestBlockManager, general_test) {
     ov::genai::TokenIds prompt_ids;
 
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
-        0, 
+        0,
         ov::Tensor(ov::element::i64, {
         prompt_ids.size()}, prompt_ids.data()),
         ov::genai::beam_search(),
-        4, 
-        false);
+        4);
     auto sequence = sequence_group->get_not_finished_sequences()[0];
     bm.allocate(sequence, 6);
     auto seq_id = sequence->get_id();
@@ -46,13 +45,11 @@ TEST(TestBlockManager, required_blocks_count) {
 
     std::vector<uint64_t> tokens = {0,1,2,3,4};
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
-        0, 
+        0,
         ov::Tensor(ov::element::i64, {
         tokens.size()}, tokens.data()),
         ov::genai::beam_search(),
-        4,
-        false);
-    sequence_group->set_sequence_group_ptr(sequence_group);
+        4);
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 2);
@@ -62,7 +59,7 @@ TEST(TestBlockManager, required_blocks_count) {
     EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 2);
 
     sequence_group->finish_iteration();
-    auto sequence_to_fork = sequence_group->get_running_sequences()[0];    
+    auto sequence_to_fork = sequence_group->get_running_sequences()[0];
     for (size_t i = 0; i < 4; ++i) {
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
         bm.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());
@@ -98,9 +95,7 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
             ov::Tensor(ov::element::i64, {
                     tokens.size()}, tokens.data()),
             ov::genai::beam_search(),
-            BLOCK_SIZE,
-            false);
-    sequence_group->set_sequence_group_ptr(sequence_group);
+            BLOCK_SIZE);
     sequence_group->schedule_tokens(5);
     bm.append_slots(sequence_group);
     ASSERT_EQ(bm.num_free_blocks(), 5);

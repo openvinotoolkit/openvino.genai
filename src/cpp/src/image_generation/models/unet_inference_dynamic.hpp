@@ -40,10 +40,8 @@ public:
     }
 
 private:
-
     ov::InferRequest m_request;
 };
-
 
 }  // namespace genai
 }  // namespace ov

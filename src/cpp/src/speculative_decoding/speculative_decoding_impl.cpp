@@ -35,21 +35,21 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
 
     std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
-
-    bool is_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
+    bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
-                               draft_scheduler_config = is_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
-    if (is_scheduler_undefined) {
-        // split KV cache to 2 caches for main and draft models
-        size_t main_model_cache_size = utils::get_kv_cache_size(main_model),
-            draft_model_cache_size = utils::get_kv_cache_size(draft_model);
-        auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
+                               draft_scheduler_config = is_draft_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
 
-        size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
+    if (is_draft_scheduler_undefined) {
+        // split KV cache to 2 caches for main and draft models
+        size_t main_model_hidden_size = utils::get_hidden_size(main_model),
+               draft_model_hidden_size = utils::get_hidden_size(draft_model);
+        auto k = static_cast<float>(draft_model_hidden_size) / (main_model_hidden_size + draft_model_hidden_size);
+
+        size_t main_cache_size = std::ceil(main_scheduler_config.cache_size * (1.f - k)),
                draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
-        if (draft_cache_size == 0) {
-            main_cache_size -= main_cache_size > 1 ? 1 : 0;
+        if (draft_cache_size == 0 && main_cache_size > 0) {
+            main_cache_size -= (main_cache_size > 1 ? 1 : 0);
             draft_cache_size = 1;
         }
 
@@ -60,7 +60,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
 
     ov::Core core = utils::singleton_core();
-    DeviceConfig main_device_config(core, main_scheduler_config, main_device, main_model_desc.properties),
+    DeviceConfig main_device_config(core, main_scheduler_config_updated, main_device, main_model_desc.properties),
                  draft_device_config(core, draft_scheduler_config, draft_device, draft_properties);
 
     utils::set_kv_cache_type_and_shape(main_model, main_device_config);
@@ -79,7 +79,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
         main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_device_config, main_scheduler_config, main_device, main_model_desc.properties, true);
+        main_device_config, main_scheduler_config_updated, main_device, main_model_desc.properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
         draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
         draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
@@ -190,10 +190,20 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {
-    ManualTimer generate_timer("speculative_decoding: generate()");
-    generate_timer.start();
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+
+    ManualTimer generate_timer("speculative_decoding: generate()");
+    generate_timer.start();
+
+    // checks that all requests has the same LoRA adapters property value
+    for (size_t i = 1; i < sampling_params.size(); ++i) {
+        OPENVINO_ASSERT(sampling_params[i - 1].adapters == sampling_params[i].adapters,
+            "LoRA adapters value must be the same for all requests");
+    }
+    m_main_pipeline->set_adapters(sampling_params[0].adapters);
+    m_draft_pipeline->set_adapters(sampling_params[0].adapters);
+
     const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
         [](std::monostate) -> std::shared_ptr<StreamerBase> {
             return nullptr;
