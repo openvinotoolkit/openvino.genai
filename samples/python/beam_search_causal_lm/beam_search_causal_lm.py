@@ -19,6 +19,7 @@ def main():
     config.max_new_tokens = 20
     config.num_beam_groups = 3
     config.num_beams = 15
+    config.diversity_penalty = 1
     config.num_return_sequences = config.num_beams
 
     beams = pipe.generate(args.prompts, config)

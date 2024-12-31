@@ -52,15 +52,20 @@ struct PipelineMetrics {
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
 protected:
-    class ImplInterface;
+    class IContinuousBatchingPipeline;
     class ContinuousBatchingImpl;
+
     class ContinuousBatchingForSpeculativeDecodingImpl;
+    class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
+    class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
+    friend class ContinuousBatchingForPromptLookupImpl;
     friend class SpeculativeDecodingImpl;
+    friend class PromptLookupImpl;
 
-    std::shared_ptr<ImplInterface> m_impl;
+    std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
     ContinuousBatchingPipeline() = default;
 
@@ -86,6 +91,32 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& properties = {}
+    );
+
+    /**
+     * @brief Constructs a ContinuousBatchingPipeline from already existing model and tokenizer.
+     * 
+     * This constructor allows for the creation of a ContinuousBatchingPipeline using an existing model
+     * represented as a string and a weights tensor, along with a manually initialized tokenizer.
+     * This is useful when the model and tokenizer are already loaded or created in memory and do not
+     * need to be loaded from files.
+     *
+     * @param model_str A string representation of the model.
+     * @param weights_tensor A tensor containing the weights of the model.
+     * @param tokenizer A manually initialized ov::genai::Tokenizer.
+     * @param scheduler_config Configuration for the scheduler.
+     * @param device The device to run the pipeline on (e.g., CPU, GPU).
+     * @param properties Optional properties for the pipeline.
+     * @param generation_config Optional generation configuration for the pipeline.
+     */
+    ContinuousBatchingPipeline(
+        const std::string& model_str,
+        const ov::Tensor& weights_tensor,
+        const ov::genai::Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties = {},
+        const ov::genai::GenerationConfig& generation_config = {}
     );
 
     ov::genai::Tokenizer get_tokenizer();

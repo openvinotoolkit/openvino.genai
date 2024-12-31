@@ -7,7 +7,8 @@
 #include <numeric>
 #include <cmath>
 
-namespace {
+namespace ov {
+namespace genai {
 
 ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
     if (durations.size() == 0) {
@@ -28,11 +29,6 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
     float std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
     return {mean, std};
 }
-
-} // namespace
-
-namespace ov {
-namespace genai {
 
 float PerfMetrics::get_load_time() {
     return load_time;
@@ -105,7 +101,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
 
         auto ttft = tok_times[0] - start_time_val;
         raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
-        raw_metrics.m_times_to_first_token.emplace_back(ttft / batch_sizes[0]);
+        raw_metrics.m_times_to_first_token.emplace_back(ttft);
         num_generated_tokens = batch_sizes[0];
         
         // The very first infer request (prefill stage) is slower than subsequent ones since we process a sequence of tokens.

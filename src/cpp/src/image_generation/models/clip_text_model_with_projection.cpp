@@ -39,6 +39,25 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::filesystem::
     compile(device, properties);
 }
 
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& model,
+                                                         const Tensor& weights,
+                                                         const Config& config,
+                                                         const Tokenizer& clip_tokenizer) :
+    m_clip_tokenizer(clip_tokenizer), m_config(config) {
+    ov::Core core = utils::singleton_core();
+    m_model = core.read_model(model, weights);
+}
+
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& model,
+                                                         const Tensor& weights,
+                                                         const Config& config,
+                                                         const Tokenizer& clip_tokenizer,
+                                                         const std::string& device,
+                                                         const ov::AnyMap& properties) :
+    CLIPTextModelWithProjection(model, weights, config, clip_tokenizer) {
+    compile(device, properties);
+}
+
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const CLIPTextModelWithProjection&) = default;
 
 const CLIPTextModelWithProjection::Config& CLIPTextModelWithProjection::get_config() const {
@@ -69,6 +88,7 @@ CLIPTextModelWithProjection& CLIPTextModelWithProjection::compile(const std::str
     } else {
         compiled_model = core.compile_model(m_model, device, properties);
     }
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text with projection model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
@@ -89,13 +109,20 @@ ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, con
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
-
         ov::Tensor input_ids_token = m_clip_tokenizer.encode(prompt).input_ids;
-        std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int64_t>());
+
+        if (input_ids.get_element_type() == ov::element::i32) {
+            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
+        } else {
+            std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int64_t>());
+        }
     };
 
-    ov::Tensor input_ids(ov::element::i64, {text_embedding_batch_size, m_config.max_position_embeddings});
+    ov::Tensor input_ids = m_request.get_input_tensor();
+    input_ids.set_shape({text_embedding_batch_size, m_config.max_position_embeddings});
+
     size_t current_batch_idx = 0;
 
     if (do_classifier_free_guidance) {
@@ -112,7 +139,6 @@ ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, con
                                                {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
-    m_request.set_tensor("input_ids", input_ids);
     m_request.infer();
 
     return m_request.get_output_tensor(0);

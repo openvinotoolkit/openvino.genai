@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) try {
     config.max_new_tokens = 20;
     config.num_beam_groups = 3;
     config.num_beams = 15;
+    config.diversity_penalty = 1.0f;
     config.num_return_sequences = config.num_beams;
        
     // Since the streamer is set, the results will

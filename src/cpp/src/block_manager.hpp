@@ -12,7 +12,6 @@
 
 #include "sequence_group.hpp"
 
-
 namespace ov::genai {
 
 class KVCacheBlock {
@@ -188,7 +187,10 @@ class CacheStateDumper;
  */
 class BlockAllocator {
     std::vector<std::list<KVCacheBlock::Ptr>> m_free_blocks;
-    int m_total_num_blocks;
+    // We keep m_free_blocks_num instead of m_free_blocks[X].size() to WA old CXX library implementation issue for std::list::size()
+    // see https://stackoverflow.com/questions/13157164/why-isnt-stdlist-size-constant-time
+    std::vector<size_t> m_free_blocks_num;
+    size_t m_total_num_blocks;
     friend class CacheStateDumper;
     size_t m_num_layers;
     bool m_enable_prefix_caching;
@@ -202,14 +204,20 @@ public:
      * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
      * Blocks returned will be vectors with this size, each vector entry to be associated with a separate layer's KV cache.
      */
-    BlockAllocator(int num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
+    BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
         m_free_blocks.resize(m_num_layers);
-        for (auto& per_layer_block_list : m_free_blocks) {
-            for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+        if (num_blocks > 0) {
+            m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
+            for (auto& per_layer_block_list : m_free_blocks) {
+                for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
+                    per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                }
             }
+        }
+        else {
+            m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
@@ -218,13 +226,28 @@ public:
         // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
     }
 
+    void increase_kv_blocks_number(size_t new_kv_blocks_count) {
+        OPENVINO_ASSERT(new_kv_blocks_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
+        size_t added_blocks = new_kv_blocks_count - m_total_num_blocks;
+        for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
+            m_free_blocks_num[idx] += added_blocks;
+        }
+        for (auto& per_layer_block_list : m_free_blocks) {
+            for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
+                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+            }
+        }
+        m_total_num_blocks = new_kv_blocks_count;
+    }
+
+
     /**
      * Returns the number of free blocks for a given layer.
      * @param layer_idx Index of the layer.
      * @return Number of free blocks for this layer.
      */
     size_t num_free_blocks(size_t layer_idx) const {
-        return m_free_blocks[layer_idx].size() + m_overwriteable_blocks.num_blocks();
+        return m_free_blocks_num[layer_idx] + num_overwriteable_blocks();
     }
 
     /**
@@ -270,6 +293,7 @@ public:
         block_ptr->release();
         if (block_ptr->is_free()) {
             m_free_blocks[layer_idx].push_back(block_ptr);
+            ++m_free_blocks_num[layer_idx];
         }
     }
 
@@ -325,6 +349,7 @@ public:
                         // actual collision case
                         for (size_t layer_idx = 0; layer_idx < colliding_blocks_per_layer.size(); layer_idx++) {
                             m_free_blocks[layer_idx].push_back(colliding_blocks_per_layer[layer_idx]);
+                            ++m_free_blocks_num[layer_idx];
                         }
                     }
                     m_overwriteable_blocks.add(blocks_for_all_layers);
@@ -333,12 +358,14 @@ public:
                     // TODO (vshampor): more fine-grained hash store control
                     for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                         m_free_blocks[layer_idx].push_back(blocks_for_all_layers[layer_idx]);
+                        ++m_free_blocks_num[layer_idx];
                     }
                 }
             }
             else {
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_free_blocks[layer_idx].push_back(blocks_for_all_layers[layer_idx]);
+                    ++m_free_blocks_num[layer_idx];
                 }
             }
         }
@@ -368,6 +395,7 @@ public:
         KVCacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
         allocated_block->increment();
         m_free_blocks[layer_idx].pop_front();
+        --m_free_blocks_num[layer_idx];
         return allocated_block;
     }
 
@@ -386,7 +414,7 @@ public:
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
 
-        if (m_free_blocks[0].size() > 0) {
+        if (m_free_blocks_num[0] > 0) {
             // allocate new empty block
             BlocksPerLayer allocated_blocks;
             allocated_blocks.reserve(m_num_layers);
@@ -396,6 +424,7 @@ public:
                 allocated_block->set_hash(hash);
                 allocated_blocks.push_back(allocated_block);
                 m_free_blocks[i].pop_front();
+                --m_free_blocks_num[i];
             }
             cached_blocks[hash] = allocated_blocks;
             return allocated_blocks;
@@ -450,6 +479,13 @@ public:
         size_t sum = 0;
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) sum += num_free_blocks(layer_idx);
         return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / (m_num_layers * m_total_num_blocks) * 100;
+    }
+
+    /**
+     * @return The total number of KV blocks .
+     */
+    size_t get_total_number_of_kv_blocks() const {
+        return m_total_num_blocks;
     }
 };
 
@@ -703,6 +739,21 @@ public:
      */
     float get_used_percentage() const {
         return m_allocator.get_used_percentage();
+    }
+
+    /**
+     * Increases the number of KV blocks.
+     * @param num_blocks The new number of KV-blocks.
+     */
+    void increase_kv_blocks_number(size_t num_blocks) {
+        m_allocator.increase_kv_blocks_number(num_blocks);
+    }
+
+    /**
+     * @return The total number of KV blocks .
+     */
+    size_t get_total_number_of_kv_blocks() const {
+        return m_allocator.get_total_number_of_kv_blocks();
     }
 
     /**

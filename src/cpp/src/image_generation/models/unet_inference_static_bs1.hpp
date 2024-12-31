@@ -40,9 +40,9 @@ public:
 
         ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
-        for (int i = 0; i < m_native_batch_size; i++)
-        {
+        for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model.create_infer_request();
         }
     }

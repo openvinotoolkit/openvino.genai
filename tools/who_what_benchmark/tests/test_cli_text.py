@@ -73,31 +73,29 @@ def test_text_target_model():
 
 @pytest.fixture
 def test_text_gt_data():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_name = os.path.join(temp_dir, "gt.csv")
 
-    result = run_wwb(
-        [
-            "--base-model",
-            base_model_path,
-            "--gt-data",
-            temp_file_name,
-            "--dataset",
-            "EleutherAI/lambada_openai,en",
-            "--dataset-field",
-            "text",
-            "--split",
-            "test",
-            "--num-samples",
-            "2",
-            "--device",
-            "CPU",
-        ]
-    )
-    data = pd.read_csv(temp_file_name)
-    os.remove(temp_file_name)
-
-    assert result.returncode == 0
+        result = run_wwb(
+            [
+                "--base-model",
+                base_model_path,
+                "--gt-data",
+                temp_file_name,
+                "--dataset",
+                "EleutherAI/lambada_openai,en",
+                "--dataset-field",
+                "text",
+                "--split",
+                "test",
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+            ]
+        )
+        assert result.returncode == 0
+        data = pd.read_csv(temp_file_name)
     assert len(data["questions"].values) == 2
 
 
@@ -107,6 +105,8 @@ def test_text_output_directory():
             [
                 "--base-model",
                 base_model_path,
+                "--gt-data",
+                os.path.join(temp_dir, "gt.csv"),
                 "--target-model",
                 target_model_path,
                 "--num-samples",
@@ -121,6 +121,23 @@ def test_text_output_directory():
         assert "Metrics for model" in result.stderr
         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
+        assert os.path.exists(os.path.join(temp_dir, "target.csv"))
+
+        # test measurtement w/o models
+        result = run_wwb(
+            [
+                "--gt-data",
+                os.path.join(temp_dir, "gt.csv"),
+                "--target-data",
+                os.path.join(temp_dir, "target.csv"),
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+            ]
+        )
+        assert result.returncode == 0
+        assert "Metrics for model" in result.stderr
 
 
 def test_text_verbose():
@@ -138,53 +155,47 @@ def test_text_verbose():
         ]
     )
     assert result.returncode == 0
-    assert "## Diff " in result.stderr
+    assert "## Diff:" in result.stderr
 
 
 def test_text_language_autodetect():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
-
-    result = run_wwb(
-        [
-            "--base-model",
-            "Qwen/Qwen2-0.5B",
-            "--gt-data",
-            temp_file_name,
-            "--num-samples",
-            "2",
-            "--device",
-            "CPU",
-        ]
-    )
-    data = pd.read_csv(temp_file_name)
-    os.remove(temp_file_name)
-
-    assert result.returncode == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_name = os.path.join(temp_dir, "gt.csv")
+        result = run_wwb(
+            [
+                "--base-model",
+                "Qwen/Qwen2-0.5B",
+                "--gt-data",
+                temp_file_name,
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+            ]
+        )
+        assert result.returncode == 0
+        data = pd.read_csv(temp_file_name)
     assert "马克" in data["prompts"].values[0]
 
 
 def test_text_hf_model():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
-        temp_file_name = tmpfile.name
-
-    result = run_wwb(
-        [
-            "--base-model",
-            model_id,
-            "--gt-data",
-            temp_file_name,
-            "--num-samples",
-            "2",
-            "--device",
-            "CPU",
-            "--hf",
-        ]
-    )
-    data = pd.read_csv(temp_file_name)
-    os.remove(temp_file_name)
-
-    assert result.returncode == 0
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_name = os.path.join(temp_dir, "gt.csv")
+        result = run_wwb(
+            [
+                "--base-model",
+                model_id,
+                "--gt-data",
+                temp_file_name,
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+                "--hf",
+            ]
+        )
+        assert result.returncode == 0
+        data = pd.read_csv(temp_file_name)
     assert len(data["prompts"].values) == 2
 
 

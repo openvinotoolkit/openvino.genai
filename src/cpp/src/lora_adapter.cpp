@@ -637,7 +637,9 @@ public:
 
         ov::Core core = ov::genai::utils::singleton_core();
         auto model = std::make_shared<ov::Model>(request_results, request_parameters);
-        rwb.request = core.compile_model(model, device).create_infer_request();
+        auto compiled_model = core.compile_model(model, device);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "Infer Request Signature Cache");
+        rwb.request = compiled_model.create_infer_request();
         requests.emplace(signature, rwb);
     }
 
@@ -1303,7 +1305,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
 
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
-void AdapterController::apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config) {
+void AdapterController::apply(ov::InferRequest request, const std::optional<AdapterConfig>& config) {
     OPENVINO_ASSERT(m_pimpl || !config || !*config,
         "Adapters are passed to AdapterController but it was not configured to use adapters. "
         "Enable using adapters by pass them in the constructor first.");

@@ -9,21 +9,30 @@ WWB provides default datasets for the supported use cases. However, it is relati
 * Command-line interface for Hugging Face and OpenVINO models and API to support broader inference backends.
 * Simple and quick accuracy test for compressed, quantized, pruned, distilled LLMs. It works with any model that supports HuggingFace Transformers text generation API including:
     * HuggingFace Transformers compressed models via [Bitsandbytes](https://huggingface.co/docs/transformers/main_classes/quantization#transformers.BitsAndBytesConfig)
+    * [OpenVINO](https://github.com/openvinotoolkit/openvino) and [NNCF](https://github.com/openvinotoolkit/nncf) via [Optimum-Intel](https://github.com/huggingface/optimum-intel) and OpenVINO [GenAI](https://github.com/openvinotoolkit/openvino.genai)
     * [GPTQ](https://huggingface.co/docs/transformers/main_classes/quantization#transformers.GPTQConfig) via HuggingFace API
     * Llama.cpp via [BigDL-LLM](https://github.com/intel-analytics/BigDL/tree/main/python/llm)
-    * [OpenVINO](https://github.com/openvinotoolkit/openvino) and [NNCF](https://github.com/openvinotoolkit/nncf) via [Optimum-Intel](https://github.com/huggingface/optimum-intel)
     * Support of custom datasets of the user choice
-* Validation of text-to-image pipelines. Computes similarity score between generated images:
-    * Supports Diffusers library and Optimum-Intel via `Text2ImageEvaluator` class.
+* Validation of text-to-image pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `Text2ImageEvaluator` class.
+* Validation of Visual Language pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `VisualTextEvaluator` class.
 
 ### Installation
-Install WWB and its requirements from the source using `pip` or any other package manager. For example,
-
-* `python -m venv eval_env`
-* `source eval_env/bin/activate`
-* `pip install -r requirements.txt`
-* `pip install openvino.genai` to validate with OpenVINO GenAI API
-* `pip install .`
+To install WWB and its dependencies, follow these steps:
+1. Set up a Python virtual environment (recommended):
+```
+    python -m venv eval_env
+    source eval_env/bin/activate
+```
+2. Install WWB from the source directory:
+```
+    pip install .
+```
+To install WWB with nightly builds of openvino, openvino-tokenizers, and openvino-genai, use the following command:
+```
+PIP_PRE=1 \
+PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly \
+pip install .
+```
 
 ## Usage
 ### Compare Text-generation Models (LLMs)
@@ -41,18 +50,30 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text
 wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```
 
-### Compare Text-to-image models (Diffusers)
+> **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
+
+### Compare Text-to-image models
 ```sh
-# Export FP16 model to OpenVINO
-optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
 # Export model with 8-bit quantized weights to OpenVINO
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
-# Collect the references and save the mappling in the .json file. 
-# Reference images will be stored in the "reference" subfolder under the same path with .json.
-wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type text-to-image
+# Collect the references and save the mappling in the .csv file. 
+# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
-# Target images will be stored in the "target" subfolder under the same path with .json.
-wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type text-to-image
+# Target images will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
+```
+
+### Compare Visual Language Models (VLMs)
+```sh
+# Export FP16 model to OpenVINO
+optimum-cli export openvino -m llava-hf/llava-v1.6-mistral-7b-hf  --weight-format int8 llava-int8
+# Collect the references and save the mappling in the .csv file. 
+# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv --model-type visual-text --hf
+# Compute the metric
+# Target images will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-text --genai
 ```
 
 ### API

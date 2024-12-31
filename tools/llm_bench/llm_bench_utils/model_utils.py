@@ -13,38 +13,54 @@ import librosa
 def get_param_from_file(args, input_key):
     is_json_data = False
     data_list = []
-    if args[input_key] is None and args['prompt_file'] is None:
-        if args['use_case'] == 'text_gen':
-            data_list.append('What is OpenVINO?')
-        elif args['use_case'] == 'code_gen':
-            data_list.append('def print_hello_world():')
-        elif args['use_case'] == 'image_gen':
-            data_list.append('sailing ship in storm by Leonardo da Vinci')
-        else:
-            raise RuntimeError(f'== {input_key} and prompt file is empty ==')
-    elif args[input_key] is not None and args['prompt_file'] is not None:
-        raise RuntimeError(f'== {input_key} and prompt file should not exist together ==')
-    else:
-        if args[input_key] is not None:
-            if args[input_key] != '':
-                data_list.append(args[input_key])
-            else:
-                raise RuntimeError(f'== {input_key} path should not be empty string ==')
-        else:
-            input_prompt_list = args['prompt_file']
-            is_json_data = True
-            for input_prompt in input_prompt_list:
-                if input_prompt.endswith('.jsonl'):
-                    if os.path.exists(input_prompt):
-                        log.info(f'Read prompts from {input_prompt}')
-                        with open(input_prompt, 'r', encoding='utf-8') as f:
-                            for line in f:
-                                data = json.loads(line)
-                                data_list.append(data)
-                    else:
-                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
+    if args['prompt_file'] is None:
+        if not isinstance(input_key, (list, tuple)):
+            if args[input_key] is None:
+                if args['use_case'] == 'text_gen':
+                    data_list.append('What is OpenVINO?')
+                elif args['use_case'] == 'code_gen':
+                    data_list.append('def print_hello_world():')
+                elif args['use_case'] == 'image_gen':
+                    data_list.append('sailing ship in storm by Leonardo da Vinci')
                 else:
-                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
+                    raise RuntimeError(f'== {input_key} and prompt file is empty ==')
+
+            elif args[input_key] is not None and args['prompt_file'] is not None:
+                raise RuntimeError(f'== {input_key} and prompt file should not exist together ==')
+            else:
+                if args[input_key] is not None:
+                    if args[input_key] != '':
+                        data_list.append(args[input_key])
+                    else:
+                        raise RuntimeError(f'== {input_key} path should not be empty string ==')
+        else:
+            if args["use_case"] != "vlm":
+                raise RuntimeError("Multiple sources for benchmarking supported only for Visual Language Models")
+            data_dict = {}
+            if args["media"] is None:
+                log.warn("Input image is not provided. Only text generation part will be evaluated")
+            else:
+                data_dict["media"] = args["media"]
+            if args["prompt"] is None:
+                data_dict["prompt"] = "What is OpenVINO?" if args["media"] is None else "Describe image"
+            else:
+                data_dict["prompt"] = args["prompt"]
+            data_list.append(data_dict)
+    else:
+        input_prompt_list = args['prompt_file']
+        is_json_data = True
+        for input_prompt in input_prompt_list:
+            if input_prompt.endswith('.jsonl'):
+                if os.path.exists(input_prompt):
+                    log.info(f'Read prompts from {input_prompt}')
+                    with open(input_prompt, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            data = json.loads(line)
+                            data_list.append(data)
+                else:
+                    raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
+            else:
+                raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
     return data_list, is_json_data
 
 
@@ -81,6 +97,9 @@ def analyze_args(args):
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
     model_args['infer_count'] = args.infer_count
+    model_args["num_steps"] = args.num_steps
+    model_args["height"] = args.height
+    model_args["width"] = args.width
     model_args['images'] = args.images
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
@@ -95,6 +114,13 @@ def analyze_args(args):
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
 
+    optimum = args.optimum
+
+    if optimum and args.genai:
+        raise RuntimeError("`--genai` and `--optimum` can not be selected in the same time")
+    model_args["optimum"] = optimum
+    model_args["genai"] = not optimum
+
     has_torch_compile_options = any([args.torch_compile_options is not None, args.torch_compile_options is not None, args.torch_compile_dynamic])
     if model_args["torch_compile_backend"] is None and has_torch_compile_options:
         log.warning("torch.compile configuration options provided, but backend is not selected, openvino backend will be used")
@@ -102,7 +128,6 @@ def analyze_args(args):
     model_args['convert_tokenizer'] = args.convert_tokenizer
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
-    model_args['genai'] = args.genai
     model_args['lora'] = args.lora
     model_args['lora_alphas'] = args.lora_alphas
     model_args["use_cb"] = args.use_cb
@@ -115,6 +140,9 @@ def analyze_args(args):
 
     model_framework = args.framework
     model_path = Path(args.model)
+    if model_args["torch_compile_backend"]:
+        log.info("Setting Framework to PyTorch Since torch_compile_backend is provided.")
+        model_framework = 'pt'
     if not model_path.exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     if model_framework in ('ov', 'pt'):
@@ -135,12 +163,20 @@ def analyze_args(args):
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
 
-    if args.use_cb and not args.genai:
+    if (args.use_cb or args.draft_model) and optimum:
         raise RuntimeError("Continuous batching mode supported only via OpenVINO GenAI")
     cb_config = None
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
+    model_args['draft_model'] = args.draft_model
+    model_args['draft_device'] = args.draft_device
+    draft_cb_config = None
+    if args.draft_cb_config:
+        draft_cb_config = get_config(args.draft_cb_config)
+    model_args["draft_cb_config"] = draft_cb_config
+    model_args['num_assistant_tokens'] = args.num_assistant_tokens
+    model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
     return model_path, model_framework, model_args, model_name
 
 
@@ -161,6 +197,11 @@ def get_use_case(model_name_or_path):
         config = json.loads(config_file.read_text())
     except Exception:
         config = None
+    if (Path(model_name_or_path) / "model_index.json").exists():
+        diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
+        pipe_type = diffusers_config.get("_class_name")
+        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
+            return "image_gen", pipe_type.replace("Pipeline", "")
 
     if config is not None:
         for case, model_ids in USE_CASES.items():
