@@ -25,6 +25,7 @@ public:
 
 private:
     WhisperInitializedModels m_models;
+    std::shared_ptr<ov::Model> m_decoder_model;
 };
 
 }  // namespace genai
