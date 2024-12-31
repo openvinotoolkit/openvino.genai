@@ -38,6 +38,8 @@ py::list handle_utf8(const std::vector<std::string>& decoded_res) {
     return res;
 }
 
+namespace {
+
 bool py_object_is_any_map(const py::object& py_obj) {
     if (!py::isinstance<py::dict>(py_obj)) {
         return false;
@@ -291,14 +293,15 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
 }
 
-std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties) {
-    std::map<std::string, ov::Any> properties_to_cpp;
+} // namespace
+
+ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
+    ov::AnyMap properties_to_cpp;
     for (const auto& property : properties) {
         properties_to_cpp[property.first] = py_object_to_any(property.second, property.first);
     }
     return properties_to_cpp;
 }
-
 
 ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
     ov::AnyMap params = {};
@@ -357,7 +360,7 @@ ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::O
         return std::nullopt;
 
     ov::genai::GenerationConfig res_config;
-    if(config.has_value())
+    if (config.has_value())
         res_config = *config;
 
     if (!kwargs.empty())
