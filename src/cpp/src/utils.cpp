@@ -13,6 +13,8 @@
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 
+#include "sampler.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -203,7 +205,7 @@ ProcessorConfig from_any_map(
  * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
  * Move this options to `core.set_property` config
  */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& properties) {
+std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
     const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
     ov::AnyMap core_properties;
     ov::AnyMap compile_properties{properties};
@@ -218,6 +220,29 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& p
 
     return {core_properties, compile_properties};
 };
+
+/**
+ * scheduler_config is a separate config for continuous batching pipeline. 
+ * This routine splits scheduler_config from plugin_config.
+ */
+std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    }
+    return {plugin_config, scheduler_config};
+};
+
+std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+    auto [core_properties, compile_properties] = split_core_compile_config(properties);
+    ov::Core core;
+    core.set_property(core_properties);
+    std::filesystem::path openvino_model_name = "openvino_model.xml";
+    return core.read_model((models_path / openvino_model_name).string());
+}
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
@@ -260,9 +285,64 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
     }
 }
 
+template <typename T>
+void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
+    if (!model)
+        return;
+    if (model->get_rt_info().count(name) == 0)
+        return;
+    auto str_value = model->get_rt_info().at(name).as<std::string>();
+    if constexpr (std::is_same<T, int64_t>::value) {
+        value = std::stoll(str_value);
+    } else if constexpr (std::is_same<T, std::string>::value) {
+        value = str_value;
+    }
+}
+
+template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
+template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
+
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
+}
+
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+    size_t idx = 0;
+    auto encoded_history_data = encoded_history.data<int64_t>();
+    while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
+        if (encoded_history_data[idx] != tokenized_history[idx])
+            break;
+        idx++;
+    }
+
+    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
+    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
+        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
+        return SIZE_MAX;
+    else
+        return idx;
+}
+
+void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end) {
+    // TODO: add handling for case with LoRA adapters enabled
+    auto states = request.query_state();
+    for (auto& state : states) {
+        ov::Tensor old_tensor = state.get_state();
+        // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+        auto shape = old_tensor.get_shape();
+        shape[2] -= remove_from_end;
+
+        ov::Coordinate new_shape_begin{0, 0, 0, 0};
+        ov::Coordinate new_shape_end{shape};
+
+        auto trimmed_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
+
+        ov::Tensor new_tensor(old_tensor.get_element_type(), shape);
+        trimmed_tensor.copy_to(new_tensor);
+
+        state.set_state(new_tensor);
+    }
 }
 
 }  // namespace utils

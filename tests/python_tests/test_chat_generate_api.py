@@ -158,6 +158,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         **tokenizer_config)
     
     tok = load_tok([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
+    tok.set_chat_template(tokenizer_config['chat_template'])
     full_history_str = tok.apply_chat_template(conversation, add_generation_prompt=False)
     if full_history_str != full_history_str_hf:
         print(f'hf reference: {full_history_str_hf}')
@@ -186,10 +187,13 @@ def test_set_chat_template():
     model_descr = get_chat_models_list()[0]
     model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
     pipe.get_tokenizer().set_chat_template("{% for message in messages %}{{ message['content'] }}{% endfor %}")
+    config = ov_genai.GenerationConfig()
+    config.max_new_tokens = 1
+    config.do_sample = False
     pipe.start_chat()
-    generated = pipe.generate("a", max_new_tokens=1)
+    generated = pipe.generate("a", config)
     pipe.finish_chat()
-    reference = pipe.generate("a", max_new_tokens=1)
+    reference = pipe.generate("a", config)
     assert generated == reference
 
 prompts = [
