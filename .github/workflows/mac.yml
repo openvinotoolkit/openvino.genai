@@ -219,7 +219,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --parallel --verbose
 
       - name: Test bindings
         run: |
@@ -284,7 +284,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_openvino_genai -j
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
 
       - name: Test bindings
         run: |
@@ -350,7 +350,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package --parallel --verbose
 
       - name: Build and Install dependencies
         run: |
