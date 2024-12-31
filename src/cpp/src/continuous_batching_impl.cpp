@@ -105,9 +105,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
 
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                         sampling_params,
-                                                                        m_scheduler->get_block_size(),
-                                                                        m_scheduler->get_config().enable_prefix_caching);
-    sequence_group->set_sequence_group_ptr(sequence_group);
+                                                                        m_scheduler->get_block_size());
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -353,7 +351,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
-            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
             const auto & generated_ids = sequence->get_generated_ids();
 
             if (sampling_params.echo)
