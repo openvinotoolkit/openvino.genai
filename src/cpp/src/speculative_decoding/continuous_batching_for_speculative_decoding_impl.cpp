@@ -159,7 +159,7 @@ init_request(
     for (const auto& candidate_sequence : candidates) {
         Sequence::Ptr sequence;
         if (is_init_all_sequences_in_request && candidate_sequence.first > 0) {
-            sequence = Sequence::Ptr(new Sequence(candidate_sequence.first));
+            sequence = Sequence::create(candidate_sequence.first);
             sequence->set_status(ov::genai::SequenceStatus::RUNNING);
             request->add_sequence(sequence);
         } else {

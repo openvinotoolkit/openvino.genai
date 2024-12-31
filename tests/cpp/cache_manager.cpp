@@ -11,14 +11,17 @@
 
 using namespace ov::genai;
 
-std::shared_ptr<ov::Model> get_dummy_model(size_t num_layers) {
+std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
     ov::NodeVector keys;
     ov::NodeVector values;
     ov::ParameterVector params;
+    ov::element::Type inference_precision = core.get_property("CPU", ov::hint::inference_precision);
+    ov::element::Type kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
+
     auto shape = ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()});
     for (size_t i = 0; i < num_layers; i++) {
-        auto key = std::make_shared<ov::op::v0::Parameter>(ov::element::f16, shape);
-        auto value = std::make_shared<ov::op::v0::Parameter>(ov::element::f16, shape);
+        auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
+        auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
         key->get_output_tensor(0).set_names({"key_cache." + std::to_string(i)});
         value->get_output_tensor(0).set_names({"value_cache." + std::to_string(i)});
         keys.push_back(key);
@@ -57,7 +60,7 @@ TEST(TestCacheManager, test_cache_size_param) {
     std::vector<size_t> num_kv_heads(12, 12);
     device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
 
-    ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
@@ -80,7 +83,7 @@ TEST(TestCacheManager, test_kv_blocks_param) {
     std::vector<size_t> num_kv_heads(12, 12);
     device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
 
-    ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
     OPENVINO_ASSERT(block_manager.get_total_number_of_kv_blocks(), scheduler_config.num_kv_blocks);
@@ -107,7 +110,7 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     }
 
 
-    ov::InferRequest request = core.compile_model(get_dummy_model(num_decoder_layers)).create_infer_request();
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
 
