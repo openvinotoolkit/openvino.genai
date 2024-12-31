@@ -147,7 +147,6 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 
 def get_greedy_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_return_sequences = 3
     generation_config.max_new_tokens = 300
     return generation_config
 
@@ -155,6 +154,7 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 300
     generation_config.num_return_sequences = generation_config.num_beams
     return generation_config

@@ -111,7 +111,7 @@ def read_model(params, **tokenizer_kwargs):
         path,
         hf_tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(path, 'CPU', **{'ENABLE_MMAP': False}),
+        ov_genai.LLMPipeline(path, 'CPU', ENABLE_MMAP=False),
     )
 
 
@@ -139,7 +139,7 @@ def model_tmp_path(tmpdir_factory):
 
 
 @pytest.fixture(scope="module")
-def model_tokenizers_path_tmp_path(tmpdir_factory):
+def model_tokenizers_tmp_path(tmpdir_factory):
     model_id, path, _, _, _ = read_model(get_models_list()[0])
     temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
 
@@ -180,10 +180,15 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return ov_genai.LLMPipeline(temp_path, 'CPU')
+
+    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU')
+
+    for _, config_name in configs:
+        os.remove(temp_path / config_name)
+
+    return ov_pipe
 
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
-    scheduler_config = ov_genai.SchedulerConfig()
-    return ov_genai.LLMPipeline(path, ov_genai.Tokenizer(path), 'CPU', **{"scheduler_config": scheduler_config})
+    return ov_genai.LLMPipeline(path, 'CPU', scheduler_config=ov_genai.SchedulerConfig())

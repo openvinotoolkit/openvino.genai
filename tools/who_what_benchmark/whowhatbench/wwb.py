@@ -55,7 +55,7 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
         "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
@@ -301,6 +301,20 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
     return image
 
 
+def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    mask_data = ov.Tensor(np.array(mask.getdata()).reshape(1, mask.size[1], mask.size[0], 3).astype(np.uint8))
+    image_tensor = model.generate(
+        prompt,
+        image=image_data,
+        mask_image=mask_data,
+        num_inference_steps=num_inference_steps,
+        generator=generator,
+    )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
     image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
     config = model.get_generation_config()
@@ -379,6 +393,17 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 gen_image_fn=genai_gen_image2image if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+            )
+        elif task == "image-inpainting":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_inpainting if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
             )
