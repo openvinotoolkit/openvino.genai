@@ -398,12 +398,12 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
     return axes;
 }
 
-ov::genai::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
+ov::genai::static_llm::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
     std::ifstream file(filepath);
     OPENVINO_ASSERT(file.is_open(), "Could not open file: ", filepath);
     nlohmann::json config_data = nlohmann::json::parse(file);
 
-    ov::genai::ModelConfigDesc desc;
+    ov::genai::static_llm::ModelConfigDesc desc;
     desc.type = config_data["model_type"].get<std::string>();
     // NB: In case _name_or_path field isn't presented in config.json
     if (config_data.contains("_name_or_path")) {
@@ -412,6 +412,16 @@ ov::genai::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& 
     desc.num_key_value_heads = config_data.contains("num_key_value_heads")
         ? config_data["num_key_value_heads"].get<int>() : -1;
     return desc;
+}
+
+std::string model_desc_to_string(const ov::genai::static_llm::ModelConfigDesc& model_desc) {
+    std::map<std::string, std::string> model_desc_map;
+    model_desc_map["type"] = model_desc.type;
+    model_desc_map["name_or_path"] = model_desc.name_or_path;
+    model_desc_map["num_key_value_heads"] = std::to_string(model_desc.num_key_value_heads);
+    std::stringstream result;
+    ov::util::Write<std::map<std::string,std::string>>()(result, model_desc_map);
+    return result.str();
 }
 
 void reshape_to_static(std::shared_ptr<ov::Model> model,
@@ -588,6 +598,21 @@ std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& 
     return std::nullopt;
 }
 
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
+void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
+    if (config.count(old_key) == 0) {
+        return;
+    } else {
+        auto opt_value = pop_option(config, old_key);
+        config[new_key] = opt_value.value();
+    }
+}
+
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
     ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
     start_shape[dim] = start_pos;
@@ -651,8 +676,252 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
 
 namespace ov {
 namespace genai {
+namespace static_llm {
 
-StaticLLMPipeline::StaticLLMPipeline(
+StatefulLLMPipeline::StatefulLLMPipeline(
+    const std::filesystem::path& models_path,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string&,
+    const ov::AnyMap& config
+) : LLMPipelineImplBase(tokenizer,
+                        utils::from_config_json_if_exists(models_path)) {
+
+    auto model = genai::utils::singleton_core().read_model((models_path / "openvino_model.xml").string());
+    ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+    ov::AnyMap properties = config;
+
+    auto compiled = setupAndCompileModel(model, model_desc, properties);
+    m_request  = compiled->create_infer_request();
+}
+
+
+StatefulLLMPipeline::StatefulLLMPipeline(
+    const std::shared_ptr<ov::Model>& model,
+    const ModelConfigDesc& model_desc,
+    const ov::genai::Tokenizer& tokenizer,
+    const std::string&,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) : LLMPipelineImplBase(tokenizer, generation_config) {
+
+    bool use_blobs = false;
+    auto anyopt = get_option<bool>(properties, "USE_BLOBS");
+    if (anyopt.has_value()) {
+        use_blobs = *anyopt;
+    }
+    // Using model_str and weights_tesnor with blobs is meaningless.
+    OPENVINO_ASSERT(!use_blobs, "blobs cannot be used with model string and weights tensor");
+
+    ov::AnyMap properties_copy = properties;
+    auto compiled = setupAndCompileModel(model, model_desc, properties_copy);
+    m_request  = compiled->create_infer_request();
+}
+
+std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
+    const std::shared_ptr<ov::Model>& model,
+    const ModelConfigDesc& model_desc,
+    ov::AnyMap& pipeline_config) {
+
+    const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
+    std::string generate_hint = pop_or_default<std::string>(pipeline_config, "GENERATE_HINT", "FAST_COMPILE");
+
+    update_config(pipeline_config, {"NPU_USE_NPUW", "YES"});
+    update_config(pipeline_config, {"NPUW_LLM", "YES"});
+    update_config(pipeline_config, {"NPUW_LLM_MODEL_DESC", model_desc_to_string(model_desc)});
+    update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
+    update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
+    update_config(pipeline_config, {"NPUW_LLM_GENERATE_HINT", generate_hint});
+    update_config(pipeline_config, {"NPUW_LLM_PAD_TOKEN_ID", m_tokenizer.get_pad_token_id()});
+
+    rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
+  
+    return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
+}
+
+DecodedResults StatefulLLMPipeline::generate(
+    StringInputs inputs,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    std::string prompt;
+    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+        if (input_vector->size() > 1u) {
+            OPENVINO_THROW("Currently only batch size=1 is supported");
+        }
+        OPENVINO_ASSERT(!input_vector->empty());
+        prompt = std::move(input_vector->front());
+    } else {
+        OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
+        prompt = std::get<std::string>(inputs);
+    }
+
+    ov::genai::TokenizedInputs tokenized_input;
+    if (m_is_chat_conversation) {
+        m_history.push_back({{"role", "user"}, {"content", prompt}});
+        constexpr bool add_generation_prompt = true;
+        prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
+        tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
+    } else {
+        tokenized_input = m_tokenizer.encode(prompt);
+    }
+
+    auto encode_stop_time =  std::chrono::steady_clock::now();
+    auto encoded_results = generate(tokenized_input, config, streamer);
+
+    auto decode_start_time =  std::chrono::steady_clock::now();
+    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    auto decode_stop_time =  std::chrono::steady_clock::now();
+
+    if (m_is_chat_conversation) {
+        auto answer = decoded_results.texts[0];
+        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+    }
+
+    // generate_durations
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.m_evaluated = false;
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
+    return decoded_results;
+}
+
+EncodedResults StatefulLLMPipeline::generate(
+    const EncodedInputs& inputs,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    ov::Tensor input_ids;
+    ov::Tensor attention_mask;
+
+    if (auto data = std::get_if<ov::Tensor>(&inputs)) {
+        input_ids = *data;
+        attention_mask = ov::genai::utils::init_attention_mask(input_ids);
+    } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
+        input_ids = data->input_ids;
+        attention_mask = data->attention_mask;
+    }
+
+    if (input_ids.get_shape().at(0) > 1u) {
+        OPENVINO_THROW("Currently only batch size=1 is supported");
+    }
+
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (config.eos_token_id == -1)
+        config.set_eos_token_id(m_generation_config.eos_token_id);
+    config.validate();
+
+    std::shared_ptr<StreamerBase> streamer_ptr;
+    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
+        streamer_ptr = nullptr;
+    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+        streamer_ptr = *streamer_obj;
+    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+    }
+
+    if (!config.is_greedy_decoding()) {
+        OPENVINO_THROW("Currently only greedy decoding is supported");
+    }
+
+    ov::Shape prompts_shape = input_ids.get_shape();
+    const size_t batch_size = prompts_shape[0];
+    ov::genai::EncodedResults results;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    // NB: Only batch=1 is supported now
+    results.scores.resize(1u);
+    results.scores[0] = 0u;
+    results.tokens.resize(1u);
+
+    // TODO: Check if there is enough space in KV-cache to process input prompt
+    auto prompt_len = input_ids.get_size();
+
+    ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
+    utils::initialize_position_ids(position_ids, attention_mask);
+
+    m_request.set_tensor("input_ids", input_ids);
+    m_request.set_tensor("attention_mask", attention_mask);
+    m_request.set_tensor("position_ids", position_ids);
+
+    m_request.infer();
+
+    int64_t last_token = utils::argmax(m_request.get_tensor("logits"), 0);
+
+    results.tokens[0].push_back(last_token);
+    if (streamer_ptr && streamer_ptr->put(last_token)) {
+        return results;
+    }
+
+    int64_t input_ids_data = -1;
+    int64_t position_ids_data = prompt_len - 1;
+    std::vector<int64_t> attention_mask_data(prompt_len - 1, 1);
+    const size_t max_tokens = config.get_max_new_tokens(prompt_len);
+    for (int i = 0; i < max_tokens - 1; ++i) {
+        input_ids_data = last_token;
+        ++position_ids_data;
+        attention_mask_data.push_back(1);
+
+        m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&input_ids_data));
+        m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&position_ids_data));
+        m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, (void*)&attention_mask_data[0]));
+
+        m_request.infer();
+
+        last_token = utils::argmax(m_request.get_tensor("logits"), 0);
+        results.tokens[0].push_back(last_token);
+
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
+        if (streamer_ptr && streamer_ptr->put(last_token)) {
+            break;
+        }
+
+        if (last_token == config.eos_token_id && !config.ignore_eos) {
+            break;
+        }
+
+        // TODO: How to check that KV-Cache is full?
+    }
+
+    if (streamer_ptr) {
+        streamer_ptr->end();
+    }
+
+    auto stop_time = std::chrono::steady_clock::now();
+    // If is called without tokenization then that stat will not be reported.
+    auto& metrics = results.perf_metrics;
+    metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
+    metrics.load_time = this->m_load_time_ms;
+    metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    metrics.evaluate_statistics(start_time);
+    return results;
+}
+
+void StatefulLLMPipeline::start_chat(const std::string& system_message) {
+    if (!system_message.empty()) {
+        m_history.push_back({{"role", "system"}, {"content", system_message}});
+    }
+    m_is_chat_conversation = true;
+};
+
+void StatefulLLMPipeline::finish_chat() {
+    m_is_chat_conversation = false;
+    m_history.clear();
+};
+
+StatelessLLMPipeline::StatelessLLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
@@ -676,7 +945,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     const auto use_blobs = pop_or_default(properties, "USE_BLOBS", false);
     if (!use_blobs) {
         ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
-        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties);
+        auto model = genai::utils::singleton_core().read_model((models_path / "openvino_model.xml").string());
         setupAndCompileModels(model, device, model_desc, properties);
     } else {
         setupAndImportModels(models_path, device, properties);
@@ -692,14 +961,14 @@ StaticLLMPipeline::StaticLLMPipeline(
     m_sampler.set_seed(m_generation_config.rng_seed);
 };
 
-StaticLLMPipeline::StaticLLMPipeline(
+StatelessLLMPipeline::StatelessLLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties
-) : StaticLLMPipeline(models_path, Tokenizer(models_path), device, properties) {
+) : StatelessLLMPipeline(models_path, Tokenizer(models_path), device, properties) {
 }
 
-StaticLLMPipeline::StaticLLMPipeline(
+StatelessLLMPipeline::StatelessLLMPipeline(
     const std::shared_ptr<ov::Model>& model,
     const ModelConfigDesc& model_desc,
     const ov::genai::Tokenizer& tokenizer,
@@ -729,7 +998,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
-void StaticLLMPipeline::setupAndCompileModels(
+void StatelessLLMPipeline::setupAndCompileModels(
     const std::shared_ptr<ov::Model>& model,
     const std::string& device,
     const ModelConfigDesc& model_desc,
@@ -808,7 +1077,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     ov::genai::utils::print_compiled_model_properties(prefill_compiled_model, "Static LLM prefill compiled model");
 }
 
-void StaticLLMPipeline::setupAndImportModels(
+void StatelessLLMPipeline::setupAndImportModels(
     const std::filesystem::path& models_path,
     const std::string& device,
     ov::AnyMap& properties) {
@@ -882,19 +1151,19 @@ void StaticLLMPipeline::setupAndImportModels(
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
 }
 
-void StaticLLMPipeline::start_chat(const std::string& system_message) {
+void StatelessLLMPipeline::start_chat(const std::string& system_message) {
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
     m_is_chat_conversation = true;
 };
 
-void StaticLLMPipeline::finish_chat() {
+void StatelessLLMPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
 };
 
-void StaticLLMPipeline::prepare_for_new_conversation() {
+void StatelessLLMPipeline::prepare_for_new_conversation() {
     fill_tensor<int64_t>(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
     fill_tensor<int64_t>(m_prefill_request.get_tensor("position_ids"), 0u);
     fill_tensor<int64_t>(m_prefill_request.get_tensor("attention_mask"), 0u);
@@ -902,7 +1171,7 @@ void StaticLLMPipeline::prepare_for_new_conversation() {
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
-DecodedResults StaticLLMPipeline::generate(
+DecodedResults StatelessLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
@@ -957,7 +1226,7 @@ DecodedResults StaticLLMPipeline::generate(
     return decoded_results;
 }
 
-EncodedResults StaticLLMPipeline::generate(
+EncodedResults StatelessLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
@@ -1156,5 +1425,53 @@ EncodedResults StaticLLMPipeline::generate(
     return results;
 }
 
+std::unique_ptr<LLMPipelineImplBase>
+LLMPipelineFactory::create(const std::filesystem::path& models_path,
+                                 const ov::genai::Tokenizer& tokenizer,
+                                 const std::string& device,
+                                 const ov::AnyMap& config) {
+    auto properties = config;
+    const auto pipeline_mode = pop_or_default(properties, "NPU_PIPELINE", std::string("STATELESS"));
+    OPENVINO_ASSERT(pipeline_mode == "STATELESS" || pipeline_mode == "STATEFUL",
+                    "Only STATELESS and STATEFULL NPU_PIPELINE modes are supported!");
+    if (pipeline_mode == "STATEFUL") {
+        return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+    }
+    return std::make_unique<ov::genai::static_llm::StatelessLLMPipeline>(models_path, tokenizer, device, properties);
+}
+
+std::unique_ptr<LLMPipelineImplBase>
+LLMPipelineFactory::create(const std::filesystem::path& models_path,
+                                 const std::string& device,
+                                 const ov::AnyMap& config) {
+    return create(models_path, Tokenizer(models_path), device, config);
+}
+
+std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::shared_ptr<ov::Model>& model,
+                                                                const ModelConfigDesc& model_desc,
+                                                                const ov::genai::Tokenizer& tokenizer,
+                                                                const std::string& device,
+                                                                const ov::AnyMap& properties,
+                                                                const ov::genai::GenerationConfig& generation_config) {
+    auto properties_copy = properties;
+    const auto pipeline_mode = pop_or_default(properties_copy, "NPU_PIPELINE", std::string("STATELESS"));
+    OPENVINO_ASSERT(pipeline_mode == "STATELESS" || pipeline_mode == "STATEFUL",
+                    "Only STATELESS and STATEFULL NPU_PIPELINE modes are supported!");
+    if (pipeline_mode == "STATEFUL") {
+        return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
+                                                                            model_desc,
+                                                                            tokenizer,
+                                                                            device,
+                                                                            properties_copy,
+                                                                            generation_config);
+    }
+    return std::make_unique<ov::genai::static_llm::StatelessLLMPipeline>(model,
+                                                                         model_desc,
+                                                                         tokenizer,
+                                                                         device,
+                                                                         properties_copy,
+                                                                         generation_config);
+}
+}  // namespace static_llm
 }  // namespace genai
 }  // namespace ov
