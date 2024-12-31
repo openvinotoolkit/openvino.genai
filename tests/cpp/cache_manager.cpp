@@ -7,33 +7,9 @@
 #include "scheduler.hpp"
 #include "device_config.hpp"
 #include "cache_manager.hpp"
-#include "openvino/op/concat.hpp"
+#include "helper.hpp"
 
 using namespace ov::genai;
-
-std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
-    ov::NodeVector keys;
-    ov::NodeVector values;
-    ov::ParameterVector params;
-    ov::element::Type inference_precision = core.get_property("CPU", ov::hint::inference_precision);
-    ov::element::Type kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-
-    auto shape = ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()});
-    for (size_t i = 0; i < num_layers; i++) {
-        auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
-        auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
-        key->get_output_tensor(0).set_names({"key_cache." + std::to_string(i)});
-        value->get_output_tensor(0).set_names({"value_cache." + std::to_string(i)});
-        keys.push_back(key);
-        values.push_back(value);
-        params.push_back(key);
-        params.push_back(value);
-    }
-    const auto& concat1 = std::make_shared<ov::op::v0::Concat>(keys, 1);
-    const auto& concat2 = std::make_shared<ov::op::v0::Concat>(values, 1);
-    auto model = std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-    return std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-}
 
 size_t get_total_allocated_bytes(std::shared_ptr<ov::genai::CacheManager> cache_manager, size_t num_decoder_layers) {
     size_t allocated_bytes = 0;
@@ -58,14 +34,23 @@ TEST(TestCacheManager, test_cache_size_param) {
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     size_t num_decoder_layers = 12;
     std::vector<size_t> num_kv_heads(12, 12);
-    device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
+    size_t head_size = 64;
+    device_config.set_model_params(num_kv_heads, head_size, num_decoder_layers);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
-    
-    ASSERT_EQ(get_total_allocated_bytes(cache_manager, num_decoder_layers), 2146959360);
+
+    const size_t kv_cache_total_size = scheduler_config.cache_size * 1024 * 1024 * 1024;
+    const size_t cpu_block_size = 32;
+    // For u8 kvcahce, its scale, zero point and quantized data will be stored together.
+    // The layout for per token per head:
+    // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
+    // so, we have to extend head_size by 2 * sizeof(float)
+    const size_t cpu_block_size_total = num_decoder_layers * (num_kv_heads[0] + num_kv_heads[1]) * cpu_block_size * (head_size + 2 * sizeof(float)) * sizeof(uint8_t);
+    size_t expected_size = kv_cache_total_size / cpu_block_size_total * cpu_block_size_total;
+    ASSERT_EQ(get_total_allocated_bytes(cache_manager, num_decoder_layers), expected_size);
 }
 
 
