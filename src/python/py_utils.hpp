@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#define PYBIND11_DETAILED_ERROR_MESSAGES
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
@@ -32,7 +34,7 @@ ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& proper
 
 ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs);
 
-std::string ov_tokenizers_module_path();
+std::filesystem::path ov_tokenizers_module_path();
 
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
 
