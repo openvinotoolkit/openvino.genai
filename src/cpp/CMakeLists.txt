@@ -59,11 +59,13 @@ ov_genai_build_jinja2cpp()
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 set(TARGET_NAME openvino_genai)
+
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
+add_library(openvino::genai ALIAS ${TARGET_NAME})
+
 if(TARGET openvino_tokenizers)
     add_dependencies(${TARGET_NAME} openvino_tokenizers)
 endif()
-add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
@@ -81,6 +83,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
+
 # Extract two last digits from OpenVINOGenAI_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
 string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${OpenVINOGenAI_VERSION_MAJOR})
 if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
