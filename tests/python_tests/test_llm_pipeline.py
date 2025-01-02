@@ -143,18 +143,14 @@ def run_hf_ov_genai_comparison_encoded_inputs(
 #
 
 test_cases = [
-    (dict(max_new_tokens=20), 'table is made of'),
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_decoding(model_descr, generation_config, prompt):
+def test_string_inputs(model_descr, generation_config, prompt):
     run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
 
 
@@ -169,120 +165,6 @@ input_tensors_list = [
 @pytest.mark.nightly
 def test_encoded_inputs(model_descr, inputs):
     run_hf_ov_genai_comparison_encoded_inputs(read_model(model_descr), dict(max_new_tokens=20), *inputs)
-
-
-test_configs = [
-    dict(max_new_tokens=20),
-    dict(max_new_tokens=200, ignore_eos=True),
-    dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
-]
-batched_prompts = [
-    ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
-    ['hello', 'Here is the longest nowel ever: '],
-    ['Alan Turing was a', 'return 0', '你好！ 你好嗎？'],
-    ['table is made', 'table is made [force left pad tokens]']
-]
-@pytest.mark.parametrize("generation_config", test_configs)
-@pytest.mark.parametrize("prompts", batched_prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_batch_text_input(model_descr, generation_config, prompts):
-    run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
-
-
-prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is that', 'table is made of']
-@pytest.mark.parametrize("num_beam_groups", [2, 3, 8])
-@pytest.mark.parametrize("group_size", [5, 3, 10])
-@pytest.mark.parametrize("max_new_tokens", [20, 15])
-@pytest.mark.parametrize("diversity_penalty", [1.0 , 1.5])
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_beam_search_decoding(model_descr, num_beam_groups, group_size, max_new_tokens, diversity_penalty, prompt):
-    generation_config = dict(
-        num_beam_groups=num_beam_groups,
-        num_beams=num_beam_groups * group_size,
-        diversity_penalty=diversity_penalty,
-        num_return_sequences=num_beam_groups * group_size,
-        max_new_tokens=max_new_tokens,
-    )
-    run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
-
-
-@pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.EARLY, StopCriteria.HEURISTIC])
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("max_new_tokens", [10, 80])
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_beam_search_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
-    # todo: with EARLY stop_criteria looks like HF return invalid out with sentence<eos><unk><unk>
-    # while genai ends sentence with <eos>
-    if (stop_criteria == StopCriteria.EARLY):
-        pytest.skip()
-    generation_config = dict(
-        num_beam_groups=2,
-        num_beams=2 * 3,
-        diversity_penalty=1.0,
-        num_return_sequences=2 * 3,
-        max_new_tokens=max_new_tokens,
-        stop_criteria=stop_criteria,
-    )
-    run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
-
-
-# test long sequences
-@pytest.mark.parametrize("num_beam_groups", [2])
-@pytest.mark.parametrize("group_size", [5])
-@pytest.mark.parametrize("max_new_tokens", [800, 2000])
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.nightly
-def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
-                                    max_new_tokens, prompt):
-    generation_config = dict(
-        num_beam_groups=num_beam_groups,
-        num_beams=num_beam_groups * group_size,
-        diversity_penalty=1.0,
-        num_return_sequences=num_beam_groups * group_size,
-        max_new_tokens=max_new_tokens,
-    )
-    run_hf_ov_genai_comparison_text_inputs(read_model(model_descr), generation_config, prompt)
-
-
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_greedy_repetition_penalty(model_descr, prompt):
-    model_id, path, tokenizer, model, pipe = read_model(model_descr)
-
-    generation_config = dict(
-        repetition_penalty=2.0,
-        max_new_tokens=20,
-        do_sample=False
-    )
-    run_hf_ov_genai_comparison_text_inputs((model_id, path, tokenizer, model, pipe), generation_config, prompt)
-
-    generation_config = dict(
-        repetition_penalty=1.0,
-        max_new_tokens=20,
-        do_sample=False
-    )
-    run_hf_ov_genai_comparison_text_inputs((model_id, path, tokenizer, model, pipe), generation_config, prompt)
-
-    ov_output = pipe.generate(prompt, **generation_config)
-
-    generation_config = dict(
-        repetition_penalty=0.5,
-        max_new_tokens=20,
-        do_sample=False
-    )
-    ov_output_half_penalty = pipe.generate(prompt, **generation_config)
-
-    assert(len(set(ov_output.split(' '))) > len(set(ov_output_half_penalty.split(' '))))
 
 
 @pytest.mark.precommit
@@ -656,34 +538,6 @@ def test_perf_metrics(model_descr, generation_config, prompt):
 #
 # Misc
 #
-
-# TODO: move to test_sampling.py
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_stop_token_ids():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
-    res = ov_pipe.generate(
-        ov.Tensor([(1,)]),
-        max_new_tokens=3,
-        stop_token_ids={9935, ov_pipe.get_tokenizer().get_eos_token_id()},
-        include_stop_str_in_output=False
-    )
-    assert 2 == len(res.tokens[0])
-    assert 9935 in res.tokens[0]
-
-
-# TODO: move to test_sampling.py
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_stop_strings():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
-    res = ov_pipe.generate(
-        "",
-        max_new_tokens=5,
-        stop_strings={"ignored", "боль"}
-    )
-    assert "боль" not in res
-
 
 # TODO: move this test to test_tokenizer.py
 @pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
