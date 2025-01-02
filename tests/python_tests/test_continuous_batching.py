@@ -117,8 +117,8 @@ questions = [
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
-    cb_pipe = get_continuous_batching(path)
+    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    cb_pipe = get_continuous_batching(models_path)
 
     ov_pipe.start_chat()
     cb_pipe.start_chat()
@@ -249,7 +249,6 @@ multinomial_params = RandomSamplingTestStruct(
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
-        config.rng_seed = 0
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
@@ -329,15 +328,12 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
-    generation_configs = multinomial_params_n_seq.generation_config
-    for config in generation_configs:
-        config.rng_seed = 0
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
 
     models_path : Path = tmp_path / model_id
-    convert_models(model, hf_tokenizer, models_path)
+    convert_models(opt_model, hf_tokenizer, models_path)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
-    generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, generation_configs, scheduler_config)
+    generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)

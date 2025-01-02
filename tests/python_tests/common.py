@@ -243,6 +243,9 @@ def run_hugging_face(
     prompts: List[str],
     generation_configs: List[GenerationConfig] | GenerationConfig,
 ) -> List[GenerationResult]:
+    if type(generation_configs) is not list:
+        generation_configs = [generation_configs]
+
     generation_results = []
     for prompt, generation_config in zip(prompts, generation_configs):
         hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
@@ -353,6 +356,12 @@ def get_hugging_face_models(model_id: str, use_optimum = True):
 
 def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer, models_path: Path):
     opt_model.save_pretrained(models_path)
+
+    # to store tokenizer config jsons with special tokens
+    hf_tokenizer.save_pretrained(models_path)
+
+    # save generation config
+    opt_model.generation_config.save_pretrained(models_path)
 
     # convert tokenizers as well
     from openvino_tokenizers import convert_tokenizer

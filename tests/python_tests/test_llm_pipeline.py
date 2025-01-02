@@ -373,7 +373,7 @@ test_cases = [
 def test_perf_metrics(generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    model_id, path = 'facebook/opt-125m', Path('facebook-opt-125m')
+    model_id, path = 'Qwen/Qwen2-0.5B-Instruct', Path('Qwen-Qwen2-0.5B-Instruct')
     perf_metrics = run_perf_metrics_collection((model_id, path), generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
 
