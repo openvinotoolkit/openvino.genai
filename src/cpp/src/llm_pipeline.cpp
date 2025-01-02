@@ -121,6 +121,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #ifdef OPENVINO_ARCH_X86_64
             SchedulerConfig default_config;
             default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+            default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
 
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, default_config, device, properties);
 #endif
@@ -162,6 +163,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #ifdef OPENVINO_ARCH_X86_64
             SchedulerConfig default_config;
             default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+            default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
 
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, default_config, device, properties);
 #endif
@@ -228,6 +230,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 #ifdef OPENVINO_ARCH_X86_64
             SchedulerConfig default_config;
             default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+            default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
 
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor, tokenizer,
                                                                   default_config, device, properties, generation_config);
