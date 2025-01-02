@@ -88,7 +88,7 @@ public:
     Sampler() = default;
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
-    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
+    SamplerOutput sample(const std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t new_seed) {
         rng_engine.seed(new_seed);
         seed = new_seed;

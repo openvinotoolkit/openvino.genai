@@ -746,7 +746,7 @@ process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& token
     return result;
 }
 
-SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
+SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_groups,
                               ov::Tensor logits,
                               bool is_validation_mode_enabled) {
     const float * logits_data = logits.data<float>();

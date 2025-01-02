@@ -7,6 +7,7 @@
 #include <random>
 
 #include "llm_pipeline_base.hpp"
+#include "sampler.hpp"
 
 namespace ov {
 namespace genai {
@@ -78,15 +79,14 @@ private:
         bool v_tensors_transposed;
     };
 
+    Sampler m_sampler;
+
     KVCacheDesc m_kvcache_desc;
     ov::InferRequest m_kvcache_request;
     ov::InferRequest m_prefill_request;
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
-
-    // NB: For multinomial sampling
-    std::mt19937 m_rng_engine;
 };
 
 }  // namespace genai
