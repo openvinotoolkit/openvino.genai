@@ -67,7 +67,15 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
     compile(device, properties);
 }
 
-CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
+CLIPTextModel::CLIPTextModel(const CLIPTextModel& origin_model) {
+    m_config = origin_model.m_config;
+    m_adapter_controller = origin_model.m_adapter_controller;
+    compiled_model = origin_model.compiled_model;
+    m_request = compiled_model->create_infer_request();
+    m_model = origin_model.m_model;
+    m_clip_tokenizer = origin_model.m_clip_tokenizer;
+}
+
 
 const CLIPTextModel::Config& CLIPTextModel::get_config() const {
     return m_config;
@@ -88,17 +96,16 @@ CLIPTextModel& CLIPTextModel::reshape(int batch_size) {
 CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
     std::optional<AdapterConfig> adapters;
     if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
         adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_te"));
         m_adapter_controller = AdapterController(m_model, *adapters, device);
-        compiled_model = core.compile_model(m_model, device, *filtered_properties);
+        compiled_model = std::make_shared<ov::CompiledModel>(core.compile_model(m_model, device, *filtered_properties));
     } else {
-        compiled_model = core.compile_model(m_model, device, properties);
+        compiled_model = std::make_shared<ov::CompiledModel>(core.compile_model(m_model, device, properties));
     }
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
-    m_request = compiled_model.create_infer_request();
+    ov::genai::utils::print_compiled_model_properties(*compiled_model, "Clip Text model");
+    m_request = compiled_model->create_infer_request();
     // release the original model
     m_model.reset();
 

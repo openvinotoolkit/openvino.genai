@@ -179,7 +179,20 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
     }
 }
 
-AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
+AutoencoderKL::AutoencoderKL(const AutoencoderKL& original_model){
+    std::cout << "bla1" << std::endl;
+    encoder_compiled_model = original_model.encoder_compiled_model;
+    std::cout << "bla2" << std::endl;
+    decoder_compiled_model = original_model.decoder_compiled_model;
+    std::cout << "bla3" << std::endl;
+    m_decoder_request = original_model.decoder_compiled_model->create_infer_request();
+    if (m_encoder_model){
+        std::cout << "bla4" << std::endl;
+        m_decoder_request = decoder_compiled_model->create_infer_request();
+    }
+    m_encoder_model = original_model.m_encoder_model;
+    m_decoder_model = original_model.m_decoder_model;
+}
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
@@ -211,16 +224,20 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     ov::Core core = utils::singleton_core();
 
     if (m_encoder_model) {
-        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, properties);
-        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
-        m_encoder_request = encoder_compiled_model.create_infer_request();
+        std::cout << "copiling model" << std::endl;
+        encoder_compiled_model = std::make_shared<ov::CompiledModel>(core.compile_model(m_encoder_model, device, properties));
+        std::cout << "compiled encoder model" << std::endl;
+        ov::genai::utils::print_compiled_model_properties(*encoder_compiled_model, "Auto encoder KL encoder model");
+        m_encoder_request = encoder_compiled_model->create_infer_request();
+        std::cout << "infer request encoder model" << std::endl;
         // release the original model
         m_encoder_model.reset();
     }
 
-    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, properties);
-    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
-    m_decoder_request = decoder_compiled_model.create_infer_request();
+    decoder_compiled_model = std::make_shared<ov::CompiledModel>(core.compile_model(m_decoder_model, device, properties));
+    std::cout << "compiled decoder model" << std::endl;
+    ov::genai::utils::print_compiled_model_properties(*decoder_compiled_model, "Auto encoder KL decoder model");
+    m_decoder_request = decoder_compiled_model->create_infer_request();
     // release the original model
     m_decoder_model.reset();
 

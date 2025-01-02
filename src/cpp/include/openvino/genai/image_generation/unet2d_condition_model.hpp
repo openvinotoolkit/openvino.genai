@@ -28,6 +28,7 @@ public:
         int time_cond_proj_dim = -1;
 
         explicit Config(const std::filesystem::path& config_path);
+        //Config() = default;
     };
 
     explicit UNet2DConditionModel(const std::filesystem::path& root_dir);

@@ -138,9 +138,13 @@ public:
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae)
         : StableDiffusionPipeline(pipeline_type) {
+        std::cout << "test" << std::endl;
         m_clip_text_encoder = std::make_shared<CLIPTextModel>(clip_text_model);
+        std::cout << "test1" << std::endl;
         m_unet = std::make_shared<UNet2DConditionModel>(unet);
+        std::cout << "test2" << std::endl;
         m_vae = std::make_shared<AutoencoderKL>(vae);
+        std::cout << "test3" << std::endl;
 
         const bool is_lcm = m_unet->get_config().time_cond_proj_dim > 0;
         const char * const pipeline_name = is_lcm ? "LatentConsistencyModelPipeline" : "StableDiffusionPipeline";

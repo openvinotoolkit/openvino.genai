@@ -84,6 +84,7 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
     if (device == "NPU") {
         m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
     } else {
+        std::cout << "impl UNetInferenceDynamic" << std::endl;
         m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
     }
 
@@ -93,6 +94,7 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
         m_adapter_controller = AdapterController(m_model, *adapters, device);
         m_impl->compile(m_model, device, *filtered_properties);
     } else {
+        std::cout << "impl compile" << std::endl;
         m_impl->compile(m_model, device, properties);
     }
 
@@ -104,6 +106,7 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
 
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
+    std::cout << "UNet2DConditionModel::set_hidden_states " << typeid(m_impl).name() << std::endl;
     m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
 }
 

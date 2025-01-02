@@ -29,6 +29,7 @@ public:
         std::vector<size_t> block_out_channels = { 64 };
 
         explicit Config(const std::filesystem::path& config_path);
+        Config() = default;
     };
 
     explicit AutoencoderKL(const std::filesystem::path& vae_decoder_path);
@@ -140,6 +141,7 @@ private:
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
+    std::shared_ptr<ov::CompiledModel> encoder_compiled_model, decoder_compiled_model;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 };
 
