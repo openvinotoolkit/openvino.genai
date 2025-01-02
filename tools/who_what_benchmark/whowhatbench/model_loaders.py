@@ -48,14 +48,7 @@ def load_text_llamacpp_pipeline(model_dir):
         logger.error(
             "Failed to import llama_cpp package. Please install llama-cpp-python.")
         exit(-1)
-    # from llama_cpp.llama_tokenizer import LlamaHFTokenizer
-    # tokenizer = LlamaHFTokenizer.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
-    # tokenizer.chat_template = None
-    # model = Llama(model_dir,
-    #               chat_format="functionary-v1",
-    #               tokenizer=tokenizer)
-    model = Llama(model_dir, chat_format="")#, chat_format="llama-2")
-    #model.create_chat_completion(messages = [])
+    model = Llama(model_dir)
     return model
 
 

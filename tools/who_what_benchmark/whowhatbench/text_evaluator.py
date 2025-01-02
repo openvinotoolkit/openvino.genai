@@ -108,6 +108,7 @@ class TextEvaluator(BaseEvaluator):
         generation_config=None,
         generation_config_base=None,
         seqs_per_request=None,
+        use_chat_template=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -123,6 +124,7 @@ class TextEvaluator(BaseEvaluator):
         self.generation_config_base = generation_config
         self.seqs_per_request = seqs_per_request
         self.generation_fn = gen_answer_fn
+        self.use_chat_template = use_chat_template
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
 
@@ -202,15 +204,22 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question):
-            inputs = self.tokenizer(prompt, return_tensors="pt")
-
-            tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
-
-            if crop_question:
-                tokens = tokens[:, inputs["input_ids"].shape[-1] :]
-
-            return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+            if use_chat_template:
+                message = [{"role": "user", "content": prompt}]
+                inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt")
+                tokens = model.generate(inputs, do_sample=False, max_new_tokens=max_new_tokens)
+                if crop_question:
+                    tokens = tokens[:, inputs.shape[-1]:]
+                res = self.tokenizer.decode(tokens[0], skip_special_tokens=True)
+                print(res)
+                return res
+            else:
+                inputs = self.tokenizer(prompt, return_tensors="pt")
+                tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
+                if crop_question:
+                    tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+                return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -250,6 +259,7 @@ class TextEvaluator(BaseEvaluator):
                         p,
                         self.max_new_tokens,
                         self._crop_question,
+                        self.use_chat_template
                     )
                 )
         else:
