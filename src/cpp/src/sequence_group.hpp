@@ -290,8 +290,8 @@ public:
     }
 
     size_t num_finished_seqs() const {
-        return std::count_if(m_sequences.begin(), m_sequences.end(), [] (Sequence::CPtr seq) {
-            return seq->has_finished();
+        return std::count_if(m_sequences.begin(), m_sequences.end(), [this] (Sequence::CPtr seq) {
+            return seq->has_finished() || seq->out_of_memory() || handle_dropped();
         });
     }
 

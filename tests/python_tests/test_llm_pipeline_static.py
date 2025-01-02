@@ -196,6 +196,26 @@ def test_max_number_of_tokens():
     assert len(encoded_results.tokens[0]) == num_tokens
 
 
+@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_terminate_when_kvcache_is_full():
+    model_path = get_models_list()[0][1]
+    prompt = 'The Sun is yellow because'
+    pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
+    pipeline_config |= common_config
+    kv_cache_size = pipeline_config['MAX_PROMPT_LEN'] + pipeline_config['MIN_RESPONSE_LEN']
+
+    tokenizer = ov_genai.Tokenizer(model_path)
+    tokenized_input = tokenizer.encode(prompt)
+    input_len = tokenized_input.input_ids.get_shape()[1]
+
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
+    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True)
+
+    assert len(encoded_results.tokens[0]) == (kv_cache_size - input_len + 1)
+
+
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")

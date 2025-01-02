@@ -1125,6 +1125,7 @@ EncodedResults StaticLLMPipeline::generate(
         // NB: KV-cache is full, further generation is impossible
         if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
             sequence_group->set_out_of_memory();
+            break;
         }
 
         // NB: Write KV-cache for the new token to the correct input position for the next iteration
