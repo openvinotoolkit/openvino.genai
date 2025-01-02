@@ -52,6 +52,7 @@ def get_models_list():
 
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
+
     # pytest.set_trace()
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
@@ -113,16 +114,6 @@ def read_model(params, **tokenizer_kwargs):
         opt_model,
         ov_genai.LLMPipeline(path, 'CPU', ENABLE_MMAP=False),
     )
-
-
-# in OpenVINO GenAI this parameter is called stop_criteria,
-# while in HF it's called early_stopping.
-# HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
-STOP_CRITERIA_MAP = {
-    ov_genai.StopCriteria.NEVER: "never",
-    ov_genai.StopCriteria.EARLY: True,
-    ov_genai.StopCriteria.HEURISTIC: False
-}
 
 
 @pytest.fixture(scope="module")

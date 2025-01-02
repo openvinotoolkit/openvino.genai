@@ -7,7 +7,7 @@ import pytest
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple
@@ -211,7 +211,15 @@ def convert_to_hf(
         if generation_config.num_beam_groups > 1:
             kwargs['diversity_penalty'] = generation_config.diversity_penalty
 
-        from ov_genai_test_utils import STOP_CRITERIA_MAP
+        # in OpenVINO GenAI this parameter is called stop_criteria,
+        # while in HF it's called early_stopping.
+        # HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
+        STOP_CRITERIA_MAP = {
+            StopCriteria.NEVER: "never",
+            StopCriteria.EARLY: True,
+            StopCriteria.HEURISTIC: False
+        }
+
         kwargs['early_stopping'] = STOP_CRITERIA_MAP[generation_config.stop_criteria]
     elif generation_config.is_multinomial():
         # mulitinomial
@@ -283,16 +291,21 @@ def run_llm_pipeline(
     properties = { 'scheduler_config' : SchedulerConfig() } if use_cb else { }
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
 
-    generation_results = []
-    for prompt in prompts:
-        generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompt, generation_config=generation_config)
+    generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config)
 
+    index = 0
+    generation_results = []
+
+    for _ in prompts:
         generation_result = GenerationResult()
-        generation_result.m_generation_ids = generate_outputs.texts
+
+        generation_result.m_generation_ids = generate_outputs.texts[index : index + generation_config.num_return_sequences]
         # sequences_scores are available only for beam search case
         if generation_config.is_beam_search():
-            generation_result.m_scores = [score for score in generate_outputs.scores]
+            generation_result.m_scores = generate_outputs.scores[index : index + generation_config.num_return_sequences]
         generation_results.append(generation_result)
+
+        index += generation_config.num_return_sequences
 
     del ov_pipe
     shutil.rmtree(models_path)
@@ -382,7 +395,7 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
     if use_optimum:
         convert_models(opt_model, hf_tokenizer, models_path)
 
-    hf_results = run_hugging_face(opt_model=opt_model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
+    hf_results = run_hugging_face(opt_model=opt_model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_config=generation_config)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_configs)

@@ -77,8 +77,8 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
         "facebook/opt-125m",
         Path("opt-125m")
     ))
-    cb = get_continuous_batching(path)
-    generated = cb.generate(prompt, **generation_config)
+    cb_pipe = get_continuous_batching(path)
+    generated = cb_pipe.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
     assert generated.texts == reference.texts
     if 1 != generation_config.get("num_return_sequences", 1):
