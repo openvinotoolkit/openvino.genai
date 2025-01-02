@@ -183,7 +183,7 @@ def test_unsupported_sampling_raise_error(generation_config):
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_max_number_of_tokens():
+def test_terminate_by_max_number_of_tokens():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
     num_tokens = 128
@@ -199,7 +199,7 @@ def test_max_number_of_tokens():
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_terminate_when_kvcache_is_full():
+def test_terminate_by_out_of_memory():
     model_path = get_models_list()[0][1]
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
@@ -214,6 +214,29 @@ def test_terminate_when_kvcache_is_full():
     encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True)
 
     assert len(encoded_results.tokens[0]) == (kv_cache_size - input_len + 1)
+
+
+@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_terminate_by_sampler():
+    model_path = get_models_list()[0][1]
+    prompt = 'The Sun is yellow because'
+
+    current_iter = 0
+    num_iters = 10
+    def callback(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return current_iter == num_iters
+
+    tokenizer = ov_genai.Tokenizer(model_path)
+    tokenized_input = tokenizer.encode(prompt)
+
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=callback)
+
+    assert len(encoded_results.tokens[0]) == num_iters
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
