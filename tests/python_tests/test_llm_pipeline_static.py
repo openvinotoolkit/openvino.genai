@@ -177,7 +177,7 @@ def test_unsupported_sampling_raise_error(generation_config):
     prompt = 'What is OpenVINO?'
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
-        pipe.generate(prompt, **generation_config)
+        pipe.generate(prompt, generation_config)
 
 
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
