@@ -3,7 +3,6 @@
 
 #include "llm_pipeline_static.hpp"
 
-#include "logit_processor.hpp"
 #include "sampler.hpp"
 
 #include <fstream>
@@ -635,10 +634,10 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     }
 }
 
-void stream_generated_tokens(std::shared_ptr<StreamerBase> streamer_ptr,
-                             GenerationHandle& handle) {
+void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
+                             ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
-        std::unordered_map<uint64_t, GenerationOutput> token = handle->back();
+        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->back();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
             if (streamer_ptr->put(gen_token)) {
                 handle->drop();
@@ -648,7 +647,7 @@ void stream_generated_tokens(std::shared_ptr<StreamerBase> streamer_ptr,
     }
 }
 
-int64_t get_last_token(SequenceGroup::Ptr sequence_group) {
+int64_t get_last_token(ov::genai::SequenceGroup::Ptr sequence_group) {
     const auto running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1u);
     const auto sequence = running_sequences.front();

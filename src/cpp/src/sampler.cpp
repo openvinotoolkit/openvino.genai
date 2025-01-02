@@ -67,71 +67,6 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
-Token greedy_sample(const Logits& logits, size_t top_logprobs) {
-    // For greedy sampling we do not expect sorting or shrinking considered tokens
-    // so we can operate directly on the data buffer
-    size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
-    std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
-    std::vector<size_t> top_indexes(m, 0);
-
-    for (size_t i = 0; i < logits.m_size; ++i) {
-        if (logits.m_data[i] > top_values.back()) {
-            top_values.back() = logits.m_data[i];
-            top_indexes.back() = i;
-
-            for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
-                std::swap(top_values[j], top_values[j - 1]);
-                std::swap(top_indexes[j], top_indexes[j - 1]);
-            }
-        }
-    }
-
-    size_t max_index = top_indexes.front();
-    float max_value = 0.0;
-
-    if (top_logprobs) {
-        // apply log softmax to max value
-        max_value = top_values.front();
-        float log_sum = std::log(std::accumulate(
-            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
-                return accumulated + std::exp(to_add - max_value);
-        }));
-        max_value = -log_sum;
-    }
-
-    return Token(max_value, max_index);
-}
-
-std::vector<Token> multinomial_sample(const Logits& logits,
-                                      size_t num_tokens_per_sequence,
-                                      std::mt19937& rng_engine) {
-    // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
-    std::vector<float> multinomial_weights;
-    multinomial_weights.reserve(logits.m_size);
-    if (logits.is_vector_initialized())
-        for (auto& logit: logits.m_vector) multinomial_weights.emplace_back(logit.m_log_prob);
-    else
-        multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
-
-    // std::discrete_distribution returns corrupted results when applied to log probabilities
-    // which result returning NAN only logprobs.
-    // so log() is applied after this line
-    auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-
-    std::vector<Token> out_tokens;
-    for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-        size_t element_to_pick = dist(rng_engine);
-        if (logits.is_vector_initialized()) {
-            auto logit = logits.m_vector[element_to_pick];
-            logit.m_log_prob = std::log(logit.m_log_prob);
-            out_tokens.push_back(logit);
-        }
-        else
-            out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
-    }
-    return out_tokens;
-}
-
 std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
     std::vector<int64_t> all_tokens = prefix_tokens;
     all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
@@ -159,6 +94,13 @@ std::vector<int64_t> encode_and_process_string(const std::string& stop_string, o
     std::copy_n(ov_encoded_stop_string.data<int64_t>(), tensor_size, encoded_stop_string.begin());
     return encoded_stop_string;
 }
+
+struct MatchStopStringResult {
+    size_t to_remove = 0;
+    // int64_t last_token_id = 0;
+    // bool is_to_update_last_token = false;
+    bool is_matched = false;
+};
 
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
 MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
@@ -539,11 +481,66 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
 }
 
 Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
-    return greedy_sample(logits, top_logprobs);
+    // For greedy sampling we do not expect sorting or shrinking considered tokens
+    // so we can operate directly on the data buffer
+    size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
+    std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
+    std::vector<size_t> top_indexes(m, 0);
+
+    for (size_t i = 0; i < logits.m_size; ++i) {
+        if (logits.m_data[i] > top_values.back()) {
+            top_values.back() = logits.m_data[i];
+            top_indexes.back() = i;
+
+            for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
+                std::swap(top_values[j], top_values[j - 1]);
+                std::swap(top_indexes[j], top_indexes[j - 1]);
+            }
+        }
+    }
+
+    size_t max_index = top_indexes.front();
+    float max_value = 0.0;
+
+    if (top_logprobs) {
+        // apply log softmax to max value
+        max_value = top_values.front();
+        float log_sum = std::log(std::accumulate(
+            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
+                return accumulated + std::exp(to_add - max_value);
+        }));
+        max_value = -log_sum;
+    }
+
+    return Token(max_value, max_index);
 }
 
 std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
-    return multinomial_sample(logits, num_tokens_per_sequence, rng_engine);
+    // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
+    std::vector<float> multinomial_weights;
+    multinomial_weights.reserve(logits.m_size);
+    if (logits.is_vector_initialized())
+        for (auto& logit: logits.m_vector) multinomial_weights.emplace_back(logit.m_log_prob);
+    else
+        multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
+
+    // std::discrete_distribution returns corrupted results when applied to log probabilities
+    // which result returning NAN only logprobs.
+    // so log() is applied after this line
+    auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
+
+    std::vector<Token> out_tokens;
+    for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+        size_t element_to_pick = dist(rng_engine);
+        if (logits.is_vector_initialized()) {
+            auto logit = logits.m_vector[element_to_pick];
+            logit.m_log_prob = std::log(logit.m_log_prob);
+            out_tokens.push_back(logit);
+        }
+        else
+            out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
+    }
+    return out_tokens;
 }
 
 std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequence_group) {
