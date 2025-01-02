@@ -175,8 +175,10 @@ def convert_to_hf(
     default_generation_config : HFGenerationConfig,
     generation_config : GenerationConfig
 ) -> HFGenerationConfig:
-    kwargs = {}
+    if generation_config is None:
+        return
 
+    kwargs = {}
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
@@ -195,7 +197,7 @@ def convert_to_hf(
         kwargs['eos_token_id'] = generation_config.eos_token_id
     else:
         kwargs['eos_token_id'] = default_generation_config.eos_token_id
-        
+
     # copy penalties
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
@@ -239,14 +241,14 @@ def run_hugging_face(
     opt_model,
     hf_tokenizer,
     prompts: List[str],
-    generation_config: GenerationConfig,
+    generation_configs: List[GenerationConfig] | GenerationConfig,
 ) -> List[GenerationResult]:
-    hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
     generation_results = []
-
-    for prompt in prompts:
+    for prompt, generation_config in zip(prompts, generation_configs):
+        hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = 0 if generation_config.echo else inputs['input_ids'].numel()
+
         generate_outputs = opt_model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'],
                                               generation_config=hf_generation_config, return_dict_in_generate=True, tokenizer=hf_tokenizer)
         all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
@@ -270,8 +272,8 @@ def run_continuous_batching(
     prompts: List[str],
     generation_configs : List[GenerationConfig] | GenerationConfig 
 ) -> List[GenerationResult]:
-    if not type(generation_configs) is List:
-        generation_configs = [generation_configs]
+    if type(generation_configs) is not list:
+        generation_configs = [generation_configs] * len(prompts)
  
     cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU')
     output = cb_pipe.generate(prompts, generation_configs)
@@ -331,7 +333,7 @@ def compare_generation_result(hf_result: GenerationResult, ov_result: Generation
 
 
 def compare_generation_results(prompts: List[str], hf_results: List[GenerationResult], ov_results: List[GenerationResult], generation_configs: List[GenerationConfig] | GenerationConfig):
-    if not type(generation_configs) is List:
+    if type(generation_configs) is not list:
         generation_configs = [generation_configs]
 
     assert len(prompts) == len(hf_results)
@@ -383,7 +385,7 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
     scheduler_config = get_scheduler_config(scheduler_params)
 
     # override dataset's generation config
-    if not generation_config is None:
+    if generation_config is not None:
         if type(generation_config) is dict:
             generation_config = GenerationConfig(**generation_config)
         generation_configs = [generation_config] * len(prompts)
@@ -395,7 +397,7 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
     if use_optimum:
         convert_models(opt_model, hf_tokenizer, models_path)
 
-    hf_results = run_hugging_face(opt_model=opt_model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_config=generation_config)
+    hf_results = run_hugging_face(opt_model=opt_model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_configs)
