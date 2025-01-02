@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "llm_pipeline_static.hpp"
@@ -635,6 +635,31 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     }
 }
 
+void stream_generated_tokens(std::shared_ptr<StreamerBase> streamer_ptr,
+                             GenerationHandle& handle) {
+    if (streamer_ptr && handle->can_read()) {
+        std::unordered_map<uint64_t, GenerationOutput> token = handle->back();
+        for (const auto& gen_token : token.begin()->second.generated_ids) {
+            if (streamer_ptr->put(gen_token)) {
+                handle->drop();
+                break;
+            }
+        }
+    }
+}
+
+int64_t get_last_token(SequenceGroup::Ptr sequence_group) {
+    const auto running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1u);
+    const auto sequence = running_sequences.front();
+
+    size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+    OPENVINO_ASSERT(num_scheduled_tokens == 1u);
+
+    const auto num_processed_tokens = sequence_group->get_num_processed_tokens();
+    return sequence->get_generated_ids()[num_processed_tokens - sequence_group->get_prompt_len()];
+}
+
 } // anonymous namespace
 
 namespace ov {
@@ -943,31 +968,6 @@ DecodedResults StaticLLMPipeline::generate(
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
-}
-
-void stream_generated_tokens(std::shared_ptr<StreamerBase> streamer_ptr,
-                             GenerationHandle& handle) {
-    if (streamer_ptr && handle->can_read()) {
-        std::unordered_map<uint64_t, GenerationOutput> token = handle->back();
-        for (const auto& gen_token : token.begin()->second.generated_ids) {
-            if (streamer_ptr->put(gen_token)) {
-                handle->drop();
-                break;
-            }
-        }
-    }
-}
-
-int64_t get_last_token(SequenceGroup::Ptr sequence_group) {
-    const auto running_sequences = sequence_group->get_running_sequences();
-    OPENVINO_ASSERT(running_sequences.size() == 1u);
-    const auto sequence = running_sequences.front();
-
-    size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-    OPENVINO_ASSERT(num_scheduled_tokens == 1u);
-
-    const auto num_processed_tokens = sequence_group->get_num_processed_tokens();
-    return sequence->get_generated_ids()[num_processed_tokens - sequence_group->get_prompt_len()];
 }
 
 EncodedResults StaticLLMPipeline::generate(

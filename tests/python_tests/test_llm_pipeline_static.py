@@ -99,9 +99,9 @@ generation_configs = [
 @pytest.mark.nightly
 @pytest.mark.parametrize("generation_config", generation_configs)
 def test_multinomial_sampling(generation_config):
-	# Multinomial sampling is highly sensitive to raw logits values. For fair comparison,
-	# a reference implementation producing identical logits (e.g., from StaticLLMPipeline)
-	# would be necessary. However, the CPU in StatefulPipeline and StaticLLMPipeline may apply
+    # Multinomial sampling is highly sensitive to raw logits values. For fair comparison,
+    # a reference implementation producing identical logits (e.g., from StaticLLMPipeline)
+    # would be necessary. However, the CPU in StatefulPipeline and StaticLLMPipeline may apply
     # different optimizations due to differences in provided topologies, leading to slight
     # variations in raw logits. Therefore, there is no reliable reference for validation,
     # so only ensure that no exceptions are raised.
@@ -163,13 +163,13 @@ def test_batch_raise_error():
 
 
 # TODO: For the further sampling support
-generation_config = [
+generation_configs = [
     get_beam_search(),
     # NB: Only num_return_sequences=1 is supported!
     get_multinomial_all_parameters()
 ]
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
-@pytest.mark.parametrize("generation_config", generation_config)
+@pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config):

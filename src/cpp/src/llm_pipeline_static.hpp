@@ -1,10 +1,9 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include <filesystem>
-#include <random>
 
 #include "llm_pipeline_base.hpp"
 #include "sampler.hpp"
