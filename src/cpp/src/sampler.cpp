@@ -758,7 +758,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             continue;
 
         size_t num_running_sequences = sequence_group->num_running_seqs();
-        size_t actual_seq_len = sequence_group->get_seq_len_to_sample();
+        size_t output_seq_len = sequence_group->get_output_seq_len();
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
@@ -773,13 +773,13 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         auto& stop_strings = m_stop_strings.at(request_id);
         auto& logit_processor = m_logit_processors.at(request_id);
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
-        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
         size_t max_removed_tokens_per_request = 0, min_generated_len = std::numeric_limits<size_t>::max(), updated_validation_len = 0;
         if (sequence_group->requires_sampling()) {
             // get number of token to be validated
             auto num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
-            if (num_tokens_to_process > actual_seq_len - 1) {
-                auto delta = num_tokens_to_process - (actual_seq_len - 1);
+            if (num_tokens_to_process > output_seq_len - 1) {
+                auto delta = num_tokens_to_process - (output_seq_len - 1);
                 updated_validation_len = std::max(updated_validation_len, delta);
                 num_tokens_to_process -= delta;
             }
@@ -913,7 +913,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         }
 
         // accumulate a number of processed tokens
-        currently_processed_tokens += actual_seq_len * num_running_sequences;
+        currently_processed_tokens += output_seq_len * num_running_sequences;
     }
 
     return sampler_output;

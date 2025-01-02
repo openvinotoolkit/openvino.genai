@@ -139,6 +139,7 @@ public:
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
+                actual_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_id];
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
@@ -148,10 +149,15 @@ public:
 
                     position_ids_data[token_id] = position_id;
 
-                    if (matmul_gathering_is_required && sampling_is_required) {
+                    // Check if token gathering is required for the entire sequence group
+                    if (matmul_gathering_is_required && (sampling_is_required || echo_output)) {
+                        // Determine if the current token should be gathered
                         if (echo_output ||
+                            // Skip gathering for prompt tokens
                             group_position_id + token_id >= prompt_len - 1 &&
-                            group_position_id + token_id >= num_scheduled_tokens - tokens_to_sample_per_sequence) {
+                            // Gather only the last scheduled token or 1 + num_tokens_to_validate tokens for SD
+                            // In SD, tokens_to_sample_per_sequence may exceed num_scheduled_tokens
+                            token_id + tokens_to_sample_per_sequence >= num_scheduled_tokens) {
                             gather_indice_values.push_back(gathering_current_index);
                             actual_seq_len++;
                         }
@@ -173,7 +179,7 @@ public:
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
             }
-            sequence_group->set_seq_len_to_sample(matmul_gathering_is_required ? std::min(actual_seq_len, num_scheduled_tokens) : num_scheduled_tokens);
+            sequence_group->set_seq_len_to_sample(matmul_gathering_is_required ? actual_seq_len : num_scheduled_tokens);
         }
 
         // typical LLM parameters

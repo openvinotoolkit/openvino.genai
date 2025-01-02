@@ -227,9 +227,6 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
-    // flag shows wheather last matmul was sliced
-    bool m_sliced_matmul = false;
-
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
@@ -399,7 +396,7 @@ public:
         return m_num_processed_tokens;
     }
 
-    size_t get_seq_len_to_sample() const {
+    size_t get_output_seq_len() const {
         return m_seq_len_to_sample;
     }
 
