@@ -25,12 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check for trailing whitespaces in files (excluding Markdown and hidden files)
-        run: git --no-pager diff --check $(git hash-object -t tree /dev/null) $(git ls-files | grep -Ev '^\.' | grep -Ev '\.md$')
-      - name: Prohibit non-ASCII characters in file names
-        run: test $(git diff --name-only --diff-filter=A -z $(git hash-object -t tree /dev/null) | LC_ALL=C tr -d '[ -~]\0' | wc -c) == 0
-      - name: Check for non-ASCII characters in files (excluding Markdown and hidden files), with characters ± and � allowed
-        run: ! git grep -n '[^ -~±�]' -- $(git ls-files | grep -vE '^\.' | grep -vE '\.md$' | grep -vE '^(tests/python_tests|tools/who_what_benchmark/(tests|whowhatbench))' | grep -v 'tools/llm_bench/llm_bench_utils/ov_model_classes.py')
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Run pre-commit (checks for trailing whitespaces, and non-ASCII symbols in filenames and file content)
+        run: pre-commit run --all-files
 
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
