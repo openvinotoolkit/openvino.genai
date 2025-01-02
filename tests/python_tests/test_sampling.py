@@ -10,11 +10,11 @@ from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
 from typing import List, TypedDict
 
-from common import get_hugging_face_model_and_tokenizer, save_ov_model_from_optimum, \
+from common import get_hugging_face_models, convert_models, \
     get_greedy, get_beam_search, get_multinomial_temperature, \
     get_greedy_with_penalties, get_multinomial_temperature, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
-    get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, \
+    get_multinomial_temperature_top_p_and_top_k, get_greedy_with_repetition_penalty, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_greedy, get_greedy_with_min_and_max_tokens, \
     get_greedy_with_single_stop_string, get_greedy_with_multiple_stop_strings, get_greedy_with_multiple_stop_strings_no_match, \
@@ -23,7 +23,7 @@ from common import get_hugging_face_model_and_tokenizer, save_ov_model_from_opti
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
     get_greedy_stop_strings_exclude_from_output, get_greedy_stop_strings_include_to_output, \
     get_greedy_n_stop_strings_exclude_from_output, get_greedy_n_stop_strings_include_to_output, \
-    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config, \
+    run_llm_pipeline_with_ref, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config, \
     run_continuous_batching
 
 
@@ -40,9 +40,7 @@ def test_beam_search_has_eos_token_at_end(tmp_path):
     '''
     model_id = "facebook/opt-125m"
     prompts = ["Tell me something about Canada"]
-    generation_configs = [get_beam_search()]
-    scheduler_config = get_scheduler_config()
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
+    run_llm_pipeline_with_ref(model_id, prompts, get_beam_search(), tmp_path)
 
 
 # TODO: currently, this test drops EOS token as both HF and OV use `skip_special_tokens=True`, which should be disabled for samlpling tests
@@ -57,9 +55,7 @@ def test_greedy_has_eos_token_at_end(tmp_path):
     '''
     model_id = "bigscience/bloomz-560m"
     prompts = ["What is OpenVINO?"]
-    generation_configs = [get_greedy()]
-    scheduler_config = get_scheduler_config()
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
+    run_llm_pipeline_with_ref(model_id, prompts, get_greedy(), tmp_path)
 
 
 # TODO: consider removing all these functions with generation configs and use Dict with properties, which can be converted to generation config
@@ -76,9 +72,8 @@ def test_greedy_has_eos_token_at_end(tmp_path):
                               "greedy_n_stop_strings_exclude_from_output", "greedy_n_stop_strings_include_to_output"])
 def test_sampling_against_optimum(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
-    generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
 
 
 @pytest.mark.precommit
@@ -91,9 +86,8 @@ def test_sampling_against_optimum(tmp_path, generation_config):
                          ids=["beam_search_with_single_stop_string", "beam_search_with_multiple_stop_strings"])
 def test_beam_search_with_stop_string(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
-    generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF
@@ -287,13 +281,13 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     generation_config.rng_seed = 0
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
 
     models_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
+    convert_models(model, hf_tokenizer, models_path)
 
     # run multinomial without comparison with reference
-    _ = run_continuous_batching(models_path, DEFAULT_SCHEDULER_CONFIG, prompts, generation_configs)
+    _ = run_continuous_batching(models_path, get_scheduler_config(), prompts, generation_configs)
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
@@ -312,10 +306,10 @@ def test_echo_prompt_phase_only(tmp_path, get_generation_config, max_num_batched
     scheduler_config.max_num_batched_tokens = max_num_batched_tokens
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(opt_model, hf_tokenizer, model_path)
+    convert_models(opt_model, hf_tokenizer, model_path)
 
     cb_pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
 
@@ -340,10 +334,10 @@ def test_echo_with_generation_phase(tmp_path, get_generation_config, max_num_bat
     scheduler_config.max_num_batched_tokens = max_num_batched_tokens
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(opt_model, hf_tokenizer, model_path)
+    convert_models(opt_model, hf_tokenizer, model_path)
 
     cb_pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
     outputs = cb_pipe.generate(["What is OpenVINO?"], generation_configs)
