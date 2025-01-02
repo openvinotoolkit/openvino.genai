@@ -261,7 +261,13 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 
 def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+    if use_chat_template:
+        model.start_chat()
+        result = model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+        model.finish_chat()
+        return result
+    else:
+        return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
 
 
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):

@@ -212,7 +212,6 @@ class TextEvaluator(BaseEvaluator):
                 if crop_question:
                     tokens = tokens[:, inputs.shape[-1]:]
                 res = self.tokenizer.decode(tokens[0], skip_special_tokens=True)
-                print(res)
                 return res
             else:
                 inputs = self.tokenizer(prompt, return_tensors="pt")
