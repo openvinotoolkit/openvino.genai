@@ -647,18 +647,6 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     }
 }
 
-int64_t get_last_token(ov::genai::SequenceGroup::Ptr sequence_group) {
-    const auto running_sequences = sequence_group->get_running_sequences();
-    OPENVINO_ASSERT(running_sequences.size() == 1u);
-    const auto sequence = running_sequences.front();
-
-    size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-    OPENVINO_ASSERT(num_scheduled_tokens == 1u);
-
-    const auto num_processed_tokens = sequence_group->get_num_processed_tokens();
-    return sequence->get_generated_ids()[num_processed_tokens - sequence_group->get_prompt_len()];
-}
-
 } // anonymous namespace
 
 namespace ov {
@@ -1012,6 +1000,10 @@ EncodedResults StaticLLMPipeline::generate(
         OPENVINO_THROW("Currently only greedy and multinomial decoding are supported");
     }
 
+    if (config.num_return_sequences != 1u) {
+        OPENVINO_THROW("Currently only \"num_return_sequences\" equal to 1 is supported!");
+    }
+
     ov::genai::EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     // NB: Only batch=1 is supported now
@@ -1105,9 +1097,10 @@ EncodedResults StaticLLMPipeline::generate(
 
     while (sequence_group->is_running()) {
         sequence_group->schedule_tokens(1);
-        int64_t last_token = get_last_token(sequence_group);
+        const auto running_sequences = sequence_group->get_running_sequences();
+        OPENVINO_ASSERT(running_sequences.size() == 1u);
 
-        input_ids_data[0] = last_token;
+        input_ids_data[0] = running_sequences.front()->get_generated_ids().back();
         position_ids_data[0] = m_kvcache_desc.num_stored_tokens;
         attention_mask_data[m_kvcache_desc.num_stored_tokens - 1] = 1u;
 
