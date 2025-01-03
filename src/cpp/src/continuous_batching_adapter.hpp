@@ -33,7 +33,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{tokenizer, GenerationConfig()}, m_impl{
-        models_path.string(),
+        models_path,
         tokenizer,
         scheduler_config,
         device,
@@ -64,7 +64,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()}, m_impl{
-        models_path.string(),
+        models_path,
         m_tokenizer,
         scheduler_config,
         device,

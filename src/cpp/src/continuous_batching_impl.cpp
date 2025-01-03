@@ -23,17 +23,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    ov::Core core;
-
-    auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
-    core.set_property(core_properties);
-
-    DeviceConfig device_config(core, scheduler_config, device, compile_properties);
+    ov::Core core = utils::singleton_core();
+    DeviceConfig device_config(core, scheduler_config, device, properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
-    initialize_pipeline(model, scheduler_config, compile_properties, device_config, core);
+    initialize_pipeline(model, scheduler_config, properties, device_config, core);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -105,9 +101,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
 
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                         sampling_params,
-                                                                        m_scheduler->get_block_size(),
-                                                                        m_scheduler->get_config().enable_prefix_caching);
-    sequence_group->set_sequence_group_ptr(sequence_group);
+                                                                        m_scheduler->get_block_size());
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -201,7 +195,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     step_count++;
 #endif
 
-    // process generation_config.echo parameetr
+    // process generation_config.echo parameter
     _fill_prompt_log_probs(m_requests, logits);
 
     SamplerOutput sampler_output;
@@ -353,7 +347,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
-            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_probs();
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
             const auto & generated_ids = sequence->get_generated_ids();
 
             if (sampling_params.echo)

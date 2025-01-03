@@ -7,7 +7,7 @@
 #include "lora_helper.hpp"
 #include "lm_encoding.hpp"
 #include "text_callback_streamer.hpp"
-
+#include "utils.hpp"
 
 namespace ov::genai {
 
@@ -22,12 +22,12 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& plugin_config)
+    const ov::AnyMap& properties)
     : StatefulLLMPipeline{
-        ov::genai::utils::read_model_with_config(models_path, plugin_config),
+        utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties),
         tokenizer,
         device,
-        plugin_config,
+        properties,
         utils::from_config_json_if_exists(models_path)
     } {}
 
@@ -35,21 +35,20 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::shared_ptr<ov::Model>& model,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& config,
+    const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
-    ov::CompiledModel compiled_model;
-    auto [core_plugin_config, plugin_config] = ov::genai::utils::split_core_compile_config(config);
     utils::slice_matmul_stateful_model(model);
     m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
-    if (auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
+    ov::CompiledModel compiled_model;
+    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_plugin_config);
+        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
         m_model_runner = compiled_model.create_infer_request();
     } else {
-        compiled_model = utils::singleton_core().compile_model(model, device, plugin_config);
+        compiled_model = utils::singleton_core().compile_model(model, device, properties);
         m_model_runner = compiled_model.create_infer_request();
     }
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");
@@ -300,23 +299,21 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::vector<SequenceGroup::Ptr> requests;
     size_t block_size = 1;
-    bool enable_prefix_caching = false;
 
     for (size_t request_id = 0; request_id < batch_size; request_id++) {
         SequenceGroup::Ptr sequence_group;
         if (is_chat_conversation) {
             ov::Tensor tokenized_chat_history = ov::Tensor(ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data());
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_chat_history, config, block_size, enable_prefix_caching);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_chat_history, config, block_size);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
             const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
             std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
 
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size, enable_prefix_caching);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size);
         }
 
-        sequence_group->set_sequence_group_ptr(sequence_group);
         requests.push_back(sequence_group);
     }
 
