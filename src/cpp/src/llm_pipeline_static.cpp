@@ -657,6 +657,20 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     }
 }
 
+enum NpuPipeline {
+    STATEFUL,
+    STATELESS
+};
+NpuPipeline str_to_pipeline(const std::string& str) {
+    if (str == "STATEFUL") {
+        return NpuPipeline::STATEFUL;
+    }
+    if (str == "STATELESS") {
+        return NpuPipeline::STATELESS;
+    }
+    OPENVINO_THROW("Unsupported \"NPU_PIPELINE\" provided: " +
+                   str + ". Please select either \"STATEFUL\" or \"STATELESS\".");
+}
 } // anonymous namespace
 
 namespace ov {
@@ -694,8 +708,10 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (anyopt.has_value()) {
         use_blobs = *anyopt;
     }
-    // Using model_str and weights_tesnor with blobs is meaningless.
-    OPENVINO_ASSERT(!use_blobs, "blobs cannot be used with model string and weights tensor");
+    // Using model_str and weights_tensor with blobs is meaningless.
+    if (use_blobs) {
+        OPENVINO_THROW("Blobs cannot be used with model string and weights tensor");
+    }
 
     ov::AnyMap properties_copy = properties;
     auto compiled = setupAndCompileModel(model, model_desc, properties_copy);
@@ -709,15 +725,25 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
 
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
+    m_kvcache_total = kMaxPromptLen + kMinResponseLen;
     std::string generate_hint = pop_or_default<std::string>(pipeline_config, "GENERATE_HINT", "FAST_COMPILE");
 
     update_config(pipeline_config, {"NPU_USE_NPUW", "YES"});
     update_config(pipeline_config, {"NPUW_LLM", "YES"});
-    update_config(pipeline_config, {"NPUW_LLM_MODEL_DESC", model_desc_to_string(model_desc)});
+
+    KVAxesPosition axes = get_kv_axes(model_desc.type);
+    update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
+    update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
     update_config(pipeline_config, {"NPUW_LLM_GENERATE_HINT", generate_hint});
-    update_config(pipeline_config, {"NPUW_LLM_PAD_TOKEN_ID", m_tokenizer.get_pad_token_id()});
+
+    // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
+    if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
+        (model_desc.type == "llama" && model_desc.num_key_value_heads == 32)) {
+            update_config(pipeline_config, {"NPUW_LLM_OPTIMIZE_V_TENSORS", true});
+    }
 
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
@@ -852,14 +878,24 @@ EncodedResults StatefulLLMPipeline::generate(
     int64_t input_ids_data = -1;
     int64_t position_ids_data = prompt_len - 1;
     std::vector<int64_t> attention_mask_data(prompt_len - 1, 1);
+    m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&input_ids_data));
+    m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&position_ids_data));
+
     const size_t max_tokens = config.get_max_new_tokens(prompt_len);
     for (int i = 0; i < max_tokens - 1; ++i) {
+        // KV Cache is full, no further generation is possible
+        if (position_ids_data + 1 == m_kvcache_total) {
+            break;
+        }
+
         input_ids_data = last_token;
         ++position_ids_data;
         attention_mask_data.push_back(1);
 
-        m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&input_ids_data));
-        m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&position_ids_data));
+        auto* input_ids_tnsr_data = m_request.get_tensor("input_ids").data<int64_t>();
+        input_ids_tnsr_data[0] = input_ids_data;
+        auto* position_ids_tnsr_data = m_request.get_tensor("position_ids").data<int64_t>();
+        position_ids_tnsr_data[0] = position_ids_data;
         m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, (void*)&attention_mask_data[0]));
 
         m_request.infer();
@@ -876,8 +912,6 @@ EncodedResults StatefulLLMPipeline::generate(
         if (last_token == config.eos_token_id && !config.ignore_eos) {
             break;
         }
-
-        // TODO: How to check that KV-Cache is full?
     }
 
     if (streamer_ptr) {
@@ -1389,14 +1423,12 @@ EncodedResults StatelessLLMPipeline::generate(
 
 std::unique_ptr<LLMPipelineImplBase>
 LLMPipelineFactory::create(const std::filesystem::path& models_path,
-                                 const ov::genai::Tokenizer& tokenizer,
-                                 const std::string& device,
-                                 const ov::AnyMap& config) {
+                           const ov::genai::Tokenizer& tokenizer,
+                           const std::string& device,
+                           const ov::AnyMap& config) {
     auto properties = config;
-    const auto pipeline_mode = pop_or_default(properties, "NPU_PIPELINE", std::string("STATELESS"));
-    OPENVINO_ASSERT(pipeline_mode == "STATELESS" || pipeline_mode == "STATEFUL",
-                    "Only STATELESS and STATEFULL NPU_PIPELINE modes are supported!");
-    if (pipeline_mode == "STATEFUL") {
+    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "NPU_PIPELINE", std::string("STATELESS")));
+    if (pipeline_mode == NpuPipeline::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
     return std::make_unique<ov::genai::static_llm::StatelessLLMPipeline>(models_path, tokenizer, device, properties);
@@ -1416,10 +1448,8 @@ std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::share
                                                                 const ov::AnyMap& properties,
                                                                 const ov::genai::GenerationConfig& generation_config) {
     auto properties_copy = properties;
-    const auto pipeline_mode = pop_or_default(properties_copy, "NPU_PIPELINE", std::string("STATELESS"));
-    OPENVINO_ASSERT(pipeline_mode == "STATELESS" || pipeline_mode == "STATEFUL",
-                    "Only STATELESS and STATEFULL NPU_PIPELINE modes are supported!");
-    if (pipeline_mode == "STATEFUL") {
+    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "NPU_PIPELINE", std::string("STATELESS")));
+    if (pipeline_mode == NpuPipeline::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
                                                                             model_desc,
                                                                             tokenizer,
