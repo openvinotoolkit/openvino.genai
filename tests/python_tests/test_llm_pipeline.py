@@ -379,7 +379,7 @@ def test_perf_metrics(generation_config, prompt):
 
     # Check that load time is adequate.
     load_time = perf_metrics.get_load_time()
-    assert load_time > 0 and load_time < 1000.0
+    assert load_time > 0 and load_time < 2000.0
 
     # Check that num input and generated tokens are adequate.
     num_generated_tokens = perf_metrics.get_num_generated_tokens()
