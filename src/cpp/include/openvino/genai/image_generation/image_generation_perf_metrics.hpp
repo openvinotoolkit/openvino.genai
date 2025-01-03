@@ -3,6 +3,7 @@
 #include <vector>
 #include <chrono>
 #include <map>
+#include <string>
 
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/perf_metrics.hpp"
