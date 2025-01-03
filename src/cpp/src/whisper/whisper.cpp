@@ -67,7 +67,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
             if (streamer_ptr->put(gen_token)) {
-                handle->drop();
+                handle->stop();
                 break;
             }
         }
@@ -102,7 +102,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     stream_generated_tokens();
 
     // "Generation" phase
-    while (!sequence_group->has_finished() && !sequence_group->handle_dropped()) {
+    while (!sequence_group->has_finished() && !sequence_group->handle_stopped()) {
         std::map<size_t, std::vector<int64_t>> batch_to_generated_ids{};
 
         sequence_group->schedule_tokens(1);
@@ -182,7 +182,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     sampler.clear_request_info(sequence_group->get_request_id());
 
-    return {results, sequence_group->handle_dropped()};
+    return {results, sequence_group->handle_stopped()};
 }
 
 ov::Tensor encode(ov::InferRequest& request,

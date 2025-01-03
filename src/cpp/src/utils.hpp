@@ -9,6 +9,8 @@
 
 #include "visual_language/processor_config.hpp"
 
+#include "openvino/genai/streamer_base.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -32,15 +34,25 @@ struct HistoryRemoveManager
 {
     size_t num_tokens_to_remove_from_kv_cache = 0;
     size_t trusted_history_length = 0;
+    size_t kv_cache_seq_length_axis = 2;
+    bool reset_kv_cache = false;
 
-    bool does_kv_cache_need_to_update() {
-        return (trusted_history_length > 0 || num_tokens_to_remove_from_kv_cache > 0);
+    bool does_history_cache_need_to_update() {
+        return (trusted_history_length > 0 && num_tokens_to_remove_from_kv_cache > 0);
     }
 
     void reset() {
         num_tokens_to_remove_from_kv_cache = 0;
         trusted_history_length = 0;
+        reset_kv_cache = false;
     }
+};
+
+struct GenerationFinishInfo
+{
+    EncodedResults results;
+    std::optional<int64_t> probably_disappeared_token = std::nullopt;
+    GenerationStatus streaming_finish_status;
 };
 
 Tensor init_attention_mask(const Tensor& position_ids);
@@ -110,6 +122,10 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
+
+template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer);
 
 }  // namespace utils
 }  // namespace genai

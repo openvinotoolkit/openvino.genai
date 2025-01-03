@@ -15,8 +15,8 @@ enum class GenerationStatus {
     RUNNING = 0, // Default status for ongoing generation
     FINISHED = 1, // Status set when generation has been finished
     IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
-    DROPPED_BY_PIPELINE = 3, // Currently not used, TODO: implement abort functionality
-    DROPPED_BY_HANDLE = 4 // Status set when generation handle is dropped
+    CANCEL = 3, // Status set when generation handle is canceled
+    STOP = 4 // Status set when generation handle is stopped
 };
 
 struct EncodedGenerationResult {
@@ -70,10 +70,10 @@ using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
 
 class GenerationStream;
 
-class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
+class OPENVINO_GENAI_EXPORTS 
+GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
-    ov::genai::GenerationConfig m_sampling_params;
- 
+    ov::genai::GenerationConfig m_sampling_params; 
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
     m_generation_stream(std::move(generation_stream)),
@@ -88,10 +88,18 @@ public:
     GenerationStatus get_status();
 
     bool can_read();
-    bool is_dropped();
+
+    bool is_stopped();
+
+    bool is_canceled();
 
     void drop();
 
+    void stop();
+
+    void cancel();
+
+    GenerationOutputs back();
     // Reads result of a generation for single iteration
     GenerationOutputs read();
     // Reads all generated tokens for all sequences

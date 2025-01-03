@@ -3,6 +3,7 @@
 
 #include "utils.hpp"
 
+#include <variant>
 #include <fstream>
 #include <memory>
 
@@ -14,6 +15,8 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
+
+#include "text_callback_streamer.hpp"
 
 #include "sampler.hpp"
 
@@ -141,9 +144,30 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
+        } else if (any_val.is<std::function<StreamerRunningStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<StreamerRunningStatus(std::string)>>();
         }
     }
     return streamer;
+}
+
+std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
+    std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
+        [](std::monostate) -> std::shared_ptr<StreamerBase> {
+            return nullptr;
+        },
+        [](const std::shared_ptr<StreamerBase>& streamer) {
+            return streamer;
+        },
+        [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+        },
+        [&tokenizer = tokenizer](const std::function<ov::genai::StreamerRunningStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+        }
+    }, streamer);
+
+    return streamer_ptr;
 }
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {

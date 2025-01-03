@@ -16,6 +16,7 @@ from .py_openvino_genai import (
     PerfMetrics,
     StreamerBase,
     get_version,
+    StreamerRunningStatus
 )
 
 __version__ = get_version()
@@ -84,5 +85,5 @@ from .py_openvino_genai import (
     GenerationResult,
     SchedulerConfig,
     CacheEvictionConfig,
-    AggregationMode,
+    AggregationMode
 )
