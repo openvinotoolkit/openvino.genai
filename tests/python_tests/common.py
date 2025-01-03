@@ -73,6 +73,7 @@ def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
     generation_config.num_return_sequences = generation_config.num_beams
@@ -82,6 +83,7 @@ def get_beam_search_min_and_max_tokens() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.min_new_tokens = 15
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
@@ -92,6 +94,7 @@ def get_beam_search_with_single_stop_string() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {"open sour"}  # expected match on "open source"
@@ -102,6 +105,7 @@ def get_beam_search_with_multiple_stop_strings() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {".", "software", "Intel"}
@@ -112,6 +116,7 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
@@ -299,7 +304,7 @@ def convert_to_hf(
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
-    if generation_config.num_beams > 1:
+    if generation_config.is_beam_search():
         # beam search case
         kwargs['num_beam_groups'] = generation_config.num_beam_groups
         kwargs['num_beams'] = generation_config.num_beams
@@ -309,7 +314,7 @@ def convert_to_hf(
         kwargs['output_scores'] = True
         if generation_config.num_beam_groups > 1:
             kwargs['diversity_penalty'] = generation_config.diversity_penalty
-    elif generation_config.do_sample:
+    elif generation_config.is_multinomial():
         # mulitinomial
         kwargs['temperature'] = generation_config.temperature
         kwargs['top_k'] = generation_config.top_k
@@ -362,18 +367,6 @@ def run_continuous_batching(
     del pipe
     shutil.rmtree(models_path)
     return output
-
-
-def read_models_list(file_name: str):
-    models = []
-    with open(file_name) as f:
-        for model_name in f:
-            model_name = model_name.strip()
-            # skip comment in model scope file
-            if model_name.startswith('#'):
-                continue
-            models.append(model_name)
-    return models
 
 
 def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
@@ -447,7 +440,7 @@ def generate_and_compare_with_reference_text(models_path: Path, prompts: List[st
             assert ref_text == ov_text
 
 
-def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
+def run_continuous_batching_pipeline_test(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = get_scheduler_config(scheduler_params)
 

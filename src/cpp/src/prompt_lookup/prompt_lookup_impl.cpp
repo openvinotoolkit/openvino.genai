@@ -74,10 +74,19 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer) {
-    ManualTimer generate_timer("speculative_decoding: generate()");
-    generate_timer.start();
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+
+    ManualTimer generate_timer("speculative_decoding: generate()");
+    generate_timer.start();
+
+    // checks that all requests has the same LoRA adapters property value
+    for (size_t i = 1; i < sampling_params.size(); ++i) {
+        OPENVINO_ASSERT(sampling_params[i - 1].adapters == sampling_params[i].adapters,
+            "LoRA adapters value must be the same for all requests");
+    }
+    m_pipeline->set_adapters(sampling_params[0].adapters);
+
     const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
         [](std::monostate) -> std::shared_ptr<StreamerBase> {
             return nullptr;

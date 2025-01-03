@@ -11,11 +11,11 @@
 
 namespace ov::genai {
 
-class ContinuousBatchingPipeline::PromptLookupImpl : public ContinuousBatchingPipeline::ImplInterface {
+class ContinuousBatchingPipeline::PromptLookupImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<ContinuousBatchingForPromptLookupImpl> m_pipeline;
     SpeculativeDecodingMetrics m_sd_metrics;
-    
+
 public:
     PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
                      const Tokenizer& tokenizer,
