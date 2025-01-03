@@ -6,6 +6,7 @@ from openvino.runtime import Core
 import pytest
 import sys
 from ov_genai_test_utils import (
+    read_model,
     get_models_list,
     get_chat_models_list,
 )
@@ -24,7 +25,7 @@ common_config = {
 def generate_chat_history(model_path, device, pipeline_config, questions):
     pipe = ov_genai.LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
-    chat_history = [ pipe.generate(question, max_new_tokens=50) for question in questions ]
+    chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
     pipe.finish_chat()
     return chat_history
 
@@ -132,12 +133,10 @@ def test_max_number_of_tokens():
     assert len(encoded_results.tokens[0]) == num_tokens
 
 
-# FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
-@pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_generation(model_descr):
+def test_chat_generation():
     questions = [
         '1+1=',
         'What is the previous answer?',
@@ -145,10 +144,11 @@ def test_chat_generation(model_descr):
         'What was my first question?'
     ]
 
-    model_path = get_chat_models_list()[0][1]
+    model_descr = get_chat_models_list()[0]
+    model_info = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", { }, questions)
-    chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
+    chat_history_stateful = generate_chat_history(model_info[1], "CPU", { }, questions)
+    chat_history_static   = generate_chat_history(model_info[1], "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')
     print('cpu chat: \n{chat_history_stateful}')
