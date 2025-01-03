@@ -22,14 +22,10 @@ int main(int argc, char* argv[]) try {
     
     std::string device = "CPU";
 
-    ov::genai::SchedulerConfig scheduler_config;
-    scheduler_config.cache_size = 5;
-
     ov::genai::LLMPipeline pipe(
         model_path,
         device,
-        ov::genai::prompt_lookup(true),
-        ov::genai::scheduler_config(scheduler_config));
+        ov::genai::prompt_lookup(true));
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;

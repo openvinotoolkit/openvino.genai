@@ -398,7 +398,7 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
 
 ov::genai::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
     std::ifstream file(filepath);
-    OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
+    OPENVINO_ASSERT(file.is_open(), "Could not open file: ", filepath);
     nlohmann::json config_data = nlohmann::json::parse(file);
 
     ov::genai::ModelConfigDesc desc;
@@ -407,7 +407,8 @@ ov::genai::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& 
     if (config_data.contains("_name_or_path")) {
         desc.name_or_path = config_data["_name_or_path"].get<std::string>();
     }
-    desc.num_key_value_heads = config_data["num_key_value_heads"].get<int>();
+    desc.num_key_value_heads = config_data.contains("num_key_value_heads")
+        ? config_data["num_key_value_heads"].get<int>() : -1;
     return desc;
 }
 
@@ -659,7 +660,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     const auto use_blobs = pop_or_default(properties, "USE_BLOBS", false);
     if (!use_blobs) {
         ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
-        auto model = genai::utils::singleton_core().read_model((models_path / "openvino_model.xml").string());
+        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties);
         setupAndCompileModels(model, device, model_desc, properties);
     } else {
         setupAndImportModels(models_path, device, properties);
@@ -726,7 +727,7 @@ void StaticLLMPipeline::setupAndCompileModels(
         9) Compile both models
     */
 
-    ov::Core core;
+    ov::Core core = utils::singleton_core();
 
     // NB: Get information about NPU if available
     auto npudesc = extract_npu_descriptor(core);
@@ -801,7 +802,7 @@ void StaticLLMPipeline::setupAndImportModels(
         3) Import generate model from model directory or specified path
         4) Fill in m_kvcache_desc
     */
-    ov::Core core;
+    ov::Core core = utils::singleton_core();
 
     auto import_blob = [this,
                         &models_path,
@@ -1102,6 +1103,11 @@ EncodedResults StaticLLMPipeline::generate(
             m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
+
+    if (streamer_ptr) {
+        streamer_ptr->end();
+    }
+
     auto stop_time = std::chrono::steady_clock::now();
     // If is called without tokenization then that stat will not be reported.
     auto& metrics = results.perf_metrics;

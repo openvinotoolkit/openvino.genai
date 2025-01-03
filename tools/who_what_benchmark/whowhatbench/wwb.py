@@ -1,245 +1,22 @@
-from .utils import patch_diffusers
-
-patch_diffusers()
-
 import argparse
 import difflib
 import numpy as np
-import json
 import logging
 import os
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel, AutoModelForVision2Seq
+from transformers import AutoTokenizer, AutoProcessor
 import openvino as ov
 
 import pandas as pd
 from datasets import load_dataset
-from diffusers import DiffusionPipeline
 from PIL import Image
 
+from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-class GenAIModelWrapper:
-    """
-    A helper class to store additional attributes for GenAI models
-    """
-
-    def __init__(self, model, model_dir, model_type):
-        self.model = model
-        self.model_type = model_type
-
-        if model_type == "text" or model_type == "visual-text":
-            self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        elif model_type == "text-to-image":
-            self.config = DiffusionPipeline.load_config(
-                model_dir, trust_remote_code=True)
-
-    def __getattr__(self, attr):
-        if attr in self.__dict__:
-            return getattr(self, attr)
-        else:
-            return getattr(self.model, attr)
-
-
-def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
-    try:
-        import openvino_genai
-    except ImportError:
-        logger.error(
-            "Failed to import openvino_genai package. Please install it.")
-        exit(-1)
-    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
-
-
-def load_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    if use_hf:
-        logger.info("Using HF Transformers API")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, trust_remote_code=True, device_map=device.lower()
-        )
-        model.eval()
-    elif use_genai:
-        logger.info("Using OpenVINO GenAI API")
-        model = load_text_genai_pipeline(model_id, device, ov_config)
-    else:
-        logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForCausalLM
-        try:
-            model = OVModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
-            )
-        except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = OVModelForCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
-
-    return model
-
-
-def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
-    try:
-        import openvino_genai
-    except ImportError:
-        logger.error(
-            "Failed to import openvino_genai package. Please install it.")
-        exit(-1)
-
-    return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, **ov_config),
-        model_dir,
-        "text-to-image"
-    )
-
-
-def load_text2image_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    if use_genai:
-        logger.info("Using OpenvINO GenAI API")
-        model = load_text2image_genai_pipeline(model_id, device, ov_config)
-    elif use_hf:
-        logger.info("Using HF Transformers API")
-        model = DiffusionPipeline.from_pretrained(
-            model_id, trust_remote_code=True)
-    else:
-        logger.info("Using Optimum API")
-        from optimum.intel import OVPipelineForText2Image
-        TEXT2IMAGEPipeline = OVPipelineForText2Image
-
-        try:
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
-            )
-        except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
-
-    return model
-
-
-def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
-    try:
-        import openvino_genai
-    except ImportError as e:
-        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
-        exit(-1)
-
-    return GenAIModelWrapper(
-        openvino_genai.VLMPipeline(model_dir, device, **ov_config),
-        model_dir,
-        "visual-text"
-    )
-
-
-def load_visual_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    if use_hf:
-        logger.info("Using HF Transformers API")
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        try:
-            model = AutoModelForVision2Seq.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device.lower()
-            )
-        except ValueError:
-            try:
-                model = AutoModel.from_pretrained(
-                    model_id, trust_remote_code=True, device_map=device.lower()
-                )
-            except ValueError:
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_id, trust_remote_code=True, device_map=device.lower(), _attn_implementation="eager", use_flash_attention_2=False
-                )
-        model.eval()
-    elif use_genai:
-        logger.info("Using OpenVINO GenAI API")
-        model = load_visual_text_genai_pipeline(model_id, device, ov_config)
-    else:
-        logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForVisualCausalLM
-        try:
-            model = OVModelForVisualCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device=device, ov_config=ov_config
-            )
-        except ValueError:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            model = OVModelForVisualCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
-    return model
-
-
-def load_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
-):
-    if model_id is None:
-        return None
-
-    if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
-    else:
-        ov_options = {}
-
-    if model_type == "text":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai)
-    elif model_type == "text-to-image":
-        return load_text2image_model(
-            model_type, model_id, device, ov_options, use_hf, use_genai
-        )
-    elif model_type == "visual-text":
-        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai)
-    else:
-        raise ValueError(f"Unsupported model type: {model_type}")
-
-
-def load_prompts(args):
-    if args.dataset is None:
-        return None
-    split = "validation"
-    if args.split is not None:
-        split = args.split
-    if "," in args.dataset:
-        path_name = args.dataset.split(",")
-        path = path_name[0]
-        name = path_name[1]
-    else:
-        path = args.dataset
-        name = None
-    data = load_dataset(path=path, name=name, split=split)
-
-    res = data[args.dataset_field]
-
-    res = {"prompts": list(res)}
-
-    return res
 
 
 def parse_args():
@@ -278,9 +55,10 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting"],
         default="text",
-        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation.",
+        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
+        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
     )
     parser.add_argument(
         "--data-encoder",
@@ -389,6 +167,26 @@ def check_args(args):
             "Wether --target-model, --target-data or --gt-data should be provided")
 
 
+def load_prompts(args):
+    if args.dataset is None:
+        return None
+    split = "validation"
+    if args.split is not None:
+        split = args.split
+    if "," in args.dataset:
+        path_name = args.dataset.split(",")
+        path = path_name[0]
+        name = path_name[1]
+    else:
+        path = args.dataset
+        name = None
+    data = load_dataset(path=path, name=name, split=split)
+
+    res = data[args.dataset_field]
+    res = {"prompts": list(res)}
+    return res
+
+
 def load_tokenizer(args):
     tokenizer = None
     if args.tokenizer is not None:
@@ -453,7 +251,7 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
-    if model.resolution[0] is not None:
+    if model.resolution is not None and model.resolution[0] is not None:
         image_tensor = model.generate(
             prompt,
             width=model.resolution[0],
@@ -471,8 +269,35 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
     return image
 
 
+def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    image_tensor = model.generate(
+        prompt,
+        image=image_data,
+        num_inference_steps=num_inference_steps,
+        strength=0.8,
+        generator=generator,
+    )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
+def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    mask_data = ov.Tensor(np.array(mask.getdata()).reshape(1, mask.size[1], mask.size[0], 3).astype(np.uint8))
+    image_tensor = model.generate(
+        prompt,
+        image=image_data,
+        mask_image=mask_data,
+        num_inference_steps=num_inference_steps,
+        generator=generator,
+    )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.byte))
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
     config = model.get_generation_config()
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
@@ -532,6 +357,28 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+            )
+        elif task == "image-to-image":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_image2image if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+            )
+        elif task == "image-inpainting":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_inpainting if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -641,7 +488,7 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type == "text" or args.model_type == "visual-text":
             print_text_results(evaluator)
-        elif "text-to-image" in args.model_type:
+        elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
 
 

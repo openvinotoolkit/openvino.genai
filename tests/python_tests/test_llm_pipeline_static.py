@@ -145,7 +145,7 @@ def test_chat_generation(model_descr):
         'What was my first question?'
     ]
 
-    model_path = get_chat_models_lists()[0][1]
+    model_path = get_chat_models_list()[0][1]
 
     chat_history_stateful = generate_chat_history(model_path, "CPU", { }, questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)

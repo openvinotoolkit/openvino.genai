@@ -201,27 +201,6 @@ ProcessorConfig from_any_map(
 }
 
 /**
- * Split config by core and compile configs
- * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
- * Move this options to `core.set_property` config
- */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
-    const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
-    ov::AnyMap core_properties;
-    ov::AnyMap compile_properties{properties};
-
-    for (const auto option : unsupported_by_compile_properties) {
-        auto iter = properties.find(option);
-        if (iter != properties.end()) {
-            core_properties[option] = iter->second;
-            compile_properties.erase(option);
-        }
-    }
-
-    return {core_properties, compile_properties};
-};
-
-/**
  * scheduler_config is a separate config for continuous batching pipeline. 
  * This routine splits scheduler_config from plugin_config.
  */
@@ -235,14 +214,6 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
     }
     return {plugin_config, scheduler_config};
 };
-
-std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-    auto [core_properties, compile_properties] = split_core_compile_config(properties);
-    ov::Core core;
-    core.set_property(core_properties);
-    std::filesystem::path openvino_model_name = "openvino_model.xml";
-    return core.read_model((models_path / openvino_model_name).string());
-}
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
@@ -259,7 +230,7 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
     return {new_input_ids, new_attention_mask};
 }
 
-void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
+void slice_matmul_stateful_model(std::shared_ptr<ov::Model> model) {
     auto last_node = model->output(0).get_node()->input_value(0).get_node();
     ov::Node* matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node);
     if (matmul) {
@@ -379,6 +350,14 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
 
         state.set_state(new_tensor);
     }
+}
+
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front) {
+    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
+    auto new_tensor_data = new_tensor.data<int64_t>();
+    new_tensor_data[0] = add_to_front;
+    std::copy_n(base_tensor.data<int64_t>(), base_tensor.get_size(), new_tensor_data + 1);
+    return new_tensor;
 }
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
