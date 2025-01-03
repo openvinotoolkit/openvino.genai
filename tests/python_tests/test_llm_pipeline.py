@@ -137,7 +137,7 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
-        answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config).texts[0]
+        answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
         chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
     ov_pipe.finish_chat()
@@ -329,7 +329,7 @@ def test_unicode_pybind_decoding_one_string():
     # Test that pybind will not fail.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
-    res_str = ov_pipe.generate(',', max_new_tokens=4).texts[0]
+    res_str = ov_pipe.generate(',', max_new_tokens=4)
     assert '�' == res_str[-1]
 
 
@@ -340,8 +340,8 @@ def test_unicode_pybind_decoding_batched():
     # Test that pybind will not fail.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
-    res_str = ov_pipe.generate([","], max_new_tokens=4).texts[0]
-    assert '�' == res_str[-1]
+    res_str = ov_pipe.generate([","], max_new_tokens=4)
+    assert '�' == res_str.texts[0][-1]
 
 
 @pytest.mark.precommit

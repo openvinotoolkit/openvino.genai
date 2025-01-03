@@ -247,7 +247,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 
 def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens).texts[0]
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):

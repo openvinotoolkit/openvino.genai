@@ -97,8 +97,8 @@ def test_cb_streamer_vs_return_vs_stateful(prompt):
     ))
     cb_pipe = get_continuous_batching(path)
     streamed = []
-    generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword)).texts[0]
-    reference = ov_pipe.generate(prompt, max_new_tokens=20).texts[0]
+    generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
+    reference = ov_pipe.generate(prompt, max_new_tokens=20)
     assert generated == "".join(streamed)
     assert "".join(streamed) == reference
 
@@ -127,8 +127,8 @@ def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
     ov_pipe.set_generation_config(generation_config)
 
     for question in questions:
-        generated = cb_pipe.generate(question, generation_config=generation_config).texts[0]
-        reference = ov_pipe.generate(question).texts[0]
+        generated = cb_pipe.generate(question, generation_config=generation_config)
+        reference = ov_pipe.generate(question)
         assert generated == reference
 
     # Test that finish_chat() doesn't fail just in case.

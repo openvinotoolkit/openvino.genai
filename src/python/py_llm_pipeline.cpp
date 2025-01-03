@@ -68,7 +68,13 @@ py::object call_common_generate(
         results = py::cast(pipe.generate(tokenized_input, updated_config, streamer));
     },
     [&](std::string string_input) {
-        results = py::cast(pipe.generate(string_input, updated_config, streamer));
+        DecodedResults res = pipe.generate(string_input, updated_config, streamer);
+        // If input was a string return a single string otherwise return DecodedResults.
+        if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
+            results = py::cast<py::object>(pyutils::handle_utf8(res.texts[0]));
+        } else {
+            results = py::cast(res);
+        }
     },
     [&](std::vector<std::string> string_input) {
         // For DecodedResults texts getter already handles utf8 decoding.
