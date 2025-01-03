@@ -37,7 +37,6 @@ def generate_chat_history(model_path, device, pipeline_config, questions):
 
 
 generation_configs = [
-    get_greedy(),
     get_greedy_n_stop_strings_exclude_from_output(),
     get_greedy_n_stop_strings_include_to_output()
 ]
