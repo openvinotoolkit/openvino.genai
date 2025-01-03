@@ -9,6 +9,8 @@
 
 #include "visual_language/processor_config.hpp"
 
+#include "openvino/genai/streamer_base.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -32,8 +34,9 @@ struct HistoryRemoveManager
 {
     size_t num_tokens_to_remove_from_kv_cache = 0;
     size_t trusted_history_length = 0;
+    size_t kv_cache_seq_length_axis = 2;
 
-    bool does_kv_cache_need_to_update() {
+    bool does_history_cache_need_to_update() {
         return (trusted_history_length > 0 || num_tokens_to_remove_from_kv_cache > 0);
     }
 
@@ -41,6 +44,13 @@ struct HistoryRemoveManager
         num_tokens_to_remove_from_kv_cache = 0;
         trusted_history_length = 0;
     }
+};
+
+struct GenerationFinishInfo
+{
+    EncodedResults results;
+    std::optional<int64_t> probably_disappeared_token = std::nullopt;
+    CallbacWorkStatus streaming_finish_status = CallbacWorkStatus::UNDEF;
 };
 
 Tensor init_attention_mask(const Tensor& position_ids);
