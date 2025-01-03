@@ -75,6 +75,7 @@ public:
     void finish_chat() override;
 
 private:
+    uint32_t m_kvcache_total = 0u;
     ov::InferRequest m_request;
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
