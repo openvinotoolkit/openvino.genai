@@ -1,17 +1,15 @@
 
-# OpenVINO AI Text Generation Samples
+# OpenVINO GenAI Text Generation Samples
 
 These samples showcase the use of OpenVINO's inference capabilities for text generation tasks, including different decoding strategies such as beam search, multinomial sampling, and speculative decoding. Each sample has a specific focus and demonstrates a unique aspect of text generation.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
-There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) that provides an example of LLM-powered text generation in Python.
+There are also Jupyter notebooks for some samples. You can find links to them in the appropriate sample descritions.
 
 ## Table of Contents
 1. [Download and Convert the Model and Tokenizers](#download-and-convert-the-model-and-tokenizers)
-2. [Running the Samples](#running-the-samples)
-3. [Using encrypted models](#using-encrypted-models)
-4. [Sample Descriptions](#sample-descriptions)
-5. [Troubleshooting](#troubleshooting)
-6. [Support and Contribution](#support-and-contribution)
+2. [Sample Descriptions](#sample-descriptions)
+3. [Troubleshooting](#troubleshooting)
+4. [Support and Contribution](#support-and-contribution)
 
 ## Download and convert the model and tokenizers
 
@@ -24,41 +22,47 @@ pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
-## Running the Samples
+Model examples to use for different samples:
+chat_sample - meta-llama/Llama-2-7b-chat-hf
+speculative_decoding_lm - meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model
+other samples - meta-llama/Llama-2-7b-hf
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run a specific sample.
-
-`greedy_causal_lm TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
+## Sample Descriptions
+### Common information
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
-
-## Sample Descriptions
-
 ### 1. Greedy Causal LM (`greedy_causal_lm`)
-- **Description:** Basic text generation using a causal language model.
+- **Description:**
+Basic text generation using a causal language model.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
 - **Main Feature:** Demonstrates simple text continuation.
 - **Run Command:**
   ```bash
-  ./greedy_causal_lm <model_path> <prompt>
+  ./greedy_causal_lm <MODEL_DIR> "<PROMPT>"
   ```
 
 ### 2. Beam Search Causal LM (`beam_search_causal_lm`)
-- **Description:** Uses beam search for more coherent text generation.
+- **Description:**
+Uses beam search for more coherent text generation.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
 - **Main Feature:** Improves text quality with beam search.
 - **Run Command:**
   ```bash
-  ./beam_search_causal_lm <model_path> <prompt>
+  ./beam_search_causal_lm <MODEL_DIR> "<PROMPT 1>" ["<PROMPT 2>" ...]
   ```
 
 ### 3. Chat Sample (`chat_sample`)
-- **Description:** Interactive chat interface powered by OpenVINO.
+- **Description:**
+Interactive chat interface powered by OpenVINO.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) that provides an example of LLM-powered text generation in Python.
 - **Main Feature:** Real-time chat-like text generation.
 - **Run Command:**
   ```bash
-  ./chat_sample <model_path>
+  ./chat_sample <MODEL_DIR>
   ```
 #### Missing chat template
 If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model.
@@ -73,7 +77,7 @@ The following template can be used as a default, but it may not work properly wi
 - **Main Feature:** Introduces randomness for creative outputs.
 - **Run Command:**
   ```bash
-  ./multinomial_causal_lm <model_path> <prompt>
+  ./multinomial_causal_lm <MODEL_DIR> "<PROMPT>"
   ```
 
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
@@ -82,7 +86,7 @@ The following template can be used as a default, but it may not work properly wi
 - **Main Feature:** Specialized prompt-based inference.
 - **Run Command:**
   ```bash
-  ./prompt_lookup_decoding_lm <model_path> <prompt>
+  ./prompt_lookup_decoding_lm <MODEL_DIR> "<PROMPT>"
   ```
 
 ### 6. Speculative Decoding LM (`speculative_decoding_lm`)
@@ -92,10 +96,12 @@ Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assis
 Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
 
 This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In that case they are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
+
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash
-  ./speculative_decoding_lm <main_model_path> <draft_model_path> <prompt>
+  ./speculative_decoding_lm <MODEL_DIR> <DRAFT_MODEL_DIR> "<PROMPT>"
   ```
 
 ### 7. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
@@ -111,8 +117,27 @@ For the sake of brevity the code above does not include Tokenizer decryption. Fo
 - **Main Feature:** Read model directly from memory buffer
 - **Run Command:**
   ```bash
-  ./encrypted_model_causal_lm <model_path> <prompt>
+  ./encrypted_model_causal_lm <MODEL_DIR> "<PROMPT>"
   ```
+
+### 8. LLMs benchmarking sample (`benchmark_genai`)
+- **Description:** 
+This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+
+For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+- **Main Feature:** Benchmark model via GenAI
+- **Run Command:**
+  ```bash
+  ./benchmark_genai [OPTIONS]
+  ```
+  #### Options
+- `-m, --model`: Path to the model and tokenizers base directory.
+- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `-n, --num_iter` (default: `3`): Number of iterations.
+- `-d, --device` (default: `"CPU"`): Device to run the model on.
+
 
 ## Troubleshooting
 

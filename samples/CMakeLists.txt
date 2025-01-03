@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-add_subdirectory(cpp/benchmark_genai)
 add_subdirectory(cpp/text_generation)
 add_subdirectory(cpp/image_generation)
 add_subdirectory(cpp/visual_language_chat)
@@ -16,7 +15,6 @@ install(FILES
     COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
-            cpp/benchmark_genai
             cpp/text_generation
             cpp/image_generation
             cpp/visual_language_chat
