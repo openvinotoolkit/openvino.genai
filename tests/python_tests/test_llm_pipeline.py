@@ -586,7 +586,8 @@ test_cases = [
 def test_perf_metrics(model_descr, generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
+    # To ensure the prefill stage takes much more time make initial prompt long.
+    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt * 200)
     total_time = (time.perf_counter() - start_time) * 1000
 
     # Check that load time is adequate.
@@ -608,7 +609,7 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     durations = np.array(raw_metrics.m_durations) / 1000
     # Check that prefill is not included in durations for TPOT calculation.
     # For the very long prompt prefill is slow and TTFT is much larger than any other token generation duration.
-    assert np.all(mean_ttft > durations * 2)
+    assert np.all(mean_ttft > durations * 10)
 
     mean_tpot, std_tpot = perf_metrics.get_tpot()
     assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
