@@ -15,7 +15,7 @@ from common import                                      \
     get_greedy_n_stop_strings_include_to_output,        \
     get_multinomial_temperature,                        \
     get_multinomial_all_parameters,                     \
-    get_multinomial_temperature_and_presence_penalty    \
+    get_multinomial_temperature_and_presence_penalty,   \
     get_beam_search
 
 # This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
