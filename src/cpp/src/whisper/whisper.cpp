@@ -89,11 +89,11 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
-                                      std::shared_ptr<ov::genai::WhisperDecoder> decoder,
-                                      const ov::genai::WhisperGenerationConfig& config,
-                                      const bool return_timestamps,
-                                      ov::genai::RawPerfMetrics& raw_metrics) {
+std::vector<int64_t> prepare_init_tokens(ov::Tensor& encoder_hidden_state,
+                                         std::shared_ptr<ov::genai::WhisperDecoder> decoder,
+                                         const ov::genai::WhisperGenerationConfig& config,
+                                         const bool return_timestamps,
+                                         ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
         if (return_timestamps) {
             return std::vector<int64_t>{config.decoder_start_token_id};
@@ -109,8 +109,8 @@ std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
             language_token_id = config.lang_to_id.at(language);
         }
     } else {
-        auto [language, infer_ms] = decoder->detect_language(encoder_hidden_state, config.decoder_start_token_id);
-        language_token_id = language;
+        auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config.decoder_start_token_id);
+        language_token_id = language_token;
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
     }
 
@@ -132,13 +132,13 @@ std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   std::shared_ptr<ov::genai::WhisperDecoder> decoder,
-                                                  std::vector<int64_t> init_ids,
+                                                  const std::vector<int64_t>& init_tokens,
                                                   const size_t max_new_tokens,
                                                   const bool return_timestamps,
                                                   ov::genai::RawPerfMetrics& raw_metrics,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
     int64_t output_token =
-        decode(encoder_hidden_state, decoder, init_ids, 0, config, raw_metrics, return_timestamps, true, {});
+        decode(encoder_hidden_state, decoder, init_tokens, 0, config, raw_metrics, return_timestamps, true, {});
 
     std::vector<int64_t> output_tokens{output_token};
 
@@ -154,7 +154,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         auto output_token = decode(encoder_hidden_state,
                                    decoder,
                                    {output_tokens.back()},
-                                   init_ids.size() + i,
+                                   init_tokens.size() + i,
                                    config,
                                    raw_metrics,
                                    return_timestamps,
@@ -228,9 +228,9 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 feature_extractor.nb_max_frames,
                                                 raw_metrics);
 
-        // prepare init_ids just once for whole input
+        // prepare init_tokens just once for whole input
         if (init_tokens.empty()) {
-            init_tokens = prepare_init_ids(hidden_state_tensor, decoder, config, return_timestamps, raw_metrics);
+            init_tokens = prepare_init_tokens(hidden_state_tensor, decoder, config, return_timestamps, raw_metrics);
         }
 
         std::vector<int64_t> chunk_init_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
