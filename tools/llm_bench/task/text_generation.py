@@ -225,7 +225,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         log.info(out_str)
     gen_config = model.get_generation_config()
     gen_config.max_new_tokens = max_gen_tokens
-    gen_config.rng_seed= args["seed"]
+    gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
@@ -377,7 +377,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     gen_config = model.get_generation_config()
-    gen_config.rng_seed= args["seed"]
+    gen_config.rng_seed = args["seed"]
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     if args.get('draft_model', ''):
