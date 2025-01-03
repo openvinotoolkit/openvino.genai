@@ -603,9 +603,7 @@ void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pa
 }
 
 void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
-    if (config.count(old_key) == 0) {
-        return;
-    } else {
+    if (config.count(old_key) != 0) {
         auto opt_value = pop_option(config, old_key);
         config[new_key] = opt_value.value();
     }
@@ -657,16 +655,16 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     }
 }
 
-enum NpuPipeline {
+enum StaticPipelineType {
     STATEFUL,
     STATELESS
 };
-NpuPipeline str_to_pipeline(const std::string& str) {
+StaticPipelineType str_to_pipeline(const std::string& str) {
     if (str == "STATEFUL") {
-        return NpuPipeline::STATEFUL;
+        return StaticPipelineType::STATEFUL;
     }
     if (str == "STATELESS") {
-        return NpuPipeline::STATELESS;
+        return StaticPipelineType::STATELESS;
     }
     OPENVINO_THROW("Unsupported \"NPU_PIPELINE\" provided: " +
                    str + ". Please select either \"STATEFUL\" or \"STATELESS\".");
@@ -690,7 +688,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     ov::AnyMap properties = config;
 
     auto compiled = setupAndCompileModel(model, model_desc, properties);
-    m_request  = compiled->create_infer_request();
+    m_request = compiled->create_infer_request();
 }
 
 
@@ -878,8 +876,8 @@ EncodedResults StatefulLLMPipeline::generate(
     int64_t input_ids_data = -1;
     int64_t position_ids_data = prompt_len - 1;
     std::vector<int64_t> attention_mask_data(prompt_len - 1, 1);
-    m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&input_ids_data));
-    m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, (void*)&position_ids_data));
+    m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
+    m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 
     const size_t max_tokens = config.get_max_new_tokens(prompt_len);
     for (int i = 0; i < max_tokens - 1; ++i) {
@@ -888,14 +886,11 @@ EncodedResults StatefulLLMPipeline::generate(
             break;
         }
 
+        // Just change the variables here, as pointers to them are already set to corresponding tensors
         input_ids_data = last_token;
         ++position_ids_data;
+        // However, attention_mask changes its shape on each iteration, it should be re-set explicitly
         attention_mask_data.push_back(1);
-
-        auto* input_ids_tnsr_data = m_request.get_tensor("input_ids").data<int64_t>();
-        input_ids_tnsr_data[0] = input_ids_data;
-        auto* position_ids_tnsr_data = m_request.get_tensor("position_ids").data<int64_t>();
-        position_ids_tnsr_data[0] = position_ids_data;
         m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, (void*)&attention_mask_data[0]));
 
         m_request.infer();
@@ -1428,7 +1423,7 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const ov::AnyMap& config) {
     auto properties = config;
     const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "NPU_PIPELINE", std::string("STATELESS")));
-    if (pipeline_mode == NpuPipeline::STATEFUL) {
+    if (pipeline_mode == StaticPipelineType::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
     return std::make_unique<ov::genai::static_llm::StatelessLLMPipeline>(models_path, tokenizer, device, properties);
@@ -1449,7 +1444,7 @@ std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::share
                                                                 const ov::genai::GenerationConfig& generation_config) {
     auto properties_copy = properties;
     const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "NPU_PIPELINE", std::string("STATELESS")));
-    if (pipeline_mode == NpuPipeline::STATEFUL) {
+    if (pipeline_mode == StaticPipelineType::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
                                                                             model_desc,
                                                                             tokenizer,
