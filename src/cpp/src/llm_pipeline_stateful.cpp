@@ -9,6 +9,8 @@
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
 
+#include "debug_utils.hpp"
+
 namespace ov::genai {
 
 StatefulLLMPipeline::StatefulLLMPipeline(
@@ -39,7 +41,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
     utils::slice_matmul_stateful_model(model);
-    m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
+    m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
     ov::CompiledModel compiled_model;
     if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
@@ -86,6 +88,9 @@ DecodedResults StatefulLLMPipeline::generate(
 
     TokenizedInputs encoded_input;
 
+    std::string prev_templated_chat_history(m_templated_chat_history);
+    std::vector<int64_t> prev_tokenized_chat_history(m_tokenized_chat_history);
+
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
         encoded_input = m_tokenizer.encode(*input_vector);
@@ -104,7 +109,7 @@ DecodedResults StatefulLLMPipeline::generate(
 
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
-            auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             // Do not add special tokens in chat scenario to be aligned with HF.
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
             auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
@@ -116,21 +121,24 @@ DecodedResults StatefulLLMPipeline::generate(
             if (!m_tokenized_chat_history.empty()) {
                 std::set<int64_t> stop_tokens = config.stop_token_ids;
                 trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
-                m_trust_encoded_history = trusted_history_length == SIZE_MAX;
             }
 
             if (m_tokenized_chat_history.empty()) {
                 encoded_input = new_chat_tokens;
-            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_kv_cache_need_to_update()) {
-                // does_kv_cache_need_to_update will be true here if beam search is activated
+            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_history_cache_need_to_update()) {
+                // does_history_cache_need_to_update will be true here if beam search is activated
                 // in beam search mode we want to remove all history about last model answer from kv cache and add the best answer directly
                 // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_kv_history_manager
-                if (m_kv_history_manager.does_kv_cache_need_to_update()) {
+                if (m_kv_history_manager.does_history_cache_need_to_update()) {
                     trusted_history_length = m_kv_history_manager.trusted_history_length;
                 } else {
-                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_tokenized_chat_history.size() - trusted_history_length;
+                    size_t num_tokens_to_remove_from_kv_cache = m_tokenized_chat_history.size() - trusted_history_length;
                     // if prev generation was finished because of max len was reached, kv cache is missed one last token, let's keep it
-                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache -= m_last_disappeared_token.has_value() ? 1 : 0;
+                    num_tokens_to_remove_from_kv_cache -= m_last_disappeared_token.has_value() ? 1 : 0;
+
+                    // if streaming was used and canceled on prev step, num_tokens_to_remove_from_kv_cache could be already set and it will be bigger as include answer + prompt
+                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache = num_tokens_to_remove_from_kv_cache > m_kv_history_manager.num_tokens_to_remove_from_kv_cache ?
+                                                                                num_tokens_to_remove_from_kv_cache : m_kv_history_manager.num_tokens_to_remove_from_kv_cache;
                 }
 
                 ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.input_ids.get_element_type(),
@@ -169,11 +177,19 @@ DecodedResults StatefulLLMPipeline::generate(
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     if (is_chat_conversation) {
-        // Tail of chat template is missing in KV cache.
-        // Find the tail to concatenate it with the next input prompt.
-        auto answer = decoded_results.texts[0];
-        m_templated_chat_history.append(answer);
-        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        if (m_chat_generation_finish_status == ov::genai::CallbacWorkStatus::CANCEL) {
+            // If chat generation process was canceled by user, let's rallback to previous state of history
+            m_history.pop_back();
+            m_kv_history_manager.num_tokens_to_remove_from_kv_cache += m_tokenized_chat_history.size() - prev_tokenized_chat_history.size();
+            m_templated_chat_history = prev_templated_chat_history;
+            m_tokenized_chat_history = prev_tokenized_chat_history;
+        } else {
+            // Tail of chat template is missing in KV cache.
+            // Find the tail to concatenate it with the next input prompt.
+            auto answer = decoded_results.texts[0];
+            m_templated_chat_history.append(answer);
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        }
     }
 
     // generate_durations
@@ -218,6 +234,8 @@ EncodedResults StatefulLLMPipeline::generate(
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
 
+    size_t real_input_ids_size = input_ids.get_shape().at(1);
+
     // Tail of previous output in chat mode is missing in KV cache.
     if (m_last_disappeared_token.has_value()) {
         attention_mask = ov::genai::utils::push_front_inputs(attention_mask, 1);
@@ -241,6 +259,8 @@ EncodedResults StatefulLLMPipeline::generate(
         streamer_ptr = *streamer_obj;
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+    }  else if (auto callback = std::get_if<std::function<ov::genai::CallbacWorkStatus(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
 
     auto batch_size = input_ids.get_shape().at(0);
@@ -254,7 +274,8 @@ EncodedResults StatefulLLMPipeline::generate(
                     "(input_ids, attention_mask, position_ids, beam_idx) "
                     "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-    ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_history_manager.num_tokens_to_remove_from_kv_cache, m_kv_cache_seq_length_axis, m_adapter_controller);
+    ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_history_manager.num_tokens_to_remove_from_kv_cache,
+                                    m_kv_history_manager.kv_cache_seq_length_axis, m_adapter_controller);
 
     size_t kv_cache_len = 0;
     ov::Tensor concatenated_attention_mask;
@@ -292,8 +313,7 @@ EncodedResults StatefulLLMPipeline::generate(
         m_adapter_controller->apply(m_model_runner, config.adapters);
     }
 
-    if (is_chat_conversation && !m_trust_encoded_history) {
-        m_trust_encoded_history = true;
+    if (is_chat_conversation) {
         m_kv_history_manager.reset();
     }
 
@@ -321,9 +341,12 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
-    ov::genai::EncodedResults result;
-    std::tie(result, m_last_disappeared_token) = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
+    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
                                                                         streamer_ptr, m_sampler, requests, position_ids, std::nullopt);
+
+    ov::genai::EncodedResults result = finish_info.results;
+    m_last_disappeared_token = finish_info.probably_disappeared_token;
+    m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
     if (is_chat_conversation) {
         // force remove from kv_cache last answer
@@ -332,14 +355,20 @@ EncodedResults StatefulLLMPipeline::generate(
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
 
-        std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
+        if (m_chat_generation_finish_status == ov::genai::CallbacWorkStatus::CANCEL) {
+            m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
+
+            if (m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
+                m_tokenized_chat_history.resize(m_tokenized_chat_history.size() - real_input_ids_size);
+                m_kv_history_manager.num_tokens_to_remove_from_kv_cache += real_input_ids_size;
+            }
+        } else {
+            std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
+        }
     } else {
         reset_kv_state();
         m_last_disappeared_token = std::nullopt;
     }
-
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
-        std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
 
     auto stop_time = std::chrono::steady_clock::now();
 
@@ -354,7 +383,6 @@ EncodedResults StatefulLLMPipeline::generate(
 
 void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     is_chat_conversation = true;
-    m_trust_encoded_history = true;
     m_kv_history_manager.reset();
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     m_last_disappeared_token = std::nullopt;
@@ -387,7 +415,6 @@ void StatefulLLMPipeline::reset_kv_state() {
 
 void StatefulLLMPipeline::finish_chat() {
     is_chat_conversation = false;
-    m_trust_encoded_history = true;
     m_kv_history_manager.reset();
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     m_last_disappeared_token = std::nullopt;

@@ -6,7 +6,7 @@
 namespace ov {
 namespace genai {
 
-TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback) {
+TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<ov::genai::CallbackTypeVariant(std::string)> callback) {
     m_tokenizer = tokenizer;
     on_finalized_subword_callback = callback;
 }
@@ -20,13 +20,13 @@ bool TextCallbackStreamer::put(int64_t token) {
         res << std::string_view{text.data() + print_len, text.size() - print_len};
         m_tokens_cache.clear();
         print_len = 0;
-        return on_finalized_subword_callback(res.str());
+        return is_generation_complete(on_finalized_subword_callback(res.str()));
     }
 
     constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
         // Don't print incomplete text
-        return on_finalized_subword_callback(res.str());
+        return is_generation_complete(on_finalized_subword_callback(res.str()));
     } else if (text.size() > print_len) {
         // It is possible to have a shorter text after adding new token.
         // Print to output only if text length is increaesed.
@@ -34,7 +34,20 @@ bool TextCallbackStreamer::put(int64_t token) {
         print_len = text.size();
     }
 
-    return on_finalized_subword_callback(res.str());
+    return is_generation_complete(on_finalized_subword_callback(res.str()));
+}
+
+bool TextCallbackStreamer::is_generation_complete(CallbackTypeVariant callback_status) {
+    bool is_complete = false;
+    if (auto status = std::get_if<CallbacWorkStatus>(&callback_status)) {
+        streaming_finish_status = *status;
+        is_complete = (streaming_finish_status == CallbacWorkStatus::STOP || streaming_finish_status == CallbacWorkStatus::CANCEL);
+    } else if (auto status = std::get_if<bool>(&callback_status)) {
+        is_complete = *status;
+        streaming_finish_status = *status ? CallbacWorkStatus::STOP : CallbacWorkStatus::RUNNING;
+    }
+
+    return is_complete;
 }
 
 void TextCallbackStreamer::end() {

@@ -86,6 +86,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     m_pipeline->set_adapters(sampling_params[0].adapters);
 
+    OPENVINO_ASSERT(std::get_if<std::function<CallbacWorkStatus(std::string)>>(&streamer), "Streamer with Statuses is not supported for ContinuousBatchingPipeline");
     const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
         [](std::monostate) -> std::shared_ptr<StreamerBase> {
             return nullptr;
@@ -95,6 +96,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         },
         [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
             return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
+        },
+        [this](const std::function<CallbacWorkStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return nullptr;
         }
     }, streamer);
 
