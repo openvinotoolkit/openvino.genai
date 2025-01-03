@@ -296,6 +296,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
+    m_draft_pipeline->get_infer_duration(m_sd_metrics.draft_infer_duration, m_sd_metrics.draft_infer_num);
+    m_main_pipeline->get_infer_duration(m_sd_metrics.main_infer_duration, m_sd_metrics.main_infer_num);
+    m_sd_metrics.print(true);
+    m_sd_metrics.clean_up();
     return results;
 }
 
