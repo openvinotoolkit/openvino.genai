@@ -11,20 +11,7 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
 
-    auto model = core.read_model((models_path / "openvino_decoder_model.xml").string());
-
-    // todo: remove once stateful model has dynamic input_ids seq_len
-    std::map<std::string, ov::PartialShape> name_to_shape;
-    for (const ov::Output<ov::Node>& input : model->inputs()) {
-        ov::PartialShape shape = input.get_partial_shape();
-        if (input.get_any_name().find("input_ids") != std::string::npos) {
-            shape[1] = -1;
-            name_to_shape[input.get_any_name()] = shape;
-        }
-    }
-    model->reshape(name_to_shape);
-
-    auto compiled_model = core.compile_model(model, device, properties);
+    auto compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request = compiled_model.create_infer_request();
