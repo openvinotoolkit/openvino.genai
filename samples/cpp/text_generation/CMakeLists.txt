@@ -35,3 +35,28 @@ set (SAMPLE_LIST
 foreach(sample ${SAMPLE_LIST})
     add_sample_executable(${sample})
 endforeach()
+
+
+# benchmark_genai
+include(FetchContent)
+
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
+FetchContent_Declare(cxxopts
+    URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.1.1.tar.gz
+    URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
+FetchContent_MakeAvailable(cxxopts)
+
+add_executable(benchmark_genai benchmark_genai.cpp)
+target_link_libraries(benchmark_genai PRIVATE openvino::genai cxxopts::cxxopts)
+set_target_properties(benchmark_genai PROPERTIES
+    COMPILE_PDB_NAME benchmark_genai
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS benchmark_genai
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
