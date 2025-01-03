@@ -1,4 +1,4 @@
-name: macOS (12, Python 3.9)
+name: macOS (12, Python 3.10)
 on:
   workflow_dispatch:
   pull_request:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.9'
+  PYTHON_VERSION: '3.10'
   OV_BRANCH: master
   OV_TARBALL: ''
 

@@ -119,6 +119,13 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 } // namespace
 
 void init_continuous_batching_pipeline(py::module_& m) {
+    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
+        .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
+        .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
+        .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
+        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
+        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
+
     py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
@@ -130,6 +137,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 r.m_generation_ids = generation_ids;
             })
         .def_readwrite("m_scores", &GenerationResult::m_scores)
+        .def_readwrite("m_status", &GenerationResult::m_status)
         .def("__repr__",
             [](const GenerationResult &r) -> py::str {
                 std::stringstream stream;
@@ -147,13 +155,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores);
-
-    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
-        .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
-        .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
-        .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
-        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
-        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
 
     py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
         .value("NONE", ov::genai::GenerationFinishReason::NONE)

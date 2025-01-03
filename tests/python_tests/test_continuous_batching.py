@@ -9,8 +9,8 @@ from typing import Dict
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
 
-from common import get_hugging_face_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \
-    get_scheduler_config, get_greedy, run_continuous_batching_pipeline_test, get_beam_search, get_greedy, \
+from common import get_hugging_face_models, convert_models, generate_and_compare_with_reference_text, \
+    get_scheduler_config, get_greedy, run_cb_pipeline_with_ref, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
@@ -39,19 +39,19 @@ def read_models_list(file_name: str):
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
 def test_e2e_precommit(tmp_path, model_id):
-    run_continuous_batching_pipeline_test(tmp_path, model_id)
+    run_cb_pipeline_with_ref(tmp_path, model_id)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
 def test_e2e_nightly(tmp_path, model_id):
-    run_continuous_batching_pipeline_test(tmp_path, model_id)
+    run_cb_pipeline_with_ref(tmp_path, model_id)
 
 
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
 def test_e2e_real_models(tmp_path, model_id):
-    run_continuous_batching_pipeline_test(tmp_path, model_id)
+    run_cb_pipeline_with_ref(tmp_path, model_id)
 
 #
 # Comparison with stateful
@@ -77,8 +77,8 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
         "facebook/opt-125m",
         Path("opt-125m")
     ))
-    cb = get_continuous_batching(path)
-    generated = cb.generate(prompt, **generation_config)
+    cb_pipe = get_continuous_batching(path)
+    generated = cb_pipe.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
     assert generated.texts == reference.texts
     if 1 != generation_config.get("num_return_sequences", 1):
@@ -117,8 +117,8 @@ questions = [
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
-    cb_pipe = get_continuous_batching(path)
+    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    cb_pipe = get_continuous_batching(models_path)
 
     ov_pipe.start_chat()
     cb_pipe.start_chat()
@@ -150,10 +150,10 @@ def test_post_oom_health(tmp_path, sampling_config):
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(opt_model, hf_tokenizer, models_path)
+    convert_models(opt_model, hf_tokenizer, models_path)
 
     cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU")
 
@@ -201,7 +201,7 @@ scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_preemption(tmp_path, params):
-    run_continuous_batching_pipeline_test(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
+    run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
 
 
 multinomial_params = RandomSamplingTestStruct(
@@ -249,13 +249,12 @@ multinomial_params = RandomSamplingTestStruct(
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
-        config.rng_seed = 0
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
+    convert_models(model, hf_tokenizer, models_path)
 
     scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
@@ -329,15 +328,12 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
-    generation_configs = multinomial_params_n_seq.generation_config
-    for config in generation_configs:
-        config.rng_seed = 0
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
+    convert_models(opt_model, hf_tokenizer, models_path)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
-    generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, generation_configs, scheduler_config)
+    generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)
