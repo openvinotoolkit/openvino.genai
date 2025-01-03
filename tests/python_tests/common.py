@@ -388,10 +388,9 @@ def compare_generation_results(prompts: List[str], hf_results: List[GenerationRe
         compare_generation_result(ref_result, ov_result, generation_config)
 
 
-def get_hugging_face_models(model_id: str, use_optimum = True):
+def get_hugging_face_models(model_id: str):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, ov_config=get_default_properties()) if use_optimum else \
-                AutoModelForCausalLM.from_pretrained(model_id)
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, ov_config=get_default_properties())
     return opt_model, hf_tokenizer
 
 
@@ -414,15 +413,13 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
 
 
 def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_config: GenerationConfig | dict, tmp_path: Path, use_cb : bool = False):
-    use_optimum = True
     models_path : Path = tmp_path / model_id
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    if use_optimum:
-        convert_models(opt_model, hf_tokenizer, models_path)
+    convert_models(opt_model, hf_tokenizer, models_path)
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
@@ -440,12 +437,10 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
             generation_config = GenerationConfig(**generation_config)
         generation_configs = [generation_config] * len(prompts)
 
-    use_optimum = True
     models_path : Path = tmp_path / model_id
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
-    if use_optimum:
-        convert_models(opt_model, hf_tokenizer, models_path)
+    convert_models(opt_model, hf_tokenizer, models_path)
 
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)

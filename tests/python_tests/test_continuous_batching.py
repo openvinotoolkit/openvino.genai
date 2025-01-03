@@ -150,7 +150,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
@@ -251,7 +251,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     for config in generation_configs:
         config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
     convert_models(model, hf_tokenizer, models_path)
@@ -329,7 +329,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)

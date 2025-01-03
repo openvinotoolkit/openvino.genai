@@ -320,7 +320,7 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     generation_config.rng_seed = 0
     generation_configs = generation_config
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_models(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
     convert_models(model, hf_tokenizer, models_path)
