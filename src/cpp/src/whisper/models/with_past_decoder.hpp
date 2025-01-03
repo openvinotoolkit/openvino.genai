@@ -10,9 +10,9 @@ namespace ov::genai {
 
 class WhisperWithPastDecoder : public WhisperDecoder {
 public:
-    explicit WhisperWithPastDecoder(const std::filesystem::path& models_path,
-                                    const std::string& device,
-                                    const ov::AnyMap& properties);
+    WhisperWithPastDecoder(const std::filesystem::path& models_path,
+                           const std::string& device,
+                           const ov::AnyMap& properties);
 
     std::pair<int64_t, float> detect_language(const ov::Tensor& encoder_hidden_state,
                                               const int64_t decoder_start_token_id) override;

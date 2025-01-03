@@ -48,9 +48,6 @@ namespace genai {
 
 class WhisperPipeline::WhisperPipelineStatefulImpl : public WhisperPipeline::WhisperPipelineImplBase {
 public:
-    ov::InferRequest m_encoder;
-    std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
-
     WhisperPipelineStatefulImpl(const std::filesystem::path& models_path,
                                 const std::string& device,
                                 const ov::AnyMap& properties)
@@ -134,6 +131,10 @@ public:
 
         return result;
     }
+
+private:
+    ov::InferRequest m_encoder;
+    std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
 };
 
 std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {
