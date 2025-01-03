@@ -11,7 +11,7 @@ on:
         type: string
 
 env:
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17709-688f0428cfc/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241224_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17726-9ab2c1a18e7/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241230_x86_64.tgz
 
 jobs:
   visual_language_chat_sample-ubuntu-llava:
