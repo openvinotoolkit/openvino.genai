@@ -32,6 +32,7 @@ UNet2DConditionModel::UNet2DConditionModel(const std::filesystem::path& root_dir
     m_config(root_dir / "config.json") {
     ov::Core core = utils::singleton_core();
     m_model = core.read_model((root_dir / "openvino_model.xml").string());
+    //ov::save_model(m_model, "static_unet_model.xml");
     m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
@@ -61,7 +62,18 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
     compile(device, properties);
 }
 
-UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
+UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel& original_model) {
+    m_config = original_model.m_config;
+    m_adapter_controller = original_model.m_adapter_controller;
+    m_model = original_model.m_model;
+    m_vae_scale_factor = original_model.m_vae_scale_factor;
+    if (typeid(m_impl) == typeid(UNet2DConditionModel::UNetInferenceStaticBS1)) {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>(original_model.m_impl->get_compiled_model());
+    } else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>(original_model.m_impl->get_compiled_model());
+    }
+
+}
 
 const UNet2DConditionModel::Config& UNet2DConditionModel::get_config() const {
     return m_config;
@@ -84,7 +96,6 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
     if (device == "NPU") {
         m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>();
     } else {
-        std::cout << "impl UNetInferenceDynamic" << std::endl;
         m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>();
     }
 
@@ -94,7 +105,6 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
         m_adapter_controller = AdapterController(m_model, *adapters, device);
         m_impl->compile(m_model, device, *filtered_properties);
     } else {
-        std::cout << "impl compile" << std::endl;
         m_impl->compile(m_model, device, properties);
     }
 
@@ -106,7 +116,6 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
 
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first");
-    std::cout << "UNet2DConditionModel::set_hidden_states " << typeid(m_impl).name() << std::endl;
     m_impl->set_hidden_states(tensor_name, encoder_hidden_states);
 }
 

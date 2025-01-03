@@ -407,6 +407,12 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
                 std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
             }
         }
+        for (const auto& input : compiled_Model.inputs()) {
+            std::cout << "Input name: " << input.get_any_name() << ", shape: " << input.get_partial_shape().to_string() << std::endl;
+        }
+        for (const auto& out : compiled_Model.outputs()) {
+            std::cout << "Output name: " << out.get_any_name() << ", shape: " << out.get_partial_shape().to_string() << std::endl;
+        }
 
         ov::Core core;
         std::vector<std::string> exeTargets;

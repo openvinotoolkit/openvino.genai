@@ -179,6 +179,7 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
     }
 }
 
+//AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
 AutoencoderKL::AutoencoderKL(const AutoencoderKL& original_model){
     std::cout << "bla1" << std::endl;
     encoder_compiled_model = original_model.encoder_compiled_model;
@@ -192,6 +193,7 @@ AutoencoderKL::AutoencoderKL(const AutoencoderKL& original_model){
     }
     m_encoder_model = original_model.m_encoder_model;
     m_decoder_model = original_model.m_decoder_model;
+    m_config = original_model.m_config;
 }
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {

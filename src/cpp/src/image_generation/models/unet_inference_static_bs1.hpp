@@ -14,14 +14,16 @@ namespace genai {
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
 public:
     UNetInferenceStaticBS1() = default;
-    UNetInferenceStaticBS1(const UNetInferenceStaticBS1 & origin_model){
-        OPENVINO_ASSERT(origin_model.compiled_model, "Source model must be compiled first");
-        compiled_model = origin_model.compiled_model;
-        size_t m_native_batch_size = origin_model.m_native_batch_size;
+
+    UNetInferenceStaticBS1(const std::shared_ptr<ov::CompiledModel> & origin_compiled_model){
+        OPENVINO_ASSERT(origin_compiled_model, "Source model must be compiled first");
+        compiled_model = origin_compiled_model;
+        m_native_batch_size = compiled_model->input("sample").get_shape()[0];
         for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model->create_infer_request();
         }
     }
+
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {
@@ -144,6 +146,9 @@ public:
         }
 
         return out_sample;
+    }
+    std::shared_ptr<ov::CompiledModel> get_compiled_model(){
+        return compiled_model;
     }
 
 private:

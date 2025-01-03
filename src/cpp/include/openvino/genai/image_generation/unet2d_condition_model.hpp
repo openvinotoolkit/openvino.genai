@@ -28,7 +28,7 @@ public:
         int time_cond_proj_dim = -1;
 
         explicit Config(const std::filesystem::path& config_path);
-        //Config() = default;
+        Config() = default;
     };
 
     explicit UNet2DConditionModel(const std::filesystem::path& root_dir);
@@ -95,6 +95,7 @@ public:
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0f && m_config.time_cond_proj_dim < 0;
     }
+
 
 private:
     class UNetInference;
