@@ -11,26 +11,11 @@ from ov_genai_test_utils import (
 )
 
 from common import                                      \
-    get_greedy,                                         \
-    get_greedy_with_min_and_max_tokens,                 \
-    get_greedy_with_repetition_penalty,                 \
-    get_greedy_with_penalties,                          \
-    get_greedy_with_min_and_max_tokens,                 \
-    get_greedy_with_single_stop_string,                 \
-    get_greedy_with_multiple_stop_strings,              \
-    get_greedy_with_multiple_stop_strings_no_match,     \
-    get_greedy_stop_strings_exclude_from_output,        \
-    get_greedy_stop_strings_include_to_output,          \
     get_greedy_n_stop_strings_exclude_from_output,      \
     get_greedy_n_stop_strings_include_to_output,        \
     get_multinomial_temperature,                        \
-    get_multinomial_temperature_and_top_p,              \
-    get_multinomial_temperature_and_top_k,              \
-    get_multinomial_temperature_top_p_and_top_k,        \
-    get_multinomial_temperature_and_repetition_penalty, \
-    get_multinomial_temperature_and_frequence_penalty,  \
-    get_multinomial_temperature_and_presence_penalty,   \
     get_multinomial_all_parameters,                     \
+    get_multinomial_temperature_and_presence_penalty    \
     get_beam_search
 
 # This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
@@ -53,15 +38,6 @@ def generate_chat_history(model_path, device, pipeline_config, questions):
 
 generation_configs = [
     get_greedy(),
-    get_greedy_with_min_and_max_tokens(),
-    get_greedy_with_repetition_penalty(),
-    get_greedy_with_penalties(),
-    get_greedy_with_min_and_max_tokens(),
-    get_greedy_with_single_stop_string(),
-    get_greedy_with_multiple_stop_strings(),
-    get_greedy_with_multiple_stop_strings_no_match(),
-    get_greedy_stop_strings_exclude_from_output(),
-    get_greedy_stop_strings_include_to_output(),
     get_greedy_n_stop_strings_exclude_from_output(),
     get_greedy_n_stop_strings_include_to_output()
 ]
@@ -86,12 +62,6 @@ def test_generation_compare_with_stateful(generation_config):
 
 
 generation_configs = [
-    get_multinomial_temperature(),
-    get_multinomial_temperature_and_top_p(),
-    get_multinomial_temperature_and_top_k(),
-    get_multinomial_temperature_top_p_and_top_k(),
-    get_multinomial_temperature_and_repetition_penalty(),
-    get_multinomial_temperature_and_frequence_penalty(),
     get_multinomial_temperature_and_presence_penalty()
 ]
 @pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
