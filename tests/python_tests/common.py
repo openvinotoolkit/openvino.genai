@@ -243,25 +243,53 @@ def run_hugging_face(
     prompts: List[str],
     generation_configs: List[GenerationConfig] | GenerationConfig,
 ) -> List[GenerationResult]:
-    if type(generation_configs) is not list:
-        generation_configs = [generation_configs]
-
     generation_results = []
-    for prompt, generation_config in zip(prompts, generation_configs):
-        hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
-        inputs = hf_tokenizer(prompt, return_tensors="pt")
-        prompt_len = 0 if generation_config.echo else inputs['input_ids'].numel()
 
-        generate_outputs = opt_model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'],
-                                              generation_config=hf_generation_config, return_dict_in_generate=True, tokenizer=hf_tokenizer)
-        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+    if type(generation_configs) is list:
+        # process prompt by promp as we have multiple generation configs
+        for prompt, generation_config in zip(prompts, generation_configs):
+            hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
+            inputs = hf_tokenizer(prompt, return_tensors="pt")
+            input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
+            prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-        generation_result = GenerationResult()
-        generation_result.m_generation_ids = all_text_batch
-        # sequences_scores are available only for beam search case
-        if generation_config.is_beam_search():
-            generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
-        generation_results.append(generation_result)
+            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config,
+                                                  return_dict_in_generate=True, tokenizer=hf_tokenizer)
+            all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+
+            generation_result = GenerationResult()
+            generation_result.m_generation_ids = all_text_batch
+            # sequences_scores are available only for beam search case
+            if generation_config.is_beam_search():
+                generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
+            generation_results.append(generation_result)
+    else:
+        # process all prompts as a single batch as we have a single generation config for all prompts
+        inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=True, padding_side='left')
+        input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
+        hf_generation_config = convert_to_hf(opt_model.generation_config, generation_configs)
+        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config,
+                                                return_dict_in_generate=True, tokenizer=hf_tokenizer)
+
+        generation_ids = []
+        scores = []
+
+        for idx, hf_encoded_out in enumerate(hf_encoded_outputs.sequences):
+            prompt_idx = idx // hf_generation_config.num_return_sequences
+            prompt_len = 0 if generation_configs.echo else input_ids[prompt_idx].numel()
+            decoded_text = hf_tokenizer.decode(hf_encoded_out[prompt_len:], skip_special_tokens=True)
+            generation_ids.append(decoded_text)
+            if generation_configs.is_beam_search():
+                scores.append(hf_encoded_outputs.sequences_scores[idx])
+
+            # if we need to move to next generation result
+            if (idx + 1) // hf_generation_config.num_return_sequences != prompt_idx:
+                generation_result = GenerationResult()
+                generation_result.m_generation_ids = generation_ids
+                generation_result.m_scores = scores
+                generation_results.append(generation_result)
+                generation_ids = []
+                scores = []
 
     del hf_tokenizer
     del opt_model
@@ -287,13 +315,26 @@ def run_continuous_batching(
     return output
 
 
+def get_default_properties():
+    import openvino.properties.hint as hints
+    import openvino as ov
+
+    return {
+        hints.inference_precision : ov.Type.f32,
+        hints.kv_cache_precision : ov.Type.f16,
+    }
+
+
 def run_llm_pipeline(
     models_path : Path,
     prompts: List[str],
     generation_config : GenerationConfig,
     use_cb : bool = False
 ) -> List[GenerationResult]:
-    properties = { 'scheduler_config' : SchedulerConfig() } if use_cb else { }
+    properties = get_default_properties()
+    if use_cb:
+        properties['scheduler_config'] = SchedulerConfig()
+
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
 
     generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config)
@@ -347,9 +388,9 @@ def compare_generation_results(prompts: List[str], hf_results: List[GenerationRe
         compare_generation_result(ref_result, ov_result, generation_config)
 
 
-def get_hugging_face_models(model_id: str, use_optimum = True):    
+def get_hugging_face_models(model_id: str, use_optimum = True):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True) if use_optimum else \
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, ov_config=get_default_properties()) if use_optimum else \
                 AutoModelForCausalLM.from_pretrained(model_id)
     return opt_model, hf_tokenizer
 
@@ -406,7 +447,7 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
     if use_optimum:
         convert_models(opt_model, hf_tokenizer, models_path)
 
-    hf_results = run_hugging_face(opt_model=opt_model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
+    hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_configs)

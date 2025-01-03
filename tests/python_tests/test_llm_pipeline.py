@@ -26,7 +26,7 @@ from ov_genai_test_utils import (
 
 test_cases = [
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),
-    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
+    (dict(max_new_tokens=30, num_beams=15, num_beam_groups=3, num_return_sequences=15, diversity_penalty=1.0), 'Alan Turing was a'),
 ]
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", get_models_list())
@@ -373,7 +373,7 @@ test_cases = [
 def test_perf_metrics(generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    model_id, path = 'Qwen/Qwen2-0.5B-Instruct', Path('Qwen-Qwen2-0.5B-Instruct')
+    model_id, path = 'katuni4ka/tiny-random-gemma2', Path('katuni4ka-tiny-random-gemma2')
     perf_metrics = run_perf_metrics_collection((model_id, path), generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
 

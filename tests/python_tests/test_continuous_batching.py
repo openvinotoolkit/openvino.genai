@@ -127,7 +127,7 @@ def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
     ov_pipe.set_generation_config(generation_config)
 
     for question in questions:
-        generated = cb_pipe.generate(question, generation_config=generation_config)
+        generated = cb_pipe.generate(question, generation_config=generation_config).texts[0]
         reference = ov_pipe.generate(question).texts[0]
         assert generated == reference
 
