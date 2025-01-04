@@ -41,8 +41,19 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None):
     return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, **ov_config), model_dir, "text")
 
 
+def load_text_llamacpp_pipeline(model_dir):
+    try:
+        from llama_cpp import Llama
+    except ImportError:
+        logger.error(
+            "Failed to import llama_cpp package. Please install llama-cpp-python.")
+        exit(-1)
+    model = Llama(model_dir)
+    return model
+
+
 def load_text_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False,
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
@@ -53,6 +64,9 @@ def load_text_model(
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_text_genai_pipeline(model_id, device, ov_config)
+    elif use_llamacpp:
+        logger.info("Using llama.cpp API")
+        model = load_text_llamacpp_pipeline(model_id)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
@@ -276,7 +290,7 @@ def load_inpainting_model(
 
 
 def load_model(
-    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False
 ):
     if model_id is None:
         return None
@@ -288,7 +302,7 @@ def load_model(
         ov_options = {}
 
     if model_type == "text":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp)
     elif model_type == "text-to-image":
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai
