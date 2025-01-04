@@ -15,8 +15,8 @@ from ov_genai_test_utils import (
 from common import get_default_properties
 
 from common import                                      \
-    get_greedy_n_stop_strings_exclude_from_output,      \
-    get_greedy_n_stop_strings_include_to_output,        \
+    get_greedy,                                         \
+    get_greedy_with_penalties,                          \
     get_multinomial_temperature,                        \
     get_multinomial_all_parameters,                     \
     get_multinomial_temperature_and_presence_penalty,   \
@@ -46,8 +46,8 @@ def generate_chat_history(model_path, device, pipeline_config, questions):
 
 
 generation_configs = [
-    get_greedy_n_stop_strings_exclude_from_output(),
-    get_greedy_n_stop_strings_include_to_output()
+    get_greedy(),
+    get_greedy_with_penalties()
 ]
 @pytest.mark.precommit
 @pytest.mark.nightly
