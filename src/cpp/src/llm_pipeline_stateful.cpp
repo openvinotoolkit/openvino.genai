@@ -38,7 +38,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
-    utils::slice_matmul_stateful_model(model);
+    utils::apply_slice_before_matmul_transformation(model);
     m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
     ov::CompiledModel compiled_model;
