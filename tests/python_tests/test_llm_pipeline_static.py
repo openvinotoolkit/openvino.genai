@@ -2,14 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_genai as ov_genai
-from openvino.runtime import Core
 import pytest
+import platform
 import sys
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
+    read_model
 )
+from common import get_default_properties
 
+if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64"]:
+    pytest.skip("NPU plugin is available only on Linux and Windows x86_64", allow_module_level=True)
 
 # This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
 common_config = {
@@ -24,19 +28,18 @@ common_config = {
 def generate_chat_history(model_path, device, pipeline_config, questions):
     pipe = ov_genai.LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
-    chat_history = [ pipe.generate(question, max_new_tokens=50) for question in questions ]
+    chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
     pipe.finish_chat()
     return chat_history
 
 
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_generation_compare_with_stateful():
     prompt = 'The Sun is yellow because'
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
 
-    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU")
+    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_properties())
     ref_out = stateful_pipe.generate(prompt, max_new_tokens=100)
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
@@ -48,11 +51,10 @@ def test_generation_compare_with_stateful():
     assert ref_out == actual_out
 
 
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_length_properties_set_no_exception():
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
@@ -65,22 +67,20 @@ pipeline_configs = [
     { "MIN_RESPONSE_LEN": -1  },
     { "MIN_RESPONSE_LEN": "1" }
 ]
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.parametrize("pipeline_config", pipeline_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_invalid_length_properties_raise_error(pipeline_config):
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
     pipeline_config |= common_config
     with pytest.raises(RuntimeError):
         pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_one_no_exception():
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
     prompt = 'The Sun is yellow because'
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     # Check it doesn't throw any exception when batch of size 1 is provided
@@ -88,11 +88,10 @@ def test_batch_one_no_exception():
 
 
 # TODO: For the further batch support
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_raise_error():
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
     prompt = 'The Sun is yellow because'
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
@@ -101,26 +100,24 @@ def test_batch_raise_error():
 
 # TODO: For the further sampling support
 generation_configs = [
-    dict(num_beam_groups=3),
+    dict(num_beams=3),
     dict(do_sample=True)
 ]
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config):
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
     prompt = 'The Sun is yellow because'
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
         pipe.generate(prompt, **generation_config)
 
 
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_max_number_of_tokens():
-    model_path = get_models_list()[0][1]
+    model_path = read_model(get_models_list()[0])[1]
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
@@ -133,11 +130,10 @@ def test_max_number_of_tokens():
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
-@pytest.mark.skipif(sys.platform in ["darwin", "linux"], reason="Not supposed to work on mac. Segfault on linux CI")
 @pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_generation(model_descr):
+def test_chat_generation():
     questions = [
         '1+1=',
         'What is the previous answer?',
@@ -145,9 +141,9 @@ def test_chat_generation(model_descr):
         'What was my first question?'
     ]
 
-    model_path = get_chat_models_list()[0][1]
+    model_path = read_model(get_chat_models_list()[0])[1]
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", { }, questions)
+    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')

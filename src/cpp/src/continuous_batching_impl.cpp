@@ -23,17 +23,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    ov::Core core;
-
-    auto [core_properties, compile_properties] = utils::split_core_compile_config(properties);
-    core.set_property(core_properties);
-
-    DeviceConfig device_config(core, scheduler_config, device, compile_properties);
+    ov::Core core = utils::singleton_core();
+    DeviceConfig device_config(core, scheduler_config, device, properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    utils::apply_gather_before_matmul_transformation(model);
 
-    initialize_pipeline(model, scheduler_config, compile_properties, device_config, core);
+    initialize_pipeline(model, scheduler_config, properties, device_config, core);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -199,7 +196,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     step_count++;
 #endif
 
-    // process generation_config.echo parameetr
+    // process generation_config.echo parameter
     _fill_prompt_log_probs(m_requests, logits);
 
     SamplerOutput sampler_output;
@@ -448,7 +445,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
-    size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
+    size_t vocab_size = logits_shape[2];
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         // requests not scheduled, in decoding phase or not echoing are not processed
@@ -458,18 +455,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
 
         size_t num_running_sequences = sequence_group->num_running_seqs();
         OPENVINO_ASSERT(num_running_sequences == 1);
-        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens();
-        size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+        size_t output_seq_len = sequence_group->get_output_seq_len();
 
         const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
 
         size_t num_prompt_tokens_processed = sequence_group->get_num_processed_tokens();
-        OPENVINO_ASSERT(num_prompt_tokens_processed + actual_seq_len <= sequence_group->get_prompt_len());
+        OPENVINO_ASSERT(num_prompt_tokens_processed + output_seq_len <= sequence_group->get_prompt_len());
 
         // if we processed the whole prompt we don't include last logprob as it will be processed by the sampler (it's already completion)
         // otherwise we include it as it will be used in the next part of the prompt
         int exclude_last_logprob = 1;
-        if (num_prompt_tokens_processed + actual_seq_len < sequence_group->get_prompt_len())
+        if (num_prompt_tokens_processed + output_seq_len < sequence_group->get_prompt_len())
             exclude_last_logprob = 0;
 
         // if we start processing the prompt we add "fake" log prob for the first position (begin of sequence)
@@ -477,7 +473,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
             sequence_group->append_prompt_log_prob(1.0);
 
         for (int token_logits_offset = 0, token_id_offset = num_prompt_tokens_processed + 1;
-             token_logits_offset < actual_seq_len - exclude_last_logprob;
+             token_logits_offset < output_seq_len - exclude_last_logprob;
              token_logits_offset++, token_id_offset++) {
 
             const float* token_logits = (sequence_group_logits_data + token_logits_offset * vocab_size);
@@ -502,7 +498,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
 
             sequence_group->append_prompt_log_prob(token_logit - max_value - log_sum);
         }
-        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+        currently_processed_tokens += output_seq_len * num_running_sequences;
         // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
         if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
             sequence_group->notify_handle_echo_only();
