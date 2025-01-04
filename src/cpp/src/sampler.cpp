@@ -749,7 +749,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
-    size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
+    size_t vocab_size = logits_shape[2];
 
     SamplerOutput sampler_output;
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
@@ -758,8 +758,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             continue;
 
         size_t num_running_sequences = sequence_group->num_running_seqs();
-        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
-        size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+        size_t output_seq_len = sequence_group->get_output_seq_len();
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
@@ -774,13 +773,13 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         auto& stop_strings = m_stop_strings.at(request_id);
         auto& logit_processor = m_logit_processors.at(request_id);
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
-        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
         size_t max_removed_tokens_per_request = 0, min_generated_len = std::numeric_limits<size_t>::max(), updated_validation_len = 0;
         if (sequence_group->requires_sampling()) {
             // get number of token to be validated
             auto num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
-            if (num_tokens_to_process > actual_seq_len - 1) {
-                auto delta = num_tokens_to_process - (actual_seq_len - 1);
+            if (num_tokens_to_process > output_seq_len - 1) {
+                auto delta = num_tokens_to_process - (output_seq_len - 1);
                 updated_validation_len = std::max(updated_validation_len, delta);
                 num_tokens_to_process -= delta;
             }
@@ -914,7 +913,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         }
 
         // accumulate a number of processed tokens
-        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+        currently_processed_tokens += output_seq_len * num_running_sequences;
     }
 
     return sampler_output;
