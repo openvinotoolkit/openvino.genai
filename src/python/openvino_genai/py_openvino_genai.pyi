@@ -697,6 +697,7 @@ class GenerationResult:
     """
     m_generation_ids: list[str]
     m_scores: list[float]
+    m_status: GenerationStatus
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
