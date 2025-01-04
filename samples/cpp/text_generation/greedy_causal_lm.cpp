@@ -14,8 +14,18 @@ int main(int argc, char* argv[]) try {
     ov::genai::LLMPipeline pipe(models_path, device);
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    std::string result = pipe.generate(prompt, config);
-    std::cout << result << std::endl;
+    int iter = 0;
+    while (iter < 10) {
+        auto result = pipe.generate(prompt, config);
+        std::cout << result.texts[0] << std::endl;
+        iter++;
+        std::cout << "\n pipeline generate finish iter:" << iter << std::endl;
+        std::cout << "generate duration s:" << result.perf_metrics.get_generate_duration().mean * 0.001 << std::endl;
+        std::cout << "inference duration s:" << result.perf_metrics.get_inference_duration().mean * 0.001 << std::endl;
+        std::cout << "first token time s:" << result.perf_metrics.ttft.mean * 0.001 << std::endl;
+        std::cout << "output token size:" << result.perf_metrics.raw_metrics.m_token_infer_durations.size()
+                  << std::endl;
+    }
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

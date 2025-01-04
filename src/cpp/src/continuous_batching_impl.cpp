@@ -365,6 +365,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     return results;
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::get_infer_duration(float& duration, int& number) {
+    m_model_runner->get_infer_duration(duration, number);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::reset_infer_duration() {
+    m_model_runner->reset_infer_duration();
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {

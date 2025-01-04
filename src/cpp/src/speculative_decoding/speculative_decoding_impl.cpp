@@ -183,6 +183,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     }
 
     if (main_generated_requests.empty() && 0) {
+        m_draft_pipeline->get_infer_duration(m_sd_metrics.draft_infer_duration, m_sd_metrics.draft_infer_num);
+        m_main_pipeline->get_infer_duration(m_sd_metrics.main_infer_duration, m_sd_metrics.main_infer_num);
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
@@ -231,6 +233,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+        auto draft_generation = m_draft_generations.find(request_id);
+        if (draft_generation != m_draft_generations.end()) {
+            m_draft_generations.erase(draft_generation);
+        }
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
 
@@ -238,20 +244,39 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     results.reserve(input_ids.size());
 
     bool continue_generation = true;
+    bool get_first_token = false;
+    float first_token_time = 0;
+    int first_tokens_num = 0;
+    m_draft_pipeline->reset_infer_duration();
+    m_main_pipeline->reset_infer_duration();
     while (has_non_finished_requests() && continue_generation) {
+        ManualTimer step_timer("speculative_decoding: step()");
+        step_timer.start();
         step();
+        step_timer.end();
+        first_token_time += step_timer.get_duration();
         if (streamer_ptr) {
             // not generated tokens like several prompt phase
             if (!main_generations.at(0).get()->can_read()) {
                 continue;
             }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
+            if (!get_first_token && !token.begin()->second.generated_ids.empty()) {
+                first_tokens_num = token.begin()->second.generated_ids.size();
+            }
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 continue_generation = !streamer_ptr->put(gen_token);
                 if (!continue_generation) {
                     break;
                 }
             }
+        }
+        if (!get_first_token && first_tokens_num > 0) {
+            get_first_token = true;
+            m_sd_metrics.first_token_duration = first_token_time;
+            int number = 0;
+            m_draft_pipeline->get_infer_duration(m_sd_metrics.draft_infer_for_first_token, number);
+            m_main_pipeline->get_infer_duration(m_sd_metrics.main_infer_for_first_token, number);
         }
     }
     if (streamer_ptr) {
@@ -280,6 +305,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
+    m_draft_pipeline->get_infer_duration(m_sd_metrics.draft_infer_duration, m_sd_metrics.draft_infer_num);
+    m_main_pipeline->get_infer_duration(m_sd_metrics.main_infer_duration, m_sd_metrics.main_infer_num);
+    m_sd_metrics.print(true);
+    m_sd_metrics.clean_up();
     return results;
 }
 

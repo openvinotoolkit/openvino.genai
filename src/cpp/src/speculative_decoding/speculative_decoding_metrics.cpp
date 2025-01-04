@@ -128,6 +128,13 @@ void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
     std::cout << "Draft model duration, %: " << get_draft_duration_percentage() << std::endl;
     std::cout << "Main model duration, %: " << get_main_duration_percentage() << std::endl;
     std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(-1) << std::endl;
+    std::cout << "Draft model inference duration, s: " << draft_infer_duration << " number:" << draft_infer_num
+              << std::endl;
+    std::cout << "Main model inference duration, s: " << main_infer_duration << " number:" << main_infer_num
+              << std::endl;
+    std::cout << "First token duration, s:" << first_token_duration << std::endl;
+    std::cout << "First token inference duration, draft:" << draft_infer_for_first_token
+              << " main:" << main_infer_for_first_token << std::endl;
     std::cout << "=============================== " << std::endl;
     if (is_printing_per_request) {
         for (const auto& i : get_requests_id()) {
@@ -152,6 +159,13 @@ void SpeculativeDecodingMetrics::clean_up() {
     draft_duration = 0;
     main_duration = 0;
     total_duration = 0;
+    draft_infer_duration = 0;
+    main_infer_duration = 0;
+    first_token_duration = 0;
+    draft_infer_for_first_token = 0;
+    main_infer_for_first_token = 0;
+    draft_infer_num = 0;
+    main_infer_num = 0;
 }
 
 }

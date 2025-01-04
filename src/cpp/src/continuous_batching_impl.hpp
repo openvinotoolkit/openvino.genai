@@ -101,6 +101,9 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
 
+    void get_infer_duration(float& duration, int& number);
+    void reset_infer_duration();
+
     /**
      * Updates LoRA adapters for current generation call
      */

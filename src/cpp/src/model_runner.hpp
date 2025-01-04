@@ -32,6 +32,8 @@ class ModelRunner {
     AttentionScoresForEachSubsequence m_last_attention_scores;
     size_t m_num_decoder_layers, m_block_size;
     bool m_collect_attention_scores;
+    ManualTimer m_infer_timer = ManualTimer("pure generate inference");
+    int m_infer_num = 0;
 public:
     /**
      * Constructs the ModelRunner.
@@ -54,6 +56,24 @@ public:
      */
     ov::InferRequest get_infer_request() {
         return m_request;
+    }
+
+    /**
+     * Output inference total duration and number.
+     * @param duration inference duration.
+     * @param number inference number.
+     */
+    void get_infer_duration(float& duration, int& number) const {
+        duration = m_infer_timer.get_duration();
+        number = m_infer_num;
+    }
+
+    /**
+     * reset inference duration and number.
+     */
+    void reset_infer_duration() {
+        m_infer_timer.reset();
+        m_infer_num = 0;
     }
 
     /**
@@ -211,10 +231,10 @@ public:
         // print_tensor("max_context_len", max_context_len);
 
         {
-            static ManualTimer timer("pure generate inference");
-            timer.start();
+            m_infer_timer.start();
             m_request.infer();
-            timer.end();
+            m_infer_timer.end();
+            m_infer_num++;
         }
 
         if (m_collect_attention_scores) {
