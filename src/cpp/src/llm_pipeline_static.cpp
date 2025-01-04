@@ -688,7 +688,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(models_path)) {
 
-    auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties);
+    auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
     ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
     ov::AnyMap properties = config;
 
@@ -1450,13 +1450,8 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const std::string& device,
                            const ov::AnyMap& config) {
     auto properties = config;
-<<<<<<< HEAD
     const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "PIPELINE", std::string("STATELESS")));
     if (pipeline_mode == PipelineKind::STATEFUL) {
-=======
-    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "NPU_PIPELINE", std::string("STATELESS")));
-    if (pipeline_mode == StaticPipelineType::STATEFUL) {
->>>>>>> ac5d32b4 (Fixed review comments)
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
     return std::make_unique<ov::genai::static_llm::StatelessLLMPipeline>(models_path, tokenizer, device, properties);
