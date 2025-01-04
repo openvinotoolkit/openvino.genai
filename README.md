@@ -133,6 +133,7 @@ from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
 pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
+pipe.start_chat()
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
