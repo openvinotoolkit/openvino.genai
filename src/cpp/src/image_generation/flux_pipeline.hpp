@@ -254,12 +254,15 @@ public:
     }
     
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+        MicroSeconds infer_duration;
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
-        m_clip_text_encoder->infer(positive_prompt, {}, false);
+        m_clip_text_encoder->infer(positive_prompt, {}, false, infer_duration);
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration.count();
         ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
-        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length, infer_duration);
+        m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration.count();
 
         pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
@@ -319,6 +322,9 @@ public:
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        const auto gen_start = std::chrono::steady_clock::now();
+        MicroSeconds infer_duration;
+        m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
 
@@ -358,28 +364,43 @@ public:
         float* timestep_data = timestep.data<float>();
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
+            auto step_start = std::chrono::steady_clock::now();
             timestep_data[0] = timesteps[inference_step] / 1000;
 
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
+            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep, infer_duration);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(infer_duration);
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
             if (callback && callback(inference_step, timesteps.size(), latents)) {
-                return ov::Tensor(ov::element::u8, {});
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+                return image;
             }
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
-        return m_vae->decode(latents);
+        auto image = m_vae->decode(latents, infer_duration);
+        m_perf_metrics.vae_decoder_inference_duration = infer_duration.count();
+        m_perf_metrics.generate_duration =
+            ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+        return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent) override {
+    ov::Tensor decode(const ov::Tensor latent, MicroSeconds& infer_duration) override {
         ov::Tensor unpacked_latent = unpack_latents(latent,
                                                 m_custom_generation_config.height,
                                                 m_custom_generation_config.width,
                                                 m_vae->get_vae_scale_factor());
-        return m_vae->decode(unpacked_latent);
+        return m_vae->decode(unpacked_latent, infer_duration);
+    }
+
+    ImageGenerationPerfMetrics get_perfomance_metrics() override {
+        return m_perf_metrics;
     }
 
 private:
@@ -477,6 +498,7 @@ private:
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     ImageGenerationConfig m_custom_generation_config;
+    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 }  // namespace genai

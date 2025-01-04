@@ -126,7 +126,12 @@ ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::
 }
 
 ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
-    return m_impl->decode(latent);
+    MicroSeconds infer_duration;
+    return m_impl->decode(latent, infer_duration);
+}
+
+ImageGenerationPerfMetrics InpaintingPipeline::get_perfomance_metrics() {
+    return m_impl->get_perfomance_metrics();
 }
 
 }  // namespace genai

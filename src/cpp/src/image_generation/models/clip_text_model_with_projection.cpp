@@ -100,7 +100,10 @@ void CLIPTextModelWithProjection::set_adapters(const std::optional<AdapterConfig
     }
 }
 
-ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
+ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt,
+                                              const std::string& neg_prompt,
+                                              bool do_classifier_free_guidance,
+                                              MicroSeconds& infer_duration) {
     OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
@@ -137,7 +140,10 @@ ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, con
                                                {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
+    const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+    infer_duration = MicroSeconds(infer_ms);
 
     return m_request.get_output_tensor(0);
 }
