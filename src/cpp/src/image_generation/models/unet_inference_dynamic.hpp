@@ -12,10 +12,14 @@ namespace genai {
 
 class UNet2DConditionModel::UNetInferenceDynamic : public UNet2DConditionModel::UNetInference {
 public:
-    virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
-        ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");
-        m_request = compiled_model.create_infer_request();
+
+    virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override
+    {
+        ov::Core core = utils::singleton_core();
+
+        compiled_model = std::make_shared<ov::CompiledModel>(utils::singleton_core().compile_model(model, device, properties));
+        ov::genai::utils::print_compiled_model_properties(*compiled_model, "UNet 2D Condition dynamic model");
+        m_request = compiled_model->create_infer_request();
     }
 
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override {
@@ -30,17 +34,28 @@ public:
 
     virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first. Cannot infer non-compiled model");
-
         m_request.set_tensor("sample", sample);
         m_request.set_tensor("timestep", timestep);
-
+        ov::CompiledModel test =  m_request.get_compiled_model();
+        ov::genai::utils::print_compiled_model_properties(test, "UNet 2D Condition TEST");
         m_request.infer();
-
         return m_request.get_output_tensor();
+    }
+
+    UNetInferenceDynamic(std::shared_ptr<ov::CompiledModel> origin_compiled_model){
+        compiled_model = origin_compiled_model;
+        m_request = compiled_model->create_infer_request();
+    }
+
+    UNetInferenceDynamic() = default;
+
+    std::shared_ptr<ov::CompiledModel> get_compiled_model(){
+        return compiled_model;
     }
 
 private:
     ov::InferRequest m_request;
+    std::shared_ptr<ov::CompiledModel> compiled_model;
 };
 
 }  // namespace genai

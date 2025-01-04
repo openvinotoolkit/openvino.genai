@@ -25,6 +25,7 @@ public:
         size_t num_hidden_layers = 12;
 
         explicit Config(const std::filesystem::path& config_path);
+        Config() = default;
     };
 
     explicit CLIPTextModel(const std::filesystem::path& root_dir);
@@ -92,6 +93,7 @@ private:
     Config m_config;
     AdapterController m_adapter_controller;
     ov::InferRequest m_request;
+    std::shared_ptr<ov::CompiledModel> compiled_model;
     std::shared_ptr<ov::Model> m_model;
 
     Tokenizer m_clip_tokenizer;
