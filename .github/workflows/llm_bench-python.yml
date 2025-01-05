@@ -82,7 +82,7 @@ jobs:
           python -m pip install flake8 pytest black
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: Lint with flake8
         run: |
@@ -151,9 +151,11 @@ jobs:
           rm -rf ./ov_models/internvl2-1B
       - name: WWB Tests
         run: |
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
+        env:
+          PIP_PRE: 1
+          PIP_EXTRA_INDEX_URL: "https://storage.openvinotoolkit.org/simple/wheels/pre-release https://storage.openvinotoolkit.org/simple/wheels/nightly"
   stateful:
     defaults:
       run:
@@ -179,20 +181,24 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
-      - name: Test stateful
+      - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
+      - name: Test stateful
           python ${{ env.LLM_BENCH_PYPATH }}/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ${{ env.SRC_DIR }} --stateful
           grep beam_idx ${{ env.SRC_DIR }}/pytorch/dldt/FP32/openvino_model.xml
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |
-          pip install pytest
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
+        env:
+          PIP_PRE: 1
+          PIP_EXTRA_INDEX_URL: "https://storage.openvinotoolkit.org/simple/wheels/pre-release https://storage.openvinotoolkit.org/simple/wheels/nightly"
 
   Overall_Status:
     name: ci/gha_overall_status_llm_bench
