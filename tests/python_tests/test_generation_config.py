@@ -23,6 +23,10 @@ configs = [
     dict(max_new_tokens=1, do_sample=True, top_k=1),
     dict(max_new_tokens=1, do_sample=True, top_p=0.5),
     dict(max_new_tokens=1, do_sample=True, temperature=0.5),
+    # parameters requiring multimonial are ignored when do_sample=False
+    dict(max_new_tokens=1, top_k=1), # requires do_sample=True
+    dict(max_new_tokens=1, top_p=0.5), # requires do_sample=True
+    dict(max_new_tokens=1, temperature=2.0), # requires do_sample=True
     # beam search
     dict(max_new_tokens=1, num_beams=2),
     dict(max_new_tokens=1, num_beams=2, num_return_sequences=1),
@@ -30,6 +34,11 @@ configs = [
     dict(max_new_tokens=1, num_beams=4, num_beam_groups=2, diversity_penalty=1.0),
     dict(max_new_tokens=1, num_beams=4, length_penalty=1.0),
     dict(max_new_tokens=1, num_beams=4, no_repeat_ngram_size=2),
+    # parameters requiring beam search are ignored when num_beams == 1
+    dict(max_new_tokens=1, num_beam_groups=2), # requiring beam search
+    dict(max_new_tokens=1, no_repeat_ngram_size=2), # requiring beam search
+    dict(max_new_tokens=1, diversity_penalty=1.0), # requiring beam search
+    dict(max_new_tokens=1, length_penalty=2), # requiring beam search
     # assistant generation
     dict(max_new_tokens=1, assistant_confidence_threshold=0.5),
     dict(max_new_tokens=1, num_assistant_tokens=2),
@@ -66,10 +75,6 @@ invalid_configs = [
     dict(max_new_tokens=1, do_sample=True, top_p=1.1), # 'top_p' must be within (0, 1] when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, top_p=0), # 'top_p' must be within (0, 1] when 'do_sample' is True
     dict(max_new_tokens=1, do_sample=True, temperature=-1.0), # invalid temp
-    # parameters requiring multimonial
-    dict(max_new_tokens=1, top_k=1), # requires do_sample=True
-    dict(max_new_tokens=1, top_p=0.5), # requires do_sample=True
-    dict(max_new_tokens=1, temperature=2.0), # requires do_sample=True
     # beam search
     dict(max_new_tokens=1, num_beams=2, num_return_sequences=3), # 'num_beams' must be >= 'num_return_sequences'
     dict(max_new_tokens=1, num_beams=3, num_beam_groups=2), # 'num_beams' must be divisible by 'num_beam_groups'
@@ -80,11 +85,6 @@ invalid_configs = [
     dict(max_new_tokens=1, num_beams=2, frequency_penalty=1.0), # 'frequency_penalty' is not supported by beam search
     dict(max_new_tokens=1, num_beams=2, presence_penalty=1.0), # 'presence_penalty' is not supported by beam search
     dict(max_new_tokens=1, num_beams=2, repetition_penalty=0.0), # 'repetition_penalty' is not supported by beam search
-    # parameters requiring beam search
-    dict(max_new_tokens=1, num_beam_groups=2), # requiring beam search
-    dict(max_new_tokens=1, no_repeat_ngram_size=2), # requiring beam search
-    dict(max_new_tokens=1, diversity_penalty=1.0), # requiring beam search
-    dict(max_new_tokens=1, length_penalty=2), # requiring beam search
     # assistant generation
     dict(max_new_tokens=1, num_assistant_tokens=2, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
     dict(max_new_tokens=1, assistant_confidence_threshold=1.0, do_sample=True, num_return_sequences=2), # 'num_return_sequences' must be 1, as we cannot use different number of tokens per sequence within a group
