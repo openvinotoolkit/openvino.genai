@@ -153,9 +153,7 @@ jobs:
         run: |
           python -m pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
-        env:
-          PIP_PRE: 1
-          PIP_EXTRA_INDEX_URL: "https://storage.openvinotoolkit.org/simple/wheels/pre-release https://storage.openvinotoolkit.org/simple/wheels/nightly"
+
   stateful:
     defaults:
       run:
@@ -188,17 +186,15 @@ jobs:
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: Test stateful
+        run: |
           python ${{ env.LLM_BENCH_PYPATH }}/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ${{ env.SRC_DIR }} --stateful
           grep beam_idx ${{ env.SRC_DIR }}/pytorch/dldt/FP32/openvino_model.xml
-        working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |
           python -m pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
-        env:
-          PIP_PRE: 1
-          PIP_EXTRA_INDEX_URL: "https://storage.openvinotoolkit.org/simple/wheels/pre-release https://storage.openvinotoolkit.org/simple/wheels/nightly"
 
   Overall_Status:
     name: ci/gha_overall_status_llm_bench
