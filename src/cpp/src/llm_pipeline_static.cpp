@@ -660,19 +660,19 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     }
 }
 
-enum PipelineKind {
+enum StaticPipelineKind {
     STATEFUL,
     STATELESS
 };
-PipelineKind str_to_pipeline(const std::string& str) {
+StaticPipelineKind str_to_pipeline(const std::string& str) {
     if (str == "STATEFUL") {
-        return PipelineKind::STATEFUL;
+        return StaticPipelineKind::STATEFUL;
     }
     if (str == "STATELESS") {
-        return PipelineKind::STATELESS;
+        return StaticPipelineKind::STATELESS;
     }
-    OPENVINO_THROW("Unsupported \"PIPELINE\" provided: " +
-                   str + ". Please select either \"STATEFUL\" or \"STATELESS\".");
+    OPENVINO_THROW("Unsupported \"PIPELINE\" provided: ",
+                   str, ". Please select either \"STATEFUL\" or \"STATELESS\".");
 }
 } // anonymous namespace
 
@@ -705,20 +705,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config
 ) : LLMPipelineImplBase(tokenizer, generation_config) {
-
-    bool use_blobs = false;
-    auto anyopt = get_option<bool>(properties, "USE_BLOBS");
-    if (anyopt.has_value()) {
-        use_blobs = *anyopt;
-    }
-    // Using model_str and weights_tensor with blobs is meaningless.
-    if (use_blobs) {
-        OPENVINO_THROW("Blobs cannot be used with model string and weights tensor");
-    }
-
     ov::AnyMap properties_copy = properties;
     auto compiled = setupAndCompileModel(model, model_desc, properties_copy);
-    m_request  = compiled->create_infer_request();
+    m_request = compiled->create_infer_request();
 }
 
 std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
@@ -764,10 +753,7 @@ DecodedResults StatefulLLMPipeline::generate(
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     std::string prompt;
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        if (input_vector->size() > 1u) {
-            OPENVINO_THROW("Currently only batch size=1 is supported");
-        }
-        OPENVINO_ASSERT(!input_vector->empty());
+        OPENVINO_ASSERT(input_vector->size() == 1u, "Currently only batch size=1 is supported");
         prompt = std::move(input_vector->front());
     } else {
         OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
@@ -827,9 +813,7 @@ EncodedResults StatefulLLMPipeline::generate(
         attention_mask = data->attention_mask;
     }
 
-    if (input_ids.get_shape().at(0) > 1u) {
-        OPENVINO_THROW("Currently only batch size=1 is supported");
-    }
+    OPENVINO_ASSERT(input_ids.get_shape().at(0) == 1u, "Currently only batch size=1 is supported");
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     // If eos_token_id was not provided, take value from default m_generation_config
@@ -846,9 +830,7 @@ EncodedResults StatefulLLMPipeline::generate(
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
 
-    if (!config.is_greedy_decoding()) {
-        OPENVINO_THROW("Currently only greedy decoding is supported");
-    }
+    OPENVINO_ASSERT(config.is_greedy_decoding(), "Currently only greedy decoding is supported");
 
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
@@ -1450,8 +1432,8 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const std::string& device,
                            const ov::AnyMap& config) {
     auto properties = config;
-    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "PIPELINE", std::string("STATELESS")));
-    if (pipeline_mode == PipelineKind::STATEFUL) {
+    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "STATIC_PIPELINE", std::string("STATELESS")));
+    if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
     return std::make_unique<ov::genai::static_llm::StatelessLLMPipeline>(models_path, tokenizer, device, properties);
@@ -1471,8 +1453,8 @@ std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::share
                                                                 const ov::AnyMap& properties,
                                                                 const ov::genai::GenerationConfig& generation_config) {
     auto properties_copy = properties;
-    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "PIPELINE", std::string("STATELESS")));
-    if (pipeline_mode == PipelineKind::STATEFUL) {
+    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATELESS")));
+    if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
                                                                             model_desc,
                                                                             tokenizer,
