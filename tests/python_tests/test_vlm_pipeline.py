@@ -7,7 +7,7 @@ import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
-from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters
+from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters, get_default_properties
 
 def get_ov_model(cache):
     model_dir = cache.mkdir("tiny-random-minicpmv-2_6")
@@ -19,7 +19,7 @@ def get_ov_model(cache):
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, trust_remote_code=True)
+    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir

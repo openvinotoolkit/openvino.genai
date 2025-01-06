@@ -179,6 +179,8 @@ def convert_to_hf(
         return
 
     kwargs = {}
+    kwargs['return_dict_in_generate'] = True
+
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
@@ -253,8 +255,7 @@ def run_hugging_face(
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config,
-                                                  return_dict_in_generate=True, tokenizer=hf_tokenizer)
+            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
             all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
             generation_result = GenerationResult()
@@ -268,8 +269,7 @@ def run_hugging_face(
         inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=True, padding_side='left')
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = convert_to_hf(opt_model.generation_config, generation_configs)
-        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config,
-                                                return_dict_in_generate=True, tokenizer=hf_tokenizer)
+        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
 
         generation_ids = []
         scores = []
@@ -306,7 +306,7 @@ def run_continuous_batching(
     if type(generation_configs) is not list:
         generation_configs = [generation_configs] * len(prompts)
  
-    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU')
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_properties())
     output = cb_pipe.generate(prompts, generation_configs)
 
     del cb_pipe
@@ -390,7 +390,7 @@ def compare_generation_results(prompts: List[str], hf_results: List[GenerationRe
 
 def get_hugging_face_models(model_id: str):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, ov_config=get_default_properties())
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
     return opt_model, hf_tokenizer
 
 
