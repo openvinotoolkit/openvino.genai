@@ -43,7 +43,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 
     ov::CompiledModel compiled_model;
     if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
         compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
         m_model_runner = compiled_model.create_infer_request();
