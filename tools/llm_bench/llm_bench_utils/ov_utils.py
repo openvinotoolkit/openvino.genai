@@ -562,7 +562,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
                 word = text[self.print_len:]
                 self.tokens_cache = []
                 self.print_len = 0
-            elif len(text) >= 3 and text[-3:] == chr(65533):
+            elif len(text) >= 3 and text[-1] == chr(65533):
                 # Don't print incomplete text.
                 pass
             elif len(text) > self.print_len:
