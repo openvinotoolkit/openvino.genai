@@ -162,8 +162,6 @@ ov::genai::LLMPipeline::LLMPipeline(
         // This will convert from AnyMap to ModelDesc.
         auto [filtered_properties, model_descr] = split_model_descr(properties);
 
-        m_pimpl = std::make_unique<StaticLLMPipeline>(
-            utils::singleton_core().read_model(model_str, weights_tensor),
         m_pimpl = static_llm::LLMPipelineFactory::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
             model_descr,
