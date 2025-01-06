@@ -64,7 +64,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
     
     std::filesystem::path openvino_model_name = "openvino_model.xml";
-    auto model = utils::singleton_core().read_model((models_path / openvino_model_name).string());
+    auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -115,19 +115,20 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& config) {
+    const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
 
-    if (config.find(ov::genai::scheduler_config.name()) != config.end() || 
-        config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end() || 
-        config.find(ov::genai::prompt_lookup.name()) != config.end()) {
-        auto [plugin_config, scheduler_config] = utils::split_scheduler_config(config);
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, plugin_config);
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+        properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     } else if (device == "NPU") {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, config);
+        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, properties);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, config);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
     }
+
     m_pimpl->save_load_time(start_time);
 }
 
@@ -136,18 +137,17 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::Tensor& weights_tensor,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& config,
+    const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config) {
-    auto [core_properties, plugin_config] = ov::genai::utils::split_core_compile_config(config);
-
     auto start_time = std::chrono::steady_clock::now();
-    if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end() || 
-        plugin_config.find(utils::DRAFT_MODEL_ARG_NAME) != plugin_config.end() || 
-        plugin_config.find(ov::genai::prompt_lookup.name()) != plugin_config.end()){
 
-        auto [plugin_config_, scheduler_config] = utils::split_scheduler_config(plugin_config);
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+        properties.find(ov::genai::prompt_lookup.name()) != properties.end()){
+
+        auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
-                                                              tokenizer, scheduler_config, device, plugin_config_, generation_config);
+                                                              tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (device == "NPU") {
         // TODO: CVS-158771 Currently, it's a workaround. Probably there is a better solution.
         // NPU reads some properties from the config file, but when LLMPipeline is initialized 
@@ -160,24 +160,25 @@ ov::genai::LLMPipeline::LLMPipeline(
         //                                      {"num_key_value_heads", 32}};
         // ov::genai::LLMPipeline pipe(model_str,..., model_descr_properties);
         // This will convert from AnyMap to ModelDesc.
-        auto [properties, model_descr] = split_model_descr(plugin_config);
+        auto [filtered_properties, model_descr] = split_model_descr(properties);
 
         m_pimpl = std::make_unique<StaticLLMPipeline>(
             utils::singleton_core().read_model(model_str, weights_tensor), 
             model_descr,
             tokenizer,
             device,
-            properties,
+            filtered_properties,
             generation_config
         );
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(
-            utils::singleton_core().read_model(model_str, weights_tensor), 
+            utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,
             device,
-            plugin_config,
+            properties,
             generation_config);
     }
+
     m_pimpl->save_load_time(start_time);
 }
 

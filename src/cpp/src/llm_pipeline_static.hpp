@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "llm_pipeline_base.hpp"
+#include "sampler.hpp"
 
 namespace ov {
 namespace genai {
@@ -76,6 +77,8 @@ private:
         uint32_t seq_len;
         bool v_tensors_transposed;
     };
+
+    Sampler m_sampler;
 
     KVCacheDesc m_kvcache_desc;
     ov::InferRequest m_kvcache_request;

@@ -71,7 +71,7 @@ py::object call_common_generate(
         DecodedResults res = pipe.generate(string_input, updated_config, streamer);
         // If input was a string return a single string otherwise return DecodedResults.
         if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
-            results = py::cast<py::object>(pyutils::handle_utf8(res.texts)[0]);
+            results = py::cast<py::object>(pyutils::handle_utf8(res.texts[0]));
         } else {
             results = py::cast(res);
         }
