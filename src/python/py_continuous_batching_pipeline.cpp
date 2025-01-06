@@ -223,15 +223,14 @@ void init_continuous_batching_pipeline(py::module_& m) {
         py::arg("properties") = ov::AnyMap({}),
         py::arg("tokenizer_properties") = ov::AnyMap({}))
 
-        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::properties_to_any_map(plugin_config));
+            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"),
         py::arg("tokenizer"),
         py::arg("scheduler_config"),
-        py::arg("device"),
-        py::arg("properties") = ov::AnyMap({}))
+        py::arg("device"))
 
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
