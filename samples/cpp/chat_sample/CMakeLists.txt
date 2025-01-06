@@ -12,6 +12,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # Specifies both the source character set and the execution character set as UTF-8.
     # For details, refer to link: https://learn.microsoft.com/en-us/cpp/build/reference/utf-8-set-source-and-executable-character-sets-to-utf-8?view=msvc-170
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+endif()
 
 add_executable(chat_sample chat_sample.cpp)
 target_link_libraries(chat_sample PRIVATE openvino::genai)
