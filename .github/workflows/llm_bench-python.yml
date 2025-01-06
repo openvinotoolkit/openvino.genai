@@ -152,6 +152,7 @@ jobs:
       - name: WWB Tests
         run: |
           pip install git+https://github.com/huggingface/optimum-intel.git
+          pip insatll -U --force-reinstall datasets==3.0.2
           GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
   stateful:
@@ -191,6 +192,7 @@ jobs:
         run: |
           pip install pytest
           pip install git+https://github.com/huggingface/optimum-intel.git
+          pip insatll -U --force-reinstall datasets==3.0.2
           GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
 
