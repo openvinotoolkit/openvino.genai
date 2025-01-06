@@ -42,8 +42,8 @@ def teardown_module():
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "openvino"),
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "text-to-image", "hf"),
-        # ("hf-internal-testing/tiny-stable-diffusion-torch", "image-inpainting", "hf"),
-        # ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-inpainting", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "image-inpainting", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "image-inpainting", "hf"),
     ],
 )
 def test_image_model_types(model_id, model_type, backend):
@@ -90,7 +90,7 @@ def test_image_model_types(model_id, model_type, backend):
     list(itertools.product(OV_IMAGE_MODELS,
                            ["image-to-image",
                             "text-to-image",
-                            # "image-inpainting"
+                            "image-inpainting"
                             ])),
 )
 def test_image_model_genai(model_id, model_type):

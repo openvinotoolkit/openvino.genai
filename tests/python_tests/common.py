@@ -390,7 +390,7 @@ def compare_generation_results(prompts: List[str], hf_results: List[GenerationRe
 
 def get_hugging_face_models(model_id: str):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, ov_config=get_default_properties())
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
     return opt_model, hf_tokenizer
 
 

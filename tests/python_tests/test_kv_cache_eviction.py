@@ -42,7 +42,7 @@ class ConvertedModel:
 @pytest.fixture(scope='module')
 def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
