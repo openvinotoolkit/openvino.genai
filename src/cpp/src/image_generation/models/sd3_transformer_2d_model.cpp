@@ -28,7 +28,7 @@ SD3Transformer2DModel::Config::Config(const std::filesystem::path& config_path) 
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
-    m_model = utils::singleton_core().read_model((root_dir / "openvino_model.xml").string());
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
     m_vae_scale_factor = get_vae_scale_factor(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
@@ -44,8 +44,7 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
                                              const Config& config,
                                              const size_t vae_scale_factor) :
     m_config(config), m_vae_scale_factor(vae_scale_factor) {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model(model, weights);
+    m_model = utils::singleton_core().read_model(model, weights);
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
@@ -105,6 +104,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::reshape(int batch_size,
 SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "SD3 Transformer 2D model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();

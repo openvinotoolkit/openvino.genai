@@ -3,16 +3,19 @@
 
 #pragma once
 
-#include "continuous_batching_impl_interface.hpp"
-#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "icontinuous_batching.hpp"
+
+#include "openvino/genai/lora_adapter.hpp"
 #include "cache_eviction.hpp"
 
 namespace ov::genai {
-class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::ImplInterface {
+
+class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
+    std::optional<AdapterController> m_adapter_controller;
     std::shared_ptr<Sampler> m_sampler;
 
     // current requests to process
@@ -26,7 +29,7 @@ protected:
 
     static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
     std::deque<float> m_previous_step_cache_usages;
-    
+
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 
@@ -37,42 +40,54 @@ protected:
     // used by tests only
     ContinuousBatchingImpl() = default;
 
-    void _free_non_running_requests();
-    void _notify_requests_dropped_by_handle();
-    void _register_step_cache_usage(float step_cache_usage);
-    float _get_current_running_average_cache_usage() const;
-    void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+    void initialize_pipeline(std::shared_ptr<ov::Model> model,
+                             const SchedulerConfig& scheduler_config,
+                             const ov::AnyMap& plugin_config,
+                             const DeviceConfig& device_config,
+                             ov::Core& core);
 
-    void init(std::shared_ptr<ov::Model> model,
-              const SchedulerConfig& scheduler_config,
-              const ov::AnyMap& plugin_config,
-              const DeviceConfig& device_config,
-              ov::Core& core);
-
+    /**
+     * Pulls requests from awaiting queue to running queue
+     * Should be called within each call of step()
+     */
     virtual void _pull_awaiting_requests();
 
+    /**
+     * Releases non-running (finished, dropped or OOM) requests from running queue
+     */
+    void _free_non_running_requests();
+
+    /**
+     * Notify dropped requests by pushing empty output
+     */
+    void _notify_requests_dropped_by_handle();
+
+    /**
+     * Handles 'echo' generation parameter
+     */
     void _fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits);
+
+    /**
+     * Performs KV cache eviction is enabled / requireed
+     */
+    void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+
+    void _register_step_cache_usage(float step_cache_usage);
+    float _get_current_running_average_cache_usage() const;
+
 public:
-    ContinuousBatchingImpl(const std::filesystem::path& models_path,
+    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
-                           const ov::AnyMap& properties);
-
-    ContinuousBatchingImpl(const std::filesystem::path& models_path,
-                           const SchedulerConfig& scheduler_config,
-                           const std::string& device,
                            const ov::AnyMap& properties,
-                           const ov::AnyMap& tokenizer_properties)
-    : ContinuousBatchingImpl{ models_path,
-                              Tokenizer(models_path, tokenizer_properties),
-                              scheduler_config,
-                              device,
-                              properties } {}
+                           const ov::genai::GenerationConfig& generation_config,
+                           bool is_validation_mode_enabled = false);
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  ov::genai::GenerationConfig sampling_params) override;
+
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  ov::genai::GenerationConfig sampling_params) override;
@@ -85,5 +100,11 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
+
+    /**
+     * Updates LoRA adapters for current generation call
+     */
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
 };
-}
+
+} // namespace ov::genai

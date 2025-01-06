@@ -8,7 +8,7 @@
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path) {
     std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '" + json_path.string() + "' with processor config");
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config

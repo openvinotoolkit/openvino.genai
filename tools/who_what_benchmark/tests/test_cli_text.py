@@ -94,9 +94,8 @@ def test_text_gt_data():
                 "CPU",
             ]
         )
+        assert result.returncode == 0
         data = pd.read_csv(temp_file_name)
-
-    assert result.returncode == 0
     assert len(data["questions"].values) == 2
 
 
@@ -156,7 +155,7 @@ def test_text_verbose():
         ]
     )
     assert result.returncode == 0
-    assert "## Diff " in result.stderr
+    assert "## Diff:" in result.stderr
 
 
 def test_text_language_autodetect():
@@ -174,9 +173,8 @@ def test_text_language_autodetect():
                 "CPU",
             ]
         )
+        assert result.returncode == 0
         data = pd.read_csv(temp_file_name)
-
-    assert result.returncode == 0
     assert "马克" in data["prompts"].values[0]
 
 
@@ -196,9 +194,8 @@ def test_text_hf_model():
                 "--hf",
             ]
         )
+        assert result.returncode == 0
         data = pd.read_csv(temp_file_name)
-
-    assert result.returncode == 0
     assert len(data["prompts"].values) == 2
 
 

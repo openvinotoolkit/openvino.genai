@@ -157,16 +157,20 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 > [!NOTE]
 > Models should belong to the same family and have the same tokenizers.
 
-## Text 2 image models
+## Image generation models
 
 <table>
   <tbody style="vertical-align: top;">
     <tr>
       <th>Architecture</th>
+      <th>Text 2 image</th>
+      <th>Image 2 image</th>
       <th>Example HuggingFace Models</th>
     </tr>
     <tr>
       <td><code>Latent Consistency Model</code></td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7"><code>SimianLuo/LCM_Dreamshaper_v7</code></a></li>
@@ -175,26 +179,52 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     </tr>
     <tr>
       <td><code>Stable Diffusion</code></td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>
         <ul>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-1"><code>CompVis/stable-diffusion-v1-1</code></a></li>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-2"><code>CompVis/stable-diffusion-v1-2</code></a></li>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-3"><code>CompVis/stable-diffusion-v1-3</code></a></li>
+          <li><a href="https://huggingface.co/CompVis/stable-diffusion-v1-4"><code>CompVis/stable-diffusion-v1-4</code></a></li>
+          <li><a href="https://huggingface.co/junnyu/stable-diffusion-v1-4-paddle"><code>junnyu/stable-diffusion-v1-4-paddle</code></a></li>
+          <li><a href="https://huggingface.co/jcplus/stable-diffusion-v1-5"><code>jcplus/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5"><code>stable-diffusion-v1-5/stable-diffusion-v1-5</code></a></li>
           <li><a href="https://huggingface.co/botp/stable-diffusion-v1-5"><code>botp/stable-diffusion-v1-5</code></a></li>
           <li><a href="https://huggingface.co/dreamlike-art/dreamlike-anime-1.0"><code>dreamlike-art/dreamlike-anime-1.0</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2"><code>stabilityai/stable-diffusion-2</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-base"><code>stabilityai/stable-diffusion-2-base</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-1"><code>stabilityai/stable-diffusion-2-1</code></a></li>
+          <li><a href="https://huggingface.co/bguisard/stable-diffusion-nano-2-1"><code>bguisard/stable-diffusion-nano-2-1</code></a></li>
+          <li><a href="https://huggingface.co/justinpinkney/pokemon-stable-diffusion"><code>justinpinkney/pokemon-stable-diffusion</code></a></li>
+          <li><a href="https://huggingface.co/stablediffusionapi/architecture-tuned-model"><code>stablediffusionapi/architecture-tuned-model</code></a></li>
+          <li><a href="https://huggingface.co/IDEA-CCNL/Taiyi-Stable-Diffusion-1B-Chinese-EN-v0.1"><code>IDEA-CCNL/Taiyi-Stable-Diffusion-1B-Chinese-EN-v0.1</code></a></li>
+          <li><a href="https://huggingface.co/ZeroCool94/stable-diffusion-v1-5"><code>ZeroCool94/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/pcuenq/stable-diffusion-v1-4"><code>pcuenq/stable-diffusion-v1-4</code></a></li>
+          <li><a href="https://huggingface.co/rinna/japanese-stable-diffusion"><code>rinna/japanese-stable-diffusion</code></a></li>
+          <li><a href="https://huggingface.co/benjamin-paine/stable-diffusion-v1-5"><code>benjamin-paine/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/philschmid/stable-diffusion-v1-4-endpoints"><code>philschmid/stable-diffusion-v1-4-endpoints</code></a></li>
+          <li><a href="https://huggingface.co/naclbit/trinart_stable_diffusion_v2"><code>naclbit/trinart_stable_diffusion_v2</code></a></li>
+          <li><a href="https://huggingface.co/Fictiverse/Stable_Diffusion_PaperCut_Model"><code>Fictiverse/Stable_Diffusion_PaperCut_Model</code></a></li>
         </ul>
       </td>
     </tr>
     <tr>
       <td><code>Stable Diffusion XL</code></td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-0.9"><code>stabilityai/stable-diffusion-xl-base-0.9</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"><code>stabilityai/stable-diffusion-xl-base-1.0</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/sdxl-turbo"><code>stabilityai/sdxl-turbo</code></a></li>
         </ul>
       </td>
     </tr>
     <tr>
       <td><code>Stable Diffusion 3</code></td>
+      <td>Supported</td>
+      <td>Not supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-3-medium-diffusers"><code>stabilityai/stable-diffusion-3-medium-diffusers</code></a></li>
@@ -205,12 +235,49 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       </td>
       <tr>
       <td><code>Flux</code></td>
+      <td>Supported</td>
+      <td>Not supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"><code>black-forest-labs/FLUX.1-schnell</code></a></li>
           <li><a href="https://huggingface.co/Freepik/flux.1-lite-8B-alpha"><code>Freepik/flux.1-lite-8B-alpha</code></a></li>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-dev"><code>black-forest-labs/FLUX.1-dev</code></a></li>
           <li><a href="https://huggingface.co/shuttleai/shuttle-3-diffusion"><code>shuttleai/shuttle-3-diffusion</code></a></li>
+          <li><a href="https://huggingface.co/shuttleai/shuttle-3.1-aesthetic"><code>shuttleai/shuttle-3.1-aesthetic</code></a></li>
+          <li><a href="https://huggingface.co/Shakker-Labs/AWPortrait-FL"><code>Shakker-Labs/AWPortrait-FL</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    </tr>
+  </tbody>
+</table>
+
+## Inpainting models
+
+In addition to image generation models, `InpaintingPipeline` supports specialized inpainting models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td><code>Stable Diffusion</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-inpainting"><code>stabilityai/stable-diffusion-2-inpainting</code></a></li>
+          <li><a href="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-inpainting"><code>stable-diffusion-v1-5/stable-diffusion-inpainting</code></a></li>
+          <li><a href="https://huggingface.co/botp/stable-diffusion-v1-5-inpainting"><code>botp/stable-diffusion-v1-5-inpainting</code></a></li>
+          <li><a href="https://huggingface.co/parlance/dreamlike-diffusion-1.0-inpainting"><code>parlance/dreamlike-diffusion-1.0-inpainting</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>Stable Diffusion XL</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1"><code>diffusers/stable-diffusion-xl-1.0-inpainting-0.1</code></a></li>
         </ul>
       </td>
     </tr>

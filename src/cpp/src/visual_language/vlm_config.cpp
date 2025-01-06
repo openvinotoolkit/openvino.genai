@@ -8,7 +8,7 @@
 
 ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '" + json_path.string() + "' with processor config");
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
