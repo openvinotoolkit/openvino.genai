@@ -179,6 +179,8 @@ def convert_to_hf(
         return
 
     kwargs = {}
+    kwargs['return_dict_in_generate'] = True
+
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     # has higher priority than 'max_length'
@@ -253,8 +255,7 @@ def run_hugging_face(
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config,
-                                                  return_dict_in_generate=True, tokenizer=hf_tokenizer)
+            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
             all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
             generation_result = GenerationResult()
@@ -268,8 +269,7 @@ def run_hugging_face(
         inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=True, padding_side='left')
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = convert_to_hf(opt_model.generation_config, generation_configs)
-        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config,
-                                                return_dict_in_generate=True, tokenizer=hf_tokenizer)
+        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
 
         generation_ids = []
         scores = []
