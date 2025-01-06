@@ -140,7 +140,8 @@ image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 
 image_data = ov.Tensor(image_data)  
 
 prompt = "Can you describe the image?"
-print(pipe.generate(prompt, image=image_data, max_new_tokens=100))
+result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
+print(result.texts[0])
 ```
 
 ### Run generation using VLMPipeline in C++
