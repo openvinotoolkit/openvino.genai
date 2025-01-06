@@ -97,6 +97,9 @@ def analyze_args(args):
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
     model_args['infer_count'] = args.infer_count
+    model_args["num_steps"] = args.num_steps
+    model_args["height"] = args.height
+    model_args["width"] = args.width
     model_args['images'] = args.images
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
@@ -137,6 +140,9 @@ def analyze_args(args):
 
     model_framework = args.framework
     model_path = Path(args.model)
+    if model_args["torch_compile_backend"]:
+        log.info("Setting Framework to PyTorch Since torch_compile_backend is provided.")
+        model_framework = 'pt'
     if not model_path.exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     if model_framework in ('ov', 'pt'):

@@ -12,7 +12,10 @@
 
 namespace ov::genai {
 
-class ContinuousBatchingPipeline::ImplInterface {
+/**
+ * Base interface for all continuous batching based pipelines
+ */
+class ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     Tokenizer m_tokenizer;
 
@@ -35,6 +38,7 @@ protected:
             // std::cout << std::endl;
         }
     } m_perf;
+
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 
@@ -43,27 +47,57 @@ public:
     PipelineMetrics get_metrics() const;
     ov::genai::Tokenizer get_tokenizer();
 
+    /**
+     * Adds requests to awaiting queue using encoded inputs
+     */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
                                          ov::genai::GenerationConfig sampling_params) = 0;
+
+    /**
+     * Adds request to running queue based on string input
+     * This step also performs tokenization's encode
+     */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
                                          ov::genai::GenerationConfig sampling_params) = 0;
     
+    /**
+     * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
+     */
     virtual bool has_non_finished_requests() = 0;
 
+    /**
+     * Performs a single inference step of all running (and pulls awaiting) requests
+     */
     virtual void step() = 0;
 
+    /**
+     * Performs monolitic generation based on encoded prompts
+     */
     virtual std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) = 0;
+
+    /**
+     * Performs monolitic generation based on text prompts
+     */
     std::vector<GenerationResult>
     generate(const std::vector<std::string>& prompts,
              std::vector<ov::genai::GenerationConfig> sampling_params,
              const StreamerVariant& streamer);
 
+    /**
+     * Starts chat with a given system prompt
+     * 
+     * In chat scenario prompts passed to `generate` method are accumulated inside the pipeline until `finish_chat` is called
+     */
     void start_chat(const std::string& system_message);
+
+    /**
+     * Ends chat
+     */
     void finish_chat();
 };
 }

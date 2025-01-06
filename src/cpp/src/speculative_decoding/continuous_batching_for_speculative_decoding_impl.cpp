@@ -17,7 +17,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    init(model, scheduler_config, plugin_config, device_config, core);
+    initialize_pipeline(model, scheduler_config, plugin_config, device_config, core);
 }
 
 void
@@ -159,7 +159,7 @@ init_request(
     for (const auto& candidate_sequence : candidates) {
         Sequence::Ptr sequence;
         if (is_init_all_sequences_in_request && candidate_sequence.first > 0) {
-            sequence = Sequence::Ptr(new Sequence(candidate_sequence.first));
+            sequence = Sequence::create(candidate_sequence.first);
             sequence->set_status(ov::genai::SequenceStatus::RUNNING);
             request->add_sequence(sequence);
         } else {
