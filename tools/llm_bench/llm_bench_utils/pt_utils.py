@@ -69,7 +69,6 @@ def create_text_gen_model(model_path, device, **kwargs):
                 start = time.perf_counter()
                 trust_remote_code = True
                 model = model_class.from_pretrained(model_path, trust_remote_code=trust_remote_code)
-            
             tokenizer = token_class.from_pretrained(model_path, trust_remote_code=trust_remote_code)
             end = time.perf_counter()
             from_pretrain_time = end - start
