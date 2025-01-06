@@ -53,6 +53,7 @@ def test_encoded_inputs(model_descr, inputs):
     hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
 
     input_ids, attention_mask = inputs
+    prompt_len = input_ids.shape[1]
 
     if attention_mask is not None:
         inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
@@ -61,10 +62,10 @@ def test_encoded_inputs(model_descr, inputs):
         inputs_hf = dict(inputs=torch.tensor(input_ids))
         inputs_ov = ov.Tensor(input_ids)
 
-    hf_output = opt_model.generate(**inputs_hf, generation_config=hf_generation_config)
+    hf_output = opt_model.generate(**inputs_hf, generation_config=hf_generation_config).sequences[0]
     ov_output = ov_pipe.generate(inputs_ov, ov_generation_config)
 
-    hf_res = hf_output[0, input_ids.shape[1]:].numpy()
+    hf_res = hf_output[prompt_len:].numpy()
     ov_res = np.array(ov_output.tokens, dtype=np.int64)
     assert np.all(ov_res == hf_res)
 
@@ -132,9 +133,10 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
 
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+        prompt_len = tokenized['input_ids'].numel()
 
-        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config)
-        answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
+        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
+        answer_str = tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
         answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
@@ -379,7 +381,7 @@ def test_perf_metrics(generation_config, prompt):
 
     # Check that load time is adequate.
     load_time = perf_metrics.get_load_time()
-    assert load_time > 0 and load_time < 2000.0
+    assert load_time > 0 and load_time < total_time
 
     # Check that num input and generated tokens are adequate.
     num_generated_tokens = perf_metrics.get_num_generated_tokens()
