@@ -306,7 +306,7 @@ def run_continuous_batching(
     if type(generation_configs) is not list:
         generation_configs = [generation_configs] * len(prompts)
  
-    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU')
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_properties())
     output = cb_pipe.generate(prompts, generation_configs)
 
     del cb_pipe
