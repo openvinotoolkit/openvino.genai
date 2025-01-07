@@ -1,4 +1,4 @@
-we# OpenVINO™ GenAI Node.js bindings (preview)
+# OpenVINO™ GenAI Node.js bindings (preview)
 
 ## DISCLAIMER
 
