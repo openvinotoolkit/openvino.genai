@@ -59,6 +59,10 @@ public:
         const ModelConfigDesc& model_desc,
         ov::AnyMap& pipeline_config);
 
+    void updateStatefulConfig(
+        const ModelConfigDesc& model_desc,
+        ov::AnyMap& pipeline_config);
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,

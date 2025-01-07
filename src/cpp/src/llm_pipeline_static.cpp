@@ -683,17 +683,25 @@ namespace static_llm {
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
-    const std::string&,
+    const std::string& device,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(models_path)) {
+    if (std::filesystem::exists(models_path / "openvino_model.blob")) {
+        std::ifstream fin(models_path / "openvino_model.blob", std::ios::in | std::ios::binary);
+        ov::AnyMap properties = config;
+        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+        updateStatefulConfig(model_desc, properties);
+        auto compiled = genai::utils::singleton_core().import_model(fin, device, properties);
+        m_request = compiled.create_infer_request();
+    } else {
+        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
+        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+        ov::AnyMap properties = config;
 
-    auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
-    ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
-    ov::AnyMap properties = config;
-
-    auto compiled = setupAndCompileModel(model, model_desc, properties);
-    m_request = compiled->create_infer_request();
+        auto compiled = setupAndCompileModel(model, model_desc, properties);
+        m_request = compiled->create_infer_request();
+    }
 }
 
 
@@ -710,11 +718,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     m_request = compiled->create_infer_request();
 }
 
-std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
-    const std::shared_ptr<ov::Model>& model,
+void StatefulLLMPipeline::updateStatefulConfig(
     const ModelConfigDesc& model_desc,
     ov::AnyMap& pipeline_config) {
-
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     m_kvcache_total = kMaxPromptLen + kMinResponseLen;
@@ -742,6 +748,13 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
 
     // Replace CACHE_DIR option if NPUW is enabled
     set_npuw_cache_dir(pipeline_config);
+}
+
+std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
+    const std::shared_ptr<ov::Model>& model,
+    const ModelConfigDesc& model_desc,
+    ov::AnyMap& pipeline_config) {
+    updateStatefulConfig(model_desc, pipeline_config);
 
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
 }
