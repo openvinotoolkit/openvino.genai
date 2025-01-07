@@ -15,7 +15,7 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT
+from common import TESTS_ROOT, run_cb_pipeline_with_ref, get_default_properties
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -42,7 +42,7 @@ class ConvertedModel:
 @pytest.fixture(scope='module')
 def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_properties())
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
@@ -112,8 +112,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
     models_path = converted_model.models_path
-    model_cb_noopt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
-    model_cb_opt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_properties())
 
     tokenizer = converted_model.tokenizer
 
@@ -144,4 +144,31 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     del model_cb_opt
     del model_cb_noopt
 
+
+def get_greedy_seq_len_300() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 300
+    return generation_config
+
+
+def get_beam_search_seq_len_300() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
+    generation_config.diversity_penalty = 1
+    generation_config.max_new_tokens = 300
+    generation_config.num_return_sequences = generation_config.num_beams
+    return generation_config
+
+
+scheduler_params_list = [
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True}, get_greedy_seq_len_300()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True}, get_beam_search_seq_len_300()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False}, get_greedy_seq_len_300()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False}, get_beam_search_seq_len_300()),
+                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300())]
+@pytest.mark.parametrize("params", scheduler_params_list)
+@pytest.mark.precommit
+def test_dynamic_memory_allocation(tmp_path, params):
+    run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
 
