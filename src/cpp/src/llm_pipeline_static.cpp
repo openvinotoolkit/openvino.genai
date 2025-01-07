@@ -739,7 +739,10 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
 
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
-  
+
+    // Replace CACHE_DIR option if NPUW is enabled
+    set_npuw_cache_dir(pipeline_config);
+
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
 }
 
