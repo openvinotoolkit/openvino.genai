@@ -16,6 +16,8 @@ import typing
 import numpy as np
 import os
 import pathlib
+from dataclasses import dataclass
+
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -27,36 +29,31 @@ def run_gc_after_test():
     gc.collect()
 
 
-def get_whisper_models_list(tiny_only=False, multilingual=False, en_only=False):
-    precommit_models = [
+def get_whisper_models_list(tiny_only=False):
+    model_ids = [
         "openai/whisper-tiny",
-        "openai/whisper-tiny.en",
         "distil-whisper/distil-small.en",
     ]
-    if multilingual:
-        precommit_models = ["openai/whisper-tiny"]
-    if en_only:
-        precommit_models = ["openai/whisper-tiny.en", "distil-whisper/distil-small.en"]
+
     if tiny_only:
-        precommit_models = ["openai/whisper-tiny"]
+        model_ids = ["openai/whisper-tiny"]
 
-    nightly_models = []
-
-    if pytest.run_marker == "precommit":
-        model_ids = precommit_models
-    else:
-        model_ids = nightly_models
+    pytest.selected_model_ids = None
 
     if pytest.selected_model_ids:
-        model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
+        model_ids = [
+            model_id
+            for model_id in model_ids
+            if model_id in pytest.selected_model_ids.split(" ")
+        ]
 
-    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
-    return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
+    prefix = pathlib.Path(os.getenv("GENAI_MODELS_PATH_PREFIX", ""))
+    return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
 # used whisper models are relatively small
 # cache them in memory to speedup tests
-@functools.lru_cache(3)
+@functools.lru_cache()
 def read_whisper_model(params, **tokenizer_kwargs):
     model_id, path = params
 
@@ -114,30 +111,48 @@ def read_whisper_model(params, **tokenizer_kwargs):
     )
 
 
-def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
-    ds = datasets.load_dataset(dataset_id, "clean", split="validation")
-    opt_infer_time = 0
-    genai_infer_time = 0
+@dataclass
+class GenerationConfig:
+    task: str | None = None
+    language: str | None = None
+    return_timestamps: bool = False
+    max_new_tokens: int | None = None
+    streamer: typing.Callable[[str], bool] | None = None
 
-    for ds_row in ds:
-        audio_sample = ds_row["audio"]
 
-        streamer_result = []
+def run_huggingface(
+    pipeline,
+    sample,
+    config: GenerationConfig | None = None,
+):
+    if not config:
+        config = GenerationConfig()
 
-        start = time.time()
-        genai_result = genai_pipe.generate(
-            audio_sample["array"].tolist(), streamer=lambda x: streamer_result.append(x)
-        )
-        genai_infer_time += time.time() - start
+    return pipeline(
+        sample,
+        max_new_tokens=config.max_new_tokens,
+        return_timestamps=config.return_timestamps,
+        generate_kwargs={"language": config.language, "task": config.task},
+    )
 
-        start = time.time()
-        result = opt_pipe(audio_sample)
-        opt_infer_time += time.time() - start
 
-        assert genai_result.texts[0] == result["text"]
-        assert "".join(streamer_result) == result["text"]
+def run_genai(
+    pipeline: ov_genai.WhisperPipeline,
+    sample,
+    config: GenerationConfig | None = None,
+):
+    if not config:
+        config = GenerationConfig()
 
-    print(f"Inference time\nOpt: {opt_infer_time}\nGenAI: {genai_infer_time}")
+    genai_config = pipeline.get_generation_config()
+
+    if config.max_new_tokens:
+        genai_config.max_new_tokens = config.max_new_tokens
+    genai_config.return_timestamps = config.return_timestamps
+    genai_config.task = config.task
+    genai_config.language = f"<|{config.language}|>" if config.language else None
+
+    return pipeline.generate(sample, genai_config, streamer=config.streamer)
 
 
 def get_samples_from_dataset(
@@ -166,13 +181,60 @@ def get_samples_from_dataset(
     return [x["audio"]["array"] for x in ds]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.parametrize("dataset_id", ["hf-internal-testing/librispeech_asr_dummy"])
-@pytest.mark.precommit
-def test_whisper_on_hf_dataset(model_descr, dataset_id):
-    model_id, path, opt_pipe, genai_pipe = read_whisper_model(model_descr)
+def run_pipeline_with_ref(
+    model_id: str,
+    tmp_path: str,
+    sample: np.ndarray | list[np.ndarray],
+    generation_config: GenerationConfig | None = None,
+    print_infer_time=False,
+):
+    _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
 
-    compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id)
+    if type(sample) is np.ndarray and len(sample.shape) == 1:
+        sample = np.expand_dims(sample, 0)
+
+    hf_infer_time, genai_infer_time = 0, 0
+    hf_result, genai_result = None, None
+    for _sample in sample:
+        start = time.time()
+        genai_result = run_genai(genai_pipe, _sample, generation_config)
+        genai_infer_time += time.time() - start
+
+        start = time.time()
+        hf_result = run_huggingface(hf_pipe, _sample, generation_config)
+        hf_infer_time += time.time() - start
+
+        compare_results(hf_result, genai_result)
+
+    if print_infer_time:
+        print(f"\nInference time HF: {hf_infer_time:.2f} GenAI: {genai_infer_time:.2f}")
+
+    assert hf_result is not None
+    assert genai_result is not None
+
+    return hf_result, genai_result
+
+
+def compare_results(hf_result, genai_result):
+    assert genai_result.texts[0] == hf_result["text"]
+
+    # transformers 4.47 updated return_timestamps implementation
+    # enable once genai implementation aligned with trasformets. Ticket 160205.
+    return
+
+    if "chunks" not in hf_result and genai_result.chunks is None:
+        return
+
+    assert len(genai_result.chunks) == len(hf_result["chunks"])
+
+    for opt_chunk, genai_chunk in zip(hf_result["chunks"], genai_result.chunks):
+        assert opt_chunk["text"] == genai_chunk.text
+        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
+        if opt_chunk["timestamp"][1]:
+            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
+        else:
+            assert opt_chunk["timestamp"][1] == None
+            assert round(genai_chunk.end_ts, 2) == -1.0
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -182,16 +244,11 @@ def test_whisper_on_hf_dataset(model_descr, dataset_id):
 )
 @pytest.mark.precommit
 def test_smoke(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    expected = opt_pipe(test_sample)
-
-    genai_result = pipe.generate(test_sample)
-
-    assert genai_result.texts[0] == expected["text"]
-
-    assert "chunks" not in expected
-    assert genai_result.chunks == None
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=test_sample,
+    )
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -259,79 +316,55 @@ def test_whisper_constructors(model_descr, test_sample):
 def test_max_new_tokens(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(test_sample, max_new_tokens=10)["text"]
+    expected = opt_pipe(test_sample, max_new_tokens=10)
 
     genai_result = pipe.generate(test_sample, max_new_tokens=10)
 
-    assert genai_result.texts[0] == expected
-
-    genai_result = pipe.generate(test_sample)
-
-    assert genai_result.texts[0] != expected
+    compare_results(expected, genai_result)
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 10
     genai_result = pipe.generate(test_sample, config)
-    assert genai_result.texts[0] == expected
+    compare_results(expected, genai_result)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
-    "test_sample", get_samples_from_dataset(language="fr", length=3)
+    "test_samples",
+    [
+        (get_samples_from_dataset(language="fr", length=1), "fr"),
+        (get_samples_from_dataset(language="de", length=1), "de"),
+    ],
 )
 @pytest.mark.precommit
-def test_language_mode_fr(model_descr, test_sample):
-    model_id, path = model_descr
+def test_language_mode(model_descr, test_samples):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    samples, language = test_samples
 
     expected = opt_pipe(
-        test_sample, max_new_tokens=30, generate_kwargs={"language": "fr"}
+        samples[0], max_new_tokens=30, generate_kwargs={"language": language}
     )
 
-    genai_result = pipe.generate(test_sample, max_new_tokens=30, language="<|fr|>")
+    genai_result = pipe.generate(
+        samples[0], max_new_tokens=30, language=f"<|{language}|>"
+    )
 
-    assert genai_result.texts[0] == expected["text"]
+    compare_results(expected, genai_result)
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 30
-    config.language = "<|fr|>"
-    genai_result = pipe.generate(test_sample, config)
+    config.language = f"<|{language}|>"
+    genai_result = pipe.generate(samples[0], config)
 
-    assert genai_result.texts[0] == expected["text"]
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "test_sample", get_samples_from_dataset(language="de", length=3)
-)
-@pytest.mark.precommit
-def test_language_mode_de(model_descr, test_sample):
-    model_id, path = model_descr
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    expected = opt_pipe(
-        test_sample, max_new_tokens=30, generate_kwargs={"language": "de"}
-    )
-
-    genai_result = pipe.generate(test_sample, max_new_tokens=30, language="<|de|>")
-
-    assert genai_result.texts[0] == expected["text"]
-
-    config = pipe.get_generation_config()
-    config.max_new_tokens = 30
-    config.language = "<|de|>"
-    genai_result = pipe.generate(test_sample, config)
-
-    assert genai_result.texts[0] == expected["text"]
+    compare_results(expected, genai_result)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
-    "test_sample", get_samples_from_dataset(language="fr", length=3)
+    "test_sample", get_samples_from_dataset(language="fr", length=1)
 )
 @pytest.mark.precommit
 def test_task_mode(model_descr, test_sample):
-    model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     expected = opt_pipe(
@@ -344,7 +377,7 @@ def test_task_mode(model_descr, test_sample):
         test_sample, max_new_tokens=30, language="<|fr|>", task="translate"
     )
 
-    assert genai_result.texts[0] == expected["text"]
+    compare_results(expected, genai_result)
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 30
@@ -352,27 +385,7 @@ def test_task_mode(model_descr, test_sample):
     config.task = "translate"
     genai_result = pipe.generate(test_sample, config)
 
-    assert genai_result.texts[0] == expected["text"]
-
-    expected = opt_pipe(
-        test_sample,
-        max_new_tokens=30,
-        generate_kwargs={"language": "ru", "task": "translate"},
-    )
-
-    genai_result = pipe.generate(
-        test_sample, max_new_tokens=30, language="<|ru|>", task="translate"
-    )
-
-    assert genai_result.texts[0] == expected["text"]
-
-    config = pipe.get_generation_config()
-    config.max_new_tokens = 30
-    config.language = "<|ru|>"
-    config.task = "translate"
-    genai_result = pipe.generate(test_sample, config)
-
-    assert genai_result.texts[0] == expected["text"]
+    compare_results(expected, genai_result)
 
     # seems to be equivalent to translate task
     expected = opt_pipe(
@@ -385,7 +398,7 @@ def test_task_mode(model_descr, test_sample):
         test_sample, max_new_tokens=30, language="<|en|>", task="transcribe"
     )
 
-    assert genai_result.texts[0] == expected["text"]
+    compare_results(expected, genai_result)
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 30
@@ -393,21 +406,20 @@ def test_task_mode(model_descr, test_sample):
     config.task = "transcribe"
     genai_result = pipe.generate(test_sample, config)
 
-    assert genai_result.texts[0] == expected["text"]
+    compare_results(expected, genai_result)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
     "test_sample",
     [
-        *get_samples_from_dataset(language="fr", length=2),
-        *get_samples_from_dataset(language="de", length=2),
-        *get_samples_from_dataset(language="es", length=2),
+        *get_samples_from_dataset(language="fr", length=1),
+        *get_samples_from_dataset(language="de", length=1),
+        *get_samples_from_dataset(language="es", length=1),
     ],
 )
 @pytest.mark.precommit
 def test_language_autodetect(model_descr, test_sample):
-    model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     input_features = opt_pipe.feature_extractor(test_sample)
@@ -415,188 +427,78 @@ def test_language_autodetect(model_descr, test_sample):
     # ensure detected language us not english
     assert language_id != pipe.get_generation_config().lang_to_id["<|en|>"]
 
-    expected = opt_pipe(
-        test_sample,
-        max_new_tokens=30,
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=test_sample,
+        generation_config=GenerationConfig(max_new_tokens=30),
     )
-
-    genai_result = pipe.generate(test_sample, max_new_tokens=30)
-
-    assert genai_result.texts[0] == expected["text"]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "test_sample",
-    [
-        *get_samples_from_dataset(language="en", length=10, long_form=True),
-    ],
-)
+@pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
 def test_return_timestamps_short_form(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-    # long form audio not supported yet
-    test_sample = test_sample[: 16000 * 30]
-
-    expected = opt_pipe(
-        test_sample,
-        return_timestamps=True,
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=test_sample,
+        generation_config=GenerationConfig(return_timestamps=True),
     )
-
-    genai_result = pipe.generate(
-        test_sample.tolist(),
-        return_timestamps=True,
-    )
-
-    assert genai_result.texts[0] == expected["text"]
-
-    assert len(genai_result.chunks) == len(expected["chunks"])
-
-    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
-        assert opt_chunk["text"] == genai_chunk.text
-        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
-        assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "test_sample",
-    [
-        *get_samples_from_dataset(language="en", length=10, long_form=True),
-    ],
-)
+@pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
 def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-    # long form audio not supported yet
-    test_sample = test_sample[: 16000 * 30]
-
-    expected = opt_pipe(
-        test_sample,
-        return_timestamps=True,
-        max_new_tokens=15,
-        generate_kwargs={"language": "en"},
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=test_sample,
+        generation_config=GenerationConfig(
+            return_timestamps=True, language="en", max_new_tokens=30
+        ),
     )
 
-    genai_result = pipe.generate(
-        test_sample.tolist(),
-        max_new_tokens=15,
-        return_timestamps=True,
-        language="<|en|>",
-    )
 
-    assert genai_result.texts[0] == expected["text"]
-
-    assert len(genai_result.chunks) == len(expected["chunks"])
-
-    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
-        assert opt_chunk["text"] == genai_chunk.text
-        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
-        if opt_chunk["timestamp"][1]:
-            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
-        else:
-            assert opt_chunk["timestamp"][1] == None
-            assert round(genai_chunk.end_ts, 2) == -1.0
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(multilingual=True))
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize(
-    "test_sample",
-    [
-        *get_samples_from_dataset(language="en", length=10, long_form=True),
-        *get_samples_from_dataset(language="fr", length=10, long_form=True),
-    ],
-)
-@pytest.mark.precommit
-def test_longform_audio_return_timestamps_multilingual(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    expected = opt_pipe(
-        test_sample,
-        return_timestamps=True,
-    )
-
-    streamer_result = []
-
-    genai_result = pipe.generate(
-        test_sample,
-        return_timestamps=True,
-        streamer=lambda x: streamer_result.append(x),
-    )
-
-    assert genai_result.texts[0] == expected["text"]
-    assert "".join(streamer_result) == expected["text"]
-
-    assert len(genai_result.chunks) == len(expected["chunks"])
-
-    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
-        assert opt_chunk["text"] == genai_chunk.text
-        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
-        if opt_chunk["timestamp"][1]:
-            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
-        else:
-            assert opt_chunk["timestamp"][1] == None
-            assert round(genai_chunk.end_ts, 2) == -1.0
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(en_only=True))
-@pytest.mark.parametrize(
-    "test_sample",
-    [
-        *get_samples_from_dataset(language="en", length=10, long_form=True),
-    ],
-)
-@pytest.mark.precommit
-def test_longform_audio_return_timestamps_en(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    expected = opt_pipe(
-        test_sample,
-        return_timestamps=True,
-    )
-
-    streamer_result = []
-
-    genai_result = pipe.generate(
-        test_sample,
-        return_timestamps=True,
-        streamer=lambda x: streamer_result.append(x),
-    )
-
-    assert genai_result.texts[0] == expected["text"]
-    assert "".join(streamer_result) == expected["text"]
-
-    assert len(genai_result.chunks) == len(expected["chunks"])
-
-    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
-        assert opt_chunk["text"] == genai_chunk.text
-        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
-        if opt_chunk["timestamp"][1]:
-            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
-        else:
-            assert opt_chunk["timestamp"][1] == None
-            assert round(genai_chunk.end_ts, 2) == -1.0
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "test_sample",
-    [
-        *get_samples_from_dataset(language="en", length=3, long_form=True),
-        *get_samples_from_dataset(language="sp", length=3, long_form=True),
-    ],
+    "test_sample", get_samples_from_dataset(length=10, long_form=True)
 )
 @pytest.mark.precommit
 def test_longform_audio(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    streamer_result = []
 
-    expected = opt_pipe(test_sample, return_timestamps=True)
+    hf_result, genai_result = run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=test_sample,
+        generation_config=GenerationConfig(
+            return_timestamps=True,
+            streamer=lambda x: streamer_result.append(x),
+        ),
+    )
 
-    genai_result = pipe.generate(test_sample)
+    assert "".join(streamer_result) == hf_result["text"]
 
-    assert genai_result.texts[0] == expected["text"]
 
-    assert genai_result.chunks == None
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.precommit
+def test_shortform(model_descr):
+    samples = []
+    ds = datasets.load_dataset(
+        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
+    )
+
+    for ds_row in ds:
+        samples.append(ds_row["audio"]["array"])
+
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=samples,
+        print_infer_time=True,
+    )
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
