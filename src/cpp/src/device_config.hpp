@@ -39,48 +39,51 @@ public:
         m_block_size = get_block_size_by_device(device);
 
         if (m_device == "CPU") {
-            auto inference_precision = core.get_property(device, ov::hint::inference_precision);
-            m_key_cache_type = m_value_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-
-            // if user sets precision hint, kv cache type should be changed
-            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
-            if (inference_precision_it != plugin_config.end()) {
-                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
-                if (inference_precision == ov::element::f32) {
-                    m_key_cache_type = m_value_cache_type = ov::element::f32;
-                } else if (inference_precision == ov::element::f16) {
-                    m_key_cache_type = m_value_cache_type = ov::element::f16;
-                } else if (inference_precision == ov::element::bf16) {
-                    m_key_cache_type = m_value_cache_type = ov::element::bf16;
+            // ACCURACY mode will use f32 kvcache
+            const auto execution_mode_it = plugin_config.find(ov::hint::execution_mode.name());
+            if (execution_mode_it != plugin_config.end() && execution_mode_it->second.as<ov::hint::ExecutionMode>() == ov::hint::ExecutionMode::ACCURACY) {
+                m_key_cache_type = m_value_cache_type = ov::element::f32;
+                m_key_cache_group_size = m_value_cache_group_size = 0;
+            } else {
+                const auto key_group_size_it = plugin_config.find(ov::key_cache_group_size.name());
+                if (key_group_size_it != plugin_config.end()) {
+                    m_key_cache_group_size = key_group_size_it->second.as<size_t>();
                 } else {
-                    // use default f32
-                    m_key_cache_type = m_value_cache_type = ov::element::f32;
+                    m_key_cache_group_size = core.get_property(device, ov::key_cache_group_size);
                 }
-            }
-            const auto key_group_size_it = plugin_config.find(ov::hint::key_cache_group_size.name());
-            if (key_group_size_it != plugin_config.end()) {
-                m_key_cache_group_size = key_group_size_it->second.as<size_t>();
-            } else {
-                m_key_cache_group_size = 0;
-            }
+                const auto value_group_size_it = plugin_config.find(ov::value_cache_group_size.name());
+                if (value_group_size_it != plugin_config.end()) {
+                    m_value_cache_group_size = key_group_size_it->second.as<size_t>();
+                } else {
+                    m_value_cache_group_size = core.get_property(device, ov::value_cache_group_size);
+                }
 
-            const auto value_group_size_it = plugin_config.find(ov::hint::value_cache_group_size.name());
-            if (value_group_size_it != plugin_config.end()) {
-                m_value_cache_group_size = key_group_size_it->second.as<size_t>();
-            } else {
-                m_value_cache_group_size = 0;
-            }
-            // if user sets ov::kv_cache_precision hint
-            const auto key_cache_precision_it = plugin_config.find(ov::hint::key_cache_precision.name());
-            if (key_cache_precision_it != plugin_config.end()) {
-                const auto key_cache_precision = key_cache_precision_it->second.as<ov::element::Type>();
-                m_key_cache_type = key_cache_precision;
-            }
+                // if user sets ov::kv_cache_precision hint
+                bool has_kv_cache_precision_hint = false;
+                const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
+                if (kv_cache_precision_it != plugin_config.end()) {
+                    const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
+                    m_key_cache_type = m_value_cache_type = kv_cache_precision;
+                    has_kv_cache_precision_hint = true;
+                }
 
-            const auto value_cache_precision_it = plugin_config.find(ov::hint::value_cache_precision.name());
-            if (value_cache_precision_it != plugin_config.end()) {
-                const auto value_cache_precision = value_cache_precision_it->second.as<ov::element::Type>();
-                m_value_cache_type = value_cache_precision;
+                // ov::key/value_cache_precision has higher priority
+                const auto key_cache_precision_it = plugin_config.find(ov::key_cache_precision.name());
+                if (key_cache_precision_it != plugin_config.end()) {
+                    const auto key_cache_precision = key_cache_precision_it->second.as<ov::element::Type>();
+                    m_key_cache_type = key_cache_precision;
+                } else {
+                    if (!has_kv_cache_precision_hint)
+                        m_key_cache_type = core.get_property(device, ov::key_cache_precision);
+                }
+                const auto value_cache_precision_it = plugin_config.find(ov::value_cache_precision.name());
+                if (value_cache_precision_it != plugin_config.end()) {
+                    const auto value_cache_precision = value_cache_precision_it->second.as<ov::element::Type>();
+                    m_value_cache_type = value_cache_precision;
+                } else {
+                    if (!has_kv_cache_precision_hint)
+                        m_value_cache_type = core.get_property(device, ov::value_cache_precision);
+                }
             }
         } else if (m_device.find("GPU") != std::string::npos) {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
