@@ -2,9 +2,8 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers~=2024.6.0.0.dev
-# since https://github.com/huggingface/optimum-intel/pull/1085, Image generation models have changed their interface
-# so, we have to pin to latest compatible commit
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@420fa87d039425a906b7f755e4562b65947f016a
+# optimum is pinned because of Whisper is changed since transformers 4.47 (https://github.com/huggingface/optimum-intel/pull/1088)
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@753f84db6e0966580eb9eaa74a808213be730631
 numpy<2.0.0; sys_platform == 'darwin'
 einops==0.8.0  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
