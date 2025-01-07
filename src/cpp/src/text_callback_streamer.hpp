@@ -20,7 +20,8 @@ public:
 private:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
-    size_t print_len = 0;
+    std::vector<int64_t> m_decoded_lengths;
+    size_t printed_len = 0;
 };
 
 }  // namespace genai
