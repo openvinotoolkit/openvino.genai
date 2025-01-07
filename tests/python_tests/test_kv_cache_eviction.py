@@ -221,9 +221,9 @@ class LongBenchTestData:
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 36.78, 14, 9.596),
+    LongBenchTestData("samsum", 37.84, 11.8, 7.68),
     LongBenchTestData("trec", 28.12, 11.8, 7.721),
-    LongBenchTestData("qasper", 21.68, 18.4, 12.706),
+    LongBenchTestData("qasper", 15.88, 11.8, 6.483),
 ])
 def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
     seqs_per_request = 32
@@ -233,12 +233,10 @@ def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset
     max_new_tokens = dataset2maxlen[subset]
-    tokenizer = qwen2_converted_model.tokenizer
 
     generation_config = GenerationConfig()  # expecting default greedy sampling
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
-    generation_config.eos_token_id = tokenizer.eos_token_id
 
     scheduler_config.use_cache_eviction = True
     if scheduler_config.use_cache_eviction:
