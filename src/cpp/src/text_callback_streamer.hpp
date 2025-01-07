@@ -12,6 +12,7 @@ namespace genai {
 class TextCallbackStreamer: public StreamerBase {
 public:
     bool put(int64_t token) override;
+    
     void end() override;
 
     TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback);
@@ -21,7 +22,7 @@ private:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
-    size_t printed_len = 0;
+    size_t m_printed_len = 0;
 };
 
 }  // namespace genai
