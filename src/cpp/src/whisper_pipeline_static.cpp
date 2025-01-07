@@ -136,9 +136,6 @@ void set_decoder_input_ids_attention_mask(ov::InferRequest& decoder,
     // attention_mask [1, 1, 1, 0]
     auto input_ids_data = input_ids_tensor.data<int32_t>();
     std::copy(init_ids.begin(), init_ids.end(), input_ids_data);
-    // std::fill(input_ids_data + init_ids.size(),
-    //           input_ids_data + input_ids_tensor.get_size(),
-    //           static_cast<int32_t>(pad_token));
 
     auto attention_mask_data = attention_mask_tensor.data<ov::float16>();
     std::fill_n(attention_mask_data, init_ids.size(), 1u);
@@ -489,7 +486,7 @@ void preprocess_decoder(std::shared_ptr<ov::Model> model) {
             preprocessor.input("attention_mask").preprocess().convert_element_type();
         } else if (tensor.get_any_name().find("encoder_hidden_states") != std::string::npos) {
             preprocessor.input("encoder_hidden_states").tensor().set_element_type(ov::element::Type_t::f16);
-            preprocessor.input("encoder_hidden_states").preprocess().convert_element_type();
+            preprocessor.input("encoder_hidden_states").preprocess().convert_element_type(ov::element::Type_t::f32);
         } else if (tensor.get_any_name().find("past_key_values") != std::string::npos) {
             preprocessor.input(tensor.get_any_name()).tensor().set_element_type(ov::element::Type_t::f16);
             preprocessor.input(tensor.get_any_name()).preprocess().convert_element_type();
