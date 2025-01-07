@@ -133,13 +133,15 @@ from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
 pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
+pipe.start_chat()
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
 image_data = ov.Tensor(image_data)  
 
 prompt = "Can you describe the image?"
-print(pipe.generate(prompt, image=image_data, max_new_tokens=100))
+result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
+print(result.texts[0])
 ```
 
 ### Run generation using VLMPipeline in C++

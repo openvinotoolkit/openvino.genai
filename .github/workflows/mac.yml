@@ -1,4 +1,4 @@
-name: macOS (12, Python 3.9)
+name: macOS (12, Python 3.10)
 on:
   workflow_dispatch:
   pull_request:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.9'
+  PYTHON_VERSION: '3.10'
   OV_BRANCH: master
   OV_TARBALL: ''
 
@@ -219,7 +219,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --parallel --verbose
 
       - name: Test bindings
         run: |
@@ -284,7 +284,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_openvino_genai -j
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
 
       - name: Test bindings
         run: |
@@ -350,7 +350,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package --parallel --verbose
 
       - name: Build and Install dependencies
         run: |

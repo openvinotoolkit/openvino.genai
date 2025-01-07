@@ -1,9 +1,11 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.32.1
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@753f84db6e0966580eb9eaa74a808213be730631
 numpy<2.0.0; platform_system == "Darwin" and platform_machine == "x86_64"
 onnx==1.17.0
 pytest
+pytest-html
+hf_transfer
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM

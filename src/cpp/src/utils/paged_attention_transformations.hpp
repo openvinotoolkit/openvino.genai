@@ -27,6 +27,8 @@ size_t get_hidden_size(const std::shared_ptr<ov::Model> model);
 
 void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
+void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
