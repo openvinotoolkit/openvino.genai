@@ -62,11 +62,14 @@ def create_text_gen_model(model_path, device, **kwargs):
             model_class = PT_MODEL_CLASSES_MAPPING.get(model_type, PT_MODEL_CLASSES_MAPPING[default_model_type])
             token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
             start = time.perf_counter()
-            if model_type == 'chatglm':
-                model = model_class.from_pretrained(model_path, trust_remote_code=True).to('cpu', dtype=float)
-            else:
-                model = model_class.from_pretrained(model_path, trust_remote_code=True)
-            tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
+            trust_remote_code = False
+            try:
+                model = model_class.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+            except Exception:
+                start = time.perf_counter()
+                trust_remote_code = True
+                model = model_class.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+            tokenizer = token_class.from_pretrained(model_path, trust_remote_code=trust_remote_code)
             end = time.perf_counter()
             from_pretrain_time = end - start
         else:
@@ -131,6 +134,7 @@ def create_image_gen_model(model_path, device, **kwargs):
             model_class = PT_MODEL_CLASSES_MAPPING[model_type]
             start = time.perf_counter()
             pipe = model_class.from_pretrained(model_path)
+            pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             from_pretrain_time = end - start
         else:

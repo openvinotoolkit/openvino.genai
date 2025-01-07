@@ -133,13 +133,15 @@ from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
 pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
+pipe.start_chat()
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
 image_data = ov.Tensor(image_data)  
 
 prompt = "Can you describe the image?"
-print(pipe.generate(prompt, image=image_data, max_new_tokens=100))
+result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
+print(result.texts[0])
 ```
 
 ### Run generation using VLMPipeline in C++
@@ -331,10 +333,14 @@ For more examples check out our [Generative AI workflow](https://docs.openvino.a
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
  
- ### Converting and compressing image generation model from Hugging Face library
+ ### Converting and quantizing speech-to-text model from Hugging Face library
 ```sh
 #Download and convert to OpenVINO whisper-base model
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
+
+#Download, convert and apply int8 static quantization to whisper-base model
+optimum-cli export openvino --trust-remote-code --model openai/whisper-base \
+--quant-mode int8 --dataset librispeech --num-samples 32 whisper-base-int8
 ```
 
 ### Run generation using Whisper Pipeline API in Python

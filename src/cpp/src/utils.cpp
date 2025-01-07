@@ -4,9 +4,11 @@
 #include "utils.hpp"
 
 #include <fstream>
+#include <memory>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
+#include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/slice.hpp"
@@ -201,27 +203,6 @@ ProcessorConfig from_any_map(
 }
 
 /**
- * Split config by core and compile configs
- * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
- * Move this options to `core.set_property` config
- */
-std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties) {
-    const std::vector<std::string> unsupported_by_compile_properties{"ENABLE_MMAP"};
-    ov::AnyMap core_properties;
-    ov::AnyMap compile_properties{properties};
-
-    for (const auto option : unsupported_by_compile_properties) {
-        auto iter = properties.find(option);
-        if (iter != properties.end()) {
-            core_properties[option] = iter->second;
-            compile_properties.erase(option);
-        }
-    }
-
-    return {core_properties, compile_properties};
-};
-
-/**
  * scheduler_config is a separate config for continuous batching pipeline. 
  * This routine splits scheduler_config from plugin_config.
  */
@@ -235,14 +216,6 @@ std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& 
     }
     return {plugin_config, scheduler_config};
 };
-
-std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-    auto [core_properties, compile_properties] = split_core_compile_config(properties);
-    ov::Core core;
-    core.set_property(core_properties);
-    std::filesystem::path openvino_model_name = "openvino_model.xml";
-    return core.read_model((models_path / openvino_model_name).string());
-}
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
@@ -259,23 +232,34 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
     return {new_input_ids, new_attention_mask};
 }
 
-void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
-    auto last_node = model->output(0).get_node()->input_value(0).get_node();
-    ov::Node* matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node);
-    if (matmul) {
-        // we have found matmul, do nothing
-    } else if(auto add = dynamic_cast<ov::op::v1::Add*>(last_node)) {
-        matmul = dynamic_cast<ov::op::v0::MatMul*>(add->input_value(0).get_node());
-    } else if (auto transpose = dynamic_cast<ov::op::v1::Transpose*>(last_node)) {
-        matmul = dynamic_cast<ov::op::v0::MatMul*>(transpose->input_value(0).get_node());
-    } else if (auto multiply = dynamic_cast<ov::op::v1::Multiply*>(last_node)) {
-        if (auto tanh = dynamic_cast<ov::op::v0::Tanh*>(multiply->input_value(0).get_node())) {
-            if (auto divide = dynamic_cast<ov::op::v1::Divide*>(tanh->input_value(0).get_node())) {
-                matmul = dynamic_cast<ov::op::v0::MatMul*>(divide->input_value(0).get_node());
+namespace {
+std::shared_ptr<ov::Node> find_llm_matmul(const std::shared_ptr<ov::Model>& model) {
+    auto last_node = model->output(0).get_node()->input_value(0).get_node_shared_ptr();
+    std::shared_ptr<ov::Node> matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(last_node);
+    // There are several patterns for matmul we are looking for:
+    // Matmul -> Result
+    // Matmul -> Add -> Result
+    // Matmul -> Transpose -> Result
+    // MatMul -> Divide -> Tanh -> Multiply -> Result
+    if (!matmul) {
+        if(auto add = std::dynamic_pointer_cast<ov::op::v1::Add>(last_node)) {
+            matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
+        } else if (auto transpose = std::dynamic_pointer_cast<ov::op::v1::Transpose>(last_node)) {
+            matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
+        } else if (auto multiply = std::dynamic_pointer_cast<ov::op::v1::Multiply>(last_node)) {
+            if (auto tanh = std::dynamic_pointer_cast<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
+                if (auto divide = std::dynamic_pointer_cast<ov::op::v1::Divide>(tanh->input_value(0).get_node_shared_ptr())) {
+                    matmul = std::dynamic_pointer_cast<ov::op::v0::MatMul>(divide->input_value(0).get_node_shared_ptr());
+                }
             }
         }
     }
+    return matmul;
+}
+} // namespace
 
+void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
+    auto matmul = find_llm_matmul(model);
     if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
         auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
         auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-2});
@@ -283,6 +267,19 @@ void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
         auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         auto slice = std::make_shared<ov::op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
         matmul->input(0).replace_source_output(slice);
+    }
+}
+
+void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
+    auto matmul =  ov::genai::utils::find_llm_matmul(model);
+    if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
+        auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
+        indices->set_friendly_name("sampled_tokens_indices");
+        indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+        auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
+        matmul->input(0).replace_source_output(gather);
+        model->add_parameters({indices});
     }
 }
 
@@ -381,6 +378,14 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
     }
 }
 
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front) {
+    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
+    auto new_tensor_data = new_tensor.data<int64_t>();
+    new_tensor_data[0] = add_to_front;
+    std::copy_n(base_tensor.data<int64_t>(), base_tensor.get_size(), new_tensor_data + 1);
+    return new_tensor;
+}
+
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
@@ -417,7 +422,6 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 }
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

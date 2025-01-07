@@ -6,8 +6,8 @@ import openvino
 import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
-from openvino_genai import VLMPipeline
-from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, get_multinomial_all_parameters
+from openvino_genai import VLMPipeline, GenerationConfig
+from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters, get_default_properties
 
 def get_ov_model(cache):
     model_dir = cache.mkdir("tiny-random-minicpmv-2_6")
@@ -19,7 +19,7 @@ def get_ov_model(cache):
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, trust_remote_code=True)
+    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
@@ -49,21 +49,22 @@ def test_vlm_pipeline(cache):
         return False
 
     models_path = get_ov_model(cache)
+    generation_config = GenerationConfig(max_new_tokens=30)
 
     for links in image_links_for_testing:
         images = []
         for link in links:
             images.append(get_image_by_link(link))
 
-        pipe = VLMPipeline(models_path, "CPU")
-        pipe.start_chat()
+        ov_pipe = VLMPipeline(models_path, "CPU")
+        ov_pipe.start_chat()
 
-        pipe.generate(prompts[0], images=images, generation_config=get_greedy(), streamer=streamer)
+        ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
 
         for prompt in prompts[1:]:
-            pipe.generate(prompt, generation_config=get_greedy(), streamer=streamer)
+            ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
 
-        pipe.finish_chat()
+        ov_pipe.finish_chat()
 
 
 @pytest.mark.precommit
@@ -95,7 +96,7 @@ def test_perf_metrics(cache):
     images = [get_image_by_link(image_links[0])]
 
     pipe = VLMPipeline(models_path, "CPU")
-    result = pipe.generate(prompts[0], images=images, generation_config=get_greedy())
+    result = pipe.generate(prompts[0], images=images, generation_config=GenerationConfig(max_new_tokens=30))
 
     perf_metrics = result.perf_metrics
 

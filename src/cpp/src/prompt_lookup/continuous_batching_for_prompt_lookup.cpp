@@ -82,4 +82,5 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
         request->set_num_validated_tokens(max_validation_len);
     }
 }
+
 }

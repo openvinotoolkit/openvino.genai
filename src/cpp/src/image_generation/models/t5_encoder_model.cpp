@@ -16,8 +16,7 @@ std::filesystem::path get_tokenizer_path_by_text_encoder(const std::filesystem::
 
 T5EncoderModel::T5EncoderModel(const std::filesystem::path& root_dir) :
     m_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)) {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model((root_dir / "openvino_model.xml").string());
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
 
 T5EncoderModel::T5EncoderModel(const std::filesystem::path& root_dir,
@@ -31,8 +30,7 @@ T5EncoderModel::T5EncoderModel(const std::string& model,
                                const Tensor& weights,
                                const Tokenizer& tokenizer) :
     m_tokenizer(tokenizer) {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model(model, weights);
+    m_model = utils::singleton_core().read_model(model, weights);
 }
 
 T5EncoderModel::T5EncoderModel(const std::string& model,
@@ -60,9 +58,7 @@ T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length)
 
 T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
-    compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "T5 encoder model");
     m_request = compiled_model.create_infer_request();
     // release the original model
@@ -80,8 +76,13 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
         ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
         size_t min_length = std::min(input_ids.get_size(), input_ids_token.get_size());
 
-        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-        std::copy_n(input_ids_token.data<std::int64_t>(), min_length, input_ids.data<std::int32_t>());
+        if (input_ids.get_element_type() == ov::element::i32) {
+            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int32_t>());
+        } else {
+            std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int64_t>());
+        }
     };
 
     ov::Tensor input_ids = m_request.get_input_tensor();
@@ -114,7 +115,6 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
                                                {current_batch_idx + 1, input_ids.get_shape()[1]}));
 
     // text embeddings
-    m_request.set_tensor("input_ids", input_ids);
     m_request.infer();
 
     return m_request.get_output_tensor(0);

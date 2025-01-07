@@ -28,6 +28,21 @@ enum class GenerationChatInputsType {
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
 };
 
+struct HistoryRemoveManager
+{
+    size_t num_tokens_to_remove_from_kv_cache = 0;
+    size_t trusted_history_length = 0;
+
+    bool does_kv_cache_need_to_update() {
+        return (trusted_history_length > 0 || num_tokens_to_remove_from_kv_cache > 0);
+    }
+
+    void reset() {
+        num_tokens_to_remove_from_kv_cache = 0;
+        trusted_history_length = 0;
+    }
+};
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);
@@ -67,11 +82,7 @@ const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
     auto config_file_path = models_path / config_name;
-    if (std::filesystem::exists(config_file_path)) {
-        return Config{(config_file_path).string()};
-    } else {
-        return Config{};
-    }
+    return std::filesystem::exists(config_file_path) ? Config{config_file_path} : Config{};
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
@@ -84,14 +95,13 @@ ProcessorConfig from_any_map(
 );
 
 
-std::pair<ov::AnyMap, ov::AnyMap> split_core_compile_config(const ov::AnyMap& properties);
 std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties);
-
-std::shared_ptr<ov::Model> read_model_with_config(const std::filesystem::path& models_path, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
-void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
+void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
+
+void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 ov::Core singleton_core();
 
@@ -103,6 +113,8 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);
 
 void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
+
+ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 

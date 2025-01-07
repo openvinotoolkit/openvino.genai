@@ -361,22 +361,22 @@ class ContinuousBatchingPipeline:
     This class is used for generation with LLMs with continuous batchig
     """
     @typing.overload
-    def __init__(self, models_path: str, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
-    def __init__(self, models_path: str, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
-    def add_request(self, request_id: int, input_ids: openvino._pyopenvino.Tensor, sampling_params: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: int, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: int, prompt: str, sampling_params: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], sampling_params: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
+    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: list[str], sampling_params: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -522,23 +522,27 @@ class FluxTransformer2DModel:
 class GenerationConfig:
     """
     
-        Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-        and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+        Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+        and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
         be used while greedy and beam search parameters will not affect decoding at all.
     
-        Parameters: 
+        Parameters:
         max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                        max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
         max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
         ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
         eos_token_id:  token_id of <eos> (end of sentence)
-        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
         stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
         include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
         stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+    
+        repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+        presence_penalty: reduces absolute log prob if the token was generated at least once.
+        frequency_penalty: reduces absolute log prob as many times as the token was generated.
     
         Beam search specific parameters:
         num_beams:         number of beams for beam search. 1 disables beam search.
@@ -550,8 +554,8 @@ class GenerationConfig:
             length_penalty < 0.0 encourages shorter sequences.
         num_return_sequences: the number of sequences to return for grouped beam search decoding.
         no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-        stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-            "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+        stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+            "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
             "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
             "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
     
@@ -560,7 +564,7 @@ class GenerationConfig:
         top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-        repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+        num_return_sequences: the number of sequences to generate from a single prompt.
     """
     adapters: AdapterConfig | None
     assistant_confidence_threshold: float
@@ -605,11 +609,15 @@ class GenerationConfig:
         ...
     def is_greedy_decoding(self) -> bool:
         ...
+    def is_multinomial(self) -> bool:
+        ...
     def is_prompt_lookup(self) -> bool:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
-    def update_generation_config(self, config_map: dict[str, openvino._pyopenvino.OVAny]) -> None:
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+    def validate(self) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -689,6 +697,7 @@ class GenerationResult:
     """
     m_generation_ids: list[str]
     m_scores: list[float]
+    m_status: GenerationStatus
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
@@ -822,7 +831,7 @@ class Image2ImagePipeline:
         ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
-    def set_generation_config(self, generation_config: ImageGenerationConfig) -> None:
+    def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
@@ -923,7 +932,7 @@ class InpaintingPipeline:
         ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
-    def set_generation_config(self, generation_config: ImageGenerationConfig) -> None:
+    def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
@@ -951,23 +960,27 @@ class LLMPipeline:
             :rtype: DecodedResults, EncodedResults, str
          
          
-            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
             be used while greedy and beam search parameters will not affect decoding at all.
         
-            Parameters: 
+            Parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
-            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
             stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
             stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+            presence_penalty: reduces absolute log prob if the token was generated at least once.
+            frequency_penalty: reduces absolute log prob as many times as the token was generated.
         
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -979,8 +992,8 @@ class LLMPipeline:
                 length_penalty < 0.0 encourages shorter sequences.
             num_return_sequences: the number of sequences to return for grouped beam search decoding.
             no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
         
@@ -989,7 +1002,7 @@ class LLMPipeline:
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+            num_return_sequences: the number of sequences to generate from a single prompt.
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
@@ -1032,23 +1045,27 @@ class LLMPipeline:
             :rtype: DecodedResults, EncodedResults, str
          
          
-            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
             be used while greedy and beam search parameters will not affect decoding at all.
         
-            Parameters: 
+            Parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
-            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
             stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
             stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+            presence_penalty: reduces absolute log prob if the token was generated at least once.
+            frequency_penalty: reduces absolute log prob as many times as the token was generated.
         
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -1060,8 +1077,8 @@ class LLMPipeline:
                 length_penalty < 0.0 encourages shorter sequences.
             num_return_sequences: the number of sequences to return for grouped beam search decoding.
             no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
         
@@ -1070,7 +1087,7 @@ class LLMPipeline:
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+            num_return_sequences: the number of sequences to generate from a single prompt.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -1343,15 +1360,18 @@ class Scheduler:
           FLOW_MATCH_EULER_DISCRETE
         
           PNDM
+        
+          EULER_ANCESTRAL_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
         DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
         EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
         FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
         LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
         PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>}
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -1417,7 +1437,7 @@ class StopCriteria:
     """
     
         StopCriteria controls the stopping condition for grouped beam search.
-        
+    
         The following values are possible:
             "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
             "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
@@ -1600,7 +1620,7 @@ class Text2ImagePipeline:
         ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
-    def set_generation_config(self, generation_config: ImageGenerationConfig) -> None:
+    def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
@@ -1850,9 +1870,9 @@ class VLMPipeline:
         ...
     def get_tokenizer(self) -> Tokenizer:
         ...
-    def set_chat_template(self, new_template: str) -> None:
+    def set_chat_template(self, chat_template: str) -> None:
         ...
-    def set_generation_config(self, new_config: GenerationConfig) -> None:
+    def set_generation_config(self, config: GenerationConfig) -> None:
         ...
     def start_chat(self, system_message: str = '') -> None:
         ...
@@ -1945,6 +1965,9 @@ class WhisperGenerationConfig:
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
     
+        :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+        :type prev_sot_token_id: int
+    
         :param is_multilingual:
         :type is_multilingual: bool
     
@@ -1973,10 +1996,34 @@ class WhisperGenerationConfig:
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
+    
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+        window. Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+        Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type hotwords: Optional[str]
     """
     begin_suppress_tokens: list[int]
     decoder_start_token_id: int
     eos_token_id: int
+    hotwords: str | None
+    initial_prompt: str | None
     is_multilingual: bool
     lang_to_id: dict[str, int]
     language: str | None
@@ -1985,6 +2032,7 @@ class WhisperGenerationConfig:
     max_new_tokens: int
     no_timestamps_token_id: int
     pad_token_id: int
+    prev_sot_token_id: int
     return_timestamps: bool
     suppress_tokens: list[int]
     task: str | None
@@ -1999,6 +2047,8 @@ class WhisperGenerationConfig:
     def __init__(self, **kwargs) -> None:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
+        ...
+    def update_generation_config(self, **kwargs) -> None:
         ...
 class WhisperPerfMetrics(PerfMetrics):
     """
@@ -2077,6 +2127,9 @@ class WhisperPipeline:
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
         
+            :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+            :type prev_sot_token_id: int
+        
             :param is_multilingual:
             :type is_multilingual: bool
         
@@ -2105,6 +2158,28 @@ class WhisperPipeline:
                                then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
+        
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+            window. Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+            Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type hotwords: Optional[str]
         """
     def get_generation_config(self) -> WhisperGenerationConfig:
         ...

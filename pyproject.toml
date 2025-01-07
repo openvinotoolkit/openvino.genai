@@ -51,7 +51,7 @@ options = {"BUILD_TOKENIZERS" = "OFF"}
 
 [build-system]
 requires = [
-    "py-build-cmake==0.3.3",
+    "py-build-cmake==0.3.4",
     "openvino~=2025.0.0.0.dev",
     "pybind11-stubgen==2.5.1",
     "cmake~=3.23.0"

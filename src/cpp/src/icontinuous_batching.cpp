@@ -1,40 +1,41 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "continuous_batching_impl_interface.hpp"
+#include "icontinuous_batching.hpp"
 
 namespace ov::genai {
 
-GenerationConfig ContinuousBatchingPipeline::ImplInterface::get_config() const {
+GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
 }
 
-PipelineMetrics ContinuousBatchingPipeline::ImplInterface::get_metrics() const {
+PipelineMetrics ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_metrics() const {
     return m_pipeline_metrics;
 }
 
-Tokenizer ContinuousBatchingPipeline::ImplInterface::get_tokenizer() {
+Tokenizer ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_tokenizer() {
     return m_tokenizer;
 }
 
-void ContinuousBatchingPipeline::ImplInterface::start_chat(const std::string& system_message) {
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
     m_is_chat_conversation = true;
 };
 
-void ContinuousBatchingPipeline::ImplInterface::finish_chat() {
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
 };
 
 std::vector<GenerationResult>
-ContinuousBatchingPipeline::ImplInterface::generate(
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
     std::vector<ov::Tensor> input_ids;
+
     static ManualTimer timer("tokenize");
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
@@ -47,13 +48,15 @@ ContinuousBatchingPipeline::ImplInterface::generate(
         timer.end();
     } else {
         input_ids.reserve(prompts.size());
+        timer.start();
         for (const std::string& prompt : prompts) {
-            timer.start();
             input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
-            timer.end();
         }
+        timer.end();
     }
+
     std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
+
     std::vector<GenerationResult> decoded;
     decoded.reserve(encoded.size());
     for (EncodedGenerationResult& res : encoded) {
@@ -65,6 +68,7 @@ ContinuousBatchingPipeline::ImplInterface::generate(
                 m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
             }
         }
+
         decoded.push_back(GenerationResult{
             res.m_request_id,
             std::move(generated),
@@ -72,6 +76,7 @@ ContinuousBatchingPipeline::ImplInterface::generate(
             res.m_status
         });
     }
+
     return decoded;
 }
 }

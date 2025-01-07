@@ -119,6 +119,13 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 } // namespace
 
 void init_continuous_batching_pipeline(py::module_& m) {
+    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
+        .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
+        .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
+        .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
+        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
+        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
+
     py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
@@ -130,6 +137,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 r.m_generation_ids = generation_ids;
             })
         .def_readwrite("m_scores", &GenerationResult::m_scores)
+        .def_readwrite("m_status", &GenerationResult::m_status)
         .def("__repr__",
             [](const GenerationResult &r) -> py::str {
                 std::stringstream stream;
@@ -147,13 +155,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores);
-
-    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
-        .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
-        .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
-        .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
-        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
-        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
 
     py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
         .value("NONE", ov::genai::GenerationFinishReason::NONE)
@@ -212,7 +213,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
-        .def(py::init([](const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config), pyutils::properties_to_any_map(tokenizer_plugin_config));
         }),
@@ -222,35 +223,34 @@ void init_continuous_batching_pipeline(py::module_& m) {
         py::arg("properties") = ov::AnyMap({}),
         py::arg("tokenizer_properties") = ov::AnyMap({}))
 
-        .def(py::init([](const std::string& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::properties_to_any_map(plugin_config));
+            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"),
         py::arg("tokenizer"),
         py::arg("scheduler_config"),
-        py::arg("device"),
-        py::arg("properties") = ov::AnyMap({}))
+        py::arg("device"))
 
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
-        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("sampling_params"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("sampling_params"))
+        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("generation_config"))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def(
             "generate",
             py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
             py::arg("input_ids"),
-            py::arg("sampling_params"),
+            py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         )
         .def(
             "generate",
             py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
             py::arg("prompts"),
-            py::arg("sampling_params"),
+            py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         );
 }
