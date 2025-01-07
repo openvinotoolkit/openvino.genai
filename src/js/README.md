@@ -24,7 +24,7 @@ OpenVINO GenAI Node.js bindings can be built as an extra module during the OpenV
 1. Configure CMake with OpenVINO extra modules:
    ```sh
    cmake -DOPENVINO_EXTRA_MODULES=*absolute path to genai repository directory* -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
-         -DCPACK_GENERATOR=NPM -DENABLE_JS=ON -UTBB* -DENABLE_SYSTEM_TBB=OFF \
+         -DCPACK_GENERATOR=NPM \
          -DENABLE_PYTHON=OFF \
          -DENABLE_WHEEL=OFF \
          -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
