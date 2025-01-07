@@ -90,7 +90,8 @@ public:
                     ov::Tensor key_dst_cache_roi(m_key_cache[decoder_layer_id], key_dst_start_roi, key_dst_end_roi);
 
                     key_src_cache_roi.copy_to(key_dst_cache_roi);
-                    if (m_value_cache[decoder_layer_id].get_element_type() != ov::element::u4 || m_value_cache[decoder_layer_id].get_element_type() != ov::element::i4)  {
+                    const auto& value_cache_prec = m_value_cache[decoder_layer_id].get_element_type();
+                    if (value_cache_prec != ov::element::u4 && value_cache_prec != ov::element::i4)  {
                         ov::Tensor value_src_cache_roi(m_value_cache[decoder_layer_id], value_src_start_roi, value_src_end_roi);
                         ov::Tensor value_dst_cache_roi(m_value_cache[decoder_layer_id], value_dst_start_roi, value_dst_end_roi);
                         value_src_cache_roi.copy_to(value_dst_cache_roi);
