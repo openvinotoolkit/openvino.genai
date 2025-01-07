@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: llm_bench Python Test
+name: GenAI tools
 
 on:
   workflow_dispatch:
@@ -46,7 +46,8 @@ jobs:
         commit_packages_to_provide: wheels
         revision: latest_available_commit
 
-  build:
+  llm_bench:
+    name: 'LLM bench tests'
     defaults:
       run:
         shell: bash
@@ -60,7 +61,6 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}
       LLM_BENCH_PYPATH: ${{ github.workspace }}/tools/llm_bench
-      WWB_PATH: ${{ github.workspace }}/tools/who_what_benchmark
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -70,6 +70,12 @@ jobs:
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Lint with flake8
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 pytest black
+          # stop the build if there are Python syntax errors or undefined names
+          python -m flake8 ${{ env.LLM_BENCH_PYPATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
       - name: Download OpenVINO package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
@@ -78,59 +84,42 @@ jobs:
           merge-multiple: true
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install flake8 pytest black
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
-      - name: Lint with flake8
-        run: |
-          # stop the build if there are Python syntax errors or undefined names
-          python -m flake8 ${{ env.LLM_BENCH_PYPATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
-          python -m flake8 ${{ env.WWB_PATH }} --config=${{ env.WWB_PATH }}/setup.cfg
-      - name: Create code style diff for samples
-        if: failure()
-        run: |
-          python -m black -l 160 -S ${{ env.LLM_BENCH_PYPATH }}/
-          git diff > llm.bench_diff.diff
-      - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
-        if: failure()
-        with:
-          name: llm.bench_diff
-          path: llm.bench_diff.diff
-      - name: Test native pytorch model on Linux
+      - name: Test native pytorch model
         run: |
           git clone --depth 1 https://huggingface.co/katuni4ka/tiny-random-qwen
           python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt -ic 20
           rm -rf tiny-random-qwen
         env:
           GIT_LFS_SKIP_SMUDGE: 0
-      - name: Test tiny-random-baichuan2 on Linux Optimum Intel
+      - name: Test tiny-random-baichuan2 Optimum Intel
         run: |
           optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1 --optimum -ic 10
           rm -rf ./ov_models/tiny-random-baichuan2
-      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux Optimum Intel
+      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov Optimum Intel
         run: |
           huggingface-cli download OpenVINO/LCM_Dreamshaper_v7-int8-ov --local-dir ov_models/lcm_dreamshaper_v7
           python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum --num_steps 4
-      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux with GenAI
+      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov with GenAI
         run: |
           python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --num_steps 4
-      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov on Linux with GenAI and LoRA
+      - name: Test OpenVINO/LCM_Dreamshaper_v7-int8-ov with GenAI and LoRA
         run: |
           wget -O ./ov_models/soulcard.safetensors https://civitai.com/api/download/models/72591
           python ./tools/llm_bench/benchmark.py -m ./ov_models/lcm_dreamshaper_v7/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
           rm -rf ./ov_models/lcm_dreamshaper_v7/
-      - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Deconding mode on Linux
+      - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Decoding via GenAI
         run: |
           optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format fp16 ov_models/TinyLlama-1.1B-Chat-v1.0/FP16
           optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format int8 ov_models/TinyLlama-1.1B-Chat-v1.0/INT8
           python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --assistant_confidence_threshold 0.4 -ic 20
           python ./tools/llm_bench/benchmark.py -m ./ov_models/TinyLlama-1.1B-Chat-v1.0/FP16/ --draft_model ./ov_models/TinyLlama-1.1B-Chat-v1.0/INT8/ -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --num_assistant_tokens 5 -ic 20
           rm -rf ov_models/TinyLlama-1.1B-Chat-v1.0
-      - name: Test whisper-tiny on Linux
+      - name: Test whisper-tiny via GenAI
         run: |
           GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch main --single-branch https://huggingface.co/datasets/facebook/multilingual_librispeech
           cd multilingual_librispeech
@@ -143,60 +132,64 @@ jobs:
           python ./tools/llm_bench/benchmark.py -m ./ov_models/whisper-tiny --media multilingual_librispeech/data/mls_polish/train/audio/3283_1447_000/3283_1447_000000.flac -d cpu -n 1
           rm -rf ./ov_models/whisper-tiny
           rm -rf multilingual_librispeech
-      - name: Text InternVL2-1B on Linux
+      - name: Text InternVL2-1B via GenAI
         run: |
           optimum-cli export openvino --model OpenGVLab/InternVL2-1B ./ov_models/internvl2-1B --task image-text-to-text --trust-remote-code
           python ./tools/llm_bench/benchmark.py -m ./ov_models/internvl2-1B --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" -ic 20
           python ./tools/llm_bench/benchmark.py -m ./ov_models/internvl2-1B --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" -ic 20 --optimum
           rm -rf ./ov_models/internvl2-1B
-      - name: WWB Tests
-        run: |
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
-          python -m pytest -v ${{ env.WWB_PATH }}/tests
-  stateful:
+
+  wwb:
+    name: 'WWB tests'
     defaults:
       run:
         shell: bash
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
     needs: [ openvino_download ]
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}
-      LLM_BENCH_PYPATH: ${{ github.workspace }}/tools/llm_bench
       WWB_PATH: ${{ github.workspace }}/tools/who_what_benchmark
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+      - name: Lint with flake8
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 pytest black
+          # stop the build if there are Python syntax errors or undefined names
+          python -m flake8 ${{ env.WWB_PATH }} --config=${{ env.WWB_PATH }}/setup.cfg
       - name: Download OpenVINO package
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
-      - name: Test stateful
+      - name: Install dependencies
         run: |
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          python ${{ env.LLM_BENCH_PYPATH }}/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ${{ env.SRC_DIR }} --stateful
-          grep beam_idx ${{ env.SRC_DIR }}/pytorch/dldt/FP32/openvino_model.xml
+          python -m pip install -r ${{ env.WWB_PATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |
-          pip install pytest
-          pip install git+https://github.com/huggingface/optimum-intel.git
-          GIT_CLONE_PROTECTION_ACTIVE=false PIP_PRE=1 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly pip install ${{ env.WWB_PATH }}
+          python -m pip install -v ${{ env.WWB_PATH }}
           python -m pytest -v ${{ env.WWB_PATH }}/tests
 
   Overall_Status:
     name: ci/gha_overall_status_llm_bench
-    needs: [openvino_download, build, stateful]
+    needs: [openvino_download, llm_bench, wwb]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

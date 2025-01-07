@@ -21,13 +21,13 @@ namespace {
 
 /*
 * NPU reads some properties from the config file, but when LLMPipeline is initialized
-* from the model_str and weights_tensor, there are not files.
+* from the model_str and weights_tensor, there are no files.
 * In the later case ModelDesc is stored in properties.
 * This function pops ModelDescr from the the properties and returns a pair of updated properties and ModelDescr.
 */
-std::pair<ov::AnyMap, ov::genai::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties) {
+std::pair<ov::AnyMap, ov::genai::static_llm::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties) {
     ov::AnyMap main_properties = properties;
-    ov::genai::ModelConfigDesc model_descr;
+    ov::genai::static_llm::ModelConfigDesc model_descr;
 
     auto pop_property = [](ov::AnyMap& orig_propertis, const std::string& key, auto& value) {
         if (orig_propertis.find(key) != orig_propertis.end()) {
@@ -110,7 +110,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, tokenizer, device, properties);
+        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -152,7 +152,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(models_path, device, properties);
+        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, device, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -212,7 +212,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         // This will convert from AnyMap to ModelDesc.
         auto [device_properties, model_descr] = split_model_descr(properties);
 
-        m_pimpl = std::make_unique<StaticLLMPipeline>(
+        m_pimpl = static_llm::LLMPipelineFactory::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
             model_descr,
             tokenizer,

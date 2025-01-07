@@ -88,7 +88,10 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     list(itertools.product(OV_IMAGE_MODELS,
-                           ["image-to-image", "text-to-image", "image-inpainting"])),
+                           ["image-to-image",
+                            "text-to-image",
+                            "image-inpainting"
+                            ])),
 )
 def test_image_model_genai(model_id, model_type):
     with tempfile.TemporaryDirectory() as temp_dir:

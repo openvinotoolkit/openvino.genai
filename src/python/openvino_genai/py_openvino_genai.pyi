@@ -364,7 +364,7 @@ class ContinuousBatchingPipeline:
     def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
-    def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
     def add_request(self, request_id: int, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
@@ -697,6 +697,7 @@ class GenerationResult:
     """
     m_generation_ids: list[str]
     m_scores: list[float]
+    m_status: GenerationStatus
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
