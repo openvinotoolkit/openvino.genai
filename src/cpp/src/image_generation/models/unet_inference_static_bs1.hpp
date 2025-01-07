@@ -41,8 +41,7 @@ public:
         ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
-        for (int i = 0; i < m_native_batch_size; i++)
-        {
+        for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model.create_infer_request();
         }
     }

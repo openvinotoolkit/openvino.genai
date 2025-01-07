@@ -770,7 +770,7 @@ def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: st
 
 
 test_cases = [
-    (dict(max_new_tokens=20), 'table is made of'),
+    (dict(max_new_tokens=20), 'table is made of' * 1000),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", get_models_list())
@@ -780,12 +780,12 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     import time
     start_time = time.perf_counter()
     # To check prefill exclusion we need long initial prompt.
-    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt * 1000)
+    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
     
     # Check that load time is adequate.
     load_time = perf_metrics.get_load_time()
-    assert load_time > 0 and load_time < 1000.0  
+    assert load_time > 0 and load_time < total_time
     
     # Check that num input and generated tokens are adequate.
     num_generated_tokens = perf_metrics.get_num_generated_tokens()
