@@ -38,8 +38,6 @@ def get_whisper_models_list(tiny_only=False):
     if tiny_only:
         model_ids = ["openai/whisper-tiny"]
 
-    pytest.selected_model_ids = None
-
     if pytest.selected_model_ids:
         model_ids = [
             model_id
