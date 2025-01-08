@@ -190,17 +190,11 @@ def run_pipeline_with_ref(
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
 
-    hf_result, genai_result = None, None
     for _sample in sample:
         genai_result = run_genai(genai_pipe, _sample, generation_config)
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
 
         compare_results(hf_result, genai_result)
-
-    assert hf_result is not None
-    assert genai_result is not None
-
-    return hf_result, genai_result
 
 
 def compare_results(hf_result, genai_result):
@@ -455,17 +449,23 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
 )
 @pytest.mark.precommit
 def test_longform_audio(model_descr, test_sample):
+    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+
     streamer_result = []
 
-    hf_result, genai_result = run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
-        sample=test_sample,
-        generation_config=GenerationConfig(
-            return_timestamps=True,
-            streamer=lambda x: streamer_result.append(x),
-        ),
+    genai_result = run_genai(
+        genai_pipe,
+        test_sample,
+        config=GenerationConfig(streamer=lambda x: streamer_result.append(x)),
     )
+
+    hf_result = run_huggingface(
+        hf_pipe,
+        test_sample,
+        config=GenerationConfig(return_timestamps=True),
+    )
+
+    compare_results(hf_result, genai_result)
 
     assert "".join(streamer_result) == hf_result["text"]
 
