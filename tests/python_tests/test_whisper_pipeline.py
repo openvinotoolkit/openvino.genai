@@ -15,6 +15,8 @@ import typing
 import numpy as np
 import os
 import pathlib
+import importlib.metadata as metadata
+from packaging.version import parse
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -164,8 +166,7 @@ def get_samples_from_dataset(
 
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
-    ds = ds.skip(8)
-    ds = ds.take(1)
+    ds = ds.take(length)
 
     return [x["audio"]["array"] for x in ds]
 
@@ -193,8 +194,13 @@ def compare_results(hf_result, genai_result):
     assert genai_result.texts[0] == hf_result["text"]
 
     # transformers 4.47 updated return_timestamps implementation
-    # enable once genai implementation aligned with trasformets. Ticket 160205.
-    return
+    # remove once genai implementation aligned with transformers. Ticket 160205.
+    transformers_version_greater_4_47 = parse(
+        metadata.version("transformers")
+    ) >= parse("4.47.0")
+
+    if transformers_version_greater_4_47:
+        return
 
     if "chunks" not in hf_result and genai_result.chunks is None:
         return
@@ -448,6 +454,7 @@ def test_longform_audio(model_descr, test_sample):
     genai_result = run_genai(
         genai_pipe,
         test_sample,
+        config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
         streamer=lambda x: streamer_result.append(x),
     )
 
