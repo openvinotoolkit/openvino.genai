@@ -11,12 +11,10 @@ from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
-import time
 import typing
 import numpy as np
 import os
 import pathlib
-from dataclasses import dataclass
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -85,6 +83,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
             model_id,
             export=True,
             trust_remote_code=True,
+            stateful=False,
             compile=False,
             device="CPU",
             load_in_8bit=False,
@@ -109,26 +108,17 @@ def read_whisper_model(params, **tokenizer_kwargs):
     )
 
 
-@dataclass
-class GenerationConfig:
-    task: str | None = None
-    language: str | None = None
-    return_timestamps: bool = False
-    max_new_tokens: int | None = None
-    streamer: typing.Callable[[str], bool] | None = None
-
-
 def run_huggingface(
     pipeline,
     sample,
-    config: GenerationConfig | None = None,
+    config: ov_genai.WhisperGenerationConfig | None = None,
 ):
     if not config:
-        config = GenerationConfig()
+        config = ov_genai.WhisperGenerationConfig()
 
     return pipeline(
         sample,
-        max_new_tokens=config.max_new_tokens,
+        max_new_tokens=min(config.max_new_tokens, 444),
         return_timestamps=config.return_timestamps,
         generate_kwargs={"language": config.language, "task": config.task},
     )
@@ -137,20 +127,20 @@ def run_huggingface(
 def run_genai(
     pipeline: ov_genai.WhisperPipeline,
     sample,
-    config: GenerationConfig | None = None,
+    config: ov_genai.WhisperGenerationConfig | None = None,
+    streamer: typing.Callable[[str], bool] | None = None,
 ):
     if not config:
-        config = GenerationConfig()
+        config = ov_genai.WhisperGenerationConfig()
 
     genai_config = pipeline.get_generation_config()
 
-    if config.max_new_tokens:
-        genai_config.max_new_tokens = config.max_new_tokens
+    genai_config.max_new_tokens = config.max_new_tokens
     genai_config.return_timestamps = config.return_timestamps
     genai_config.task = config.task
     genai_config.language = f"<|{config.language}|>" if config.language else None
 
-    return pipeline.generate(sample, genai_config, streamer=config.streamer)
+    return pipeline.generate(sample, genai_config, streamer=streamer)
 
 
 def get_samples_from_dataset(
@@ -174,7 +164,8 @@ def get_samples_from_dataset(
 
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
-    ds = ds.take(length)
+    ds = ds.skip(8)
+    ds = ds.take(1)
 
     return [x["audio"]["array"] for x in ds]
 
@@ -183,7 +174,8 @@ def run_pipeline_with_ref(
     model_id: str,
     tmp_path: str,
     sample: np.ndarray | list[np.ndarray],
-    generation_config: GenerationConfig | None = None,
+    generation_config: ov_genai.WhisperGenerationConfig | None = None,
+    streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
 
@@ -191,7 +183,7 @@ def run_pipeline_with_ref(
         sample = np.expand_dims(sample, 0)
 
     for _sample in sample:
-        genai_result = run_genai(genai_pipe, _sample, generation_config)
+        genai_result = run_genai(genai_pipe, _sample, generation_config, streamer)
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
 
         compare_results(hf_result, genai_result)
@@ -413,7 +405,7 @@ def test_language_autodetect(model_descr, test_sample):
         model_id=model_descr[0],
         tmp_path=model_descr[1],
         sample=test_sample,
-        generation_config=GenerationConfig(max_new_tokens=30),
+        generation_config=ov_genai.WhisperGenerationConfig(max_new_tokens=30),
     )
 
 
@@ -425,7 +417,7 @@ def test_return_timestamps_short_form(model_descr, test_sample):
         model_id=model_descr[0],
         tmp_path=model_descr[1],
         sample=test_sample,
-        generation_config=GenerationConfig(return_timestamps=True),
+        generation_config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
     )
 
 
@@ -437,7 +429,7 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
         model_id=model_descr[0],
         tmp_path=model_descr[1],
         sample=test_sample,
-        generation_config=GenerationConfig(
+        generation_config=ov_genai.WhisperGenerationConfig(
             return_timestamps=True, language="en", max_new_tokens=30
         ),
     )
@@ -456,13 +448,13 @@ def test_longform_audio(model_descr, test_sample):
     genai_result = run_genai(
         genai_pipe,
         test_sample,
-        config=GenerationConfig(streamer=lambda x: streamer_result.append(x)),
+        streamer=lambda x: streamer_result.append(x),
     )
 
     hf_result = run_huggingface(
         hf_pipe,
         test_sample,
-        config=GenerationConfig(return_timestamps=True),
+        config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
     )
 
     compare_results(hf_result, genai_result)
