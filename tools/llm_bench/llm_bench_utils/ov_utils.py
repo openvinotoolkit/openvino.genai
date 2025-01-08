@@ -421,7 +421,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
 
     scheduler_type = data.get("scheduler", ["", ""])[1]
     if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "LMSDiscreteScheduler", "EulerDiscreteScheduler",
-                               "FlowMatchEulerDiscreteScheduler"]):
+                               "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
         scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
         log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
 
@@ -701,7 +701,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
                 word = text[self.print_len:]
                 self.tokens_cache = []
                 self.print_len = 0
-            elif len(text) >= 3 and text[-3:] == chr(65533):
+            elif len(text) >= 3 and text[-1] == chr(65533):
                 # Don't print incomplete text.
                 pass
             elif len(text) > self.print_len:

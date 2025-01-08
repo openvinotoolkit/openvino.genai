@@ -25,10 +25,10 @@ DEFAULT_IMAGE_HEIGHT = 512
 stable_diffusion_hook = StableDiffusionHook()
 
 
-def collects_input_args(image_param, model_type, model_name, infer_count=None, callback=None):
+def collects_input_args(image_param, model_type, model_name, infer_count=None, height=None, width=None, callback=None):
     input_args = {}
-    input_args["width"] = image_param.get('width', DEFAULT_IMAGE_WIDTH)
-    input_args["height"] = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
+    input_args["width"] = image_param.get('width', width or DEFAULT_IMAGE_WIDTH)
+    input_args["height"] = image_param.get('height', height or DEFAULT_IMAGE_HEIGHT)
     if infer_count is None:
         input_args["num_inference_steps"] = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in model_name else LCM_DEFAULT_INFERENCE_STEPS)
     else:
@@ -60,7 +60,7 @@ def collects_input_args(image_param, model_type, model_name, infer_count=None, c
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["infer_count"])
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"], args.get("height"), args.get("width"))
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:
@@ -84,7 +84,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     start = time.perf_counter()
-    res = pipe(input_text_list, **input_args).images
+    res = pipe(input_text_list, **input_args, num_images_per_prompt=2).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -123,7 +123,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
 def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["infer_count"], callback)
+    input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"], args.get("height"), args.get("width"), callback)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
     if 'guidance_scale' in input_args:

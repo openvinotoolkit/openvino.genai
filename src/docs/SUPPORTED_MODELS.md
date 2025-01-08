@@ -217,6 +217,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
         <ul>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-0.9"><code>stabilityai/stable-diffusion-xl-base-0.9</code></a></li>
           <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"><code>stabilityai/stable-diffusion-xl-base-1.0</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/sdxl-turbo"><code>stabilityai/sdxl-turbo</code></a></li>
         </ul>
       </td>
     </tr>
@@ -242,6 +243,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
           <li><a href="https://huggingface.co/Freepik/flux.1-lite-8B-alpha"><code>Freepik/flux.1-lite-8B-alpha</code></a></li>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-dev"><code>black-forest-labs/FLUX.1-dev</code></a></li>
           <li><a href="https://huggingface.co/shuttleai/shuttle-3-diffusion"><code>shuttleai/shuttle-3-diffusion</code></a></li>
+          <li><a href="https://huggingface.co/shuttleai/shuttle-3.1-aesthetic"><code>shuttleai/shuttle-3.1-aesthetic</code></a></li>
+          <li><a href="https://huggingface.co/Shakker-Labs/AWPortrait-FL"><code>Shakker-Labs/AWPortrait-FL</code></a></li>
         </ul>
       </td>
     </tr>
