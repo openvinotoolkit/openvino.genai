@@ -127,7 +127,7 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor decode(ov::Tensor latent, MicroSeconds& infer_duration);
+    ov::Tensor decode(ov::Tensor latent, float& infer_duration);
 
     ov::Tensor encode(ov::Tensor image, std::shared_ptr<Generator> generator);
 

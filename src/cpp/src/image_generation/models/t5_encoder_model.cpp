@@ -75,7 +75,7 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt,
                                  const std::string& neg_prompt,
                                  bool do_classifier_free_guidance,
                                  int max_sequence_length,
-                                 MicroSeconds& infer_duration) {
+                                 float& infer_duration) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
@@ -125,8 +125,7 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt,
     // text embeddings
     const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
-    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    infer_duration = MicroSeconds(infer_ms);
+    infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
     return m_request.get_output_tensor(0);
 }

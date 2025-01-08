@@ -14,7 +14,7 @@ public:
     virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) = 0;
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) = 0;
     virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters) = 0;
-    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, MicroSeconds& infer_duration) = 0;
+    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, float& infer_duration) = 0;
 
     // utility function to resize model given optional dimensions.
     static void reshape(std::shared_ptr<ov::Model> model,

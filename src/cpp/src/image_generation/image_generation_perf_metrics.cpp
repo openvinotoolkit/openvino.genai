@@ -94,8 +94,16 @@ float ImageGenerationPerfMetrics::get_inference_total_duration() {
     for (auto encoder = encoder_inference_duration.begin(); encoder != encoder_inference_duration.end(); encoder++) {
         total_duration += encoder->second;
     }
-
+    // Return milliseconds
     return total_duration / 1000.0f;
+}
+
+float ImageGenerationPerfMetrics::get_load_time() {
+    return load_time;
+}
+
+float ImageGenerationPerfMetrics::get_generate_duration() {
+    return generate_duration;
 }
 }  // namespace genai
 }  // namespace ov

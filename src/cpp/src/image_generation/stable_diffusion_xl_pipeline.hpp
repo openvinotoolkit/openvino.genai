@@ -147,7 +147,7 @@ public:
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        MicroSeconds infer_duration;
+        float infer_duration;
 
         std::vector<float> time_ids = {static_cast<float>(generation_config.width),
                                        static_cast<float>(generation_config.height),
@@ -182,9 +182,9 @@ public:
                                                                          negative_prompt_1_str,
                                                                          batch_size_multiplier > 1,
                                                                          infer_duration);
-            m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration.count();
+            m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration / 1000.0f;
             m_clip_text_encoder->infer(prompt_2_str, negative_prompt_2_str, batch_size_multiplier > 1, infer_duration);
-            m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration.count();
+            m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration / 1000.0f;
 
             // prompt_embeds = prompt_embeds.hidden_states[-2]
             ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
@@ -194,9 +194,9 @@ public:
         } else {
             ov::Tensor add_text_embeds_positive =
                 m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, false, infer_duration);
-            m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration.count();
+            m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration / 1000.0f;
             m_clip_text_encoder->infer(prompt_2_str, negative_prompt_2_str, false, infer_duration);
-            m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration.count();
+            m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration / 1000.0f;
 
             ov::Tensor encoder_hidden_states_1_positive = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
             ov::Tensor encoder_hidden_states_2_positive = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);

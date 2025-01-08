@@ -126,7 +126,7 @@ ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::
 }
 
 ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
-    MicroSeconds infer_duration;
+    float infer_duration;
     return m_impl->decode(latent, infer_duration);
 }
 

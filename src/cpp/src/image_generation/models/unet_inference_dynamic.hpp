@@ -31,7 +31,7 @@ public:
         adapter_controller.apply(m_request, adapters);
     }
 
-    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, MicroSeconds& infer_duration) override
+    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep, float& infer_duration) override
     {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first. Cannot infer non-compiled model");
 
@@ -39,8 +39,7 @@ public:
         m_request.set_tensor("timestep", timestep);
         const auto infer_start = std::chrono::steady_clock::now();
         m_request.infer();
-        const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-        infer_duration = MicroSeconds(infer_ms);
+        infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
         return m_request.get_output_tensor();
     }

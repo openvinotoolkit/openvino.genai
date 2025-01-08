@@ -190,7 +190,7 @@ ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, cons
 }
 
 ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {
-    MicroSeconds infer_duration;
+    float infer_duration;
     return m_impl->decode(latent, infer_duration);
 }
 

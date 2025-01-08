@@ -254,15 +254,15 @@ public:
     }
     
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
-        MicroSeconds infer_duration;
+        float infer_duration;
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
         m_clip_text_encoder->infer(positive_prompt, {}, false, infer_duration);
-        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration.count();
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration / 1000.0f;
         ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
         ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length, infer_duration);
-        m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration.count();
+        m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration / 1000.0f;
 
         pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
@@ -323,7 +323,7 @@ public:
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
         const auto gen_start = std::chrono::steady_clock::now();
-        MicroSeconds infer_duration;
+        float infer_duration;
         m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
@@ -368,7 +368,7 @@ public:
             timestep_data[0] = timesteps[inference_step] / 1000;
 
             ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep, infer_duration);
-            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(infer_duration);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
@@ -378,20 +378,21 @@ public:
             if (callback && callback(inference_step, timesteps.size(), latents)) {
                 auto image = ov::Tensor(ov::element::u8, {});
                 m_perf_metrics.generate_duration =
-                    ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
+                        .count();
                 return image;
             }
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
         auto image = m_vae->decode(latents, infer_duration);
-        m_perf_metrics.vae_decoder_inference_duration = infer_duration.count();
+        m_perf_metrics.vae_decoder_inference_duration = infer_duration / 1000.0f;
         m_perf_metrics.generate_duration =
-            ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - gen_start);
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
         return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent, MicroSeconds& infer_duration) override {
+    ov::Tensor decode(const ov::Tensor latent, float& infer_duration) override {
         ov::Tensor unpacked_latent = unpack_latents(latent,
                                                 m_custom_generation_config.height,
                                                 m_custom_generation_config.width,

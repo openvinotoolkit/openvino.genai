@@ -13,6 +13,7 @@
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -21,6 +22,8 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using namespace pybind11::literals;
+using ov::genai::ImageGenerationPerfMetrics;
+using ov::genai::RawImageGenerationPerfMetrics;
 
 namespace {
 
@@ -52,6 +55,59 @@ auto text2image_generate_docstring = R"(
 
     :return: ov.Tensor with resulting images
     :rtype: ov.Tensor
+)";
+
+auto raw_image_generation_perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param unet_inference_durations: Durations for each unet inference in microseconds.
+    :type unet_inference_durations: List[float]
+
+    :param transformer_inference_durations: Durations for each transformer inference in microseconds.
+    :type transformer_inference_durations: List[float]
+
+    :param iteration_durations: Durations for each step iteration in microseconds.
+    :type iteration_durations: List[float]
+)";
+
+auto image_generation_perf_metrics_docstring = R"(
+    Holds performance metrics for each generate call.
+
+    PerfMetrics holds fields with mean and standard deviations for the following metrics:
+    - Generate iteration duration, ms
+    - Inference duration for unet model, ms
+    - Inference duration for transformer model, ms
+
+    Additional fields include:
+    - Load time, ms
+    - Generate total duration, ms
+    - inference durations for each encoder, ms
+    - inference duration of vae_encoder model, ms
+    - inference duration of vae_decoder model, ms
+
+    Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+    If mean and std were already calculated, getters return cached values.
+
+    :param get_load_time: Returns the load time in milliseconds.
+    :type get_load_time: float
+
+    :param get_generate_duration: Returns the generate duration in milliseconds.
+    :type get_generate_duration: float
+
+    :param get_inference_total_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
+    :type get_inference_total_duration: float
+
+    :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
+    :type get_iteration_duration: MeanStdPair
+
+    :param unet_inference_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
+    :type unet_inference_duration: MeanStdPair
+
+    :param get_transformer_inference_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
+    :type get_transformer_inference_duration: MeanStdPair
+
+    :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
+    :type raw_metrics: RawImageGenerationPerfMetrics
 )";
 
 // Trampoline class to support inheritance from Generator in Python
@@ -229,6 +285,28 @@ void init_image_generation_pipelines(py::module_& m) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
 
+    py::class_<RawImageGenerationPerfMetrics>(m, "RawImageGenerationPerfMetrics", raw_image_generation_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_property_readonly("unet_inference_durations", [](const RawImageGenerationPerfMetrics &rw) {
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::unet_inference_durations);
+        })
+        .def_property_readonly("transformer_inference_durations", [](const RawImageGenerationPerfMetrics &rw) { 
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::transformer_inference_durations);
+        })
+        .def_property_readonly("iteration_durations", [](const RawImageGenerationPerfMetrics &rw) { 
+            return pyutils::get_ms(rw, &RawImageGenerationPerfMetrics::iteration_durations); 
+        });
+
+    py::class_<ImageGenerationPerfMetrics>(m, "ImageGenerationPerfMetrics", image_generation_perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_load_time", &ImageGenerationPerfMetrics::get_load_time)
+        .def("get_generate_duration", &ImageGenerationPerfMetrics::get_generate_duration)
+        .def("get_unet_inference_duration", &ImageGenerationPerfMetrics::get_unet_inference_duration)
+        .def("get_transformer_inference_duration", &ImageGenerationPerfMetrics::get_transformer_inference_duration)
+        .def("get_iteration_duration", &ImageGenerationPerfMetrics::get_iteration_duration)
+        .def("get_inference_total_duration", &ImageGenerationPerfMetrics::get_inference_total_duration)
+        .def_readonly("raw_metrics", &ImageGenerationPerfMetrics::raw_metrics);
+
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")
         .def(py::init([](const std::filesystem::path& models_path) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
@@ -294,7 +372,8 @@ void init_image_generation_pipelines(py::module_& m) {
             },
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"));
+        .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"))
+        .def("get_perfomance_metrics", &ov::genai::Text2ImagePipeline::get_perfomance_metrics);
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
@@ -357,7 +436,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"));
+        .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
+        .def("get_perfomance_metrics", &ov::genai::Image2ImagePipeline::get_perfomance_metrics);
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
@@ -422,7 +502,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("image"), "Initial image",
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
-        .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"));
+        .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"))
+        .def("get_perfomance_metrics", &ov::genai::InpaintingPipeline::get_perfomance_metrics);
 
     // define constructors to create one pipeline from another
     // NOTE: needs to be defined once all pipelines are created
