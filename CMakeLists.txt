@@ -60,6 +60,7 @@ if(NOT OpenVINODeveloperPackage_FOUND)
 endif()
 
 include(cmake/features.cmake)
+include(cmake/version.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation

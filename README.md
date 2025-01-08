@@ -394,7 +394,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 ## Additional materials
 
-- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
+- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
