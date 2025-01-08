@@ -15,7 +15,6 @@ function(add_sample_executable target_name)
         COMPILE_PDB_NAME ${target_name}
         # Ensure out-of-box LC_RPATH on macOS with SIP
         INSTALL_RPATH_USE_LINK_PATH ON)
-    target_compile_features(${target_name} PRIVATE cxx_std_11)
     install(TARGETS ${target_name}
             RUNTIME DESTINATION samples_bin/
             COMPONENT samples_bin

@@ -1,4 +1,3 @@
-
 # OpenVINO GenAI Text Generation Samples
 
 These samples showcase the use of OpenVINO's inference capabilities for text generation tasks, including different decoding strategies such as beam search, multinomial sampling, and speculative decoding. Each sample has a specific focus and demonstrates a unique aspect of text generation.
@@ -15,7 +14,7 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
