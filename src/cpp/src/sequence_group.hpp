@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -222,6 +222,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_num_validation_tokens = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
+    // output seq len at current iteration
+    size_t m_output_seq_len = 0;
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
@@ -290,8 +292,8 @@ public:
     }
 
     size_t num_finished_seqs() const {
-        return std::count_if(m_sequences.begin(), m_sequences.end(), [] (Sequence::CPtr seq) {
-            return seq->has_finished();
+        return std::count_if(m_sequences.begin(), m_sequences.end(), [this] (Sequence::CPtr seq) {
+            return seq->has_finished() || seq->out_of_memory() || handle_dropped();
         });
     }
 
@@ -394,6 +396,14 @@ public:
         return m_num_processed_tokens;
     }
 
+    size_t get_output_seq_len() const {
+        return m_output_seq_len;
+    }
+
+    void set_output_seq_len(size_t len) {
+        m_output_seq_len = len;
+    }
+
     /**
      * Registers within the sequence group that a given amount of tokens
      * has been evicted from the underlying KV cache.
@@ -436,11 +446,14 @@ public:
 
     void schedule_tokens(size_t num_tokens) {
         m_num_scheduled_tokens = num_tokens;
+        // Unless otherwise specified, the sampler will process all scheduled tokens.
+        m_output_seq_len = num_tokens;
     }
 
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
         m_num_validation_tokens = 0;
+        m_output_seq_len = 0;
     }
 
     bool is_scheduled() const {

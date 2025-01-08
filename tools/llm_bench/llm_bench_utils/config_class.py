@@ -102,7 +102,9 @@ USE_CASES = {
         "olmo",
         "phi3",
         "starcoder",
-        "instruct-gpt"
+        "instruct-gpt",
+        "granite",
+        "granitemoe",
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
