@@ -11,6 +11,7 @@
 #include <pybind11/typing.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/version.hpp"
 
 #include "py_utils.hpp"
 
@@ -21,6 +22,7 @@ using ov::genai::DecodedResults;
 using ov::genai::EncodedResults;
 using ov::genai::StreamerBase;
 using ov::genai::StringInputs;
+using ov::genai::get_version;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -82,7 +84,12 @@ class ConstructableStreamer: public StreamerBase {
 PYBIND11_MODULE(py_openvino_genai, m) {
     m.doc() = "Pybind11 binding for OpenVINO GenAI library";
 
+    m.def("get_version", [] () -> py::str {
+        return get_version().buildNumber;
+    }, get_version().description);
+
     init_perf_metrics(m);
+
     py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })

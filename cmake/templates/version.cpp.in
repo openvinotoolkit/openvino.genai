@@ -1,0 +1,19 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "openvino/genai/version.hpp"
+
+namespace ov {
+namespace genai {
+
+const Version get_version() {
+    const static Version version = {
+        "@OpenVINOGenAI_FULL_VERSION@",
+        "OpenVINO GenAI version",
+    };
+
+    return version;
+}
+
+} // namespace genai
+} // namespace ov
