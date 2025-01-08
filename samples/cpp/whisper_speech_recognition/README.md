@@ -31,7 +31,7 @@ Output:
 timestamps: [0, 2] text:  How are you doing today?
 ```
 
-See [SUPPORTED_MODELS.md](../../../src/docs/SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
 
 # Whisper pipeline usage
 
