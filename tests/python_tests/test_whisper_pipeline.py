@@ -184,28 +184,18 @@ def run_pipeline_with_ref(
     tmp_path: str,
     sample: np.ndarray | list[np.ndarray],
     generation_config: GenerationConfig | None = None,
-    print_infer_time=False,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
 
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
 
-    hf_infer_time, genai_infer_time = 0, 0
     hf_result, genai_result = None, None
     for _sample in sample:
-        start = time.time()
         genai_result = run_genai(genai_pipe, _sample, generation_config)
-        genai_infer_time += time.time() - start
-
-        start = time.time()
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
-        hf_infer_time += time.time() - start
 
         compare_results(hf_result, genai_result)
-
-    if print_infer_time:
-        print(f"\nInference time HF: {hf_infer_time:.2f} GenAI: {genai_infer_time:.2f}")
 
     assert hf_result is not None
     assert genai_result is not None
@@ -495,7 +485,6 @@ def test_shortform(model_descr):
         model_id=model_descr[0],
         tmp_path=model_descr[1],
         sample=samples,
-        print_infer_time=True,
     )
 
 
