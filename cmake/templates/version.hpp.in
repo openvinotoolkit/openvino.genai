@@ -1,0 +1,8 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#define OPENVINO_GENAI_VERSION_MAJOR @OpenVINOGenAI_VERSION_MAJOR@
+#define OPENVINO_GENAI_VERSION_MINOR @OpenVINOGenAI_VERSION_MINOR@
+#define OPENVINO_GENAI_VERSION_PATCH @OpenVINOGenAI_VERSION_PATCH@
