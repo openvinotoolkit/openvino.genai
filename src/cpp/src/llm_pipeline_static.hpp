@@ -77,6 +77,9 @@ public:
 private:
     uint32_t m_kvcache_total = 0u;
     ov::InferRequest m_request;
+
+    Sampler m_sampler;
+
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 };
