@@ -58,7 +58,7 @@ jobs:
           PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && timeout 35s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
+          && timeout 35s ./samples/python/text_generation/multinomial_causal_lm.py ./open_llama_3b_v2/ b
         env:
           PYTHONPATH: "./build"
       - run: >
@@ -79,7 +79,7 @@ jobs:
         executable:
           [
             ./build/samples/cpp/text_generation/beam_search_causal_lm,
-            python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py,
+            python ./samples/python/text_generation/beam_search_causal_lm.py,
           ]
     runs-on: ubuntu-20.04
     defaults:
@@ -339,7 +339,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && timeout 50s ./build/samples/cpp/text_generation/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
+          | diff <(timeout 50s ./samples/python/text_generation/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
         env:
           PYTHONPATH: "./build"
 
@@ -374,7 +374,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && timeout 50s ./build/samples/cpp/text_generation/beam_search_causal_lm ./phi-2/ 69
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
+          | diff <(timeout 50s ./samples/python/text_generation/beam_search_causal_lm.py ./phi-2/ 69) -
         env:
           PYTHONPATH: "./build"
 
@@ -409,7 +409,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && timeout 50s ./build/samples/cpp/text_generation/beam_search_causal_lm ./notus-7b-v1/ 69
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
+          | diff <(timeout 50s ./samples/python/text_generation/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
         env:
           PYTHONPATH: "./build"
 
@@ -447,7 +447,7 @@ jobs:
           source ./ov/setupvars.sh
           ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
           ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
-          python ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
+          python ./samples/python/text_generation/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -504,7 +504,7 @@ jobs:
 
           ./build/samples/cpp/text_generation/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
-          python ./samples/python/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
+          python ./samples/python/text_generation/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -693,7 +693,7 @@ jobs:
           "
           diff pred.txt ref.txt
           echo "Chat sample cpp" passed
-          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          timeout 30s ./samples/python/text_generation/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 

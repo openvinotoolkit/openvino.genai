@@ -1,48 +1,129 @@
-# Text generation Python greedy_causal_lm that supports most popular models like LLaMA 3
+# OpenVINO GenAI Text Generation Python Samples
 
-This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `openvino_genai.LLMPipeline` and configures it to run the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+These samples showcase the use of OpenVINO's inference capabilities for text generation tasks, including different decoding strategies such as beam search, multinomial sampling, and speculative decoding. Each sample has a specific focus and demonstrates a unique aspect of text generation.
+The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
+There are also Jupyter notebooks for some samples. You can find links to them in the appropriate sample descritions.
 
-There are two sample files:
- - [`greedy_causal_lm.py`](./greedy_causal_lm.py) demonstrates basic usage of the LLM pipeline
- - [`lora.py`](./lora.py) shows how to apply LoRA adapters to the pipeline
+## Table of Contents
+1. [Download and Convert the Model and Tokenizers](#download-and-convert-the-model-and-tokenizers)
+2. [Sample Descriptions](#sample-descriptions)
+3. [Troubleshooting](#troubleshooting)
+4. [Support and Contribution](#support-and-contribution)
 
 ## Download and convert the model and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
-## Run
+Model examples to use for different samples:
+chat_sample - meta-llama/Llama-2-7b-chat-hf
+speculative_decoding_lm - meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model
+other samples - meta-llama/Llama-2-7b-hf
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
-
-`python greedy_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
-
+## Sample Descriptions
+### Common information
+Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
-## Run with optional LoRA adapters
+### 1. Greedy Causal LM (`greedy_causal_lm`)
+- **Description:**
+Basic text generation using a causal language model.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
+- **Main Feature:** Demonstrates simple text continuation.
+- **Run Command:**
+  ```bash
+  python greedy_causal_lm.py [-h] model_dir prompt
+  ```
 
-LoRA adapters can be connected to the pipeline and modify generated text. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora.py` source code to learn how to enable adapters and specify them in each `generate` call.
+### 2. Beam Search Causal LM (`beam_search_causal_lm`)
+- **Description:**
+Uses beam search for more coherent text generation.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
+- **Main Feature:** Improves text quality with beam search.
+- **Run Command:**
+  ```bash
+  python beam_search_causal_lm.py model_dir prompts [prompts ...]
+  ```
 
-Here is an example how to run the sample with a single adapter. First download adapter file from TODO page manually and save it as TODO. Or download it from command line:
+### 3. Chat Sample (`chat_sample`)
+- **Description:**
+Interactive chat interface powered by OpenVINO.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) that provides an example of LLM-powered text generation in Python.
+- **Main Feature:** Real-time chat-like text generation.
+- **Run Command:**
+  ```bash
+  python chat_sample.py model_dir
+  ```
+#### Missing chat template
+If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model.
+The following template can be used as a default, but it may not work properly with every model:
+```
+"chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
+```
 
-#TODO command to download adapter
+### 4. Multinomial Causal LM (`multinomial_causal_lm`)
+- **Description:** Text generation with multinomial sampling for diversity.
+- **Main Feature:** Introduces randomness for creative outputs.
+- **Run Command:**
+  ```bash
+  python multinomial_causal_lm.py model_dir prompt
+  ```
 
-Then run `lora.py`:
+### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
+- **Description:** 
+[Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assested-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
+- **Main Feature:** Specialized prompt-based inference.
+- **Run Command:**
+  ```bash
+  python prompt_lookup_decoding_lm.py model_dir prompt
+  ```
 
-#TODO command to run lora.py with adapter
+### 6. Speculative Decoding LM (`speculative_decoding_lm`)
+- **Description:** 
+Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alongside with the main model.
 
-### Troubleshooting
+Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
 
-#### Unicode characters encoding error on Windows
+This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In that case they are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
+
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
+- **Main Feature:** Reduces latency while generating high-quality text.
+- **Run Command:**
+  ```bash
+  python speculative_decoding_lm.py model_dir draft_model_dir prompt
+  ```
+
+### 7. LLMs benchmarking sample (`benchmark_genai`)
+- **Description:** 
+This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+
+For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+- **Main Feature:** Benchmark model via GenAI
+- **Run Command:**
+  ```bash
+  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+  ```
+  #### Options
+- `-m, --model`: Path to the model and tokenizers base directory.
+- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `-n, --num_iter` (default: `3`): Number of iterations.
+- `-d, --device` (default: `"CPU"`): Device to run the model on.
+
+
+## Troubleshooting
+
+### Unicode characters encoding error on Windows
 
 Example error:
 ```
@@ -52,3 +133,7 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u25aa' in position 
 If you encounter the error described in the example when sample is printing output to the Windows console, it is likely due to the default Windows encoding not supporting certain Unicode characters. To resolve this:
 1. Enable Unicode characters for Windows cmd - open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 2. Enable UTF-8 mode by setting environment variable `PYTHONIOENCODING="utf8"`.
+
+## Support and Contribution
+- For troubleshooting, consult the [OpenVINO documentation](https://docs.openvino.ai).
+- To report issues or contribute, visit the [GitHub repository](https://github.com/openvinotoolkit/openvino.genai).

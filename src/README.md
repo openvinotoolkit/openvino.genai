@@ -394,7 +394,7 @@ durations = np.array(raw_metrics.m_new_token_times[1:]) - np.array(raw_metrics.m
 print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
-For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/benchmark_genai/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
+For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
 
 ## How It Works
 

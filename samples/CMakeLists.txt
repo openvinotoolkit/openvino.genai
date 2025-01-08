@@ -22,13 +22,8 @@ install(DIRECTORY
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
-            python/beam_search_causal_lm
-            python/benchmark_genai
-            python/chat_sample
             python/text_generation
             python/image_generation
-            python/multinomial_causal_lm
-            python/speculative_decoding_lm
             python/visual_language_chat
             python/whisper_speech_recognition
         DESTINATION samples/python COMPONENT cpp_samples_genai
