@@ -1371,7 +1371,7 @@ public:
     ):
         IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
         m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()},
-        m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device).create_infer_request()} {}
+        m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         OPENVINO_ASSERT(images.empty() || m_history.empty(), "Images can only be provided for initial prompt");
