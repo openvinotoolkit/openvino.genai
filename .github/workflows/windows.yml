@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: master
+  OV_BRANCH: 345163f87953fb0dd8dd590257eb7fc84378da8e
   OV_TARBALL: ''
 
 jobs:
@@ -230,7 +230,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --parallel --verbose
 
       - name: Test bindings
         run: |
@@ -295,7 +295,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_openvino_genai -j
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
 
       - name: Test bindings
         run: |
@@ -360,7 +360,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target py_openvino_genai -j
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
 
       - name: Test bindings
         run: |

@@ -114,11 +114,11 @@ void init_vlm_pipeline(py::module_& m) {
 
     py::class_<ov::genai::VLMDecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)
         .def(py::init<>())
-        .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
+        .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8(dr.texts); })
         .def_readonly("scores", &ov::genai::VLMDecodedResults::scores)
         .def_readonly("perf_metrics", &ov::genai::VLMDecodedResults::perf_metrics)
         .def("__str__", [](const ov::genai::VLMDecodedResults &dr) -> py::str {
-            auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
+            auto valid_utf8_strings = pyutils::handle_utf8(dr.texts);
             py::str res;
             if (valid_utf8_strings.size() == 1)
                 return valid_utf8_strings[0];

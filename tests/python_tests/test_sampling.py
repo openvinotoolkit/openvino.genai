@@ -1,84 +1,96 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import os
+
 import sys
 import pytest
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
+from openvino_genai import GenerationConfig, StopCriteria
 from typing import List, TypedDict
 
-from common import get_hugging_face_model_and_tokenizer, save_ov_model_from_optimum, \
-    get_greedy, get_beam_search, get_multinomial_temperature, \
-    get_greedy_with_penalties, get_multinomial_temperature, \
-    get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
-    get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, \
-    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
-    get_greedy, get_greedy_with_min_and_max_tokens, \
-    get_greedy_with_single_stop_string, get_greedy_with_multiple_stop_strings, get_greedy_with_multiple_stop_strings_no_match, \
-    get_beam_search, get_beam_search_min_and_max_tokens, get_beam_search_with_single_stop_string, \
-    get_beam_search_with_multiple_stop_strings, get_beam_search_with_multiple_stop_strings_no_match, get_multinomial_max_and_min_token, \
-    get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
-    get_greedy_stop_strings_exclude_from_output, get_greedy_stop_strings_include_to_output, \
-    get_greedy_n_stop_strings_exclude_from_output, get_greedy_n_stop_strings_include_to_output, \
-    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config, \
-    run_continuous_batching
+from common import get_hugging_face_models, convert_models, run_llm_pipeline_with_ref, run_llm_pipeline
 
 
-# TODO: currently, this test drops EOS token as both HF and OV use `skip_special_tokens=True`, which should be disabled for samlpling tests
 @pytest.mark.precommit
-def test_beam_search_has_eos_token_at_end(tmp_path):
-    '''
-    Current test checks that in case of beam search, some generation results
-    explicitly have EOS token at the end, which is aligned with HF
-
-    Example of current output:
-    { -1.23264,  that I don't know about.
-    I don't know what you're talking about, but I'm pretty sure it's a Canadian thing.</s> }
-    '''
-    model_id = "facebook/opt-125m"
-    prompts = ["Tell me something about Canada"]
-    generation_configs = [get_beam_search()]
-    scheduler_config = get_scheduler_config()
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
-
-
-# TODO: currently, this test drops EOS token as both HF and OV use `skip_special_tokens=True`, which should be disabled for samlpling tests
-@pytest.mark.precommit
-def test_greedy_has_eos_token_at_end(tmp_path):
-    '''
-    Current test checks that in case of gready, some generation results
-    explicitly have EOS token at the end, which is aligned with HF:
-
-    Example of current output:
-    {  a software program</s> }
-    '''
-    model_id = "bigscience/bloomz-560m"
-    prompts = ["What is OpenVINO?"]
-    generation_configs = [get_greedy()]
-    scheduler_config = get_scheduler_config()
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
+@pytest.mark.parametrize("generation_config,prompt",
+                         [(dict(max_new_tokens=30), 'table is made of'),
+                          (dict(max_new_tokens=30, min_new_tokens=30), '你好！ 你好嗎？'),
+                          (dict(max_new_tokens=30, ignore_eos=True), 'Alan Turing was a'),
+                        #   (dict(max_length=40), 'table is made of'),
+                          (dict(stop_token_ids={28998}), 'The Sun is yellow because'), # since a test does not hang, it means stop token is met
+                        #   (dict(max_new_tokens=1, min_new_tokens=0, echo=True), 'What is OpenVINO?')
+                          ],
+                         ids=["max_new_tokens",
+                              "min_and_max_new_tokens",
+                              "max_new_tokens_and_ignore_eos_true",
+                            #   "max_length",
+                              "stop_token_ids",
+                            #   "echo_with_generation",
+                              ])
+def test_basic_stop_criteria(tmp_path, generation_config, prompt):
+    model_id : str = "katuni4ka/tiny-random-phi3"
+    run_llm_pipeline_with_ref(model_id, [prompt], generation_config, tmp_path)
 
 
-# TODO: consider removing all these functions with generation configs and use Dict with properties, which can be converted to generation config
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config",
-                         [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_greedy_with_single_stop_string(),
-                          get_greedy_with_multiple_stop_strings(), get_greedy_with_multiple_stop_strings_no_match(),
-                          get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(),
-                          get_greedy_stop_strings_exclude_from_output(), get_greedy_stop_strings_include_to_output(),
-                          get_greedy_n_stop_strings_exclude_from_output(), get_greedy_n_stop_strings_include_to_output()],
-                         ids=["greedy", "greedy_with_min_and_max_tokens", "greedy_with_repetition_penalty", "greedy_with_single_stop_string",
-                              "greedy_with_multiple_stop_strings", "greedy_with_multiple_stop_strings_no_match", "beam_search", "beam_search_min_and_max_tokens",
-                              "beam_search_with_multiple_stop_strings_no_match", "greedy_stop_strings_exclude_from_output", "greedy_stop_strings_include_to_output",
-                              "greedy_n_stop_strings_exclude_from_output", "greedy_n_stop_strings_include_to_output"])
-def test_sampling_against_optimum(tmp_path, generation_config):
+                         [dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), # expected match on "manage"
+                          dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True),
+                          dict(max_new_tokens=50, min_new_tokens=1, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True), # expected no match
+                          dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=False),
+                          dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=True),
+                          dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=False),
+                          dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=True),],
+                         ids=["single_stop_string",
+                              "multiple_stop_strings_match",
+                              "multiple_stop_strings_no_match",
+                              "single_stop_string_exclude_from_output",
+                              "single_stop_string_include_to_output",
+                              "multiple_stop_strings_exclude_from_output",
+                              "multiple_stop_strings_include_to_output"])
+def test_stop_strings(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
-    generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("generation_config",
+                         [dict(max_new_tokens=30),
+                          dict(max_new_tokens=30, repetition_penalty=2.0),],
+                         ids=["basic",
+                              "repetition_penalty",])
+def test_greedy(tmp_path, generation_config):
+    prompts = [ "What is OpenVINO?" ]
+    model_id : str = "katuni4ka/tiny-random-phi3"
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("generation_config",
+                         [dict(max_new_tokens=30, num_beams=2),
+                          dict(max_new_tokens=30, num_beams=2, stop_criteria=StopCriteria.NEVER),
+                          dict(max_new_tokens=30, num_beams=2, stop_criteria=StopCriteria.EARLY),
+                        #   dict(max_new_tokens=30, num_beams=2, echo=True),
+                          dict(max_new_tokens=30, num_beams=2, length_penalty=1.0),
+                          dict(max_new_tokens=30, num_beams=2, no_repeat_ngram_size=2),
+                          dict(max_new_tokens=30, num_beams=6, num_beam_groups=3, diversity_penalty=1.2, num_return_sequences=3),
+                          dict(max_new_tokens=30, min_new_tokens=15, num_beams=2, num_return_sequences=1),
+                          dict(max_new_tokens=30, num_beams=2, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True),],
+                         ids=["single_group_stop_criteria_heuristic",
+                              "single_group_stop_criteria_never",
+                              "single_group_stop_criteria_early",
+                            #   "single_group_with_echo",
+                              "single_group_lenght_penalty",
+                              "single_group_no_repeat_ngram_size",
+                              "multiple_groups",
+                              "single_group_min_new_tokens",
+                              "single_group_with_multiple_stop_strings_no_match",])
+def test_beam_search(tmp_path, generation_config):
+    prompts = [ "What is OpenVINO?" ]
+    model_id : str = "facebook/opt-125m"
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
 
 
 @pytest.mark.precommit
@@ -87,13 +99,28 @@ def test_sampling_against_optimum(tmp_path, generation_config):
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
     strict=True,
 )
-@pytest.mark.parametrize("generation_config", [get_beam_search_with_single_stop_string(), get_beam_search_with_multiple_stop_strings()],
-                         ids=["beam_search_with_single_stop_string", "beam_search_with_multiple_stop_strings"])
+@pytest.mark.parametrize("generation_config",
+                         [dict(max_new_tokens=50, num_beams=6, num_beam_groups=3, diversity_penalty=1.0, num_return_sequences=6, stop_strings={"open sour"}, include_stop_str_in_output=True),
+                          dict(max_new_tokens=50, num_beams=6, num_beam_groups=3, diversity_penalty=1.0, num_return_sequences=6, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True),],
+                         ids=["single_stop_string_match", "multiple_stop_strings_match"])
 def test_beam_search_with_stop_string(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
-    generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("generation_config",
+                         [dict(max_new_tokens=1, min_new_tokens=0, echo=True),
+                          dict(max_new_tokens=30, num_beams=2, echo=True),],
+                         ids=["echo_with_generation",
+                              "single_group_with_echo",])
+def test_echo(tmp_path, generation_config):
+    prompts = [ "What is OpenVINO?" ]
+    model_id : str = "facebook/opt-125m"
+    # TODO: support in stateful mode and remove 'use_cb=True' and this test at all
+    # as we can enable new parameters set in other tests
+    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path, use_cb=True)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF
@@ -123,6 +150,12 @@ class RandomSamplingTestStruct:
     prompts: List[str]
     ref_texts: List[List[str]]
 
+from common import get_multinomial_temperature, get_greedy_with_penalties, \
+    get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
+    get_multinomial_temperature_top_p_and_top_k, get_multinomial_all_parameters, \
+    get_multinomial_temperature_and_num_return_sequence, get_multinomial_max_and_min_token, \
+    get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
+    get_multinomial_temperature_and_repetition_penalty
 
 RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
@@ -285,72 +318,15 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
 
     prompts = test_struct.prompts
     generation_config.rng_seed = 0
-    generation_configs = [generation_config]
+    generation_configs = generation_config
     model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
+    model, hf_tokenizer = get_hugging_face_models(model_id)
 
     models_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, models_path)
+    convert_models(model, hf_tokenizer, models_path)
 
     # run multinomial without comparison with reference
-    _ = run_continuous_batching(models_path, DEFAULT_SCHEDULER_CONFIG, prompts, generation_configs)
+    _ = run_llm_pipeline(models_path, prompts, generation_configs)
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize("get_generation_config", [get_greedy, get_beam_search, get_multinomial_all_parameters],
-                         ids=["greedy", "beam_search", "multinomial_all_parameters"])
-@pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
-def test_echo_prompt_phase_only(tmp_path, get_generation_config, max_num_batched_tokens):
-    generation_config = get_generation_config()
-    generation_config.max_new_tokens = 0
-    generation_config.echo = True
-
-    scheduler_config = get_scheduler_config()
-    scheduler_config.max_num_batched_tokens = max_num_batched_tokens
-    generation_configs = [generation_config]
-    model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
-
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(opt_model, hf_tokenizer, model_path)
-
-    cb_pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
-
-    outputs = cb_pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(outputs))
-    for output in outputs:
-        assert(len(output.m_generation_ids))
-        for sequence in output.m_generation_ids:
-            assert(sequence == "What is OpenVINO?")
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize("get_generation_config", [get_greedy, get_beam_search, get_multinomial_all_parameters],
-                         ids=["greedy", "beam_search", "multinomial_all_parameters"])
-@pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
-def test_echo_with_generation_phase(tmp_path, get_generation_config, max_num_batched_tokens):
-    generation_config = get_generation_config()
-    generation_config.max_new_tokens = 10
-    generation_config.echo = True
-
-    scheduler_config = get_scheduler_config()
-    scheduler_config.max_num_batched_tokens = max_num_batched_tokens
-    generation_configs = [generation_config]
-    model_id : str = "facebook/opt-125m"
-    opt_model, hf_tokenizer = get_hugging_face_model_and_tokenizer(model_id, use_optimum=True)
-
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(opt_model, hf_tokenizer, model_path)
-
-    cb_pipe = ContinuousBatchingPipeline(model_path, Tokenizer(model_path), scheduler_config, "CPU")
-    outputs = cb_pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(outputs))
-
-    for output in outputs:
-        assert(len(output.m_generation_ids))
-        for sequence in output.m_generation_ids:
-            assert(sequence.startswith("What is OpenVINO?"))
-            assert(len(sequence) > len("What is OpenVINO?"))

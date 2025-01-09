@@ -41,6 +41,11 @@ def parse_args():
         help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
     )
     parser.add_argument(
+        "--chat-template",
+        action="store_true",
+        help="Whether apply the default chat template.",
+    )
+    parser.add_argument(
         "--gt-data",
         default=None,
         help="CSV file containing GT outputs from --base-model. If defined and exists then --base-model will not used."
@@ -55,7 +60,7 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
         "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
@@ -138,6 +143,11 @@ def parse_args():
         help="Use LLMPipeline from transformers library to instantiate the model.",
     )
     parser.add_argument(
+        "--llamacpp",
+        action="store_true",
+        help="Use llama-cpp-python to instantiate the model.",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
         default=None,
@@ -190,9 +200,13 @@ def load_prompts(args):
 def load_tokenizer(args):
     tokenizer = None
     if args.tokenizer is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer, trust_remote_code=True
-        )
+        if args.llamacpp:
+            from llama_cpp.llama_tokenizer import LlamaHFTokenizer
+            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.tokenizer, trust_remote_code=True
+            )
     elif args.base_model is not None:
         tokenizer = AutoTokenizer.from_pretrained(
             args.base_model, trust_remote_code=True
@@ -246,8 +260,29 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+    if use_chat_template:
+        model.start_chat()
+        result = model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+        model.finish_chat()
+        return result
+    else:
+        return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+
+
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+    if use_chat_template:
+        output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
+        text = output["choices"][0]["message"]["content"]
+        if skip_question:
+            text = text[len(question):]
+        return text
+    else:
+        output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
+        text = output["choices"][0]["text"]
+        if skip_question:
+            text = text[len(question):]
+        return text
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
@@ -282,6 +317,20 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
     return image
 
 
+def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
+    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    mask_data = ov.Tensor(np.array(mask.getdata()).reshape(1, mask.size[1], mask.size[0], 3).astype(np.uint8))
+    image_tensor = model.generate(
+        prompt,
+        image=image_data,
+        mask_image=mask_data,
+        num_inference_steps=num_inference_steps,
+        generator=generator,
+    )
+    image = Image.fromarray(image_tensor.data[0])
+    return image
+
+
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
     image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
     config = model.get_generation_config()
@@ -308,7 +357,15 @@ def create_evaluator(base_model, args):
         prompts = load_prompts(args)
 
         if task == "text":
-            tokenizer = load_tokenizer(args)
+            tokenizer = load_tokenizer(args) if not args.llamacpp else None
+
+            if args.genai:
+                gen_answer_fn = genai_gen_text
+            elif args.llamacpp:
+                gen_answer_fn = llamacpp_gen_text
+            else:
+                gen_answer_fn = None
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -317,7 +374,8 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=genai_gen_text if args.genai else None,
+                gen_answer_fn=gen_answer_fn,
+                use_chat_template=args.chat_template,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -352,6 +410,17 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 gen_image_fn=genai_gen_image2image if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+            )
+        elif task == "image-inpainting":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                gen_image_fn=genai_gen_inpainting if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
             )
@@ -442,10 +511,11 @@ def main():
                 args.ov_config,
                 args.hf,
                 args.genai,
+                args.llamacpp
             )
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
-                evaluator.get_generation_fn() if args.genai else None,
+                evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
                 output_dir=args.output
             )
         logger.info("Metrics for model: %s", args.target_model)
