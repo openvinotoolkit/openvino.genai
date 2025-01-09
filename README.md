@@ -73,9 +73,9 @@ optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weigh
 ### Run generation using LLMPipeline API in Python
 
 ```python
-import openvino_genai as ov_genai
+import openvino_genai
 #Will run model on CPU, GPU or NPU are possible options
-pipe = ov_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
+pipe = openvino_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
@@ -128,18 +128,20 @@ curl -O "https://storage.openvinotoolkit.org/test_data/images/dog.jpg"
 ```python
 import numpy as np
 import openvino as ov
-import openvino_genai as ov_genai
+import openvino_genai
 from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
-pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
+pipe = openvino_genai.VLMPipeline("./InternVL2-1B", "CPU")
+pipe.start_chat()
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
 image_data = ov.Tensor(image_data)  
 
 prompt = "Can you describe the image?"
-print(pipe.generate(prompt, image=image_data, max_new_tokens=100))
+result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
+print(result.texts[0])
 ```
 
 ### Run generation using VLMPipeline in C++
@@ -392,7 +394,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 ## Additional materials
 
-- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
+- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 

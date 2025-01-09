@@ -306,7 +306,7 @@ def run_continuous_batching(
     if type(generation_configs) is not list:
         generation_configs = [generation_configs] * len(prompts)
  
-    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU')
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_properties())
     output = cb_pipe.generate(prompts, generation_configs)
 
     del cb_pipe
@@ -390,7 +390,7 @@ def compare_generation_results(prompts: List[str], hf_results: List[GenerationRe
 
 def get_hugging_face_models(model_id: str):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, ov_config=get_default_properties())
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
     return opt_model, hf_tokenizer
 
 
