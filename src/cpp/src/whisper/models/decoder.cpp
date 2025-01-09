@@ -16,7 +16,6 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
     bool has_decoder_with_past = std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml");
 
     if (has_decoder_with_past) {
-        // todo: add deprecation notice
         return std::make_shared<WhisperWithPastDecoder>(models_path, device, properties);
     }
 
