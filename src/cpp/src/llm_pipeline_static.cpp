@@ -475,13 +475,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     }
     const auto arch = core.get_property("NPU", ov::device::architecture);
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
-
-    bool compiler_dq = false;
-    const auto device_caps = core.get_property("NPU", ov::device::capabilities);
-    if (std::find(device_caps.begin(), device_caps.end(),
-                  "COMPILER_DYNAMIC_QUANTIZATION") != device_caps.end()) {
-        compiler_dq = true;
-    }
+    const auto compiler_dq = core.get_property("NPU", ov::intel_npu::compiler_dynamic_quantization);
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
 }
 
@@ -526,6 +520,7 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
     }
     if (npudesc.has_value() && npudesc->compiler_dq) {
         config.emplace("NPUW_DQ_FULL", "NO");
+        config.emplace("NPU_COMPILATION_MODE_PARAMS", "enable-weights-dynamic-dequantization=true");
     }
     return config;
 }
@@ -547,6 +542,7 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     }
     if (npudesc.has_value() && npudesc->compiler_dq) {
         config.emplace("NPUW_DQ_FULL", "NO");
+        config.emplace("NPU_COMPILATION_MODE_PARAMS", "enable-weights-dynamic-dequantization=true");
     }
     return config;
 }
