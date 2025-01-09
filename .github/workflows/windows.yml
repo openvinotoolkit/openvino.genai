@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: 345163f87953fb0dd8dd590257eb7fc84378da8e
+  OV_BRANCH: 2339c196c4efc6d9936adc213efff38cb5fb3c5d
   OV_TARBALL: ''
 
 jobs:
@@ -76,7 +76,7 @@ jobs:
       - name: Clone OpenVINO
         uses: actions/checkout@v4
         with:
-          repository: 'openvinotoolkit/openvino'
+          repository: 'zhangYiIntel/openvino'
           path: ${{ env.OPENVINO_REPO }}
           submodules: 'true'
           ref: ${{ env.OV_BRANCH }}
