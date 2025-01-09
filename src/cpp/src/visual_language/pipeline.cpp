@@ -175,7 +175,6 @@ public:
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
-        bool enable_prefix_caching = false;
 
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
@@ -185,8 +184,7 @@ public:
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
         std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size, enable_prefix_caching);
-        sequence_group->set_sequence_group_ptr(sequence_group);
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size);
         requests.push_back(sequence_group);
 
         std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{

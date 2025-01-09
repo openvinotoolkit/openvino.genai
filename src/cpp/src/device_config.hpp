@@ -12,8 +12,9 @@
 namespace ov::genai {
 class DeviceConfig {
     ov::element::Type m_kv_cache_type;
-    ov::PartialShape m_key_cache_shape, m_value_cache_shape;
-    ov::Shape::value_type m_num_kv_heads, m_head_size, m_num_decoder_layers;
+    std::vector<ov::PartialShape> m_key_cache_shape, m_value_cache_shape;
+    std::vector<ov::Shape::value_type> m_num_kv_heads;
+    ov::Shape::value_type m_head_size, m_num_decoder_layers;
     size_t m_num_kv_blocks = 0;
     size_t m_block_size = 0;
     size_t m_cache_size = 0;
@@ -88,10 +89,13 @@ public:
         }
     }
 
-    void set_model_params(size_t num_kv_heads, size_t head_size, size_t num_decoder_layers) {
-        m_num_kv_heads = num_kv_heads;
+    void set_model_params(std::vector<size_t> num_kv_heads, size_t head_size, size_t num_decoder_layers) {
         m_head_size = head_size;
         m_num_decoder_layers = num_decoder_layers;
+
+        m_num_kv_heads.assign(num_kv_heads.begin(), num_kv_heads.end());
+        m_key_cache_shape.reserve(m_num_decoder_layers);
+        m_value_cache_shape.reserve(m_num_decoder_layers);
 
         if (m_device == "CPU") {
             // Scale, zero point and quantized data will be stored together.
@@ -104,21 +108,32 @@ public:
         }
 
         if (m_num_kv_blocks == 0 && m_cache_size > 0) {
+            size_t block_size = 0;
             size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024;
-            m_num_kv_blocks = size_in_bytes / (m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * m_kv_cache_type.size());
+            for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
+                block_size += 2 * m_num_kv_heads[layer_id] * m_block_size * m_head_size * m_kv_cache_type.size();
+            }
+            m_num_kv_blocks = size_in_bytes / block_size;
         }
 
-        m_key_cache_shape = m_value_cache_shape = ov::PartialShape{ov::Dimension::dynamic(),
-                                                                   ov::Dimension(m_num_kv_heads),
-                                                                   ov::Dimension(m_block_size),
-                                                                   ov::Dimension(m_head_size)};
+        for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
+            m_value_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
+                                                           ov::Dimension(m_num_kv_heads[layer_id]),
+                                                           ov::Dimension(m_block_size),
+                                                           ov::Dimension(m_head_size)});
 
-        if (m_device.find("GPU") != std::string::npos) {
-            // Update key shape, as the key's shape is different from the value's shape
-            m_key_cache_shape = ov::PartialShape{ov::Dimension::dynamic(),
-                                                 ov::Dimension(m_num_kv_heads),
-                                                 ov::Dimension(m_head_size),
-                                                 ov::Dimension(m_block_size)};
+            if (m_device.find("GPU") == std::string::npos) {
+                m_key_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
+                                                             ov::Dimension(m_num_kv_heads[layer_id]),
+                                                             ov::Dimension(m_block_size),
+                                                             ov::Dimension(m_head_size)});
+            } else  if (m_device.find("GPU") != std::string::npos) {
+                // Update key shape, as the key's shape is different from the value's shape
+                m_key_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
+                                                             ov::Dimension(m_num_kv_heads[layer_id]),
+                                                             ov::Dimension(m_head_size),
+                                                             ov::Dimension(m_block_size)});
+            }
         }
     }
 
@@ -134,14 +149,14 @@ public:
         return m_num_decoder_layers;
     }
 
-    ov::PartialShape get_key_cache_shape() const {
+    ov::PartialShape get_key_cache_shape(size_t id) const {
         OPENVINO_ASSERT(m_key_cache_shape.size());
-        return m_key_cache_shape;
+        return m_key_cache_shape[id];
     }
 
-    ov::PartialShape get_value_cache_shape() const {
+    ov::PartialShape get_value_cache_shape(size_t id) const {
         OPENVINO_ASSERT(m_value_cache_shape.size());
-        return m_value_cache_shape;
+        return m_value_cache_shape[id];
     }
 
     size_t get_num_kv_blocks() const {
@@ -153,7 +168,11 @@ public:
     }
 
     size_t get_block_size_in_bytes() const {
-        return m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * get_cache_precision().size();
+        size_t block_size = 0;
+        for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
+            block_size += 2 * m_num_kv_heads[layer_id] * m_block_size * m_head_size * get_cache_precision().size();
+        }
+        return block_size;
     }
 };
 }

@@ -93,15 +93,22 @@ public:
     bool echo = false;
     size_t logprobs = 0;
 
+    // EOS special token
+    int64_t eos_token_id = -1;
     std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
     bool include_stop_str_in_output = false;
     std::set<int64_t> stop_token_ids;
 
+    // penalties (not used in beam search)
+    float repetition_penalty = 1.0f;
+    float presence_penalty = 0.0;
+    float frequency_penalty = 0.0f;
+
     // Beam search specific
     size_t num_beam_groups = 1;
     size_t num_beams = 1;
-    float diversity_penalty = 1.0f;
+    float diversity_penalty = 0.0f;
     float length_penalty = 1.0f;
     size_t num_return_sequences = 1;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
@@ -112,18 +119,12 @@ public:
     float top_p = 1.0f;
     size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
-    float repetition_penalty = 1.0f;
-    float presence_penalty = 0.0;
-    float frequency_penalty = 0.0f;
     size_t rng_seed = 0;
 
     // Assisting generation parameters
     float assistant_confidence_threshold = 0.f;
     size_t num_assistant_tokens = 0;
     size_t max_ngram_size = 0;
-
-    // EOS special token
-    int64_t eos_token_id = -1;
 
     std::optional<AdapterConfig> adapters;
 
@@ -136,11 +137,13 @@ public:
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
-    OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2025.0.0 release")
-    bool is_speculative_decoding() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;
-    void update_generation_config(const ov::AnyMap& config_map);
+
+    OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
+    bool is_speculative_decoding() const;
+
+    void update_generation_config(const ov::AnyMap& properties);
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -187,8 +190,13 @@ static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_c
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
 
 // Predefined Configs
+
+OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
+OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
 OPENVINO_GENAI_EXPORTS GenerationConfig greedy();
+OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
 OPENVINO_GENAI_EXPORTS GenerationConfig multinomial();
+
 }  // namespace genai
 }  // namespace ov
