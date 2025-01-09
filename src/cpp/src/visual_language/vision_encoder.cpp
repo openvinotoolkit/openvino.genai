@@ -651,7 +651,6 @@ constexpr size_t INPUT_IMAGE_SIZE = 336;
 ov::Tensor padding_336(const ov::Tensor& unpadded) {
     ov::Shape _1ss3 = unpadded.get_shape();
     size_t s1 = _1ss3.at(1), s2 = _1ss3.at(2);
-    // TODO: test horizontal and vertical images
     if (s1 < s2) {
         size_t tar = size_t(std::ceil(float(s1) / INPUT_IMAGE_SIZE) * INPUT_IMAGE_SIZE);
         size_t top_padding = (tar - s1) / 2;
@@ -825,7 +824,7 @@ ov::Tensor pad_to_max_num_crops_tensor(const ov::Tensor& nchw, size_t max_crops)
 }
 
 std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
-    ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);  // TODO: this is just resize_and_pad_image() from clip.hpp.
+    ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);
     ImageSize image_size{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
     clip_image_u8 img{hd_image.get_shape().at(2), hd_image.get_shape().at(1), {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
     clip_image_u8 dst;

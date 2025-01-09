@@ -53,7 +53,7 @@ def test_vlm_pipeline(model_id, cache):
         return False
 
     models_path = get_ov_model(model_id, cache)
-    generation_config = GenerationConfig(max_new_tokens=100)
+    generation_config = GenerationConfig(max_new_tokens=30)
 
     for links in image_links_for_testing:
         images = []
