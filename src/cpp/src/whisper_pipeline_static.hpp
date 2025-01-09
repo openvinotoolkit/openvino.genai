@@ -15,6 +15,17 @@
 namespace ov {
 namespace genai {
 
+class DecoderCache {
+public:
+    DecoderCache() {}
+    DecoderCache(std::shared_ptr<ov::Model> model) : m_decoder_model(model) {}
+
+    ov::CompiledModel get_model(uint8_t input_ids_size);
+private:
+    std::unordered_map<uint8_t, ov::CompiledModel> m_cache;
+    std::shared_ptr<ov::Model> m_decoder_model;
+};
+
 class WhisperPipeline::StaticWhisperPipeline : public WhisperPipeline::WhisperPipelineImplBase {
 public:
     StaticWhisperPipeline(const std::filesystem::path& model_path, const ov::AnyMap& properties);
@@ -25,7 +36,7 @@ public:
 
 private:
     WhisperInitializedModels m_models;
-    std::shared_ptr<ov::Model> m_decoder_model;
+    DecoderCache m_decoder_cache;
 };
 
 }  // namespace genai
