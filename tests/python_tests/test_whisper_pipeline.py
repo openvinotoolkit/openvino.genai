@@ -52,50 +52,25 @@ def get_whisper_models_list(tiny_only=False):
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_whisper_model(params, **tokenizer_kwargs):
+def read_whisper_model(params, stateful=True):
     model_id, path = params
+    if not stateful:
+        path = pathlib.Path(f"{path}_with_past")
+
+    if not (path / "openvino_encoder_model.xml").exists():
+        save_model(model_id=model_id, tmp_path=path, stateful=stateful)
+
+    opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+        path,
+        trust_remote_code=True,
+        compile=False,
+        device="CPU",
+        load_in_8bit=False,
+    )
 
     processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
 
-    if (path / "openvino_encoder_model.xml").exists():
-        opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
-            path,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        )
-    else:
-
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer,
-            with_detokenizer=True,
-            clean_up_tokenization_spaces=False,
-            **tokenizer_kwargs,
-        )
-
-        openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-
-        # to store tokenizer config jsons with special tokens
-        tokenizer.save_pretrained(path)
-
-        opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            stateful=False,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        )
-        opt_model.generation_config.save_pretrained(path)
-        opt_model.config.save_pretrained(path)
-        opt_model.save_pretrained(path)
-        processor.save_pretrained(path)
-
-    opt_pipe = pipeline(
+    hf_pipe = pipeline(
         "automatic-speech-recognition",
         model=opt_model,
         tokenizer=processor.tokenizer,
@@ -105,9 +80,40 @@ def read_whisper_model(params, **tokenizer_kwargs):
     return (
         model_id,
         path,
-        opt_pipe,
+        hf_pipe,
         ov_genai.WhisperPipeline(path, "CPU", **{"ENABLE_MMAP": False}),
     )
+
+
+def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+        tokenizer,
+        with_detokenizer=True,
+        clean_up_tokenization_spaces=False,
+    )
+
+    openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
+    openvino.save_model(ov_detokenizer, tmp_path / "openvino_detokenizer.xml")
+
+    # to store tokenizer config jsons with special tokens
+    tokenizer.save_pretrained(tmp_path)
+
+    opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+        model_id,
+        export=True,
+        trust_remote_code=True,
+        stateful=stateful,
+        compile=False,
+        device="CPU",
+        load_in_8bit=False,
+    )
+    opt_model.generation_config.save_pretrained(tmp_path)
+    opt_model.config.save_pretrained(tmp_path)
+    opt_model.save_pretrained(tmp_path)
+
+    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor.save_pretrained(tmp_path)
 
 
 def run_huggingface(
@@ -179,6 +185,9 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
+    _, _, hf_with_past_pipe, genai_with_past_pipe = read_whisper_model(
+        (model_id, tmp_path), stateful=False
+    )
 
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
@@ -188,6 +197,12 @@ def run_pipeline_with_ref(
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
 
         compare_results(hf_result, genai_result)
+
+        genai_with_past_result = run_genai(
+            genai_with_past_pipe, _sample, generation_config, streamer
+        )
+
+        compare_results(hf_result, genai_with_past_result)
 
 
 def compare_results(hf_result, genai_result):
@@ -274,9 +289,9 @@ def test_whisper_config_constructor(model_descr):
 @pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
 def test_whisper_constructors(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(test_sample)["text"]
+    expected = hf_pipe(test_sample)["text"]
 
     genai_result = ov_genai.WhisperPipeline(
         models_path=path, device="CPU", **{"ENABLE_MMAP": False}
@@ -294,17 +309,17 @@ def test_whisper_constructors(model_descr, test_sample):
 @pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
 @pytest.mark.precommit
 def test_max_new_tokens(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(test_sample, max_new_tokens=10)
+    expected = hf_pipe(test_sample, max_new_tokens=10)
 
-    genai_result = pipe.generate(test_sample, max_new_tokens=10)
+    genai_result = genai_pipe.generate(test_sample, max_new_tokens=10)
 
     compare_results(expected, genai_result)
 
-    config = pipe.get_generation_config()
+    config = genai_pipe.get_generation_config()
     config.max_new_tokens = 10
-    genai_result = pipe.generate(test_sample, config)
+    genai_result = genai_pipe.generate(test_sample, config)
     compare_results(expected, genai_result)
 
 
@@ -318,23 +333,23 @@ def test_max_new_tokens(model_descr, test_sample):
 )
 @pytest.mark.precommit
 def test_language_mode(model_descr, test_samples):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
     samples, language = test_samples
 
-    expected = opt_pipe(
+    expected = hf_pipe(
         samples[0], max_new_tokens=30, generate_kwargs={"language": language}
     )
 
-    genai_result = pipe.generate(
+    genai_result = genai_pipe.generate(
         samples[0], max_new_tokens=30, language=f"<|{language}|>"
     )
 
     compare_results(expected, genai_result)
 
-    config = pipe.get_generation_config()
+    config = genai_pipe.get_generation_config()
     config.max_new_tokens = 30
     config.language = f"<|{language}|>"
-    genai_result = pipe.generate(samples[0], config)
+    genai_result = genai_pipe.generate(samples[0], config)
 
     compare_results(expected, genai_result)
 
@@ -345,46 +360,46 @@ def test_language_mode(model_descr, test_samples):
 )
 @pytest.mark.precommit
 def test_task_mode(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(
+    expected = hf_pipe(
         test_sample,
         max_new_tokens=30,
         generate_kwargs={"language": "fr", "task": "translate"},
     )
 
-    genai_result = pipe.generate(
+    genai_result = genai_pipe.generate(
         test_sample, max_new_tokens=30, language="<|fr|>", task="translate"
     )
 
     compare_results(expected, genai_result)
 
-    config = pipe.get_generation_config()
+    config = genai_pipe.get_generation_config()
     config.max_new_tokens = 30
     config.language = "<|fr|>"
     config.task = "translate"
-    genai_result = pipe.generate(test_sample, config)
+    genai_result = genai_pipe.generate(test_sample, config)
 
     compare_results(expected, genai_result)
 
     # seems to be equivalent to translate task
-    expected = opt_pipe(
+    expected = hf_pipe(
         test_sample,
         max_new_tokens=30,
         generate_kwargs={"language": "en", "task": "transcribe"},
     )
 
-    genai_result = pipe.generate(
+    genai_result = genai_pipe.generate(
         test_sample, max_new_tokens=30, language="<|en|>", task="transcribe"
     )
 
     compare_results(expected, genai_result)
 
-    config = pipe.get_generation_config()
+    config = genai_pipe.get_generation_config()
     config.max_new_tokens = 30
     config.language = "<|en|>"
     config.task = "transcribe"
-    genai_result = pipe.generate(test_sample, config)
+    genai_result = genai_pipe.generate(test_sample, config)
 
     compare_results(expected, genai_result)
 
@@ -400,12 +415,12 @@ def test_task_mode(model_descr, test_sample):
 )
 @pytest.mark.precommit
 def test_language_autodetect(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
-    input_features = opt_pipe.feature_extractor(test_sample)
-    language_id = opt_pipe.model.detect_language(input_features["input_features"])[0]
+    input_features = hf_pipe.feature_extractor(test_sample)
+    language_id = hf_pipe.model.detect_language(input_features["input_features"])[0]
     # ensure detected language us not english
-    assert language_id != pipe.get_generation_config().lang_to_id["<|en|>"]
+    assert language_id != genai_pipe.get_generation_config().lang_to_id["<|en|>"]
 
     run_pipeline_with_ref(
         model_id=model_descr[0],
@@ -470,6 +485,34 @@ def test_longform_audio(model_descr, test_sample):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.parametrize(
+    "test_sample", get_samples_from_dataset(length=10, long_form=True)
+)
+@pytest.mark.precommit
+def test_longform_audio_with_past(model_descr, test_sample):
+    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, stateful=True)
+
+    streamer_result = []
+
+    genai_result = run_genai(
+        genai_pipe,
+        test_sample,
+        config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
+        streamer=lambda x: streamer_result.append(x),
+    )
+
+    hf_result = run_huggingface(
+        hf_pipe,
+        test_sample,
+        config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
+    )
+
+    compare_results(hf_result, genai_result)
+
+    assert "".join(streamer_result) == hf_result["text"]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.precommit
 def test_shortform(model_descr):
     samples = []
@@ -494,19 +537,19 @@ def test_shortform(model_descr):
 )
 @pytest.mark.precommit
 def test_initial_prompt_hotwords(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
-    result = pipe.generate(test_sample)
+    result = genai_pipe.generate(test_sample)
 
     assert "Joel Keaton" in result.texts[0]
     assert "Joel Kyton" not in result.texts[0]
 
-    result = pipe.generate(test_sample, initial_prompt="Joel Kyton")
+    result = genai_pipe.generate(test_sample, initial_prompt="Joel Kyton")
 
     assert "Joel Keaton" not in result.texts[0]
     assert "Joel Kyton" in result.texts[0]
 
-    result = pipe.generate(test_sample, hotwords="Joel Kyton")
+    result = genai_pipe.generate(test_sample, hotwords="Joel Kyton")
 
     assert "Joel Keaton" not in result.texts[0]
     assert "Joel Kyton" in result.texts[0]
@@ -521,9 +564,9 @@ def test_initial_prompt_hotwords(model_descr, test_sample):
 )
 @pytest.mark.precommit
 def test_perf_metrics(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
-    result = pipe.generate(test_sample)
+    result = genai_pipe.generate(test_sample)
 
     perf_metrics = result.perf_metrics
 
