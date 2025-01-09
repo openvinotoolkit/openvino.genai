@@ -26,7 +26,7 @@ InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir) {
     } else if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir);
     } else {
-        OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
+        OPENVINO_THROW("Unsupported inpainting pipeline '", class_name, "'");
     }
 }
 
@@ -40,7 +40,7 @@ InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir, co
     } else if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else {
-        OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
+        OPENVINO_THROW("Unsupported inpainting pipeline '", class_name, "'");
     }
 }
 
