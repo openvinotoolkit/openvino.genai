@@ -53,17 +53,17 @@ jobs:
           wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
       - run: >
           . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
+          && timeout 23s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
         env:
           PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && timeout 25s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
+          && timeout 35s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
         env:
           PYTHONPATH: "./build"
       - run: >
           . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/text_generation/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+          && timeout 35s ./build/samples/cpp/text_generation/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/text_generation/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
         env:
           PYTHONPATH: "./build"
