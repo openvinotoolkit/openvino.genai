@@ -2263,6 +2263,9 @@ class ImageGenerationPerfMetrics:
         :param get_inference_total_duration: Returns all inference duration including encoder, decoder and transformer/unet inference.
         :type get_inference_total_duration: float
 
+        :param get_generate_duration: Returns generate duration in millionseconds.
+        :type get_generate_duration: float
+
         :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawImageGenerationPerfMetrics
     """
@@ -2290,4 +2293,8 @@ class ImageGenerationPerfMetrics:
     def get_iteration_duration(self) -> MeanStdPair:
         ...
     def get_inference_total_duration(self) -> float:
+        ...
+    def get_load_time(self) -> float:
+        ...
+    def get_generate_duration(self) -> float:
         ...
