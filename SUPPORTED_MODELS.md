@@ -14,7 +14,6 @@
       <td>ChatGLM</td>
       <td>
         <ul>
-          <li><a href="https://huggingface.co/THUDM/chatglm2-6b"><code>THUDM/chatglm2-6b</code></a></li>
           <li><a href="https://huggingface.co/THUDM/chatglm3-6b"><code>THUDM/chatglm3-6b</code></a></li>
         </ul>
       </td>
