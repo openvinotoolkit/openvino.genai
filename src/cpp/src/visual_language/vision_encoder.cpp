@@ -697,8 +697,7 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
         return padding_336(ov::Tensor{ov::element::u8, {1, new_w, new_h, 3}, dst.buf.data()});
     }
     src = clip_image_u8{width, height, {uint8_data, uint8_data + uint8.get_size()}};
-    // bilinear_resize(src, dst, new_w, new_h);
-    dst = src; // TODO: put resize back
+    bilinear_resize(src, dst, new_w, new_h);
     return padding_336(ov::Tensor{ov::element::u8, {1, new_h, new_w, 3}, dst.buf.data()});
 }
 
