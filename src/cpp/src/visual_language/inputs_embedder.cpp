@@ -144,7 +144,7 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "", bool add_special_tokens_for_chat = false) {
         ov::Tensor encoded_input_ids;
         if (m_is_chat_conversation) {
             // KV cache in model already contains prompts and answers from previous iterations.
@@ -165,8 +165,8 @@ protected:
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
             }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
-            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_for_chat)).input_ids;
+            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_for_chat));
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
@@ -1349,7 +1349,8 @@ std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Token
         if (iter->str().empty()) {
             continue;
         }
-        tokenized.push_back(tokenizer.encode(*iter).input_ids);
+        std::string substr = *iter;
+        tokenized.push_back(tokenizer.encode(substr, ov::genai::add_special_tokens(true)).input_ids);
     }
     return tokenized;
 }
@@ -1377,7 +1378,7 @@ public:
         OPENVINO_ASSERT(images.empty() || m_history.empty(), "Images can only be provided for initial prompt");
         std::vector<ov::Tensor> images_features_proj;
         std::vector<ov::Tensor> tokens;
-        if (!images.empty()) {
+        if (m_history.empty()) {
             std::stringstream images_prompt;
             for (const ov::Tensor& image : to_single_image_tensors(images)) {
                 EncodedImage encoded_image = m_vision_encoder.encode(image);
@@ -1394,17 +1395,18 @@ public:
                 m_templated_chat_history = images_prompt.str();
             }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
+            ov::Tensor unmodified_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(true)).input_ids;
             tokens = phi3_v::split_tokenize(m_templated_chat_history, m_tokenizer);
 
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             if (m_is_chat_conversation) {
-                for (const ov::Tensor& chunk : tokens) {
-                    m_tokenized_history.insert(m_tokenized_history.end(), chunk.data<int64_t>(), chunk.data<int64_t>() + chunk.get_size());
-                }
+                m_tokenized_history = std::vector<int64_t>{unmodified_tokens.data<int64_t>(), unmodified_tokens.data<int64_t>() + unmodified_tokens.get_size()};
             }
         } else {
-            tokens = {get_encoded_input_ids(prompt, metrics)};
+            constexpr char ignored[] = "";
+            constexpr bool add_special_tokens = true;
+            tokens = {get_encoded_input_ids(prompt, metrics, ignored, add_special_tokens)};
         }
         OPENVINO_ASSERT(tokens.size() - 1 == images_features_proj.size());
         size_t features_length = 0;
