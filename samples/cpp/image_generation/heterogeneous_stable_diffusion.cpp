@@ -105,10 +105,6 @@ int32_t main(int32_t argc, char* argv[]) try {
                                          ov::genai::num_inference_steps(number_of_inference_steps_per_image));
 
         imwrite("image_" + std::to_string(imagei) + ".bmp", image, true);
-        auto perf_metrics = pipe.get_perfomance_metrics();
-        std::cout << "pipeline generate duration ms:" << perf_metrics.generate_duration / 1000.0f << std::endl;
-        std::cout << "pipeline inference duration ms:" << perf_metrics.get_inference_total_duration() << std::endl;
-        std::cout << "pipeline iteration:" << perf_metrics.raw_metrics.iteration_durations.size() << std::endl;
     }
 
     return EXIT_SUCCESS;

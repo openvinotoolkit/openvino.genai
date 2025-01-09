@@ -29,10 +29,6 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::num_inference_steps(20),
         ov::genai::rng_seed(42));
     imwrite("lora.bmp", image, true);
-    auto perf_metrics = pipe.get_perfomance_metrics();
-    std::cout << "pipeline generate duration ms:" << perf_metrics.generate_duration / 1000.0f << std::endl;
-    std::cout << "pipeline inference duration ms:" << perf_metrics.get_inference_total_duration() << std::endl;
-    std::cout << "pipeline iteration:" << perf_metrics.raw_metrics.iteration_durations.size() << std::endl;
 
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
     image = pipe.generate(prompt,
@@ -42,10 +38,6 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::num_inference_steps(20),
         ov::genai::rng_seed(42));
     imwrite("baseline.bmp", image, true);
-    perf_metrics = pipe.get_perfomance_metrics();
-    std::cout << "pipeline generate duration ms:" << perf_metrics.generate_duration / 1000.0f << std::endl;
-    std::cout << "pipeline inference duration ms:" << perf_metrics.get_inference_total_duration() << std::endl;
-    std::cout << "pipeline iteration:" << perf_metrics.raw_metrics.iteration_durations.size() << std::endl;
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
