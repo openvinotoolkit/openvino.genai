@@ -1245,91 +1245,10 @@ ov::InferRequest create_hd_feature_transformer() {
     auto t67 = make_shared<Unsqueeze>(t66, t60);
     auto t68 = make_shared<Concat>(NodeVector{t45, t61, t67, t37}, 0);
     auto t69 = make_shared<Reshape>(t54, t68, false);
-
-    // t0 = opset.Parameter({'shape': [-1, 576, 1024], 'element_type': 'f32'},  #  -> f32[?,576,1024]
-    // t1 = opset.Parameter({'shape': [], 'element_type': 'i32'},  #  -> i32[]
-    // t2 = opset.Parameter({'shape': [], 'element_type': 'i32'},  #  -> i32[]
-    // t3 = opset.ShapeOf([t0], {'output_type': 'i64'},  # f32[?,576,1024] -> i64[3]
-    // t4 = opset.Constant(model, 4,    #  -> i64[](0)
-    // t5 = opset.Constant(model, 5,    #  -> i64[](0)
-    // t6 = opset.Gather([t3, t4, t5], {'batch_dims': 0},  # i64[3], i64[], i64[] -> i64[]
-    // t7 = opset.Constant(model, 7,    #  -> i64[1]([1])
-    // t8 = opset.Reshape([t6, t7], {'special_zero': False},  # i64[], i64[1] -> i64[1]
-    // t9 = opset.Constant(model, 9,    #  -> i64[](1)
-    // t10 = opset.Constant(model, 10,  #  -> i64[](0)
-    // t11 = opset.Gather([t3, t9, t10], {'batch_dims': 0},  # i64[3], i64[], i64[] -> i64[]
-    // t12 = opset.Convert([t11], {'destination_type': 'f32'},  # i64[] -> f32[]
-    // t13 = opset.Constant(model, 13,  #  -> f32[](0.5)
-    // t14 = opset.Power([t12, t13], {'auto_broadcast': 'numpy'},  # f32[], f32[] -> f32[]
-    // t15 = opset.Convert([t14], {'destination_type': 'i32'},  # f32[] -> i32[]
-    // t16 = opset.Convert([t15], {'destination_type': 'i64'},  # i32[] -> i64[]
-    // t17 = opset.Constant(model, 17,    #  -> i32[](0)
-    // t18 = opset.Unsqueeze([t16, t17], {},  # i64[], i32[] -> i64[1]
-    // t19 = opset.Constant(model, 19,  #  -> i64[1]([2])
-    // t20 = opset.Constant(model, 20,  #  -> i64[](0)
-    // t21 = opset.Gather([t3, t19, t20], {'batch_dims': 0},  # i64[3], i64[1], i64[] -> i64[1]
-    // t22 = opset.Concat([t8, t18, t18, t21], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    // t23 = opset.Reshape([t0, t22], {'special_zero': False},  # f32[?,576,1024], i64[4] -> f32[?,24,24,1024]
-    // t24 = opset.Constant(model, 24,  #  -> i64[](2)
-    // t25 = opset.Divide([t16, t24], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
-    // t26 = opset.Floor([t25], {},  # i64[] -> i64[]
-    // t27 = opset.Constant(model, 27,   #  -> i32[](0)
-    // t28 = opset.Unsqueeze([t26, t27], {},  # i64[], i32[] -> i64[1]
-    // t29 = opset.Constant(model, 29,   #  -> i64[1]([2])
-    // t30 = opset.Constant(model, 30,   #  -> i64[1]([2])
-    // t31 = opset.Concat([t8, t28, t29, t28, t30, t21], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[6]
-    // t32 = opset.Reshape([t23, t31], {'special_zero': False},  # f32[?,24,24,1024], i64[6] -> f32[?,12,2,12,2,1024]
-    // t33 = opset.Constant(model, 33,
-    // t34 = opset.Transpose([t32, t33], {},  # f32[?,12,2,12,2,1024], i64[6] -> f32[?,12,12,2,2,1024]
-    // t35 = opset.Constant(model, 35,   #  -> i64[1]([-1])
-    // t36 = opset.Constant(model, 36,  #  -> i64[1]([4])
-    // t37 = opset.Multiply([t21, t36], {'auto_broadcast': 'numpy'},  # i64[1], i64[1] -> i64[1]
-    // t38 = opset.Concat([t8, t35, t37], {'axis': 0},  # i64[1], i64[1], i64[1] -> i64[3]
-    // t39 = opset.Reshape([t34, t38], {'special_zero': False},  # f32[?,12,12,2,2,1024], i64[3] -> f32[?,?,4096]
-    // t40 = opset.Multiply([t1, t2], {'auto_broadcast': 'numpy'},  # i32[], i32[] -> i32[]
-    // t41 = opset.Convert([t40], {'destination_type': 'i64'},  # i32[] -> i64[]
-    // t42 = opset.Divide([t6, t41], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
-    // t43 = opset.Floor([t42], {},  # i64[] -> i64[]
-    // t44 = opset.Constant(model, 44,   #  -> i32[](0)
-    // t45 = opset.Unsqueeze([t43, t44], {},  # i64[], i32[] -> i64[1]
-    // t46 = opset.Convert([t1], {'destination_type': 'i64'},  # i32[] -> i64[]
-    // t47 = opset.Unsqueeze([t46, t44], {},  # i64[], i32[] -> i64[1]
-    // t48 = opset.Convert([t2], {'destination_type': 'i64'},  # i32[] -> i64[]
-    // t49 = opset.Unsqueeze([t48, t44], {},  # i64[], i32[] -> i64[1]
-    // t50 = opset.Constant(model, 50,  #  -> i64[1]([-1])
-    // t51 = opset.Concat([t45, t47, t49, t28, t28, t50], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1], i64[1], i64[1] -> i64[6]
-    // t52 = opset.Reshape([t39, t51], {'special_zero': False},  # f32[?,?,4096], i64[6] -> f32[?,?,?,?,?,?]
-    // t53 = opset.Constant(model, 53,
-    // t54 = opset.Transpose([t52, t53], {},  # f32[?,?,?,?,?,?], i64[6] -> f32[?,?,?,?,?,?]
-    // t55 = opset.Multiply([t1, t15], {'auto_broadcast': 'numpy'},  # i32[], i32[] -> i32[]
-    // t56 = opset.Convert([t55], {'destination_type': 'i64'},  # i32[] -> i64[]
-    // t57 = opset.Constant(model, 57,  #  -> i64[](2)
-    // t58 = opset.Divide([t56, t57], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
-    // t59 = opset.Floor([t58], {},  # i64[] -> i64[]
-    // t60 = opset.Constant(model, 60,  #  -> i32[](0)
-    // t61 = opset.Unsqueeze([t59, t60], {},  # i64[], i32[] -> i64[1]
-    // t62 = opset.Multiply([t2, t15], {'auto_broadcast': 'numpy'},  # i32[], i32[] -> i32[]
-    // t63 = opset.Convert([t62], {'destination_type': 'i64'},  # i32[] -> i64[]
-    // t64 = opset.Constant(model, 64,  #  -> i64[](2)
-    // t65 = opset.Divide([t63, t64], {'auto_broadcast': 'numpy', 'm_pythondiv': True},  # i64[], i64[] -> i64[]
-    // t66 = opset.Floor([t65], {},  # i64[] -> i64[]
-    // t67 = opset.Unsqueeze([t66, t60], {},  # i64[], i32[] -> i64[1]
-    // t68 = opset.Concat([t45, t61, t67, t37], {'axis': 0},  # i64[1], i64[1], i64[1], i64[1] -> i64[4]
-    // t69 = opset.Reshape([t54, t68], {'special_zero': False},  # f32[?,?,?,?,?,?], i64[4] -> f32[?,?,?,?]
     shared_ptr<Model> model = make_shared<Model>(make_shared<Result>(t69), ParameterVector{t0, t1, t2});
-    ov::InferRequest hd_feature_transformer = utils::singleton_core().compile_model(
+    return utils::singleton_core().compile_model(
         model, "CPU"
     ).create_infer_request();
-    // hd_feature_transformer.set_input_tensor(0, ov::Tensor{f32, {1, 576, 1024}});
-    // ov::Tensor h_crop = ov::Tensor{i32, {}};
-    // h_crop.data<int32_t>()[0] = 1;
-    // hd_feature_transformer.set_input_tensor(1, h_crop);
-    // ov::Tensor w_crop = ov::Tensor{i32, {}};
-    // w_crop.data<int32_t>()[0] = 1;
-    // hd_feature_transformer.set_input_tensor(2, w_crop);
-    // hd_feature_transformer.infer();
-    // std::cout << hd_feature_transformer.get_output_tensor().get_shape() << '\n';  // [1,24,24,4096]
-    return hd_feature_transformer;
 }
 
 ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop, InferRequest& hd_feature_transformer) {
@@ -1458,7 +1377,7 @@ public:
         OPENVINO_ASSERT(images.empty() || m_history.empty(), "Images can only be provided for initial prompt");
         std::vector<ov::Tensor> images_features_proj;
         std::vector<ov::Tensor> tokens;
-        if (m_history.empty()) {
+        if (!images.empty()) {
             std::stringstream images_prompt;
             for (const ov::Tensor& image : to_single_image_tensors(images)) {
                 EncodedImage encoded_image = m_vision_encoder.encode(image);
@@ -1467,7 +1386,6 @@ public:
                 ++m_image_id;
             }
             images_prompt << prompt;
-            std::string new_templated_chat_history;
             if (m_is_chat_conversation) {
                 m_history.push_back({{"role", "user"}, {"content", images_prompt.str()}});
                 constexpr bool add_generation_prompt = true;

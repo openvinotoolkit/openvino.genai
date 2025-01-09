@@ -824,7 +824,7 @@ ov::Tensor pad_to_max_num_crops_tensor(const ov::Tensor& nchw, size_t max_crops)
     return padded;
 }
 
-std::tuple<ov::Tensor, ImageSize, size_t> get_pixel_values_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
+std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
     ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);  // TODO: this is just resize_and_pad_image() from clip.hpp.
     ImageSize image_size{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
     clip_image_u8 img{hd_image.get_shape().at(2), hd_image.get_shape().at(1), {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
@@ -838,8 +838,7 @@ std::tuple<ov::Tensor, ImageSize, size_t> get_pixel_values_phi3_v(const ov::Tens
     ov::Tensor slices = slice_image(hd_image);
     ov::Tensor concatenated = concatenate_batch(global_image, slices);
     ov::Tensor pixel_values = pad_to_max_num_crops_tensor(concatenated, config.phi3_v.num_crops);
-    size_t num_img_tokens = (image_size.height / INPUT_IMAGE_SIZE) * (image_size.width / INPUT_IMAGE_SIZE) * config.phi3_v.num_img_tokens + 1 + (image_size.height / INPUT_IMAGE_SIZE + 1) * size_t(std::sqrt(config.phi3_v.num_img_tokens));
-    return {std::move(pixel_values), image_size, num_img_tokens};
+    return {std::move(pixel_values), image_size};
 }
 }  // namespace phi3_v
 }  // anonymous namespace
@@ -955,37 +954,8 @@ EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const Proce
 }
 
 EncodedImage VisionEncoder::encode_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
-    // TODO: drop num_img_tokens
-    const auto& [pixel_values, image_size, num_img_tokens] = phi3_v::get_pixel_values_phi3_v(image, config);
-    // std::cout << pixel_values.data<float>()[3*336*336+0] << '\n';
-    // std::cout << pixel_values.data<float>()[3*336*336+1] << '\n';
-    // std::cout << pixel_values.data<float>()[3*336*336+100] << '\n';
-// -1.79226
-// -1.74847
-// -1.14993
-// 0.645675
-// 0.660273
-// 1.09823
+    const auto& [pixel_values, image_size] = phi3_v::get_pixel_values_phi3_v(image, config);
     m_vision_encoder.set_input_tensor(pixel_values);
     m_vision_encoder.infer();
-    // std::cout << pixel_values.get_shape() << ' ' << m_vision_encoder.get_output_tensor().get_shape() << '\n';
-    // ov::Tensor out = m_vision_encoder.get_output_tensor();
-    // std::cout << out.data<float>()[576*1024 + 0] << '\n';
-    // std::cout << out.data<float>()[576*1024 + 1] << '\n';
-    // std::cout << out.data<float>()[576*1024 + 1025] << '\n';
-    // std::cout << out.data<float>()[576*1024 + 4090] << '\n';
-    // std::cout << out.data<float>()[576*1024 + 80000] << '\n';
-// [5,3,336,336] [5,576,1024]
-// 0.134461
-// -0.867309
-// -0.274503
-// 1.73786
-// 0.13117
-// [5,3,336,336] [5,576,1024]
-// -1.01567
-// -0.291421
-// -0.260488
-// 0.743025
-// 1.4099
     return {m_vision_encoder.get_output_tensor(), image_size};
 }
