@@ -14,5 +14,7 @@ NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int 
 
 NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& keys);
 
+void convert_prefix_te(std::string& name);
+
 }
 }

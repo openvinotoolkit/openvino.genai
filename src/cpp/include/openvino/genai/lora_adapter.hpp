@@ -21,16 +21,23 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
+class AdapterImpl;
+
+
 
 // Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
 class OPENVINO_GENAI_EXPORTS Adapter {
-    class Impl;
-    std::shared_ptr<Impl> m_pimpl;
+    std::shared_ptr<AdapterImpl> m_pimpl;
 
     friend AdapterController;
     friend AdapterControllerImpl;
     friend bool operator== (const Adapter& a, const Adapter& b);
     friend bool operator< (const Adapter& a, const Adapter& b);
+
+    friend Adapter flux_adapter_normalization(const Adapter& adapter);
+    friend Adapter diffusers_adapter_normalization(const Adapter& adapter);
+
+    Adapter(const std::shared_ptr<AdapterImpl>& pimpl);
 public:
     explicit Adapter(const std::filesystem::path& path);
     Adapter() = default;
@@ -39,6 +46,9 @@ public:
         return bool(m_pimpl);
     }
 };
+
+Adapter flux_adapter_normalization(const Adapter& adapter);
+Adapter diffusers_adapter_normalization(const Adapter& adapter);
 
 // bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
 // bool OPENVINO_GENAI_EXPORTS operator< (const Adapter& a, const Adapter& b);

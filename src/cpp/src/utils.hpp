@@ -16,7 +16,7 @@ namespace utils {
 // Variable template that checks if a type has begin() and end() member functions
 template<typename, typename = void>
 constexpr bool is_container = false;
- 
+
 template<typename T>
 constexpr bool is_container<T,
     std::void_t<decltype(std::declval<T>().begin()),
@@ -117,6 +117,48 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
+
+#include <optional>
+#include <stdexcept>
+#include <utility>
+
+/// @brief Like std::optional it has two states: default one and set value. The difference from std::optional is that default state is not empty and contains a reference to existing object outside.
+/// @tparam T type of held value
+template <typename T>
+class DefaultOptional {
+public:
+    // Constructor: Requires a reference to the default value.
+    explicit DefaultOptional(T* default_value)
+        : value_ref(default_value) {}
+
+    // Constructor: In case of reference, the object taken an ownership.
+    explicit DefaultOptional(T& _alternative)
+        : alternative(_alternative) {
+        value_ref = &*alternative;
+    }
+
+    T& value() {
+        return *value_ref;
+    }
+
+    const T& value() const {
+        return *value_ref;
+    }
+
+    operator T&() {
+        return value();
+    }
+
+    operator const T&() const {
+        return value();
+    }
+
+private:
+    T* value_ref;               // Reference to the default value.
+    std::optional<T> alternative; // Optional alternative value.
+};
+
+
 
 }  // namespace utils
 }  // namespace genai

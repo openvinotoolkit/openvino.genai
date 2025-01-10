@@ -880,7 +880,7 @@ public:
                 cur_index += cur_dims[i];
                 end[0] = cur_index;
                 auto B = std::make_shared<v0::Constant>(ov::Tensor(weight.second.B->get_tensor_view(), begin, end));
-                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;  // ov::Tensor ROI constructor doesn't respect the origin ownership so we need to keep a pointer to the original constant
+                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;  // ov::Tensor ROI constructor doesn't keep the origin reference so we need to keep a pointer to the original constant to avoid its early disposal
                 result.emplace(
                     dst_patterns[i].format(*match),
                     LoRAWeight(
@@ -899,7 +899,8 @@ public:
 
 
 
-LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
+LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
+    std::cerr << "Applied Kohya preprocessing\n";
     std::vector<ReplaceRule> replace_rules = {
         {
             "lora_unet_double_blocks_(\\d+)_img_attn_proj",
@@ -968,12 +969,43 @@ LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
             result.insert(new_tensors->begin(), new_tensors->end());
             continue;
         }
-        result.emplace(std::regex_replace(src_tensor.first, std::regex("lora.unet"), "transformer"), src_tensor.second);
+        std::string name = src_tensor.first;
+        std::cerr << "Before key conversion: " << name << "\n";
+        ov::genai::convert_prefix_te(name);
+        std::cerr << "After key conversion: " << name << "\n";
+        result.emplace(std::regex_replace(name, std::regex("lora.unet"), "transformer"), src_tensor.second);
     }
 
     return result;
 }
 
+LoRATensors diffusers_normalization (const LoRATensors& tensors) {
+    std::cerr << "Applied Diffusers normalization\n";
+
+    std::set<std::string> keys;
+    for(const auto& kv: tensors) {
+        keys.insert(kv.first);
+    }
+    auto mapping = ov::genai::maybe_map_non_diffusers_lora_to_diffusers(keys);
+    if(!mapping.empty()) {
+        std::cerr << "MAPPING WORKS\n";
+        LoRATensors new_tensors;
+        for(const auto& kv: tensors) {
+            auto it = mapping.find(kv.first);
+            if(it == mapping.end()) {
+                // pass
+                new_tensors[kv.first] = kv.second;
+            } else {
+                // replace key
+                //std::cerr << kv.first << " --> " << it->second << "\n";
+                new_tensors[it->second] = kv.second;
+            }
+        }
+        return new_tensors;
+    } else {
+        return tensors;
+    }
+}
 
 } // namespace
 
@@ -982,53 +1014,116 @@ namespace ov {
 namespace genai {
 
 
-class Adapter::Impl {
+class AdapterImpl {
 public:
-    Impl(const std::filesystem::path& path) :
+
+    virtual const LoRATensors& get_tensors() const = 0;
+    virtual bool eq(const AdapterImpl* other) const = 0;
+};
+
+class SafetensorsAdapterImpl : public AdapterImpl {
+public:
+
+    SafetensorsAdapterImpl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
     {
-        if(true) {  // FIXME: This is for Kohya fine tuned FLUX only
-            // TODO: Move it into a separate Adapter class with name mappings
-            tensors = flux_lora_preprocessing(tensors);
-        }
-        std::set<std::string> keys;
-        for(const auto& kv: tensors) {
-            keys.insert(kv.first);
-        }
-        auto mapping = maybe_map_non_diffusers_lora_to_diffusers(keys);
-        if(!mapping.empty()) {
-            LoRATensors new_tensors;
-            for(const auto& kv: tensors) {
-                auto it = mapping.find(kv.first);
-                if(it == mapping.end()) {
-                    // pass
-                    new_tensors[kv.first] = kv.second;
-                } else {
-                    // replace key
-                    new_tensors[it->second] = kv.second;
-                }
-            }
-            tensors = new_tensors;
-        }
+        // if(true) {  // FIXME: This is for Kohya fine tuned FLUX only
+        //     // TODO: Move it into a separate Adapter class with name mappings
+        //     tensors = flux_kohya_lora_preprocessing(tensors);
+        // }
+
     }
+
+    const LoRATensors& get_tensors() const override {
+        return tensors;
+    }
+
+    bool eq(const AdapterImpl* other) const override {
+        if(auto other_casted = dynamic_cast<const SafetensorsAdapterImpl*>(other)) {
+            return other == this;
+        }
+        return false;
+    }
+
+private:
 
     LoRATensors tensors;
 };
 
 
+/// @brief Adapter that derived from another adapter by applying Derivation function.
+/// Two objects instanciated from the same Derivation type are equal when both origins and derivations are equal (while comparing with operator==).
+/// The derivation is postponed to the first call of get_tensors(), giving a way to compare Adapters without applying the derivation.
+/// It is supposed that Derivation works always in the same way and don't have a side effect.
+template <typename Derivation>
+class DerivedAdapterImpl : public AdapterImpl {
+public:
+
+    DerivedAdapterImpl(const std::shared_ptr<AdapterImpl>& origin, const Derivation& derivation) : origin(origin), derivation(derivation) {}
+
+    const LoRATensors& get_tensors() const override {
+        if(!tensors) {
+            tensors = derivation(origin->get_tensors());
+        }
+        return *tensors;
+    }
+
+    bool eq(const AdapterImpl* other) const {
+        if(auto other_casted = dynamic_cast<const DerivedAdapterImpl<Derivation>*>(other)) {
+            return origin.get() == other_casted->origin.get() && derivation == other_casted->derivation;
+        }
+        return false;
+    }
+
+private:
+
+    std::shared_ptr<AdapterImpl> origin;
+    Derivation derivation;
+    mutable std::optional<LoRATensors> tensors;
+};
+
+
+// struct FluxKohyaDerivation {
+//     static LoRATensors operator(const LoRATensors& tensors) {
+//         return flux_kohya_lora_preprocessing()
+//     }
+// };
+
+Adapter diffusers_adapter_normalization(const Adapter& adapter) {
+    auto origin = adapter.m_pimpl;
+    using DiffusersDerivedAdapter = DerivedAdapterImpl<decltype(&diffusers_normalization)>;
+    if(std::dynamic_pointer_cast<DiffusersDerivedAdapter>(origin)) {
+        return adapter; // it is already derived adapter, skipping
+    }
+    return Adapter(std::make_shared<DiffusersDerivedAdapter>(origin, diffusers_normalization));
+}
+
+Adapter flux_adapter_normalization(const Adapter& adapter) {
+    auto origin = adapter.m_pimpl;
+    using FluxDerivedAdapter = DerivedAdapterImpl<decltype(&flux_kohya_lora_preprocessing)>;
+    if(std::dynamic_pointer_cast<FluxDerivedAdapter>(origin)) {
+        return adapter; // it is already derived adapter, skipping
+    }
+    return Adapter(std::make_shared<FluxDerivedAdapter>(origin, flux_kohya_lora_preprocessing));
+}
+
+
+Adapter::Adapter(const std::shared_ptr<AdapterImpl>& pimpl) : m_pimpl(pimpl) {}
+
+
 Adapter::Adapter(const std::filesystem::path& path) :
-    m_pimpl(std::make_shared<Adapter::Impl>(path)) {
+    m_pimpl(std::make_shared<SafetensorsAdapterImpl>(path)) {
 }
 
 
 bool operator== (const Adapter& a, const Adapter& b) {
-    return a.m_pimpl == b.m_pimpl;
+    return a.m_pimpl->eq(b.m_pimpl.get());
 }
 
 
-bool operator< (const Adapter& a, const Adapter& b) {
-    return a.m_pimpl < b.m_pimpl;
-}
+// bool operator< (const Adapter& a, const Adapter& b) {
+//     return a.m_pimpl < b.m_pimpl;
+// }
 
 
 struct AdapterControllerImpl {
@@ -1047,9 +1142,9 @@ struct AdapterControllerImpl {
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, config.get_tensor_name_prefix().value_or("")));
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
             if(params_getter.type != ov::element::f32) {
-                for(auto const& tensor : adapter_impl->tensors) {
+                for(auto const& tensor : adapter_impl->get_tensors()) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
                     OPENVINO_ASSERT(lora_tensor_type == tensor.second.B->get_output_element_type(0));
                     if(params_getter.type == ov::element::dynamic) {
@@ -1114,7 +1209,7 @@ struct AdapterControllerImpl {
         }
     }
 
-    static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
+    static std::shared_ptr<AdapterImpl> get_adapter_impl(const Adapter& adapter) {
         return adapter.m_pimpl;
     }
 
@@ -1190,7 +1285,7 @@ struct AdapterControllerImpl {
         const auto& adapters = current_config.get_adapters();
         weight_getters.reserve(adapters.size());
         for(const auto& adapter: adapters) {
-            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, current_config.get_tensor_name_prefix().value_or("")));
+            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->get_tensors(), current_config.get_tensor_name_prefix().value_or("")));
         }
 
         auto state = infer_request.query_state();
