@@ -18,15 +18,12 @@ namespace genai {
 class DecoderCache {
 public:
     DecoderCache() = default;
-    DecoderCache(std::shared_ptr<ov::Model> model, ov::PartialShape shape)
-     : m_decoder_model(model)
-     , m_lhs_shape(shape) {}
+    DecoderCache(std::shared_ptr<ov::Model> model) : m_decoder_model(model) {}
 
-    ov::CompiledModel get_model(uint8_t input_ids_size);
+    ov::InferRequest get_model(uint8_t input_ids_size);
 private:
-    std::unordered_map<uint8_t, ov::CompiledModel> m_cache;
+    std::unordered_map<uint8_t, ov::InferRequest> m_cache;
     std::shared_ptr<ov::Model> m_decoder_model;
-    ov::PartialShape m_lhs_shape;
 };
 
 class WhisperPipeline::StaticWhisperPipeline : public WhisperPipeline::WhisperPipelineImplBase {
