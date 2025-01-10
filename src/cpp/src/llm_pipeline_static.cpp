@@ -865,13 +865,22 @@ EncodedResults StatefulLLMPipeline::generate(
 
     m_request.infer();
 
-    auto logits = m_request.get_tensor("logits");
+    auto padded_logits = m_request.get_tensor("logits");
+    // FIXME: Here is workaround to get only useful units of returned logits.
+    //        If SliceOut is applied, there will be only 1 useful logit returned,
+    //        nothing is required here.
+    //        Other way, model will return logits of full context length,
+    //        as internally prefill model is specially reshaped to return them.
+    //        Fix should be done on OpenVINO side, so the model should return only
+    //        useful logits of input prompt length, dropping the implementation-related
+    //        padding ones.
+    auto padded_sequence_len = padded_logits.get_shape()[1];
+    auto logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - input_ids.get_size(), padded_sequence_len);
     int64_t output_sequence_len = logits.get_shape().at(1);
 
-    // Swap max_new_token to get_max_new_token()
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(input_ids.get_size());
+    sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
     sequence_group->schedule_tokens(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
@@ -1341,6 +1350,8 @@ EncodedResults StatelessLLMPipeline::generate(
     auto logits = m_prefill_request.get_tensor("logits");
     int64_t output_sequence_len = logits.get_shape().at(1);
 
+    // TODO: Pass input_ids to say that there is room for generation.
+    //       Retrive only useful logits and work only with them here.
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, padded_input_ids, config, 1 /* block_size */);
     sequence_group->update_processed_tokens_num(m_kvcache_desc.max_prompt_size - output_sequence_len);
