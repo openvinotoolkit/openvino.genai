@@ -133,7 +133,7 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
+size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
 
@@ -157,7 +157,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
         copy_blocks_timer.end();
     }
-
     // if no tokens were scheduled, we are out of memory => free all requests and return
     if (scheduler_output.m_total_num_scheduled_tokens == 0) {
         for (size_t i = 0; i < m_requests.size(); ++i) {
@@ -168,9 +167,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             }
         }
         _free_non_running_requests();
-        return;
+        return 0;
     }
-
+    size_t num_generated_tokens = scheduler_output.m_total_num_scheduled_tokens;
+    
     ov::Tensor logits;
     {
         static ManualTimer timer("forward");
@@ -243,6 +243,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
 
     step_timer.end();
+    return num_generated_tokens;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
@@ -251,12 +252,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
     }
 }
 
-std::vector<EncodedGenerationResult>
+std::pair<std::vector<EncodedGenerationResult>, PerfMetrics>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer) {
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+
+    PerfMetrics perf_metrics;
+    auto& raw_perf_counters = perf_metrics.raw_metrics;
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -303,13 +307,20 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
-            step();
+            const auto infer_start = std::chrono::steady_clock::now();
+            auto num_generated_tokens = step();
+            const auto infer_end = std::chrono::steady_clock::now();
+            const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+            raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+            // raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+            raw_perf_counters.m_new_token_times.emplace_back(infer_end);
+            raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
             throw;
         }
 
-        auto & generation = generations.at(0);
+        GenerationHandle & generation = generations.at(0);
         if (streamer_ptr && generation->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
@@ -362,7 +373,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
-    return results;
+    return {results, perf_metrics};
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {

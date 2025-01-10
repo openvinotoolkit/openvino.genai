@@ -70,12 +70,12 @@ public:
     /**
      * Performs a single inference step of all running (and pulls awaiting) requests
      */
-    virtual void step() = 0;
+    virtual size_t step() = 0;
 
     /**
      * Performs monolitic generation based on encoded prompts
      */
-    virtual std::vector<EncodedGenerationResult>
+    virtual std::pair<std::vector<EncodedGenerationResult>, PerfMetrics>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) = 0;
@@ -83,7 +83,7 @@ public:
     /**
      * Performs monolitic generation based on text prompts
      */
-    std::vector<GenerationResult>
+    std::pair<std::vector<GenerationResult>, PerfMetrics>
     generate(const std::vector<std::string>& prompts,
              std::vector<ov::genai::GenerationConfig> sampling_params,
              const StreamerVariant& streamer);

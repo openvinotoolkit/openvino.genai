@@ -4,6 +4,7 @@
 
 #include "llm_pipeline_base.hpp"
 
+#include "icontinuous_batching.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
 namespace ov::genai {
@@ -87,7 +88,7 @@ public:
         }, inputs);
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<GenerationResult> generated = m_impl.generate(
+        auto [generated, perf_metrics] = m_impl.m_impl->generate(
             prompts,
             std::vector<GenerationConfig>{prompts.size(), config},
             streamer
@@ -99,7 +100,7 @@ public:
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
-        return {std::move(plain_replies), std::move(plain_scores)};
+        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics)};
     }
 
     EncodedResults generate(
@@ -148,7 +149,7 @@ public:
 
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config}, streamer);
+        auto [generated, perf_metrics] = m_impl.m_impl->generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config}, streamer);
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
@@ -156,7 +157,7 @@ public:
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
-        return {std::move(plain_tokens), std::move(plain_scores)};
+        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics)};
     }
 
     void start_chat(const std::string& system_message) override {

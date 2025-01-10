@@ -64,6 +64,7 @@ protected:
     friend class ContinuousBatchingForPromptLookupImpl;
     friend class SpeculativeDecodingImpl;
     friend class PromptLookupImpl;
+    friend class ContinuousBatchingAdapter;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 

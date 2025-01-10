@@ -140,11 +140,11 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
-    return m_impl->generate(input_ids, sampling_params, streamer);
+    return m_impl->generate(input_ids, sampling_params, streamer).first;
 }
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
-    return m_impl->generate(prompts, sampling_params, streamer);
+    return m_impl->generate(prompts, sampling_params, streamer).first;
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {

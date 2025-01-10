@@ -29,12 +29,13 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_history.clear();
 };
 
-std::vector<GenerationResult>
+std::pair<std::vector<GenerationResult>, PerfMetrics>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
     std::vector<ov::Tensor> input_ids;
+    auto start_time = std::chrono::steady_clock::now();
 
     static ManualTimer timer("tokenize");
     if (m_is_chat_conversation) {
@@ -55,9 +56,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         timer.end();
     }
 
-    std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
-
+    // std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
+    auto [encoded, perf_metrics] = generate(input_ids, sampling_params, streamer);
     std::vector<GenerationResult> decoded;
+    auto decode_start_time =  std::chrono::steady_clock::now();
     decoded.reserve(encoded.size());
     for (EncodedGenerationResult& res : encoded) {
         std::vector<std::string> generated;
@@ -76,7 +78,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             res.m_status
         });
     }
+    auto stop_time = std::chrono::steady_clock::now();
 
-    return decoded;
+    auto& raw_counters = perf_metrics.raw_metrics;
+    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_start_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(stop_time - decode_start_time));
+    perf_metrics.m_evaluated = false;
+    perf_metrics.evaluate_statistics(start_time);
+
+    return {decoded, perf_metrics};
 }
 }

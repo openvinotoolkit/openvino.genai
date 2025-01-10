@@ -128,7 +128,7 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
     }
 }
 
-void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
+size_t ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
     m_draft_pipeline->pull_awaiting_requests(true);
@@ -186,9 +186,12 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
+
+    // TODO: return valid number of generated tokens
+    return 0;
 }
 
-std::vector<EncodedGenerationResult>
+std::pair<std::vector<EncodedGenerationResult>, PerfMetrics>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {
@@ -236,6 +239,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(input_ids.size());
+    PerfMetrics perf_metrics;
+    // TODO: add collecting perf statistics
 
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
@@ -280,7 +285,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    return results;
+    return {results, perf_metrics};
 }
 
 SpeculativeDecodingMetrics
