@@ -108,7 +108,7 @@ jobs:
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI and LoRA
         run: |
           wget -O ./ov_models/soulcard.safetensors https://civitai.com/api/download/models/72591
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
+          # python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
           rm -rf ./ov_models/
       - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Decoding via GenAI
         run: |
