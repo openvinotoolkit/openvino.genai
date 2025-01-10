@@ -97,6 +97,14 @@ def test_batch_size_switch():
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
 
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_empty_encoded_inputs_throw():
+    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    with pytest.raises(RuntimeError):
+        ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
+
 #
 # Chat scenario
 #
