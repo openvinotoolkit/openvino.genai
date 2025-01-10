@@ -68,25 +68,6 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
 }
 
 ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
-    // Python types
-    // TODO: Remove this after ov::Any is fixed to allow pass types, that can be casted to target type. Ticket: 157622
-    std::set<std::string> size_t_properties = {
-        "max_new_tokens",
-        "max_length",
-        "min_new_tokens",
-        "logprobs",
-        "num_beam_groups",
-        "num_beams",
-        "num_return_sequences",
-        "no_repeat_ngram_size",
-        "top_k",
-        "rng_seed",
-        "num_assistant_tokens",
-        "max_initial_timestamp_index",
-        "num_images_per_prompt",
-        "num_inference_steps",
-        "max_sequence_length"
-    };
     // These properties should be casted to ov::AnyMap, instead of std::map. 
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
@@ -105,9 +86,6 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance(py_obj, float_32_type)) {
         return py_obj.cast<float>();
     } else if (py::isinstance<py::int_>(py_obj)) {
-        if (size_t_properties.find(property_name) != size_t_properties.end()) {
-            return py_obj.cast<size_t>();
-        }
         return py_obj.cast<int64_t>();
     } else if (py::isinstance<py::none>(py_obj)) {
         return {};
