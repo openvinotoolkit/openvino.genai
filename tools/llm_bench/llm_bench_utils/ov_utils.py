@@ -418,6 +418,9 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     main_model_name = "unet" if "unet" in data else "transformer"
     callback = PerfCollector(main_model_name)
 
+    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+    callback.orig_tokenizer = orig_tokenizer
+
     start = time.perf_counter()
 
     scheduler_type = data.get("scheduler", ["", ""])[1]

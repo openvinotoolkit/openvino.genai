@@ -123,6 +123,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
 def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption, callback=None):
     set_seed(args['seed'])
     input_text = image_param['prompt']
+    input_token_size = callback.orig_tokenizer(input_text, return_tensors="pt").input_ids.numel()
     input_args = collects_input_args(image_param, args['model_type'], args['model_name'], args["num_steps"], args.get("height"), args.get("width"), callback)
     out_str = f"Input params: Batch_size={args['batch_size']}, " \
               f"steps={input_args['num_inference_steps']}, width={input_args['width']}, height={input_args['height']}"
@@ -157,6 +158,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     generation_time = end - start
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
+        in_size=input_token_size * args['batch_size'],
         infer_count=input_args["num_inference_steps"],
         gen_time=generation_time,
         res_md5=result_md5_list,
