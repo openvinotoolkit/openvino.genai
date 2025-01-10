@@ -21,7 +21,10 @@ foreach(pyi_file IN LISTS pyi_files)
                         ERROR_VARIABLE error_message
                         RESULT_VARIABLE exit_code
                         OUTPUT_STRIP_TRAILING_WHITESPACE)
+        message(STATUS "compare output_message is ${output_message}")
+        message(STATUS "compare error_message is ${error_message}")
         if(NOT exit_code EQUAL 0)
+            message(STATUS "commited_pyi_file is ${commited_pyi_file}, pyi_file is ${pyi_file}")
             message(FATAL_ERROR "File ${commited_pyi_file} is outdated and need to be regenerated with pybind11-stubgen")
         endif()
     endif()
