@@ -367,7 +367,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
             self.iteration_time = []
             self.start_time = time.perf_counter()
             self.duration = -1
-            self.main_model_name =  main_model_name
+            self.main_model_name = main_model_name
 
         def __call__(self, step, num_steps, latents):
             self.iteration_time.append(time.perf_counter() - self.start_time)
