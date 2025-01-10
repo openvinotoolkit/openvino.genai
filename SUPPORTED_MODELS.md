@@ -324,6 +324,10 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-2B"><code>OpenGVLab/InternVL2-2B</code></a></li>
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-4B"><code>OpenGVLab/InternVL2-4B</code></a></li>
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-8B"><code>OpenGVLab/InternVL2-8B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-1B"><code>OpenGVLab/InternVL2_5-1B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-2B"><code>OpenGVLab/InternVL2_5-2B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-4B"><code>OpenGVLab/InternVL2_5-4B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-8B"><code>OpenGVLab/InternVL2_5-8B</code></a></li>
         </ul>
       </td>
     </tr>
