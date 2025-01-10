@@ -874,8 +874,12 @@ EncodedResults StatefulLLMPipeline::generate(
     //        Fix should be done on OpenVINO side, so the model should return only
     //        useful logits of input prompt length, dropping the implementation-related
     //        padding ones.
+    auto logits = padded_logits;
     auto padded_sequence_len = padded_logits.get_shape()[1];
-    auto logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - input_ids.get_size(), padded_sequence_len);
+    if (padded_sequence_len > 1) {
+        // If SliceOut is not applied:
+        logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - input_ids.get_size(), padded_sequence_len);
+    }
     int64_t output_sequence_len = logits.get_shape().at(1);
 
     auto sequence_group = std::make_shared<SequenceGroup>(
