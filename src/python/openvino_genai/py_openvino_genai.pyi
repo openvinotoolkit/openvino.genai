@@ -1745,7 +1745,7 @@ class UNet2DConditionModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
-class VLMDecodedResults:
+class VLMDecodedResults(DecodedResults):
     """
     
         Structure to store resulting batched text outputs and scores for each batch.
