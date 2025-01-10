@@ -18,13 +18,8 @@ It's not required to install [../../export-requirements.txt](../../export-requir
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
-optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+optimim-cli export openvino --model <model> <output_folder>
 ```
-
-Model examples to use for different samples:
-chat_sample - meta-llama/Llama-2-7b-chat-hf
-speculative_decoding_lm - meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model
-other samples - meta-llama/Llama-2-7b-hf
 
 ## Sample Descriptions
 ### Common information
@@ -38,6 +33,7 @@ See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#
 - **Description:**
 Basic text generation using a causal language model.
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
+Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Demonstrates simple text continuation.
 - **Run Command:**
   ```bash
@@ -48,6 +44,7 @@ Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_noteboo
 - **Description:**
 Uses beam search for more coherent text generation.
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
+Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Improves text quality with beam search.
 - **Run Command:**
   ```bash
@@ -58,6 +55,7 @@ Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_noteboo
 - **Description:**
 Interactive chat interface powered by OpenVINO.
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) that provides an example of LLM-powered text generation in Python.
+Recommended models: meta-llama/Llama-2-7b-chat-hf, TinyLlama/TinyLlama-1.1B-Chat-v1.0, etc
 - **Main Feature:** Real-time chat-like text generation.
 - **Run Command:**
   ```bash
@@ -70,9 +68,9 @@ The following template can be used as a default, but it may not work properly wi
 "chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
 ```
 
-
 ### 4. Multinomial Causal LM (`multinomial_causal_lm`)
 - **Description:** Text generation with multinomial sampling for diversity.
+Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Introduces randomness for creative outputs.
 - **Run Command:**
   ```bash
@@ -82,6 +80,7 @@ The following template can be used as a default, but it may not work properly wi
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
 - **Description:** 
 [Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assested-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
+Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Specialized prompt-based inference.
 - **Run Command:**
   ```bash
@@ -97,6 +96,8 @@ Speculative decoding works the following way. The draft model predicts the next 
 This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In that case they are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
 
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
+
+Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model, etc
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash
