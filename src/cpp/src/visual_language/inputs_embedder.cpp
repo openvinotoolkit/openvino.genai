@@ -1170,6 +1170,39 @@ namespace phi3_v {
 //     .permute(0, 1, 3, 2, 4, 5)  # n_img, h_crop, 12, w_crop, 12, 4096
 //     .reshape(num_images, h_crop * H // 2, w_crop * H // 2, 4 * C)  # n_img, h_crop*12, w_crop*12, 4096
 // )
+// Obtained in the following way
+// import torch
+// import openvino as ov
+// import numpy as np
+// class Model(torch.nn.Module):
+//     def forward(self, image_features, h_crop, w_crop):
+//         """
+//         image_features: (num_images*num_crops, 24*24, 1024)
+//         output: (num_images, h_crop*12, w_crop*12, 4096), h_crop*w_crop == num_crops
+//         """
+//         N, L, C = image_features.shape
+//         num_images = N // (h_crop * w_crop)
+//         H = (torch.tensor(L, dtype=torch.float32)**0.5).int()
+//         image_features_hd = (
+//             image_features.reshape(N, H, H, C)  # N, 24, 24, 1024
+//             .reshape(N, H // 2, 2, H // 2, 2, C)  # N, 12, 2, 12, 2, 1024
+//             .permute(0, 1, 3, 2, 4, 5)  # N, 12, 12, 2, 2, 1024
+//             .reshape(N, -1, 4 * C)  # N, 144, 4096
+//             .reshape(num_images, h_crop, w_crop, H // 2, H // 2, -1)  # n_img, h_crop, w_crop, 12, 12, 4096
+//             .permute(0, 1, 3, 2, 4, 5)  # n_img, h_crop, 12, w_crop, 12, 4096
+//             .reshape(num_images, h_crop * H // 2, w_crop * H // 2, 4 * C)  # n_img, h_crop*12, w_crop*12, 4096
+//         return {"o": image_features_hd}
+// model = Model()
+// example_input = {"image_features": torch.rand((4, 576, 1024), dtype=torch.float32), "h_crop": torch.tensor(2, dtype=torch.int32), "w_crop": torch.tensor(2, dtype=torch.int32)}
+// ov_model = ov.convert_model(model, example_input=example_input, input=ov.PartialShape([-1, 576, 1024]))
+// # ov_model.outputs[0].get_tensor().set_names({"out"})
+// ov.save_model(ov_model, "reshape_hd_patches_2x2merge.xml")
+// inp = np.arange(4 * 576 * 1024).reshape([4, 576, 1024])
+// test = ov.Core().compile_model(ov_model, "CPU")
+// print(ov_model)
+// print(test([inp, 2, 2])["o"].flatten())
+// 2. Run https://github.com/slyalin/openvino_devtools/blob/bcd4a51b1354b24b2316ac3e1c77b2f87ae7a497/openvino_devtools/ov2py.py with the IR.
+// 3. Translate the printed Python implementation to C++.
 ov::InferRequest create_hd_feature_transformer() {
     using namespace ov;
     using namespace element;
