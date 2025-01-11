@@ -864,42 +864,42 @@ class ImageGenerationConfig:
         ...
 class ImageGenerationPerfMetrics:
     """
-
+    
         Holds performance metrics for each generate call.
-
+    
         PerfMetrics holds fields with mean and standard deviations for the following metrics:
         - Generate iteration duration, ms
         - Inference duration for unet model, ms
         - Inference duration for transformer model, ms
-
+    
         Additional fields include:
         - Load time, ms
         - Generate total duration, ms
         - inference durations for each encoder, ms
         - inference duration of vae_encoder model, ms
         - inference duration of vae_decoder model, ms
-
+    
         Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
-
+    
         :param get_load_time: Returns the load time in milliseconds.
         :type get_load_time: float
-
+    
         :param get_generate_duration: Returns the generate duration in milliseconds.
         :type get_generate_duration: float
-
+    
         :param get_inference_total_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
         :type get_inference_total_duration: float
-
+    
         :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
         :type get_iteration_duration: MeanStdPair
-
+    
         :param unet_inference_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
         :type unet_inference_duration: MeanStdPair
-
+    
         :param get_transformer_inference_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
         :type get_transformer_inference_duration: MeanStdPair
-
+    
         :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawImageGenerationPerfMetrics
     """
@@ -1293,15 +1293,15 @@ class PipelineMetrics:
         ...
 class RawImageGenerationPerfMetrics:
     """
-
+    
         Structure with raw performance metrics for each generation before any statistics are calculated.
-
+    
         :param unet_inference_durations: Durations for each unet inference in microseconds.
         :type unet_inference_durations: List[float]
-
+    
         :param transformer_inference_durations: Durations for each transformer inference in microseconds.
         :type transformer_inference_durations: List[float]
-
+    
         :param iteration_durations: Durations for each step iteration in microseconds.
         :type iteration_durations: List[float]
     """
