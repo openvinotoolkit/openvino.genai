@@ -98,18 +98,24 @@ jobs:
           optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/ -d cpu -n 1 --optimum -ic 10
           rm -rf ./ov_models/
+      - name: Create prompt file for for image generation
+        run: |
+          prompt="side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background"
+          json_template='{steps: $steps, width: $width, height: $height, guidance_scale: $guidance_scale, prompt: $prompt}'
+          jq -n -c --arg steps "30" --arg width "64" --arg height "128" --arg guidance_scale "1.0" --arg prompt "$prompt" "$json_template" > ./image_generation.jsonl
+          jq -n -c --arg steps "4" --arg width "64" --arg height "32" --arg guidance_scale "7.0" --arg prompt "$prompt" "$json_template" >> ./image_generation.jsonl
       - name: Test echarlaix/tiny-random-latent-consistency Optimum Intel
         run: |
           optimum-cli export openvino --model echarlaix/tiny-random-latent-consistency --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-latent-consistency
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --optimum --num_steps 4
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --optimum --num_steps 4
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI
         run: |
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --num_steps 4
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --num_steps 4
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI and LoRA
         run: |
           wget -O ./ov_models/soulcard.safetensors https://civitai.com/api/download/models/72591
-          # python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
-          rm -rf ./ov_models/
+          # python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
+          rm -rf ./ov_models/ ./image_generation.jsonl
       - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Decoding via GenAI
         run: |
           optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format fp16 ov_models/TinyLlama-1.1B-Chat-v1.0/FP16
