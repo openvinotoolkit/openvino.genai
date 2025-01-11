@@ -97,6 +97,10 @@ def test_image_model_genai(model_id, model_type):
     if ("flux" in model_id or "stable-diffusion-3" in model_id) and model_type != "text-to-image":
         pytest.skip(reason="FLUX or SD3 are supported as text to image only")
 
+    if "flux" in model_id:
+        pytest.skip(reason="katuni4ka/tiny-random-flux contains ClipTextModel instead of T5TextModel as \
+            second text encoder, which is not supported by OpenVINO GenAI FLUX")
+
     with tempfile.TemporaryDirectory() as temp_dir:
         GT_FILE = os.path.join(temp_dir, "gt.csv")
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
@@ -138,8 +142,6 @@ def test_image_model_genai(model_id, model_type):
         result = run_wwb(wwb_args)
 
         assert result.returncode == 0
-        print(f"result.stdout = {result.stdout}")
-        print(f"result.stderr = {result.stderr}")
         similarity = float(str(result.stderr).split(" ")[-1])
         assert similarity >= 0.98
         assert os.path.exists(os.path.join(temp_dir, "target"))
