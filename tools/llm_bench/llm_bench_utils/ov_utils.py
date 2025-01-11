@@ -363,10 +363,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
 
     class PerfCollector:
-        def __init__(self) -> types.NoneType:
+        def __init__(self, main_model_name="unet") -> types.NoneType:
             self.iteration_time = []
             self.start_time = time.perf_counter()
             self.duration = -1
+            self.main_model_name = main_model_name
 
         def __call__(self, step, num_steps, latents):
             self.iteration_time.append(time.perf_counter() - self.start_time)
@@ -405,8 +406,6 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         def get_vae_decoder_step_count(self):
             return 1
 
-    callback = PerfCollector()
-
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
     if adapter_config:
         ov_config['adapters'] = adapter_config
@@ -416,6 +415,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         data = json.load(f)
 
     model_class_name = data.get("_class_name", "")
+    main_model_name = "unet" if "unet" in data else "transformer"
+    callback = PerfCollector(main_model_name)
+
+    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+    callback.orig_tokenizer = orig_tokenizer
 
     start = time.perf_counter()
 
