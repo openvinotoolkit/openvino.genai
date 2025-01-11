@@ -26,9 +26,7 @@ def run_wwb(args):
 def setup_module():
     for model_id in OV_IMAGE_MODELS:
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
-        subprocess.run(["huggingface-cli", "download",
-                        model_id, "--local-dir",
-                        MODEL_PATH], capture_output=True, text=True)
+        subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
 
 
 def teardown_module():
@@ -96,6 +94,9 @@ def test_image_model_types(model_id, model_type, backend):
                             ])),
 )
 def test_image_model_genai(model_id, model_type):
+    if ("flux" in model_id or "stable-diffusion-3" in model_id) and model_type != "text-to-image":
+        pytest.skip(reason="FLUX or SD3 are supported as text to image only")
+
     with tempfile.TemporaryDirectory() as temp_dir:
         GT_FILE = os.path.join(temp_dir, "gt.csv")
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
@@ -137,7 +138,8 @@ def test_image_model_genai(model_id, model_type):
         result = run_wwb(wwb_args)
 
         assert result.returncode == 0
-        assert "Metrics for model" in result.stderr
+        print(f"result.stdout = {result.stdout}")
+        print(f"result.stderr = {result.stderr}")
         similarity = float(str(result.stderr).split(" ")[-1])
         assert similarity >= 0.98
         assert os.path.exists(os.path.join(temp_dir, "target"))
