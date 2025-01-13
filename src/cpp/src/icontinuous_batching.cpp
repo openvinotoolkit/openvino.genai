@@ -82,7 +82,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
 
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
-        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         // Reevaluate taking into accound tokenization/detokenization times.
