@@ -311,10 +311,9 @@ jobs:
           python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
           
-          # will install transformers 4.46.3 version
           # transformers 4.46.3 will enable return_timestamps tests
           # this check enabled for windows only. Ticket: 160205.
-          python -m pip install git+https://github.com/huggingface/optimum-intel.git@753f84db6e0966580eb9eaa74a808213be730631
+          python -m pip install transformers==4.46.3
           
           python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "not test_smoke"
 

@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
 
 Streaming with a custom class:
 
-C++ template for a stremer.
+C++ template for a streamer.
 ```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
