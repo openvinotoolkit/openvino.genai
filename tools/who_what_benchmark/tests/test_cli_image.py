@@ -146,7 +146,6 @@ def test_image_model_genai(model_id, model_type):
 
         assert result.returncode == 0
         assert "Metrics for model" in result.stderr
-        print("result.stderr: ", result.stderr)
         similarity = get_similarity(str(result.stderr))
         assert similarity >= 0.98
         assert os.path.exists(os.path.join(temp_dir, "target"))
