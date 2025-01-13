@@ -4,7 +4,6 @@
 
 #include "llm_pipeline_base.hpp"
 
-#include "icontinuous_batching.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
 namespace ov::genai {
@@ -123,9 +122,9 @@ public:
             }
         }
 
-        raw_metrics.generate_durations = std::vector<MicroSeconds>();
+        raw_metrics.generate_durations.clear();
         raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
-        // Updated generate duration, need to reevaluate statistics.
+        // Need to reevaluate statistics with the updated start_time which includes tokenization/detokenization durations.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
