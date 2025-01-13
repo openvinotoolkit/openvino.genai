@@ -465,7 +465,6 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
 struct NPUDesc {
     std::string arch;
     int64_t max_tiles;
-    bool compiler_dq;
 };
 
 std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
@@ -475,8 +474,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     }
     const auto arch = core.get_property("NPU", ov::device::architecture);
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
-    const auto compiler_dq = core.get_property("NPU", ov::intel_npu::compiler_dynamic_quantization);
-    return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
+    return std::make_optional(NPUDesc{arch, max_tiles});
 }
 
 ov::AnyMap get_baseline_common_config() {
@@ -510,6 +508,8 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
     auto config = get_default_common_config(model);
     if (is_cw_compressed(model)) {
         config.emplace("NPUW_DQ", "YES");
+        config.emplace("NPUW_DQ_FULL", "NO");
+        config.emplace("NPU_COMPILER_DYNAMIC_QUANTIZATION", true);
     } else {
         config.emplace("NPUW_PMM", "NO");
     }
@@ -517,10 +517,6 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
         npudesc->arch == "4000" &&
         npudesc->max_tiles != -1) {
         config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
-    }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
-        config.emplace("NPUW_DQ_FULL", "NO");
-        config.emplace("NPU_COMPILATION_MODE_PARAMS", "enable-weights-dynamic-dequantization=true");
     }
     return config;
 }
@@ -534,15 +530,13 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
     }
     // NB: Unconditionally set for generation model
     config.emplace("NPUW_DQ", "YES");
+    config.emplace("NPUW_DQ_FULL", "NO");
+    config.emplace("NPU_COMPILER_DYNAMIC_QUANTIZATION", true);
     if (npudesc.has_value() && npudesc->arch == "4000") {
         config.emplace("NPU_DPU_GROUPS", 4);
     }
     if (hint == GenerateHint::FAST_COMPILE) {
         config.emplace("NPUW_UNFOLD_IREQS", "YES");
-    }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
-        config.emplace("NPUW_DQ_FULL", "NO");
-        config.emplace("NPU_COMPILATION_MODE_PARAMS", "enable-weights-dynamic-dequantization=true");
     }
     return config;
 }
