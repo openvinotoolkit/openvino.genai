@@ -20,11 +20,12 @@ def main():
 
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
+    #{ "STATIC_PIPELINE" : "STATELESS", "NPUW_DEVICES" : "CPU" })
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    pipe.start_chat()
+    # pipe.start_chat()
     while True:
         try:
             prompt = input('question:\n')
@@ -32,7 +33,7 @@ def main():
             break
         pipe.generate(prompt, config, streamer)
         print('\n----------')
-    pipe.finish_chat()
+    # pipe.finish_chat()
 
 
 if '__main__' == __name__:

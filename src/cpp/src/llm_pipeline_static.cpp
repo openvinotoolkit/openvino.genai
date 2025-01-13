@@ -29,7 +29,31 @@
 #include "json_utils.hpp"
 #include "utils.hpp"
 
+#define PRINT_VAR(var) std::cout << #var << " : " << var << std::endl;
+
 namespace {
+void dump_tensor(const ov::Tensor& input, const std::string& base_path) {
+    ov::Tensor tensor;
+
+    if (input.is_continuous()) {
+        tensor = input;
+    } else {
+        // Create temporary tensor and copy data in. Dumping is never fast, anyway
+        tensor = ov::Tensor(input.get_element_type(), input.get_shape());
+        input.copy_to(tensor);
+    }
+
+    const auto bin_path = base_path + ".bin";
+    {
+        std::ofstream bin_file(bin_path, std::ios_base::out | std::ios_base::binary);
+        bin_file.write(static_cast<const char*>(tensor.data()), static_cast<std::streamsize>(tensor.get_byte_size()));
+    }
+    const auto meta_path = base_path + ".txt";
+    {
+        std::ofstream meta_file(meta_path);
+        meta_file << tensor.get_element_type() << ' ' << tensor.get_shape() << std::endl;
+    }
+}
 
 namespace opp = ov::pass::pattern;
 class TransposeValueTensors : public ov::pass::MatcherPass {
@@ -749,7 +773,9 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     // Replace CACHE_DIR option if NPUW is enabled
     set_npuw_cache_dir(pipeline_config);
 
-    return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
+    auto comp_model = genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config);
+    ov::genai::utils::print_compiled_model_properties(comp_model, "Stateful LLM NPU Compiled Model");
+    return std::make_shared<ov::CompiledModel>(comp_model);
 }
 
 DecodedResults StatefulLLMPipeline::generate(
@@ -865,6 +891,9 @@ EncodedResults StatefulLLMPipeline::generate(
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
     utils::initialize_position_ids(position_ids, attention_mask);
 
+    ov::genai::utils::print_tensor(input_ids);
+    ov::genai::utils::print_tensor(attention_mask);
+    ov::genai::utils::print_tensor(position_ids);
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
@@ -872,6 +901,9 @@ EncodedResults StatefulLLMPipeline::generate(
     m_request.infer();
 
     auto padded_logits = m_request.get_tensor("logits");
+    //dump_tensor(padded_logits, "stateful_padded_logits");
+    auto last_token = utils::argmax(padded_logits, 0);
+    PRINT_VAR(last_token);
     // FIXME: Here is workaround to get only useful units of returned logits.
     //        If SliceOut is applied, there will be only 1 useful logit returned,
     //        nothing is required here.
@@ -882,12 +914,13 @@ EncodedResults StatefulLLMPipeline::generate(
     //        padding ones.
     auto logits = padded_logits;
     auto padded_sequence_len = padded_logits.get_shape()[1];
+    PRINT_VAR(padded_sequence_len);
     if (padded_sequence_len > 1) {
         // If SliceOut is not applied:
         logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - prompt_len, padded_sequence_len);
     }
     int64_t output_sequence_len = logits.get_shape().at(1);
-
+    PRINT_VAR(output_sequence_len);
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, input_ids, config, 1 /* block_size */);
     sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
@@ -917,6 +950,7 @@ EncodedResults StatefulLLMPipeline::generate(
         const auto running_sequences = sequence_group->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() == 1u);
         auto last_token = running_sequences.front()->get_generated_ids().back();
+        PRINT_VAR(last_token);
 
         // Just change the variables here, as pointers to them are already set to corresponding tensors
         input_ids_data = last_token;
@@ -929,6 +963,11 @@ EncodedResults StatefulLLMPipeline::generate(
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
+
+        auto len =  m_request.get_tensor("logits").get_shape()[1];
+        PRINT_VAR(len);
+        auto new_token = utils::argmax(m_request.get_tensor("logits"), 0);
+        PRINT_VAR(new_token);
 
         SamplerOutput sampler_output = m_sampler.sample(
             {sequence_group}, m_request.get_tensor("logits"));
@@ -1069,8 +1108,8 @@ void StatelessLLMPipeline::setupAndCompileModels(
     auto kvcache_model = model;
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(kvcache_model);
-    // (3) Align u4 ZP constants
-    align_u4_zp_constants(kvcache_model);
+    // // (3) Align u4 ZP constants
+    // align_u4_zp_constants(kvcache_model);
     // (4) Clone the model - this will be prefill
     auto prefill_model = kvcache_model->clone();
     prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
@@ -1112,15 +1151,16 @@ void StatelessLLMPipeline::setupAndCompileModels(
     set_npuw_cache_dir(prefill_config);
     set_npuw_cache_dir(generate_config);
 
+    std::cout << "CPU hardcoded" << std::endl;
     auto kv_compiled_model = core.compile_model(
-        kvcache_model, device, generate_config
+        kvcache_model, "CPU"
     );
-    ov::genai::utils::print_compiled_model_properties(kv_compiled_model, "Static LLM kv compiled model");
+    ov::genai::utils::print_compiled_model_properties(kv_compiled_model, "Stateless LLM kv compiled model");
     m_kvcache_request = kv_compiled_model.create_infer_request();
 
-    auto prefill_compiled_model = core.compile_model(prefill_model, device, prefill_config);
+    auto prefill_compiled_model = core.compile_model(prefill_model, "CPU");
     m_prefill_request = prefill_compiled_model.create_infer_request();
-    ov::genai::utils::print_compiled_model_properties(prefill_compiled_model, "Static LLM prefill compiled model");
+    ov::genai::utils::print_compiled_model_properties(prefill_compiled_model, "Stateless LLM prefill compiled model");
 }
 
 void StatelessLLMPipeline::setupAndImportModels(
@@ -1338,16 +1378,22 @@ EncodedResults StatelessLLMPipeline::generate(
     // but if continuation is needed, prompt contains information about the entire conversation.
     prepare_for_new_conversation();
 
+    ov::genai::utils::print_tensor(input_ids);
+
     auto padded_input_ids = m_prefill_request.get_tensor("input_ids");
     const size_t offset = padded_input_ids.get_size() - input_ids.get_size();
     copy_with_offset(input_ids, offset, padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
     fill_tensor<int64_t>(padded_attention_mask, 1u, offset);
+    ov::genai::utils::print_tensor(make_tensor_slice(padded_attention_mask, 1, offset, padded_attention_mask.get_size()));
 
     auto padded_position_ids = m_prefill_request.get_tensor("position_ids");
+    auto padded_inputs_len = padded_input_ids.get_size();
+    PRINT_VAR(padded_inputs_len);
     auto* padded_pos_data = padded_position_ids.data<int64_t>();
     std::iota(padded_pos_data + offset, padded_pos_data + padded_position_ids.get_size(), 0u);
+    ov::genai::utils::print_tensor(make_tensor_slice(padded_position_ids, 1, offset, padded_position_ids.get_size()));
 
     m_prefill_request.infer();
     raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
@@ -1357,8 +1403,11 @@ EncodedResults StatelessLLMPipeline::generate(
     m_kvcache_desc.num_stored_tokens += static_cast<uint32_t>(prompt_len);
 
     auto logits = m_prefill_request.get_tensor("logits");
+    //dump_tensor(logits, "stateless_padded_logits");
+    auto last_token = utils::argmax(logits, 0);
+    PRINT_VAR(last_token);
     int64_t output_sequence_len = logits.get_shape().at(1);
-
+    PRINT_VAR(output_sequence_len);
     // TODO: Pass input_ids to say that there is room for generation.
     //       Retrive only useful logits and work only with them here.
     auto sequence_group = std::make_shared<SequenceGroup>(
@@ -1420,6 +1469,8 @@ EncodedResults StatelessLLMPipeline::generate(
         input_ids_data[0] = running_sequences.front()->get_generated_ids().back();
         position_ids_data[0] = m_kvcache_desc.num_stored_tokens;
         attention_mask_data[m_kvcache_desc.num_stored_tokens - 1] = 1u;
+        auto last_token = running_sequences.front()->get_generated_ids().back();
+        PRINT_VAR(last_token);
 
         m_kvcache_request.infer();
         m_kvcache_desc.num_stored_tokens += 1;
@@ -1427,6 +1478,12 @@ EncodedResults StatelessLLMPipeline::generate(
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
+        auto len =  m_kvcache_request.get_tensor("logits").get_shape()[1];
+        PRINT_VAR(len);
+        auto new_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
+        PRINT_VAR(new_token);
+
+        std::cout << std::endl;
         SamplerOutput sampler_output = m_sampler.sample(
             {sequence_group}, m_kvcache_request.get_tensor("logits"));
         stream_generated_tokens(streamer_ptr, handle);
