@@ -478,7 +478,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     bool compiler_dq = false;
     const auto supported_properties = core.get_property("NPU", ov::supported_properties);
     if (std::find(supported_properties.begin(), supported_properties.end(),
-                  "COMPILER_DYNAMIC_QUANTIZATION") != supported_properties.end()) {
+                  "NPU_COMPILER_DYNAMIC_QUANTIZATION") != supported_properties.end()) {
         compiler_dq = true;
     }
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
