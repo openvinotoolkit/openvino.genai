@@ -36,9 +36,9 @@ public:
 
     bool has_non_finished_requests() override;
 
-    size_t step() override;
+    void step() override;
 
-    std::pair<std::vector<EncodedGenerationResult>, PerfMetrics>
+    std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;

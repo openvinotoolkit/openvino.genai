@@ -28,7 +28,7 @@ bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
     return m_pipeline->has_non_finished_requests();
 }
 
-size_t ContinuousBatchingPipeline::PromptLookupImpl::step() {
+void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
     candidates_timer.start();
     m_pipeline->generate_candidates();
@@ -67,12 +67,9 @@ size_t ContinuousBatchingPipeline::PromptLookupImpl::step() {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
-    
-    // TODO: add valid number of output tokens
-    return 0;
 }
 
-std::pair<std::vector<EncodedGenerationResult>, PerfMetrics>
+std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer) {
@@ -113,8 +110,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(input_ids.size());
-    PerfMetrics perf_metrics;
-    // TODO: add collecting statistics
 
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
@@ -163,7 +158,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     generate_timer.end();
     m_sd_metrics.total_duration = generate_timer.get_duration();
 
-    return {results, perf_metrics};
+    return results;
 }
 
 SpeculativeDecodingMetrics

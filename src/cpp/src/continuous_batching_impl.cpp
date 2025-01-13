@@ -133,7 +133,7 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
-size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
 
@@ -167,10 +167,8 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             }
         }
         _free_non_running_requests();
-        return 0;
     }
-    size_t num_generated_tokens = scheduler_output.m_total_num_scheduled_tokens;
-    
+    m_pipeline_metrics.total_num_scheduled_tokens = scheduler_output.m_total_num_scheduled_tokens;
     ov::Tensor logits;
     {
         static ManualTimer timer("forward");
@@ -243,7 +241,6 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
 
     step_timer.end();
-    return num_generated_tokens;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std::optional<AdapterConfig>& adapters) {
@@ -252,7 +249,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::set_adapters(const std:
     }
 }
 
-std::pair<std::vector<EncodedGenerationResult>, PerfMetrics>
+std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer) {
@@ -308,7 +305,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     while (has_non_finished_requests() && continue_generation) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
-            auto num_generated_tokens = step();
+            step();
+            auto num_generated_tokens = get_metrics().total_num_scheduled_tokens;
             const auto infer_end = std::chrono::steady_clock::now();
             const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
             raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
@@ -369,11 +367,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
 
         result.m_status = generations[request_id]->get_status();
+        
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        result.perf_metrics = perf_metrics;
         results.push_back(std::move(result));
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
-    return {results, perf_metrics};
+    return results;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {
