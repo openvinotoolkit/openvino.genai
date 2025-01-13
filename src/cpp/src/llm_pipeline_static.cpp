@@ -735,6 +735,8 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
             update_config(pipeline_config, {"NPUW_LLM_OPTIMIZE_V_TENSORS", true});
     }
 
+    rename_key(pipeline_config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(pipeline_config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(pipeline_config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
