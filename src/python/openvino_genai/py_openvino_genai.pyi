@@ -440,10 +440,13 @@ class EncodedGenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[list[int]]
     m_scores: list[float]
+    perf_metrics: PerfMetrics
     def __init__(self) -> None:
         ...
     @property
@@ -693,11 +696,14 @@ class GenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[str]
     m_scores: list[float]
     m_status: GenerationStatus
+    perf_metrics: PerfMetrics
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
@@ -1211,6 +1217,9 @@ class PipelineMetrics:
     
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
+    
+        :param total_num_scheduled_tokens: Number of tokens scheduled for processing at the previous step of the pipeline.
+        :type total_num_scheduled_tokens: int
     """
     def __init__(self) -> None:
         ...
@@ -1228,6 +1237,9 @@ class PipelineMetrics:
         ...
     @property
     def scheduled_requests(self) -> int:
+        ...
+    @property
+    def total_num_scheduled_tokens(self) -> int:
         ...
 class RawPerfMetrics:
     """
