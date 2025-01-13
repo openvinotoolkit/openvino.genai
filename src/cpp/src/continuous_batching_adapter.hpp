@@ -201,7 +201,7 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.generate_durations.clear();
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
-        // Updated generate duration, need to reevaluate statistics.
+        // Reevaluate statistics with the new start_time which includes time for preparing inputs
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
