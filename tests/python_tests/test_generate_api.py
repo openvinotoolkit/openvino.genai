@@ -368,29 +368,32 @@ class StremerWithResults:
 
     def accumulate(self, subword) -> bool:
         self.results.append(subword)
-        return True
+        return False
     
     def get_result_str(self) -> str:
         return ''.join(self.results)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults()])
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
+    streamer_class = None
     if isinstance(callback, StremerWithResults):
         streamer_class = callback
         callback = callback.accumulate
     pipe = read_model(get_models_list()[0])[4]
     res = pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
-    assert res == streamer_class.get_result_str()
+    if isinstance(streamer_class, StremerWithResults):
+        assert res == streamer_class.get_result_str()
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults()])
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_descr", get_models_list())
 def test_callback_decoding_metallama(model_descr, callback):
+    streamer_class = None
     if isinstance(callback, StremerWithResults):
         streamer_class = callback
         callback = callback.accumulate
@@ -401,7 +404,8 @@ def test_callback_decoding_metallama(model_descr, callback):
         pytest.skip()
     pipe = read_model(model_descr)[4]
     res = pipe.generate(prompt, max_new_tokens=300, streamer=callback)
-    assert res[0].text == streamer_class.get_result_str()
+    if isinstance(streamer_class, StremerWithResults):
+        assert res == streamer_class.get_result_str()
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
