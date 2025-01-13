@@ -2,8 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/llm_pipeline.hpp"
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 int main(int argc, char* argv[]) try {
+    #ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    system("chcp 65001"); //Using UTF-8 Encoding
+    #endif
     if (2 != argc) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR>");
     }
