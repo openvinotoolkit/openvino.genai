@@ -37,7 +37,8 @@ def teardown_module():
 def get_similarity(output: str) -> float:
     METRIC_PATTERN = "INFO:whowhatbench.wwb:   similarity"
     substr = output[output.find(METRIC_PATTERN) + len(METRIC_PATTERN) + 1:]
-    return float(substr.split(" ")[9].split("\n")[0])
+    stritems = [x for x in substr.split(" ") if x != ""]
+    return float(stritems[1].split("\n")[0])
 
 
 @pytest.mark.parametrize(
@@ -145,6 +146,7 @@ def test_image_model_genai(model_id, model_type):
 
         assert result.returncode == 0
         assert "Metrics for model" in result.stderr
+        print("result.stderr: ", result.stderr)
         similarity = get_similarity(str(result.stderr))
         assert similarity >= 0.98
         assert os.path.exists(os.path.join(temp_dir, "target"))
