@@ -5,13 +5,14 @@ import shutil
 import pytest
 import logging
 import tempfile
+import sys
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
-OV_IMAGE_MODELS = ["OpenVINO/stable-diffusion-v1-5-int8-ov"]
+OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl"]
 
 
 def run_wwb(args):
@@ -32,6 +33,12 @@ def setup_module():
 def teardown_module():
     logger.info("Remove models")
     shutil.rmtree(MODEL_CACHE)
+
+
+def get_similarity(output: str) -> float:
+    METRIC_PATTERN = "INFO:whowhatbench.wwb:   similarity"
+    substr = output[output.find(METRIC_PATTERN) + len(METRIC_PATTERN) + 1:]
+    return float(substr.split(" ")[9].split("\n")[0])
 
 
 @pytest.mark.parametrize(
@@ -79,9 +86,12 @@ def test_image_model_types(model_id, model_type, backend):
     shutil.rmtree("reference", ignore_errors=True)
     shutil.rmtree("target", ignore_errors=True)
 
+    print("result.stderr: ", result.stderr)
+    print("result.stdout: ", result.stdout)
+
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
-    similarity = float(str(result.stderr).split(" ")[-1])
+    similarity = get_similarity(str(result.stderr))
     assert similarity >= 0.98
 
 
@@ -136,7 +146,7 @@ def test_image_model_genai(model_id, model_type):
 
         assert result.returncode == 0
         assert "Metrics for model" in result.stderr
-        similarity = float(str(result.stderr).split(" ")[-1])
+        similarity = get_similarity(str(result.stderr))
         assert similarity >= 0.98
         assert os.path.exists(os.path.join(temp_dir, "target"))
 
