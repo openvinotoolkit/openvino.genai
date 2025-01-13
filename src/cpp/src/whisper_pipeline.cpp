@@ -10,6 +10,7 @@
 
 #include "utils.hpp"
 #include "whisper/context_tokens.hpp"
+#include "whisper/models/decoder.hpp"
 #include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
@@ -47,25 +48,18 @@ namespace genai {
 
 class WhisperPipeline::WhisperPipelineStatefulImpl : public WhisperPipeline::WhisperPipelineImplBase {
 public:
-    ov::genai::WhisperInitializedModels m_models;
-
     WhisperPipelineStatefulImpl(const std::filesystem::path& models_path,
                                 const std::string& device,
                                 const ov::AnyMap& properties)
         : WhisperPipelineImplBase{models_path} {
         ov::Core core = utils::singleton_core();
 
-        ov::CompiledModel compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
+        ov::CompiledModel compiled_model =
+            core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
-        m_models.encoder = compiled_model.create_infer_request();
+        m_encoder = compiled_model.create_infer_request();
 
-        compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
-        m_models.decoder = compiled_model.create_infer_request();
-
-        compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, properties);
-        m_models.decoder_with_past = compiled_model.create_infer_request();
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper decoder with past model");
+        m_decoder = WhisperDecoder::from_path(models_path, device, properties);
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -99,7 +93,8 @@ public:
                                                            m_model_config,
                                                            context_tokens,
                                                            raw_speech_input,
-                                                           m_models,
+                                                           m_encoder,
+                                                           m_decoder,
                                                            m_feature_extractor,
                                                            streamer_ptr);
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -136,6 +131,10 @@ public:
 
         return result;
     }
+
+private:
+    ov::InferRequest m_encoder;
+    std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
 };
 
 std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {

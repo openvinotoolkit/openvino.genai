@@ -75,8 +75,12 @@ public:
     void finish_chat() override;
 
 private:
+    uint32_t m_max_prompt_len = 0u;
     uint32_t m_kvcache_total = 0u;
     ov::InferRequest m_request;
+
+    Sampler m_sampler;
+
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 };
