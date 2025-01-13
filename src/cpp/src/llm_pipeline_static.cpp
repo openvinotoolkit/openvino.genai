@@ -484,7 +484,7 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
 }
 
-ov::AnyMap get_baseline_common_config(bool enable_compiler_dq) {
+ov::AnyMap get_baseline_common_config(const std::optional<NPUDesc>& npudesc) {
     ov::AnyMap config = {
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
         { "NPUW_DEVICES", "NPU" },
@@ -496,23 +496,20 @@ ov::AnyMap get_baseline_common_config(bool enable_compiler_dq) {
         { "NPUW_SLICE_OUT", "YES" },
         { "NPUW_FUNCALL_ASYNC", "YES" }
     };
-    if (enable_compiler_dq) {
+    // FIXME: this config logic is getting more and more complex
+    if (npudesc.has_value() && npudesc->compiler_dq) {
         config.emplace("NPUW_DQ", "YES");
         config.emplace("NPUW_DQ_FULL", "NO");
-        config.emplace("NPU_COMPILER_DYNAMIC_QUANTIZATION", true);
+        config.emplace("NPU_COMPILER_DYNAMIC_QUANTIZATION", "YES");
         config.erase("NPUW_DCOFF_TYPE");
         config.erase("NPUW_DCOFF_SCALE");
     }
     return config;
 }
 
-bool enable_compiler_dq(const std::optional<NPUDesc>& npudesc) {
-    return npudesc.has_value() && npudesc->compiler_dq;
-}
-
 ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model,
                                      const std::optional<NPUDesc>& npudesc) {
-    auto config = get_baseline_common_config(enable_compiler_dq(npudesc));
+    auto config = get_baseline_common_config(npudesc);
     const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
     if (npu_l0 && std::atoi(npu_l0) == 1) {
         config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
@@ -531,7 +528,7 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
         config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
     // Specify NPUW DQ if Compiler DQ is not enabled
-    if (!enable_compiler_dq(npudesc)) {
+    if (!npudesc.has_value() || !npudesc->compiler_dq) {
         if (is_cw_compressed(model)) {
             config.emplace("NPUW_DQ", "YES");
         } else {
@@ -555,7 +552,7 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
         config.emplace("NPUW_UNFOLD_IREQS", "YES");
     }
     // Specify NPUW DQ if Compiler DQ is not enabled
-    if (!enable_compiler_dq(npudesc)) {
+    if (!npudesc.has_value() || !npudesc->compiler_dq) {
         config.emplace("NPUW_DQ", "YES");
     }
     return config;
