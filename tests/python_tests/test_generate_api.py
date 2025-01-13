@@ -361,25 +361,47 @@ def test_callback_batch_fail(callback):
         pipe.generate(['1', '2'], ov_genai.GenerationConfig(), callback)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+class StremerWithResults:
+    results: List[str] = []
+    def __init__(self):
+        self.results = []
+
+    def accumulate(self, subword) -> bool:
+        self.results.append(subword)
+        return True
+    
+    def get_result_str(self) -> str:
+        return ''.join(self.results)
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults])
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
+    if isinstance(callback, StremerWithResults):
+        streamer_class = callback
+        callback = callback.accumulate
     pipe = read_model(get_models_list()[0])[4]
-    pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
+    res = pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
+    assert res[0].text == streamer_class.get_result_str()
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults])
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_descr", get_models_list())
 def test_callback_decoding_metallama(model_descr, callback):
+    if isinstance(callback, StremerWithResults):
+        streamer_class = callback
+        callback = callback.accumulate
     # On metallam this prompt generates output which can shorten after adding new tokens.
     # Test that streamer correctly handles such cases.
     prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
     if model_descr[0] != 'meta-llama/Meta-Llama-3-8B-Instruct':
         pytest.skip()
     pipe = read_model(model_descr)[4]
-    pipe.generate(prompt, max_new_tokens=300, streamer=callback)
+    res = pipe.generate(prompt, max_new_tokens=300, streamer=callback)
+    assert res[0].text == streamer_class.get_result_str()
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
