@@ -65,7 +65,7 @@ def test_vlm_pipeline(cache):
         for prompt in prompts[1:]:
             result_from_streamer = []
             res = pipe.generate(prompt, generation_config=get_greedy(), streamer=streamer)
-        assert res.texts[0] == ''.join(result_from_streamer)
+            assert res.texts[0] == ''.join(result_from_streamer)
 
         pipe.finish_chat()
 
