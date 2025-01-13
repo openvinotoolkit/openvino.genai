@@ -92,6 +92,11 @@ public:
 
     virtual ImageGenerationPerfMetrics get_perfomance_metrics() = 0;
 
+    void save_load_time(std::chrono::steady_clock::time_point start_time) {
+        auto stop_time = std::chrono::steady_clock::now();
+        m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+    }
+
     virtual ~DiffusionPipeline() = default;
 
 protected:
@@ -137,6 +142,7 @@ protected:
     PipelineType m_pipeline_type;
     std::shared_ptr<IScheduler> m_scheduler;
     ImageGenerationConfig m_generation_config;
+    float m_load_time_ms = 0.f;
 };
 
 } // namespace genai

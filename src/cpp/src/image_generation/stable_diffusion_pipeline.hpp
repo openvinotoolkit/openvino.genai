@@ -430,6 +430,7 @@ public:
     }
 
     ImageGenerationPerfMetrics get_perfomance_metrics() override {
+        m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
     }
 

@@ -18,6 +18,7 @@ namespace genai {
 Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
+    auto start_time = std::chrono::steady_clock::now();
     if (class_name == "StableDiffusionPipeline" || class_name == "LatentConsistencyModelPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline") {
@@ -25,11 +26,13 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
+    m_impl->save_load_time(start_time);
 }
 
 Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
     const std::string class_name = get_class_name(root_dir);
 
+    auto start_time = std::chrono::steady_clock::now();
     if (class_name == "StableDiffusionPipeline" || class_name == "LatentConsistencyModelPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline") {
@@ -37,9 +40,11 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
+    m_impl->save_load_time(start_time);
 }
 
 Image2ImagePipeline::Image2ImagePipeline(const InpaintingPipeline& pipe) {
+    auto start_time = std::chrono::steady_clock::now();
     if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion_xl);
     } else if (auto stable_diffusion = std::dynamic_pointer_cast<StableDiffusionPipeline>(pipe.m_impl); stable_diffusion != nullptr) {
@@ -47,6 +52,7 @@ Image2ImagePipeline::Image2ImagePipeline(const InpaintingPipeline& pipe) {
     } else {
         OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Image2ImagePipeline");
     }
+    m_impl->save_load_time(start_time);
 }
 
 Image2ImagePipeline::Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
