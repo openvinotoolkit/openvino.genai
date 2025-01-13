@@ -258,6 +258,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
+    raw_perf_counters.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -310,7 +311,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             const auto infer_end = std::chrono::steady_clock::now();
             const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
             raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-            // raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+            raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
             raw_perf_counters.m_new_token_times.emplace_back(infer_end);
             raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
         } catch (...) {
