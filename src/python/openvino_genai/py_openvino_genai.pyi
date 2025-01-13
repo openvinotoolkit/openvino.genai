@@ -446,11 +446,13 @@ class EncodedGenerationResult:
     """
     m_generation_ids: list[list[int]]
     m_scores: list[float]
-    perf_metrics: PerfMetrics
     def __init__(self) -> None:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class EncodedResults:
     """
@@ -703,7 +705,6 @@ class GenerationResult:
     m_generation_ids: list[str]
     m_scores: list[float]
     m_status: GenerationStatus
-    perf_metrics: PerfMetrics
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
@@ -712,6 +713,9 @@ class GenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class GenerationStatus:
     """
