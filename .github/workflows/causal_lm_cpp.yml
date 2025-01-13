@@ -209,7 +209,7 @@ jobs:
           "
           echo "你好！ 你好嗎？" passed
 
-          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
@@ -219,7 +219,7 @@ jobs:
           print('\n\n')
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           prompts = [
-            'Alan Turing was a',
+            'Why is the Sun yellow?',
             'return 0',
             '你好！ 你好嗎？'
           ]
@@ -227,7 +227,6 @@ jobs:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
             tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
-            print(tokenized)
             for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 print(ref)
@@ -277,7 +276,10 @@ jobs:
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True) >> ref.py
-          echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
+          echo prompt = '69' >> ref.py
+          echo if tokenizer.chat_template: >> ref.py
+          echo     prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True) >> ref.py
+          echo tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False) >> ref.py
           echo for beam in transformers.AutoModelForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True).generate(**tokenized, max_new_tokens=100, do_sample=False): >> ref.py
           echo     ref = tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
@@ -584,7 +586,10 @@ jobs:
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          prompt = 'Alan Turing was a'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -639,7 +644,10 @@ jobs:
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          prompt = 'Alan Turing was a'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)

@@ -827,7 +827,15 @@ DecodedResults StatefulLLMPipeline::generate(
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
-        tokenized_input = m_tokenizer.encode(prompt);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+        } else {
+            // in case when chat_template was not found in tokenizer_config.json or set
+            tokenized_input = m_tokenizer.encode(prompt);
+        }
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
@@ -1294,7 +1302,15 @@ DecodedResults StatelessLLMPipeline::generate(
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
-        tokenized_input = m_tokenizer.encode(prompt);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+        } else {
+            // in case when chat_template was not found in tokenizer_config.json or set
+            tokenized_input = m_tokenizer.encode(prompt);
+        }
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();

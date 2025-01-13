@@ -128,6 +128,8 @@ public:
 
     std::optional<AdapterConfig> adapters;
 
+    bool apply_chat_template = true;
+
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
      */
@@ -188,6 +190,8 @@ extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
+
+static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 
 // Predefined Configs
 

@@ -234,6 +234,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get('num_assistant_tokens', None):
@@ -380,7 +381,14 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+<<<<<<< HEAD
     gen_config.ignore_eos = True
+=======
+<<<<<<< HEAD
+=======
+    gen_config.ignore_eos = True
+    gen_config.apply_chat_template = False
+>>>>>>> 94cb1d5e (Automatically apply chat template in non-chat scenarios)
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
         log.warning(
@@ -394,6 +402,10 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         input_ids[:, 0] = num + 1
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
+<<<<<<< HEAD
+=======
+>>>>>>> 86894870 (Automatically apply chat template in non-chat scenarios)
+>>>>>>> 94cb1d5e (Automatically apply chat template in non-chat scenarios)
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get("num_assistant_tokens", None):

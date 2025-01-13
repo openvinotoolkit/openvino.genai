@@ -53,9 +53,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     } else {
         input_ids.reserve(prompts.size());
         timer.start();
-        for (const std::string& prompt : prompts) {
+        for (size_t i = 0; i < prompts.size(); i++) {
+            const std::string& prompt = prompts.at(i);
             const auto encode_start = std::chrono::steady_clock::now();
-            input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
+            ov::Tensor encoded_inputs;
+            if (sampling_params.at(i).apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                constexpr bool add_generation_prompt = true;
+                auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                encoded_inputs = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+            } else {
+                // in case when chat_template was not found in tokenizer_config.json or set
+                encoded_inputs = m_tokenizer.encode(prompt).input_ids;
+            }
+            input_ids.push_back(encoded_inputs);
             tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
         }
         timer.end();

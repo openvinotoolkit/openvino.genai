@@ -43,6 +43,8 @@ protected:
     // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
+    // True if chat template should be applied for non-chat scenario
+    bool m_apply_chat_template = true;
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
@@ -80,6 +82,10 @@ public:
         m_last_disappeared_token = last_disappeared_token;
   
         std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
+    }
+
+    void set_apply_chat_template_status(bool apply_chat_template) {
+        m_apply_chat_template = apply_chat_template;
     }
 
     virtual void start_chat(const std::string& system_message) {
@@ -155,7 +161,7 @@ protected:
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history;
-            try {
+           try {
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             } catch (const std::exception& error) {
                 // Use fallback chat template if it was not found in tokenizer_config.json
@@ -169,8 +175,23 @@ protected:
             m_templated_chat_history = std::move(new_templated_chat_history);
             return {new_chat_tokens, prev_chat_tokens};
         } else {
+            ov::Tensor encoded_input_ids;
             auto start_tokenizer_time = std::chrono::steady_clock::now();
-            ov::Tensor encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            if (m_apply_chat_template) {
+                std::string templated_prompt;
+                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                constexpr bool add_generation_prompt = true;
+
+                if (!m_tokenizer.get_chat_template().empty()) {
+                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                } else {
+                    // Use fallback chat template if it was not found in tokenizer_config.json
+                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template_fallback);
+                }
+                encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+            } else {
+                encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            }
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             return {encoded_input_ids, ov::Tensor()};
@@ -2044,6 +2065,10 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
 
 void InputsEmbedder::update_chat_history(const std::string& decoded_results) {
     return m_impl->update_chat_history(decoded_results);
+}
+
+void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
+    return m_impl->set_apply_chat_template_status(apply_chat_template);
 }
 
 void InputsEmbedder::finish_chat() {

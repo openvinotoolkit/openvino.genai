@@ -267,7 +267,7 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, us
         model.finish_chat()
         return result
     else:
-        return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+        return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=False)
 
 
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
@@ -336,6 +336,7 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     config = model.get_generation_config()
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
+    config.apply_chat_template = False
     model.set_generation_config(config)
     if tokenizer.chat_template is not None:
         model.start_chat(tokenizer.chat_template)
