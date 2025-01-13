@@ -112,7 +112,7 @@ void init_vlm_pipeline(py::module_& m) {
         .def("get_prepare_embeddings_duration", &ov::genai::VLMPerfMetrics::get_prepare_embeddings_duration)
         .def_readonly("vlm_raw_metrics", &ov::genai::VLMPerfMetrics::vlm_raw_metrics);
 
-    py::class_<ov::genai::VLMDecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)
+    py::class_<ov::genai::VLMDecodedResults, ov::genai::DecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)
         .def(py::init<>())
         .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8(dr.texts); })
         .def_readonly("scores", &ov::genai::VLMDecodedResults::scores)

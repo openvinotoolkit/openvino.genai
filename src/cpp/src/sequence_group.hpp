@@ -243,9 +243,12 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        m_prompt_ids.resize(input_ids.get_size());
-        std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
-        m_prompt_log_probs.reserve(m_prompt_ids.size());
+        size_t prompt_len = input_ids.get_size();
+        OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
+
+        m_prompt_ids.resize(prompt_len);
+        std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+        m_prompt_log_probs.reserve(prompt_len);
 
         // create a single sequence
         add_sequence(Sequence::create(m_next_sequence_id++));
