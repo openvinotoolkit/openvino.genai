@@ -39,7 +39,7 @@ image_links = [
 image_links_for_testing = [
     [],
     [image_links[0]],
-    # [image_links[0], image_links[2], image_links[1]]
+    [image_links[0], image_links[2], image_links[1]]
 ]
 
 @pytest.mark.precommit

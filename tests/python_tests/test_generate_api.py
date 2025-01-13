@@ -383,7 +383,7 @@ def test_callback_kwargs_one_string(callback):
         callback = callback.accumulate
     pipe = read_model(get_models_list()[0])[4]
     res = pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
-    assert res[0].text == streamer_class.get_result_str()
+    assert res == streamer_class.get_result_str()
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword), StremerWithResults])
