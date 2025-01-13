@@ -46,6 +46,7 @@ image_links_for_testing = [
 @pytest.mark.nightly
 def test_vlm_pipeline(cache):
     def streamer(word: str) -> bool:
+        result_from_streamer.append(word)
         return False
 
     models_path = get_ov_model(cache)
@@ -54,14 +55,17 @@ def test_vlm_pipeline(cache):
         images = []
         for link in links:
             images.append(get_image_by_link(link))
-
         pipe = VLMPipeline(models_path, "CPU")
         pipe.start_chat()
 
-        pipe.generate(prompts[0], images=images, generation_config=get_greedy(), streamer=streamer)
+        result_from_streamer = []
+        res = pipe.generate(prompts[0], images=images, generation_config=get_greedy(), streamer=streamer)
+        assert res.texts[0] == ''.join(result_from_streamer)
 
         for prompt in prompts[1:]:
-            pipe.generate(prompt, generation_config=get_greedy(), streamer=streamer)
+            result_from_streamer = []
+            res = pipe.generate(prompt, generation_config=get_greedy(), streamer=streamer)
+            assert res.texts[0] == ''.join(result_from_streamer)
 
         pipe.finish_chat()
 

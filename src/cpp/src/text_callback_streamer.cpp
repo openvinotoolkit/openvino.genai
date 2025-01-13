@@ -15,28 +15,36 @@ bool TextCallbackStreamer::put(int64_t token) {
     std::stringstream res;
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);
+    m_decoded_lengths.push_back(text.length());
     
-    if (!text.empty() && '\n' == text.back() && text.size() > print_len) {
+    if (!text.empty() && '\n' == text.back() && text.size() > m_printed_len) {
         // Flush the cache after the new line symbol
-        res << std::string_view{text.data() + print_len, text.size() - print_len};
+        res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len};
         m_tokens_cache.clear();
-        print_len = 0;
+        m_decoded_lengths.clear();
+        m_printed_len = 0;
         return on_finalized_subword_callback(res.str());
     }
 
-    // In some cases adding the next token can shorten the text, 
-    // e.g. when apostrophe removing regex had worked after adding new tokens.
-    // Several last characters are delayed before flushed to output.
-    constexpr size_t delay_n_chars = 4;
+    constexpr size_t delay_n_tokens = 3;
+    auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];
     constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
+        m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
         // Don't print incomplete text
         return on_finalized_subword_callback(res.str());
-    } else if (text.size() > print_len + delay_n_chars) {
+    } 
+    // In some cases adding the next token can shorten the text, 
+    // e.g. when apostrophe removing regex had worked after adding new tokens.
+    // Printing several last tokens is delayed.
+    if (m_tokens_cache.size() < delay_n_tokens) {
+        return on_finalized_subword_callback(res.str());
+    }
+    if (print_until != -1 && print_until > m_printed_len) {
         // It is possible to have a shorter text after adding new token.
         // Print to output only if text length is increaesed.
-        res << std::string_view{text.data() + print_len, text.size() - print_len - delay_n_chars} << std::flush;
-        print_len = text.size() - delay_n_chars;
+        res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
+        m_printed_len = print_until;
     }
 
     return on_finalized_subword_callback(res.str());
@@ -45,11 +53,12 @@ bool TextCallbackStreamer::put(int64_t token) {
 void TextCallbackStreamer::end() {
     std::stringstream res;
     std::string text = m_tokenizer.decode(m_tokens_cache);
-    if (text.size() <= print_len)
-        return ;
-    res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
+    if (text.size() <= m_printed_len)
+        return;
+    res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len} << std::flush;
     m_tokens_cache.clear();
-    print_len = 0;
+    m_decoded_lengths.clear();
+    m_printed_len = 0;
     on_finalized_subword_callback(res.str());
     return;
 }
