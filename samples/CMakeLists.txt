@@ -13,6 +13,7 @@ add_subdirectory(cpp/speculative_decoding_lm)
 add_subdirectory(cpp/image_generation)
 add_subdirectory(cpp/visual_language_chat)
 add_subdirectory(cpp/whisper_speech_recognition)
+add_subdirectory(cpp/benchmark_image_generation)
 
 install(FILES
         deployment-requirements.txt
@@ -33,6 +34,7 @@ install(DIRECTORY
             cpp/speculative_decoding_lm
             cpp/visual_language_chat
             cpp/whisper_speech_recognition
+            cpp/benchmark_image_generation
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
@@ -45,5 +47,6 @@ install(DIRECTORY
             python/speculative_decoding_lm
             python/visual_language_chat
             python/whisper_speech_recognition
+            python/benchmark_image_generation
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
