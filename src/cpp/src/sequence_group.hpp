@@ -173,8 +173,6 @@ public:
         return score;
     }
 
-
-
     // Each KV block can be uniquely identified by
     void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
         m_sequence_group = sequence_group;
@@ -332,14 +330,16 @@ public:
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_dropped()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
-        // do we need to sort sequences here or sampler can handle it for us?
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) {
-            return s1->get_beam_search_score(m_sampling_params) > s2->get_beam_search_score(m_sampling_params);
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
+            bool is_beam_search = m_sampling_params.is_beam_search();
+            const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_probs();
+            const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_probs();
+            return score_1 > score_2;
         });
 
         return finished_seqs;
@@ -571,7 +571,7 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
-    bool handle_dropped() {
+    bool handle_dropped() const {
         return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 

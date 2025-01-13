@@ -265,10 +265,9 @@ public:
         }
 
         auto batch_size = input_ids.get_shape().at(0);
-        if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
-            OPENVINO_THROW("Currently streaming is possible only with batch size=1 and "
-                            "only for greedy or multinomial decoding");
-        }
+        OPENVINO_ASSERT(streamer_ptr == nullptr || batch_size == 1 && config.num_return_sequences == 1 &&
+            (config.is_greedy_decoding() || config.is_multinomial()),
+            "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
         auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
         OPENVINO_ASSERT(num_inputs == 4 || num_inputs == 3, "Model should have 3 or 4 inputs: "
@@ -576,9 +575,7 @@ public:
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
         for (GenerationResult& res : generated) {
-            if (GenerationStatus::FINISHED != res.m_status) {
-                OPENVINO_THROW("Got unfinished GenerationStatus");
-            }
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::DROPPED_BY_HANDLE, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
@@ -634,9 +631,7 @@ public:
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
-            if (GenerationStatus::FINISHED != res.m_status) {
-                OPENVINO_THROW("Got unfinished GenerationStatus");
-            }
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::DROPPED_BY_HANDLE, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }

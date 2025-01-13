@@ -50,7 +50,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 
     # Install optimum-intel to be able to download, convert and optimize LLMs from Hugging Face
     # Optimum is not required to run models, only to convert and compress
-    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
+    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git@753f84db6e0966580eb9eaa74a808213be730631
 
     # (Optional) Install (TBD) to be able to download models from Model Scope
 ```
@@ -107,12 +107,12 @@ For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2
 
 ### Converting and compressing the model from Hugging Face library
 
-```sh
-#(Basic) download and convert to OpenVINO MiniCPM-V-2_6 model
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format fp16 MiniCPM-V-2_6
+To convert the [OpenGVLab/InternVL2-1B](https://huggingface.co/OpenGVLab/InternVL2-1B) model, `timm` and `einops` are required: `pip install timm einops`.
 
-#(Recommended) Same as above but with compression: language model is compressed to int4, other model components are compressed to int8
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code --weight-format int4 MiniCPM-V-2_6
+```sh
+# Download and convert the OpenGVLab/InternVL2-1B model to OpenVINO with int4 weight-compression for the language model
+# Other components are compressed to int8
+optimum-cli export openvino -m OpenGVLab/InternVL2-1B --trust-remote-code --weight-format int4 InternVL2-1B
 ```
 
 ### Run generation using VLMPipeline API in Python
@@ -132,7 +132,7 @@ import openvino_genai as ov_genai
 from PIL import Image
 
 # Choose GPU instead of CPU in the line below to run the model on Intel integrated or discrete GPU
-pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
+pipe = ov_genai.VLMPipeline("./InternVL2-1B", "CPU")
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
@@ -303,7 +303,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 ## Additional materials
 
-- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
+- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/releases/2024/6/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
 - [OpenVINO LLM inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
