@@ -151,6 +151,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+        m_pipeline_metrics.total_num_scheduled_tokens = scheduler_output.m_total_num_scheduled_tokens;
 
         static ManualTimer copy_blocks_timer("scheduling");
         copy_blocks_timer.start();
@@ -167,8 +168,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             }
         }
         _free_non_running_requests();
+        return;
     }
-    m_pipeline_metrics.total_num_scheduled_tokens = scheduler_output.m_total_num_scheduled_tokens;
     ov::Tensor logits;
     {
         static ManualTimer timer("forward");
@@ -255,7 +256,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const StreamerVariant& streamer) {
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-
+    
+    auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
     raw_perf_counters.m_inference_durations =  {{ MicroSeconds(0.0f) }};
@@ -370,6 +372,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         result.m_status = generations[request_id]->get_status();
         
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        perf_metrics.raw_metrics.generate_durations.clear();
+        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        perf_metrics.evaluate_statistics(start_time);
+
         result.perf_metrics = perf_metrics;
         results.push_back(std::move(result));
     }

@@ -200,7 +200,7 @@ public:
             perf_metrics = generated[0].perf_metrics;
         }
         auto& raw_counters = perf_metrics.raw_metrics;
-        raw_counters.generate_durations = std::vector<MicroSeconds>();
+        raw_counters.generate_durations.clear();
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         // Updated generate duration, need to reevaluate statistics.
         perf_metrics.m_evaluated = false;

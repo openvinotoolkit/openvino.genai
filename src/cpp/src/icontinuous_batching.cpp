@@ -35,7 +35,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
     std::vector<ov::Tensor> input_ids;
-    auto start_time = std::chrono::steady_clock::now();
+    auto start_time =  std::chrono::steady_clock::now();
 
     std::vector<MicroSeconds> tokenization_durations;
     static ManualTimer timer("tokenize");
@@ -62,18 +62,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     }
 
     std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
-    
-    // auto& raw_counters = perf_metrics.raw_metrics;
-    // For all encoded results perf_metrics are the same except for tokenization time.
-    // raw_counters.generate_durations = std::vector<MicroSeconds>();
-    // raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    // raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_start_time - start_time));
-    // raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(stop_time - decode_start_time));
-    // perf_metrics.m_evaluated = false;
-    // perf_metrics.evaluate_statistics(start_time);
-
     std::vector<GenerationResult> decoded;
-    auto decode_start_time =  std::chrono::steady_clock::now();
     decoded.reserve(encoded.size());
     for (size_t i = 0; i < encoded.size(); ++i) {
         EncodedGenerationResult res = encoded[i];
@@ -92,6 +81,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             }
         }
 
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        perf_metrics.raw_metrics.generate_durations.clear();
+        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        // Reevaluate taking into accound tokenization/detokenization times.
+        perf_metrics.m_evaluated = false;
+        perf_metrics.evaluate_statistics(start_time);
 
         decoded.push_back(GenerationResult{
             res.m_request_id,
@@ -101,8 +97,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             perf_metrics,
         });
     }
-    auto stop_time = std::chrono::steady_clock::now();
-
 
     return decoded;
 }
