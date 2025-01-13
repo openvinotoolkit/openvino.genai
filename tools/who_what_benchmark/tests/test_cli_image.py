@@ -5,6 +5,7 @@ import shutil
 import pytest
 import logging
 import tempfile
+import re
 
 
 logging.basicConfig(level=logging.INFO)
@@ -37,8 +38,9 @@ def teardown_module():
 def get_similarity(output: str) -> float:
     METRIC_PATTERN = "INFO:whowhatbench.wwb:   similarity"
     substr = output[output.find(METRIC_PATTERN) + len(METRIC_PATTERN) + 1:]
-    stritems = [x for x in substr.split(" ") if x != ""]
-    return float(stritems[1].split("\n")[0])
+    float_pattern = r"[-+]?\d*\.\d+"
+    matches = re.findall(float_pattern, substr)
+    return float(matches[-1])
 
 
 @pytest.mark.parametrize(
@@ -85,9 +87,6 @@ def test_image_model_types(model_id, model_type, backend):
         pass
     shutil.rmtree("reference", ignore_errors=True)
     shutil.rmtree("target", ignore_errors=True)
-
-    print("result.stderr: ", result.stderr)
-    print("result.stdout: ", result.stdout)
 
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
