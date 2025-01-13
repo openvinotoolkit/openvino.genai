@@ -5,7 +5,6 @@ import shutil
 import pytest
 import logging
 import tempfile
-import sys
 
 
 logging.basicConfig(level=logging.INFO)
