@@ -34,10 +34,10 @@ public:
     using SequenceLen = std::pair<uint64_t, uint64_t>;
     std::map<uint64_t, SequenceLen> get_generated_request_len();
 
-    void clear_requests();
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 
+    using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
 };

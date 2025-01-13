@@ -83,10 +83,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
     }
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::clear_requests() {
-    drop_requests();
-}
-
 bool ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::is_requests_empty() {
     return m_requests.empty();
 }

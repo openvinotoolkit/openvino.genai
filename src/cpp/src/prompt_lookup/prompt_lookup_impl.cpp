@@ -186,6 +186,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::get_metrics() {
 };
 
 void ContinuousBatchingPipeline::PromptLookupImpl::drop_requests() {
-    m_pipeline->clear_requests();
+    m_pipeline->drop_requests();
 }
 }
