@@ -9,6 +9,7 @@ class StableDiffusionHook:
         self.text_encoder_step_count = 0
         self.unet_step_count = 0
         self.vae_decoder_step_count = 0
+        self.main_model_name = "unet"
 
     def get_text_encoder_latency(self):
         return (self.text_encoder_time / self.text_encoder_step_count) * 1000 if self.text_encoder_step_count > 0 else 0
@@ -56,7 +57,9 @@ class StableDiffusionHook:
         pipe.text_encoder.request = my_text_encoder
 
     def new_unet(self, pipe):
-        old_unet = pipe.unet.request
+        main_model = pipe.unet if pipe.unet is not None else pipe.transformer
+        self.main_model_name = "unet" if pipe.unet is not None else "transformer"
+        old_unet = main_model.request
 
         def my_unet(inputs, share_inputs=True, **kwargs):
             t1 = time.time()
@@ -66,7 +69,7 @@ class StableDiffusionHook:
             self.unet_time_list.append(unet_time)
             self.unet_step_count += 1
             return r
-        pipe.unet.request = my_unet
+        main_model.request = my_unet
 
     def new_vae_decoder(self, pipe):
         old_vae_decoder = pipe.vae_decoder.request
