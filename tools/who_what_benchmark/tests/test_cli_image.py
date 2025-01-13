@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
-OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl"]
+OV_IMAGE_MODELS = ["OpenVINO/stable-diffusion-v1-5-int8-ov"]
 
 
 def run_wwb(args):
