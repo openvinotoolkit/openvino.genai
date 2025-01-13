@@ -687,12 +687,17 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(models_path)) {
-    if (std::filesystem::exists(models_path / "openvino_model.blob")) {
-        std::ifstream fin(models_path / "openvino_model.blob", std::ios::in | std::ios::binary);
-        ov::AnyMap properties = config;
-        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
-        updateStatefulConfig(model_desc, properties);
-        auto compiled = genai::utils::singleton_core().import_model(fin, device, properties);
+    const auto use_blobs = pop_or_default(config, "USE_BLOBS", false);
+    if (use_blobs) {
+        auto blob_path = pop_or_default(config, "BLOB_PATH", std::string{});
+        if (blob_path.empty()) {
+            blob_path = (models_path / "openvino_model.blob").string();
+        }
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
         m_request = compiled.create_infer_request();
     } else {
         auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
