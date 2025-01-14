@@ -703,6 +703,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
             OPENVINO_THROW("Blob file can't be opened: " + blob_path);
         }
         auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
+        m_max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        auto min_resp_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+        m_kvcache_total = m_max_prompt_len + min_resp_len;
         m_request = compiled.create_infer_request();
     } else {
         auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
