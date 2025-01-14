@@ -29,6 +29,24 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
+void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask, const int64_t rope_delta) {
+    const size_t batch_size = attention_mask.get_shape().at(0);
+    const size_t sequence_length = attention_mask.get_shape().at(1);
+    const size_t num_dimensions = 3;
+
+    position_ids.set_shape({num_dimensions, batch_size, 1});
+    int64_t* position_ids_data = position_ids.data<int64_t>();
+
+    int64_t pos_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
+
+    for (size_t batch = 0; batch < batch_size; batch++) {
+        for (size_t dim = 0; dim < num_dimensions; ++dim) {
+            position_ids_data[dim * batch_size + batch] = pos_id;
+        }
+    }
+
+}
+
 void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
     ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
     ov::Shape original_shape = original_mask.get_shape();
@@ -90,6 +108,12 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
+
+    int64_t rope_delta = 0;
+    if (position_ids.has_value() && position_ids->get_shape().size() == 3) {
+        int64_t position_ids_max_element = *std::max_element(position_ids->data<int64_t>(), position_ids->data<int64_t>() + position_ids->get_size());
+        rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+    }
 
     // Initialize results and performance metrics.
 
@@ -196,7 +220,11 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
         if (position_ids.has_value()) {
-            update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
+            if (position_ids->get_shape().size() == 3) {
+                update_3d_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"), rope_delta);
+            } else {
+                update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
+            }
         }
 
         m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
