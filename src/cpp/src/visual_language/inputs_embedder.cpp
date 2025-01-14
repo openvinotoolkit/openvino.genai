@@ -144,17 +144,8 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}, bool add_special_tokens_for_chat = false) {
-        ov::Tensor encoded_input_ids;
+    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {} bool add_special_tokens_for_chat = false) {
         if (m_is_chat_conversation) {
-            // KV cache in model already contains prompts and answers from previous iterations.
-            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
-            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
-            // <bos token> will be inserted on every iteration.
-            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
-            // and takes only the difference between them.
-            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
-            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history;
@@ -166,7 +157,31 @@ protected:
             }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_for_chat)).input_ids;
-            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_for_chat));
+            ov::Tensor prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_for_chat)).input_ids;
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+            m_templated_chat_history = std::move(new_templated_chat_history);
+            return {new_chat_tokens, prev_chat_tokens};
+        } else {
+            auto start_tokenizer_time = std::chrono::steady_clock::now();
+            ov::Tensor encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+            return {encoded_input_ids, ov::Tensor()};
+        }
+    }
+
+    ov::Tensor update_history(const ov::Tensor& new_chat_tokens, const ov::Tensor& prev_chat_tokens) {
+        if (m_is_chat_conversation) {
+            ov::Tensor encoded_input_ids;
+            // KV cache in model already contains prompts and answers from previous iterations.
+            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+            // <bos token> will be inserted on every iteration.
+            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+            // and takes only the difference between them.
+            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
@@ -174,7 +189,7 @@ protected:
             size_t trusted_history_length = 0;
             if (!m_tokenized_history.empty()) {
                 std::set<int64_t> stop_tokens = {m_tokenizer.get_eos_token_id()};
-                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_history, stop_tokens);
+                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, stop_tokens);
             }
 
             if (m_tokenized_history.empty()) {
@@ -200,27 +215,25 @@ protected:
                 new_tensor.copy_to(encoded_input_ids);
             } else {
                 encoded_input_ids = utils::subtract_chat_tokenized_inputs(
-                    {new_chat_tokens}, prev_chat_tokens
+                    {new_chat_tokens}, {prev_chat_tokens}
                 ).input_ids;
 
                 if (m_last_disappeared_token.has_value())
                     encoded_input_ids = ov::genai::utils::push_front_inputs(encoded_input_ids, *m_last_disappeared_token);
             }
-            auto end_tokenizer_time = std::chrono::steady_clock::now();
-            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-            m_templated_chat_history = std::move(new_templated_chat_history);
             m_tokenized_history.clear();
             std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
+            return encoded_input_ids;
         } else {
-            auto start_tokenizer_time = std::chrono::steady_clock::now();
-            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
-            auto end_tokenizer_time = std::chrono::steady_clock::now();
-            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_tokenized_history.clear();
-            std::copy_n(encoded_input_ids.data<int64_t>(), encoded_input_ids.get_size(), std::back_inserter(m_tokenized_history));
+            std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
+            return new_chat_tokens;
         }
+    }
 
-        return encoded_input_ids;
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "", bool add_special_tokens_for_chat = false) {
+        const auto [new_chat_tokens, prev_chat_tokens] = apply_chat_template_tokenize(prompt, metrics, chat_template_fallback, add_special_tokens_for_chat);
+        return update_history(new_chat_tokens, prev_chat_tokens);
     }
 
     /**
