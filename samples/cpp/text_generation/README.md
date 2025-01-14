@@ -19,6 +19,7 @@ optimim-cli export openvino --model <model> <output_folder>
 ```
 If a HF model is already converted (as example [OpenVINO/TinyLlama-1.1B-Chat-v1.0-int8-ov](https://huggingface.co/OpenVINO/TinyLlama-1.1B-Chat-v1.0-int8-ov)), it can be download directly via huggingface-cli
 ```sh
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
 huggingface-cli download <model> --local-dir <output_folder>
 ```
 
