@@ -78,8 +78,9 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
                 }
             }
         }
+    };
 
-        // free non running requests
+    auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
                 return sg->has_finished() || sg->out_of_memory() || sg->handle_dropped();
@@ -133,7 +134,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
-    stream_generated_tokens();
+    free_non_running_requests();
 
     // "Generation" phase
 
@@ -151,6 +152,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         int64_t * input_ids_data = new_input_ids.data<int64_t>();
 
         std::vector<int32_t> next_beams;
+        size_t current_batch_size = 0;
+
         for (auto& sequence_group : active_sequence_groups) {
             std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
             size_t num_running_sequences = running_sequences.size();
@@ -175,6 +178,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
                 // for different sequences iteration of beams started from 0, but we collect it to one input_ids
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
             }
+
+            current_batch_size += num_running_sequences;
         }
 
         for (size_t i = 0; i < active_sequence_groups.size(); i++) {
@@ -197,18 +202,24 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
 
         const auto infer_start = std::chrono::steady_clock::now();
-        m_llm.infer();
+        m_llm.start_async();
+
+        stream_generated_tokens();
+
+        m_llm.wait();
+
         const auto infer_end = std::chrono::steady_clock::now();
         const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
+        raw_perf_counters.m_batch_sizes.emplace_back(current_batch_size);
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
-        stream_generated_tokens();
+        free_non_running_requests();
     }
 
+    stream_generated_tokens();
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }

@@ -83,6 +83,7 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
 }
 
 void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
+    m_timesteps.clear();
     m_num_inference_steps = num_inference_steps;
 
     // LCM Timesteps Setting

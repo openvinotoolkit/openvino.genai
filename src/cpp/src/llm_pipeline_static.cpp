@@ -475,17 +475,16 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     }
     const auto arch = core.get_property("NPU", ov::device::architecture);
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
-
     bool compiler_dq = false;
-    const auto device_caps = core.get_property("NPU", ov::device::capabilities);
-    if (std::find(device_caps.begin(), device_caps.end(),
-                  "COMPILER_DYNAMIC_QUANTIZATION") != device_caps.end()) {
+    const auto supported_properties = core.get_property("NPU", ov::supported_properties);
+    if (std::find(supported_properties.begin(), supported_properties.end(),
+                  "NPU_COMPILER_DYNAMIC_QUANTIZATION") != supported_properties.end()) {
         compiler_dq = true;
     }
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
 }
 
-ov::AnyMap get_baseline_common_config() {
+ov::AnyMap get_baseline_common_config(const std::optional<NPUDesc>& npudesc) {
     ov::AnyMap config = {
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
         { "NPUW_DEVICES", "NPU" },
@@ -497,11 +496,20 @@ ov::AnyMap get_baseline_common_config() {
         { "NPUW_SLICE_OUT", "YES" },
         { "NPUW_FUNCALL_ASYNC", "YES" }
     };
+    // FIXME: this config logic is getting more and more complex
+    if (npudesc.has_value() && npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ", "YES");
+        config.emplace("NPUW_DQ_FULL", "NO");
+        config.emplace("NPU_COMPILER_DYNAMIC_QUANTIZATION", "YES");
+        config.erase("NPUW_DCOFF_TYPE");
+        config.erase("NPUW_DCOFF_SCALE");
+    }
     return config;
 }
 
-ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
-    auto config = get_baseline_common_config();
+ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model,
+                                     const std::optional<NPUDesc>& npudesc) {
+    auto config = get_baseline_common_config(npudesc);
     const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
     if (npu_l0 && std::atoi(npu_l0) == 1) {
         config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
@@ -513,19 +521,19 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
-    auto config = get_default_common_config(model);
-    if (is_cw_compressed(model)) {
-        config.emplace("NPUW_DQ", "YES");
-    } else {
-        config.emplace("NPUW_PMM", "NO");
-    }
+    auto config = get_default_common_config(model, npudesc);
     if (npudesc.has_value() &&
         npudesc->arch == "4000" &&
         npudesc->max_tiles != -1) {
         config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
-        config.emplace("NPUW_DQ_FULL", "NO");
+    // Specify NPUW DQ if Compiler DQ is not enabled
+    if (!npudesc.has_value() || !npudesc->compiler_dq) {
+        if (is_cw_compressed(model)) {
+            config.emplace("NPUW_DQ", "YES");
+        } else {
+            config.emplace("NPUW_PMM", "NO");
+        }
     }
     return config;
 }
@@ -533,20 +541,19 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
                                        const std::optional<NPUDesc>& npudesc,
                                        const GenerateHint hint) {
-    auto config = get_default_common_config(model);
+    auto config = get_default_common_config(model, npudesc);
     if (hint == GenerateHint::BEST_PERF) {
         config.emplace("NPUW_ONLINE_PIPELINE", "NONE");
     }
-    // NB: Unconditionally set for generation model
-    config.emplace("NPUW_DQ", "YES");
     if (npudesc.has_value() && npudesc->arch == "4000") {
         config.emplace("NPU_DPU_GROUPS", 4);
     }
     if (hint == GenerateHint::FAST_COMPILE) {
         config.emplace("NPUW_UNFOLD_IREQS", "YES");
     }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
-        config.emplace("NPUW_DQ_FULL", "NO");
+    // Specify NPUW DQ if Compiler DQ is not enabled
+    if (!npudesc.has_value() || !npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ", "YES");
     }
     return config;
 }
@@ -686,7 +693,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string&,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
-                        utils::from_config_json_if_exists(models_path)) {
+                        utils::from_config_json_if_exists(models_path)),
+    m_sampler(m_tokenizer) {
 
     auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
     ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
@@ -694,6 +702,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 
     auto compiled = setupAndCompileModel(model, model_desc, properties);
     m_request = compiled->create_infer_request();
+    m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
 
@@ -704,10 +713,12 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string&,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config
-) : LLMPipelineImplBase(tokenizer, generation_config) {
+) : LLMPipelineImplBase(tokenizer, generation_config),
+    m_sampler(m_tokenizer) {
     ov::AnyMap properties_copy = properties;
     auto compiled = setupAndCompileModel(model, model_desc, properties_copy);
     m_request = compiled->create_infer_request();
+    m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
 std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
@@ -717,8 +728,8 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
 
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
+    m_max_prompt_len = kMaxPromptLen;
     m_kvcache_total = kMaxPromptLen + kMinResponseLen;
-    std::string generate_hint = pop_or_default<std::string>(pipeline_config, "GENERATE_HINT", "FAST_COMPILE");
 
     update_config(pipeline_config, {"NPU_USE_NPUW", "YES"});
     update_config(pipeline_config, {"NPUW_LLM", "YES"});
@@ -729,7 +740,6 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
 
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
-    update_config(pipeline_config, {"NPUW_LLM_GENERATE_HINT", generate_hint});
 
     // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
     if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
@@ -737,8 +747,11 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
             update_config(pipeline_config, {"NPUW_LLM_OPTIMIZE_V_TENSORS", true});
     }
 
+    rename_key(pipeline_config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(pipeline_config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
+    rename_key(pipeline_config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
 
     // Replace CACHE_DIR option if NPUW is enabled
     set_npuw_cache_dir(pipeline_config);
@@ -790,7 +803,7 @@ DecodedResults StatefulLLMPipeline::generate(
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     auto stop_time = std::chrono::steady_clock::now();
-    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
     raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
@@ -816,7 +829,9 @@ EncodedResults StatefulLLMPipeline::generate(
         attention_mask = data->attention_mask;
     }
 
-    OPENVINO_ASSERT(input_ids.get_shape().at(0) == 1u, "Currently only batch size=1 is supported");
+    ov::Shape prompts_shape = input_ids.get_shape();
+    const size_t batch_size = prompts_shape[0];
+    OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     // If eos_token_id was not provided, take value from default m_generation_config
@@ -833,10 +848,12 @@ EncodedResults StatefulLLMPipeline::generate(
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
 
-    OPENVINO_ASSERT(config.is_greedy_decoding(), "Currently only greedy decoding is supported");
+    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
+        "Currently only greedy and multinomial decoding are supported");
 
-    ov::Shape prompts_shape = input_ids.get_shape();
-    const size_t batch_size = prompts_shape[0];
+    OPENVINO_ASSERT(config.num_return_sequences == 1u,
+        "Currently only \"num_return_sequences\" equal to 1 is supported!");
+
     ov::genai::EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     // NB: Only batch=1 is supported now
@@ -844,8 +861,13 @@ EncodedResults StatefulLLMPipeline::generate(
     results.scores[0] = 0u;
     results.tokens.resize(1u);
 
-    // TODO: Check if there is enough space in KV-cache to process input prompt
+    // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
+    if (prompt_len > m_max_prompt_len) {
+        OPENVINO_THROW("Static Stateful LLM pipeline may only process prompts up to "
+                       + std::to_string(m_max_prompt_len) + " tokens. "
+                       + "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+    }
 
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
     utils::initialize_position_ids(position_ids, attention_mask);
@@ -856,12 +878,34 @@ EncodedResults StatefulLLMPipeline::generate(
 
     m_request.infer();
 
-    int64_t last_token = utils::argmax(m_request.get_tensor("logits"), 0);
-
-    results.tokens[0].push_back(last_token);
-    if (streamer_ptr && streamer_ptr->put(last_token)) {
-        return results;
+    auto padded_logits = m_request.get_tensor("logits");
+    // FIXME: Here is workaround to get only useful units of returned logits.
+    //        If SliceOut is applied, there will be only 1 useful logit returned,
+    //        nothing is required here.
+    //        Other way, model will return logits of full context length,
+    //        as internally prefill model is specially reshaped to return them.
+    //        Fix should be done on OpenVINO side, so the model should return only
+    //        useful logits of input prompt length, dropping the implementation-related
+    //        padding ones.
+    auto logits = padded_logits;
+    auto padded_sequence_len = padded_logits.get_shape()[1];
+    if (padded_sequence_len > 1) {
+        // If SliceOut is not applied:
+        logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - prompt_len, padded_sequence_len);
     }
+    int64_t output_sequence_len = logits.get_shape().at(1);
+
+    auto sequence_group = std::make_shared<SequenceGroup>(
+        0 /* request_id */, input_ids, config, 1 /* block_size */);
+    sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
+    sequence_group->schedule_tokens(output_sequence_len);
+
+    // NB: Controls what tokens are ready to be pushed into the streamer
+    GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
+        sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters());
+
+    SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
+    stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
     int64_t position_ids_data = prompt_len - 1;
@@ -869,12 +913,17 @@ EncodedResults StatefulLLMPipeline::generate(
     m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 
-    const size_t max_tokens = config.get_max_new_tokens(prompt_len);
-    for (int i = 0; i < max_tokens - 1; ++i) {
+    while (sequence_group->is_running()) {
         // KV Cache is full, no further generation is possible
         if (position_ids_data + 1 == m_kvcache_total) {
+            sequence_group->set_out_of_memory();
             break;
         }
+
+        sequence_group->schedule_tokens(1);
+        const auto running_sequences = sequence_group->get_running_sequences();
+        OPENVINO_ASSERT(running_sequences.size() == 1u);
+        auto last_token = running_sequences.front()->get_generated_ids().back();
 
         // Just change the variables here, as pointers to them are already set to corresponding tensors
         input_ids_data = last_token;
@@ -885,23 +934,23 @@ EncodedResults StatefulLLMPipeline::generate(
 
         m_request.infer();
 
-        last_token = utils::argmax(m_request.get_tensor("logits"), 0);
-        results.tokens[0].push_back(last_token);
-
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
-        if (streamer_ptr && streamer_ptr->put(last_token)) {
-            break;
-        }
 
-        if (last_token == config.eos_token_id && !config.ignore_eos) {
-            break;
-        }
+        SamplerOutput sampler_output = m_sampler.sample(
+            {sequence_group}, m_request.get_tensor("logits"));
+        stream_generated_tokens(streamer_ptr, handle);
     }
 
     if (streamer_ptr) {
         streamer_ptr->end();
     }
+
+    OPENVINO_ASSERT(sequence_group->get_finished_sequences().size() == 1u);
+    auto sequence = sequence_group->get_finished_sequences().front();
+    results.tokens[0] = sequence->get_generated_ids();
+    results.scores[0] = sequence->get_cumulative_log_prob();
+    m_sampler.clear_request_info(sequence_group->get_request_id());
 
     auto stop_time = std::chrono::steady_clock::now();
     // If is called without tokenization then that stat will not be reported.
@@ -1221,7 +1270,7 @@ DecodedResults StatelessLLMPipeline::generate(
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     auto stop_time = std::chrono::steady_clock::now();
-    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
     raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
@@ -1287,7 +1336,7 @@ EncodedResults StatelessLLMPipeline::generate(
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
     if (prompt_len > m_kvcache_desc.max_prompt_size) {
-        OPENVINO_THROW("Static LLM pipeline may only process prompts up to "
+        OPENVINO_THROW("Static Stateless LLM pipeline may only process prompts up to "
                        + std::to_string(m_kvcache_desc.max_prompt_size) + " tokens. "
                        + "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
     }
@@ -1317,6 +1366,8 @@ EncodedResults StatelessLLMPipeline::generate(
     auto logits = m_prefill_request.get_tensor("logits");
     int64_t output_sequence_len = logits.get_shape().at(1);
 
+    // TODO: Pass input_ids to say that there is room for generation.
+    //       Retrive only useful logits and work only with them here.
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, padded_input_ids, config, 1 /* block_size */);
     sequence_group->update_processed_tokens_num(m_kvcache_desc.max_prompt_size - output_sequence_len);
