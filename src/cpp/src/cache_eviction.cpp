@@ -338,8 +338,11 @@ namespace ov::genai {
                 if (current_rotation_delta_in_blocks != 0) {
                     BlockRotationData block_rotation_data;
                     block_rotation_data.logical_block_idx = logical_block_idx - current_rotation_delta_in_blocks;
+
+                    // rotation delta is in tokens, but LUT is in blocks right now since we evict per-block
+                    // delta recomputation to a valid LUT index is done at a later stage
                     block_rotation_data.rotation_delta = current_rotation_delta_in_blocks * m_block_size;
-                    OPENVINO_ASSERT(block_rotation_data.rotation_delta <= m_rope_cos_lut.size(), "rotation delta larger than LUT size");
+                    OPENVINO_ASSERT(block_rotation_data.rotation_delta / m_block_size <= m_rope_cos_lut.size(), "rotation delta larger than LUT size");
 
                     if (!deltas_only) {
                         block_rotation_data.cosines.reserve(m_block_size);

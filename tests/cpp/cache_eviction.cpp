@@ -460,18 +460,18 @@ using CacheRotationCalculatorInvalidInputParameterizedTest =
 const std::vector<CacheRotationCalculatorInputTestStruct> CACHE_ROTATION_CALCULATOR_INVALID_INPUT_TEST_CASES = {
         {   // more num_logical_blocks_before_eviction than possible by max_context_length
             {8, 16, 4, 1337.0},
-            {1, 2, 6},
+            {1, 2, 6, 39},
             32
         },
         {   // evicted block index out of bounds
-                {16, 256, 32, 665.0},
-                {8, 0, 5,50},
-                9
+            {16, 256, 32, 665.0},
+            {8, 0, 5,50},
+            9
         },
         {   // more blocks attempted to evict than num_logical_blocks_before_eviction
-                {16, 256, 32, 665.0},
-                {0, 1, 2},
-                2
+            {16, 256, 32, 665.0},
+            {0, 1, 2},
+            2
         }
 };
 // clang-format on
