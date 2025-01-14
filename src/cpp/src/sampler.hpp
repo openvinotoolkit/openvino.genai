@@ -101,7 +101,7 @@ class Sampler::GroupBeamSearcher {
             return m_sequence->get_generated_len();
         }
     };
-    
+
     static bool greater(const Beam& left, const Beam& right) {
         return left.m_score > right.m_score;
     }
