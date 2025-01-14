@@ -8,6 +8,7 @@ There are several sample files:
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
+ - [`benchmark_text2image.cpp](./benchmark_text2image.cpp) demonstrates how to benchmark the text to image pipeline 
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -148,3 +149,36 @@ The resuling image is:
    ![](./inpainting.bmp)
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `InpaintingPipeline`.
+
+## benchmarking sample for text to image pipeline
+
+This `benchmark_text2image.cpp` sample script demonstrates how to benchmark the text to image pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
+
+The usage of this sample is:
+```bash
+./benchmark_text2image [OPTIONS]
+```
+Options:
+- `-m, --model`: Path to the model and tokenizers base directory.
+- `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
+- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `-n, --num_iter` (default: `3`): Number of iterations.
+- `-d, --device` (default: `"CPU"`): Device to run the model on.
+- `-wh, --width` (default: `512`): The width of the output image.
+- `-ht, --height` (default: `512`): The height of the output image.
+- `-is, --num_inference_steps` (default: `20`): The number of inference steps.
+- `-ni, --num_images_per_prompt` (default: `1`): The number of images to generate per generate() call.
+- `-o, --output_dir` (default: `""`): Path to save output image.
+
+For example:
+
+`./benchmark_text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
+
+Performance output:
+
+```
+Load time: 1433.69 ms
+One generate avg time: 1430.77 ms
+Total inference for one generate avg time:: 1429 ms
+```
