@@ -152,6 +152,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         int64_t * input_ids_data = new_input_ids.data<int64_t>();
 
         std::vector<int32_t> next_beams;
+        size_t current_batch_size = 0;
+
         for (auto& sequence_group : active_sequence_groups) {
             std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
             size_t num_running_sequences = running_sequences.size();
@@ -176,6 +178,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
                 // for different sequences iteration of beams started from 0, but we collect it to one input_ids
                 next_beams.push_back(beam_idxs[sequence->get_id()] + beam_offets.at(sequence_group->get_request_id()));
             }
+
+            current_batch_size += num_running_sequences;
         }
 
         for (size_t i = 0; i < active_sequence_groups.size(); i++) {
@@ -209,7 +213,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
+        raw_perf_counters.m_batch_sizes.emplace_back(current_batch_size);
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
         free_non_running_requests();

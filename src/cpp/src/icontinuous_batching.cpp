@@ -62,6 +62,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     }
 
     std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
+
     std::vector<GenerationResult> decoded;
     decoded.reserve(encoded.size());
     for (size_t i = 0; i < encoded.size(); ++i) {
