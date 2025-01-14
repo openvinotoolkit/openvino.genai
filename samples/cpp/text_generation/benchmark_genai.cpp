@@ -8,7 +8,7 @@ int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vanilla_genai", "Help command");
 
     options.add_options()
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
     std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
 
-    return 0;
+    return EXIT_SUCCESS;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
