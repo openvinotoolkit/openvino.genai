@@ -39,7 +39,7 @@ python benchmark_text2image.py [OPTIONS]
 ### Output:
 
 ```
-python benchmark_genai.py -m dreamlike_anime_1_0_ov/FP16 -n 10
+python benchmark_text2image.py -m dreamlike_anime_1_0_ov/FP16 -n 10
 ```
 
 ```
