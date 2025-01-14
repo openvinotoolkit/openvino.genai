@@ -398,98 +398,89 @@ jobs:
           ${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
 
-  genai_nodejs_bindings:
-    name: Produce genai nodejs binaries archive
-    timeout-minutes: 150
+  genai_build_nodejs_bindings:
+    name: Build Node.js bindings
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [Release]
+    needs: [ openvino_download ]
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
     env:
-      DEBIAN_FRONTEND: noninteractive # to prevent apt-get from waiting user input
-      CMAKE_BUILD_TYPE: 'Release'
-      CMAKE_GENERATOR: 'Ninja Multi-Config'
-      CMAKE_CXX_COMPILER_LAUNCHER: ccache
-      CMAKE_C_COMPILER_LAUNCHER: ccache
-      OPENVINO_REPO: ${{ github.workspace }}/openvino
-      GENAI_REPO: ${{ github.workspace }}/openvino.genai
+      CMAKE_GENERATOR: Unix Makefiles
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
-      CCACHE_DIR: ${{ github.workspace }}/ccache
-      CCACHE_MAXSIZE: 2000Mi
+      SRC_DIR: ${{ github.workspace }}/src
 
     steps:
-      - name: Set apt
-        run: |
-          echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
-          echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
-          echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
-
-      - name: Clone OpenVINO
-        uses: actions/checkout@v4
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: 'openvinotoolkit/openvino'
-          path: ${{ env.OPENVINO_REPO }}
-          submodules: 'true'
-          ref: ${{ env.OV_BRANCH}}
-
-      - name: Install build dependencies
-        run: |
-          sudo -E ${OPENVINO_REPO}/install_build_dependencies.sh
-          sudo apt-get install ccache
-
-      - name: Clone GenAI
-        uses: actions/checkout@v4
-        with:
-          path: ${{ env.GENAI_REPO }}
+          path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Setup ccache
-        uses: actions/cache@v4
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          # Should save cache only if run in the master branch of the base repo
-          # github.ref_name is 'ref/PR_#' in case of the PR, and 'branch_name' when executed on push
-          save-always: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-ov-and-genai-${{ matrix.build-type }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-ov-and-genai-${{ matrix.build-type }}
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
 
-      - name: Build openvino + genai
+      - name: Build with ENABLE_JS=ON
         run: |
-          cmake -DOPENVINO_EXTRA_MODULES=../openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF \
-              -DENABLE_OV_ONNX_FRONTEND=OFF -DENABLE_OV_PADDLE_FRONTEND=OFF -DENABLE_OV_TF_FRONTEND=OFF -DENABLE_OV_TF_LITE_FRONTEND=OFF -DENABLE_OV_PYTORCH_FRONTEND=ON -DENABLE_OV_JAX_FRONTEND=OFF -DENABLE_OV_IR_FRONTEND=ON \
-              -DENABLE_CLDNN=OFF -DENABLE_INTEL_GPU=OFF -DENABLE_INTEL_NPU=OFF -DENABLE_HETERO=OFF -DENABLE_AUTO=OFF -DENABLE_AUTO_BATCH=OFF -DENABLE_MULTI=OFF -DENABLE_PROXY=OFF \
-              -DENABLE_FASTER_BUILD=y \
-              -DCPACK_GENERATOR=NPM \
-              -DENABLE_PYTHON=OFF \
-              -DENABLE_WHEEL=OFF \
-              -DCPACK_PACKAGE_FILE_NAME=genai_nodejs_bindings \
-              -S ./openvino -B ./build
-          cmake --build ./build --target package -j
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_JS=ON -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
 
-      - name: Run javascript tests
-        working-directory: ${{ env.GENAI_REPO }}/src/js
+      - name: Combine binaries for Node.js package
         run: |
-          mkdir bin
-          cp ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz bin
-          cd bin && tar -xzf genai_nodejs_bindings.tar.gz && rm genai_nodejs_bindings.tar.gz && cd ..
-          npm install
-          npm test
+          mkdir -p nodejs
+          cp runtime/lib/intel64/* nodejs
+          cp runtime/3rdparty/tbb/lib/* nodejs
+          cp genai_node_addon.node nodejs
+          patchelf --set-rpath '$ORIGIN' libopenvino.so.2025.0.0
+        working-directory: ${{ env.INSTALL_DIR }}
 
-      #
-      # Upload build artifacts and logs
-      #
+      - name: Pack Node.js bindings libs
+        run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
+        working-directory: ${{ env.INSTALL_DIR }}/nodejs
 
-      - name: Upload genai nodejs bindings archive
+      - name: Upload Archive Package with Node.js bindings
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: genai_nodejs_bindings
           path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
 
-  genai_nodejs_samples_tests:
+      - name: Run javascript tests
+        working-directory: ${{ env.GENAI_REPO }}/src/js
+        run: |
+          cp -R ${{ env.INSTALL_DIR }}/nodejs bin
+          npm install
+          npm test
+
+      - name: Install genai-node samples dependencies
+        run: npm install
+        working-directory: ${{ env.GENAI_REPO }}/samples/js/chat_sample
+
+      - name: Run tests
+        run: npm test
+        env:
+          MODEL_PATH: ${{ env.GENAI_REPO }}/src/js/tests/models/Llama-3.2-3B-Instruct-openvino-8bit
+        working-directory: ${{ env.GENAI_REPO }}/samples/js/chat_sample
+
     name: NodeJS Samples Tests
     needs: [ genai_nodejs_bindings ]
     timeout-minutes: 30
@@ -541,7 +532,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_nodejs_bindings, genai_nodejs_samples_tests]
+    needs: [openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests, genai_build_nodejs_bindings]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
