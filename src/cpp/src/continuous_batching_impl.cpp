@@ -281,18 +281,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
     }, streamer);
 
-    auto drop_requests = [&] () {
-        for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
-            for (const auto& sequence: request->get_sequences()) {
-                if (m_scheduler->has_block_table(sequence->get_id())) {
-                    m_scheduler->free_sequence(sequence->get_id());
-                }
-            }
-            m_sampler->clear_request_info(request->get_request_id());
-        }
-        m_requests.clear();
-    };
-
     OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
@@ -422,6 +410,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_us
 
 float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_average_cache_usage() const {
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
+    for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
+        for (const auto& sequence: request->get_sequences()) {
+            if (m_scheduler->has_block_table(sequence->get_id())) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+        }
+        m_sampler->clear_request_info(request->get_request_id());
+    }
+    m_requests.clear();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
