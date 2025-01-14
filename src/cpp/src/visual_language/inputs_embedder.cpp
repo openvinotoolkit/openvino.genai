@@ -172,6 +172,8 @@ protected:
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
             TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
@@ -211,8 +213,6 @@ protected:
                 if (m_last_disappeared_token.has_value())
                     encoded_input_ids = ov::genai::utils::push_front_inputs(encoded_input_ids, *m_last_disappeared_token);
             }
-            auto end_tokenizer_time = std::chrono::steady_clock::now();
-            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_templated_chat_history = std::move(new_templated_chat_history);
             m_tokenized_history.clear();
             std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
