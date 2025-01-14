@@ -62,7 +62,7 @@ protected:
     GenerationConfig m_generation_config;
     std::optional<AdapterController> m_adapter_controller;
 
-    float m_load_time_ms  = 0;
+    float m_load_time_ms = 0.0f;
 };
 
 }  // namespace genai
