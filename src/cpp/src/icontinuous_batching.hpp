@@ -42,6 +42,8 @@ protected:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 
+    virtual void drop_requests() = 0;
+
 public:
     ov::genai::GenerationConfig get_config() const;
     PipelineMetrics get_metrics() const;

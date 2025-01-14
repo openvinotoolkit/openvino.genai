@@ -41,6 +41,10 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
+
+    void drop_requests() override;
+    bool is_requests_empty();
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     
 public:
     SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);

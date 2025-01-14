@@ -75,6 +75,8 @@ protected:
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
 
+    void drop_requests() override;
+
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,

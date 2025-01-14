@@ -93,7 +93,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         return;
     }
     // If start_item is specified then recalculate durations according to start times and calculate statistics only after that.
-    if (start_time.has_value()) {
+    if (start_time.has_value() && raw_metrics.m_new_token_times.size() > 0 && raw_metrics.m_batch_sizes.size() > 0) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
