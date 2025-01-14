@@ -689,8 +689,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
                         utils::from_config_json_if_exists(models_path)),
     m_sampler(m_tokenizer) {
     ov::AnyMap properties = config;
-    const auto use_blobs = pop_or_default(properties, "USE_BLOBS", false);
-    if (use_blobs) {
+    const auto use_blob = pop_or_default(properties, "USE_BLOB", false);
+    if (use_blob) {
         auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
         if (blob_path.empty()) {
             blob_path = (models_path / "openvino_model.blob").string();
