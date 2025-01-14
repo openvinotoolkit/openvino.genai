@@ -182,7 +182,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
 
-    if (main_generated_requests.empty() && 0) {
+    if (main_generated_requests.empty()) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
@@ -235,6 +235,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     }
     auto all_requests = get_awaiting_requests();
 
+    float streaming_duraton = 0;
+    ManualTimer streaming_timer("gen");
+    streaming_timer.start();
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
@@ -251,7 +254,11 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
             }
             std::unordered_map<uint64_t, GenerationOutput> token = main_generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
+                ManualTimer streaming_timer("streaming");
+                streaming_timer.start();
                 continue_generation = !streamer_ptr->put(gen_token);
+                streaming_timer.end();
+                streaming_duraton += streaming_timer.get_duration();
                 if (!continue_generation) {
                     main_generation->drop();
                     break;
@@ -301,6 +308,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
+    generate_timer.end();
+    std::cout << "STREAMING DURATION: " << streaming_duraton << std::endl;
+    std::cout << "Generation DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
