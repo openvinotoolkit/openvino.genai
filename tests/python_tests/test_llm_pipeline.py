@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 import torch
 
-from common import run_llm_pipeline_with_ref, convert_to_hf
+from common import run_llm_pipeline_with_ref, convert_to_hf, get_streamer_with_results
 from ov_genai_test_utils import (
     get_models_list,
     read_model,
@@ -194,6 +194,17 @@ def test_callback_kwargs_one_string(callback):
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 
+@pytest.mark.parametrize("streamer", [get_streamer_with_results()])
+@pytest.mark.parametrize("prompt", ['table is made of', 'The Sun is yellow because', '你好！ 你好嗎？'])
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_callback_kwargs_one_string(prompt, streamer):
+    pipe = read_model(get_models_list()[0])[4]
+    streamer.reset()
+    res = pipe.generate(prompt, max_new_tokens=10, streamer=streamer.accumulate)
+    assert res == streamer.get_result_str()
+
+
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -206,6 +217,21 @@ def test_callback_decoding_metallama(model_descr, callback):
         pytest.skip()
     ov_pipe = read_model(model_descr)[4]
     ov_pipe.generate(prompt, max_new_tokens=300, streamer=callback)
+
+@pytest.mark.parametrize("streamer", [get_streamer_with_results()])
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_descr", get_models_list())
+def test_callback_decoding_metallama_with_accumlation(model_descr, streamer):
+    # On metallama this prompt generates output which can shorten after adding new tokens.
+    # Test that streamer correctly handles such cases.
+    prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
+    if model_descr[0] != 'meta-llama/Meta-Llama-3-8B-Instruct':
+        pytest.skip()
+    ov_pipe = read_model(model_descr)[4]
+    streamer.reset()
+    res = ov_pipe.generate(prompt, max_new_tokens=300, streamer=streamer.accumulate)
+    assert res == streamer.get_result_str()
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])

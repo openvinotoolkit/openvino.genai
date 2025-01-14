@@ -474,3 +474,22 @@ def get_image_by_link(link):
         image = image.convert('RGB')
     image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, 3, image.size[1], image.size[0])
     return Tensor(image_data)
+
+def get_streamer_with_results():
+    # Return a streamer which accumulates results in order to compare with results returned from generate.
+    class StreamerWithResults:
+        results: List[str] = []
+        def __init__(self):
+            self.results = []
+
+        def accumulate(self, subword) -> bool:
+            self.results.append(subword)
+            return False
+        
+        def get_result_str(self) -> str:
+            return ''.join(self.results)
+        
+        def reset(self):
+            self.results = []
+
+    return StreamerWithResults()
