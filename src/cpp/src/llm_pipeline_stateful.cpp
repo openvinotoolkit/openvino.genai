@@ -361,7 +361,7 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     if (!m_tokenized_chat_history.empty()) {
         reset_kv_state();
         m_history = {};
-        m_templated_chat_history = "";
+        m_templated_chat_history.clear();
         m_tokenized_chat_history.clear();
     }
     if (system_message.empty())

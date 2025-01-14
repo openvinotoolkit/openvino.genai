@@ -149,7 +149,7 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}) {
         ov::Tensor encoded_input_ids;
         if (m_is_chat_conversation) {
             // KV cache in model already contains prompts and answers from previous iterations.
