@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <thread>
+
 #include "text_callback_streamer.hpp"
 #include "speculative_decoding_impl.hpp"
 #include "utils.hpp"
@@ -182,7 +184,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }
 
-    if (main_generated_requests.empty()) {
+    if (main_generated_requests.empty() && 0) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
@@ -235,35 +237,74 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     }
     auto all_requests = get_awaiting_requests();
 
-    float streaming_duraton = 0;
+    // todo: remove
+    float streaming_duraton = 0, thread_duration = 0;
     ManualTimer streaming_timer("gen");
     streaming_timer.start();
+
     bool continue_generation = true;
-    while (has_non_finished_requests() && continue_generation) {
-        try {
-            step();
-        } catch (...) {
-            drop_requests(); // remove all requests from pipeline state in case of exception
-            throw;
-        }
-        if (streamer_ptr) {
-            auto& main_generation = main_generations.at(0);
-            // not generated tokens like several prompt phase
-            if (!main_generation->can_read()) {
-                continue;
-            }
+    auto& main_generation = main_generations.at(0);
+    // define lamdba to stream generated tokens
+    auto stream_generated_tokens = [&main_generation, &streamer_ptr, &continue_generation, &streaming_duraton]() {
+        if (streamer_ptr && main_generation->can_read()) {
+            // todo: remove
+            ManualTimer streaming_timer("streaming");
+            streaming_timer.start();
+
             std::unordered_map<uint64_t, GenerationOutput> token = main_generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
-                ManualTimer streaming_timer("streaming");
-                streaming_timer.start();
                 continue_generation = !streamer_ptr->put(gen_token);
-                streaming_timer.end();
-                streaming_duraton += streaming_timer.get_duration();
                 if (!continue_generation) {
                     main_generation->drop();
                     break;
                 }
             }
+
+            // todo: remove
+            streaming_timer.end();
+            streaming_duraton += streaming_timer.get_duration();
+        }
+    };
+
+    // to store potential exception thrown in step_thread
+    std::exception_ptr step_outputs_error = nullptr;
+    while (continue_generation) {
+        // todo: remove
+        ManualTimer thread_timer("threading");
+        thread_timer.start();
+
+        // to define inference thread
+        std::thread t_step([this, &step_outputs_error] {
+            try {
+                step();
+            } catch (...) {
+                // remove all requests from pipeline state in case of exception
+                drop_requests();
+                step_outputs_error = std::current_exception();
+            }
+        });
+
+        // to define streaming thread
+        std::thread t_stream([&stream_generated_tokens] {
+            stream_generated_tokens();
+        });
+
+        // todo: remove
+        thread_timer.end();
+        thread_duration += thread_timer.get_duration();
+
+        t_stream.join();
+        t_step.join();
+
+        // throw exception in case of inference error
+        if (step_outputs_error) {
+            throw;
+        }
+
+        // stream last generated tokens
+        if (!has_non_finished_requests() && continue_generation) {
+            stream_generated_tokens();
+            break;
         }
     }
 
@@ -309,8 +350,11 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    std::cout << "STREAMING DURATION: " << streaming_duraton << std::endl;
-    std::cout << "Generation DURATION: " << generate_timer.get_duration() << std::endl;
+    
+    // todo: remove
+    std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
+    std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
     return results;
 }
 

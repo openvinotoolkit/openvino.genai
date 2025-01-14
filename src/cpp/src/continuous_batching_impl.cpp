@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <thread>
+
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
@@ -254,6 +256,10 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer) {
+    // todo: remove
+    ManualTimer generate_timer("generate()");
+    generate_timer.start();
+
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
     
@@ -293,26 +299,16 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
 
     bool continue_generation = true;
-    while (has_non_finished_requests() && continue_generation) {
-        try {
-            const auto infer_start = std::chrono::steady_clock::now();
-            step();
-            auto num_generated_tokens = get_metrics().total_num_scheduled_tokens;
-            if (num_generated_tokens > 0) {
-                const auto infer_end = std::chrono::steady_clock::now();
-                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
-                raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
-                raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-                raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
-            }
-        } catch (...) {
-            drop_requests(); // remove all requests from pipeline state in case of exception
-            throw;
-        }
+    GenerationHandle& generation = generations.at(0);
+    // todo: remove
+    float streaming_duraton = 0, thread_duration = 0;
 
-        GenerationHandle & generation = generations.at(0);
+    auto stream_generated_tokens = [&generation, &streamer_ptr, &continue_generation, &streaming_duraton]() {
         if (streamer_ptr && generation->can_read()) {
+            // todo: remove
+            ManualTimer streaming_timer("streaming");
+            streaming_timer.start();
+
             std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 continue_generation = !streamer_ptr->put(gen_token);
@@ -321,6 +317,56 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                     break;
                 }
             }
+
+            // todo: remove
+            streaming_timer.end();
+            streaming_duraton += streaming_timer.get_duration();
+        }
+    };
+
+    std::exception_ptr step_outputs_error;
+    while (continue_generation) {
+        // todo: remove
+        ManualTimer thread_timer("streaming");
+        thread_timer.start();
+
+        std::thread t_step([this, &raw_perf_counters, &step_outputs_error] {
+            try {
+                const auto infer_start = std::chrono::steady_clock::now();
+                step();
+                auto num_generated_tokens = get_metrics().total_num_scheduled_tokens;
+                if (num_generated_tokens > 0) {
+                    const auto infer_end = std::chrono::steady_clock::now();
+                    const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+                    raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+                    raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+                    raw_perf_counters.m_new_token_times.emplace_back(infer_end);
+                    raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+                }
+            } catch (...) {
+                drop_requests(); // remove all requests from pipeline state in case of exception
+                step_outputs_error = std::current_exception();
+            }
+        });
+
+        std::thread t_stream([&stream_generated_tokens] {
+            stream_generated_tokens();
+        });
+        
+        // todo: remove
+        thread_timer.end();
+        thread_duration += thread_timer.get_duration();
+
+        t_stream.join();
+        t_step.join();
+
+        if (step_outputs_error) {
+            throw;
+        }
+
+        if (!has_non_finished_requests() && continue_generation) {
+            stream_generated_tokens();
+            break;
         }
     }
 
@@ -371,6 +417,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
+
+    // todo: remove
+    generate_timer.end();
+    std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
+    std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
+
     return results;
 }
 
