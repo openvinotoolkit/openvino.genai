@@ -341,14 +341,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             try {
                 const auto infer_start = std::chrono::steady_clock::now();
                 step();
-                auto num_generated_tokens = get_metrics().total_num_scheduled_tokens;
-                if (num_generated_tokens > 0) {
+                if (m_batch_size > 0) {
                     const auto infer_end = std::chrono::steady_clock::now();
-                    const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+                    const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
                     raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
                     raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
                     raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-                    raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+                    raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
                 }
             } catch (...) {
                 drop_requests(); // remove all requests from pipeline state in case of exception
