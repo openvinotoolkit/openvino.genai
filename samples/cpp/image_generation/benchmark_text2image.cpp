@@ -3,6 +3,7 @@
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include <cxxopts.hpp>
+#include "imwrite.hpp"
 
 int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_image_generation", "Help command");
@@ -12,7 +13,6 @@ int main(int argc, char* argv[]) try {
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
     ("o,output_dir", "Path to save output image", cxxopts::value<std::string>()->default_value(""))
     ("wh,width", "The width of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
@@ -42,27 +42,26 @@ int main(int argc, char* argv[]) try {
     size_t num_iter = result["num_iter"].as<size_t>();
     const std::string output_dir = result["output_dir"].as<std::string>();
 
-    ov::genai::GenerationConfig config;
-    config.max_new_tokens = result["max_new_tokens"].as<size_t>();
+    ov::genai::Text2ImagePipeline pipe(models_path, device);
+    ov::genai::ImageGenerationConfig config = pipe.get_generation_config();
     config.width = result["width"].as<size_t>();
     config.height = result["height"].as<size_t>();
     config.num_inference_steps = result["num_inference_steps"].as<size_t>();
     config.num_images_per_prompt = result["num_images_per_prompt"].as<size_t>();
-
-    ov::genai::Text2ImagePipeline pipe(models_path, device);
+    pipe.set_generation_config(config);
     
     for (size_t i = 0; i < num_warmup; i++) {
-        pipe.generate(prompt, config);
+        pipe.generate(prompt);
     }
 
     std::vector<float> generate_durations;
     std::vector<float> total_inference_durations;
     float load_time;
     for (size_t i = 0; i < num_iter; i++) {
-        ov::Tensor image = pipe.generate(prompt, config);
+        ov::Tensor image = pipe.generate(prompt);
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
         generate_durations.emplace_back(metrics.get_generate_duration());
-        inference_durations.emplace_back(metrics.get_inference_total_duration());
+        total_inference_durations.emplace_back(metrics.get_inference_total_duration());
         std::string image_name = output_dir + "/image_" + std::to_string(i) + ".bmp";
         imwrite(image_name, image, true);
         load_time = metrics.get_load_time();

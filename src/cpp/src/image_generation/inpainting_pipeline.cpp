@@ -136,8 +136,8 @@ ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent, infer_duration);
 }
 
-ImageGenerationPerfMetrics InpaintingPipeline::get_perfomance_metrics() {
-    return m_impl->get_perfomance_metrics();
+ImageGenerationPerfMetrics InpaintingPipeline::get_performance_metrics() {
+    return m_impl->get_performance_metrics();
 }
 
 }  // namespace genai

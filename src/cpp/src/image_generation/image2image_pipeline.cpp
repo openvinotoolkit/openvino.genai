@@ -130,8 +130,8 @@ ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent, infer_duration);
 }
 
-ImageGenerationPerfMetrics Image2ImagePipeline::get_perfomance_metrics() {
-    return m_impl->get_perfomance_metrics();
+ImageGenerationPerfMetrics Image2ImagePipeline::get_performance_metrics() {
+    return m_impl->get_performance_metrics();
 }
 
 }  // namespace genai

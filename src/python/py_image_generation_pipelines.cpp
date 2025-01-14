@@ -373,7 +373,7 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"))
-        .def("get_perfomance_metrics", &ov::genai::Text2ImagePipeline::get_perfomance_metrics);
+        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics);
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
@@ -437,7 +437,7 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
-        .def("get_perfomance_metrics", &ov::genai::Image2ImagePipeline::get_perfomance_metrics);
+        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics);
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
@@ -503,7 +503,7 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"))
-        .def("get_perfomance_metrics", &ov::genai::InpaintingPipeline::get_perfomance_metrics);
+        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics);
 
     // define constructors to create one pipeline from another
     // NOTE: needs to be defined once all pipelines are created

@@ -400,7 +400,7 @@ public:
         return m_vae->decode(unpacked_latent, infer_duration);
     }
 
-    ImageGenerationPerfMetrics get_perfomance_metrics() override {
+    ImageGenerationPerfMetrics get_performance_metrics() override {
         m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
     }

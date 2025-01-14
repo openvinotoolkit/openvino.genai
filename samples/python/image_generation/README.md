@@ -162,7 +162,6 @@ Options:
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
-- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 - `-wh, --width` (default: `512`): The width of the output image.
 - `-ht, --height` (default: `512`): The height of the output image.

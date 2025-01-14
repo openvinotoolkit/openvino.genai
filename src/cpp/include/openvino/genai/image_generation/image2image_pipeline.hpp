@@ -87,7 +87,7 @@ public:
 
     ov::Tensor decode(const ov::Tensor latent);
 
-    ImageGenerationPerfMetrics get_perfomance_metrics();
+    ImageGenerationPerfMetrics get_performance_metrics();
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;

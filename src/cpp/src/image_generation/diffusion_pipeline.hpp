@@ -90,7 +90,7 @@ public:
 
     virtual ov::Tensor decode(const ov::Tensor latent, float& infer_duration) = 0;
 
-    virtual ImageGenerationPerfMetrics get_perfomance_metrics() = 0;
+    virtual ImageGenerationPerfMetrics get_performance_metrics() = 0;
 
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
         auto stop_time = std::chrono::steady_clock::now();
