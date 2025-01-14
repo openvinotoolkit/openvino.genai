@@ -690,19 +690,38 @@ namespace static_llm {
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
-    const std::string&,
+    const std::string& device,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(models_path)),
     m_sampler(m_tokenizer) {
-
-    auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
-    ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
     ov::AnyMap properties = config;
-
-    auto compiled = setupAndCompileModel(model, model_desc, properties);
-    m_request = compiled->create_infer_request();
-    m_sampler.set_seed(m_generation_config.rng_seed);
+    const auto use_blob = pop_or_default(properties, "USE_BLOB", false);
+    if (use_blob) {
+        auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+        if (blob_path.empty()) {
+            blob_path = (models_path / "openvino_model.blob").string();
+        }
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
+        auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
+        m_max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        auto min_resp_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+        m_kvcache_total = m_max_prompt_len + min_resp_len;
+        m_request = compiled.create_infer_request();
+    } else {
+        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
+        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+        ov::AnyMap properties = config;
+        auto compiled = setupAndCompileModel(model, model_desc, properties);
+        m_request = compiled->create_infer_request();
+        m_sampler.set_seed(m_generation_config.rng_seed);
+    }
 }
 
 
@@ -721,11 +740,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
-std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
-    const std::shared_ptr<ov::Model>& model,
+void StatefulLLMPipeline::updateStatefulConfig(
     const ModelConfigDesc& model_desc,
     ov::AnyMap& pipeline_config) {
-
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     m_max_prompt_len = kMaxPromptLen;
@@ -755,6 +772,13 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
 
     // Replace CACHE_DIR option if NPUW is enabled
     set_npuw_cache_dir(pipeline_config);
+}
+
+std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
+    const std::shared_ptr<ov::Model>& model,
+    const ModelConfigDesc& model_desc,
+    ov::AnyMap& pipeline_config) {
+    updateStatefulConfig(model_desc, pipeline_config);
 
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
 }
