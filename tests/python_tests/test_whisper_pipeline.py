@@ -481,7 +481,7 @@ def test_longform_audio(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1, long_form=True)])
+@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
 @pytest.mark.precommit
 def test_longform_audio_with_past(model_descr, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, stateful=True)
