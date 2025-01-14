@@ -101,13 +101,14 @@ public:
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
+
         PerfMetrics perf_metrics;
         // For GenerationResults, all perf_metrics are the same except tokenization and detokenization durations.
         // Since we return here only one perf_metrics, we should accumulate all tokenization and detokenization times.
         if (generated.size() > 0) {
             perf_metrics = generated[0].perf_metrics;
         }
-        
+
         // Tokenizations and detokenization times are dispersed across GenerationResult vector.
         // Need to collect them into a single perf_metric for DecodedResult.
         auto& raw_metrics = perf_metrics.raw_metrics;
