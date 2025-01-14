@@ -698,6 +698,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
             OPENVINO_THROW("Blob file is not found at: " + blob_path);
         }
         std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
         auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
         m_request = compiled.create_infer_request();
     } else {
