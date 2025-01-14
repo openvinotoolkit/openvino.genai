@@ -24,7 +24,7 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
-        OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
+        OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
     m_impl->save_load_time(start_time);
 }
@@ -38,7 +38,7 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
     } else if (class_name == "StableDiffusionXLPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
-        OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
+        OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
     m_impl->save_load_time(start_time);
 }

@@ -25,6 +25,10 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
     OPENVINO_ASSERT(src_shape.size() == 3 && src_shape.size() == res_shape.size(), "Rank of tensors within 'padding_right' must be 3");
     OPENVINO_ASSERT(src_shape[0] == res_shape[0] && src_shape[1] == res_shape[1], "Tensors for padding_right must have the same dimensions");
 
+    // since torch.nn.functional.pad can also perform trancation in case of negative pad size value
+    // we need to find minimal amoung src and res and respect it
+    size_t min_size = std::min(src_shape[2], res_shape[2]);
+
     const float* src_data = src.data<const float>();
     float* res_data = res.data<float>();
 
@@ -33,8 +37,11 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
             size_t offset_1 = (i * res_shape[1] + j) * res_shape[2];
             size_t offset_2 = (i * src_shape[1] + j) * src_shape[2];
 
-            std::memcpy(res_data + offset_1, src_data + offset_2, src_shape[2] * sizeof(float));
-            std::fill_n(res_data + offset_1 + src_shape[2], res_shape[2] - src_shape[2], 0.0f);
+            std::memcpy(res_data + offset_1, src_data + offset_2, min_size * sizeof(float));
+            if (res_shape[2] > src_shape[2]) {
+                // peform actual padding if required
+                std::fill_n(res_data + offset_1 + src_shape[2], res_shape[2] - src_shape[2], 0.0f);
+            }
         }
     }
 }

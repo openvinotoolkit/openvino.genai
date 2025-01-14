@@ -440,6 +440,8 @@ class EncodedGenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[list[int]]
@@ -448,6 +450,9 @@ class EncodedGenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class EncodedResults:
     """
@@ -693,6 +698,8 @@ class GenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[str]
@@ -706,6 +713,9 @@ class GenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class GenerationStatus:
     """
@@ -1273,6 +1283,9 @@ class PipelineMetrics:
     
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
+    
+        :param total_num_scheduled_tokens: Number of tokens scheduled for processing at the previous step of the pipeline.
+        :type total_num_scheduled_tokens: int
     """
     def __init__(self) -> None:
         ...
@@ -1290,6 +1303,9 @@ class PipelineMetrics:
         ...
     @property
     def scheduled_requests(self) -> int:
+        ...
+    @property
+    def total_num_scheduled_tokens(self) -> int:
         ...
 class RawImageGenerationPerfMetrics:
     """
@@ -1834,7 +1850,7 @@ class UNet2DConditionModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
-class VLMDecodedResults:
+class VLMDecodedResults(DecodedResults):
     """
     
         Structure to store resulting batched text outputs and scores for each batch.
