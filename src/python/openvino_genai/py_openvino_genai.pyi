@@ -1283,9 +1283,6 @@ class PipelineMetrics:
     
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
-    
-        :param total_num_scheduled_tokens: Number of tokens scheduled for processing at the previous step of the pipeline.
-        :type total_num_scheduled_tokens: int
     """
     def __init__(self) -> None:
         ...
@@ -1303,9 +1300,6 @@ class PipelineMetrics:
         ...
     @property
     def scheduled_requests(self) -> int:
-        ...
-    @property
-    def total_num_scheduled_tokens(self) -> int:
         ...
 class RawImageGenerationPerfMetrics:
     """
