@@ -151,13 +151,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+        m_pipeline_metrics.total_num_scheduled_tokens = scheduler_output.m_total_num_scheduled_tokens;
 
         static ManualTimer copy_blocks_timer("scheduling");
         copy_blocks_timer.start();
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
         copy_blocks_timer.end();
     }
-
     // if no tokens were scheduled, we are out of memory => free all requests and return
     if (scheduler_output.m_total_num_scheduled_tokens == 0) {
         for (size_t i = 0; i < m_requests.size(); ++i) {
@@ -170,7 +170,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         return;
     }
-
     ov::Tensor logits;
     {
         static ManualTimer timer("forward");
@@ -257,6 +256,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const StreamerVariant& streamer) {
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+    
+    auto start_time =  std::chrono::steady_clock::now();
+    PerfMetrics perf_metrics;
+    auto& raw_perf_counters = perf_metrics.raw_metrics;
+    raw_perf_counters.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -303,13 +307,23 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
+            const auto infer_start = std::chrono::steady_clock::now();
             step();
+            auto num_generated_tokens = get_metrics().total_num_scheduled_tokens;
+            if (num_generated_tokens > 0) {
+                const auto infer_end = std::chrono::steady_clock::now();
+                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+                raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+                raw_perf_counters.m_new_token_times.emplace_back(infer_end);
+                raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+            }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
             throw;
         }
 
-        auto & generation = generations.at(0);
+        GenerationHandle & generation = generations.at(0);
         if (streamer_ptr && generation->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
@@ -358,6 +372,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
 
         result.m_status = generations[request_id]->get_status();
+        
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        perf_metrics.raw_metrics.generate_durations.clear();
+        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        perf_metrics.evaluate_statistics(start_time);
+
+        result.perf_metrics = perf_metrics;
         results.push_back(std::move(result));
     }
 
