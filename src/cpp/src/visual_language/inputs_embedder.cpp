@@ -144,7 +144,7 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {} bool add_special_tokens_for_chat = false) {
+    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}, bool add_special_tokens_for_chat = false) {
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
