@@ -80,6 +80,8 @@ auto generation_result_docstring = R"(
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
         DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
         DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+    perf_metrics:
+                        Performance metrics for each generation result.
 
 )";
 
@@ -102,6 +104,9 @@ auto pipeline_metrics_docstring = R"(
 
     :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
     :type avg_cache_usage: float
+
+    :param total_num_scheduled_tokens: Number of tokens scheduled for processing at the previous step of the pipeline.
+    :type total_num_scheduled_tokens: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
@@ -138,6 +143,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             })
         .def_readwrite("m_scores", &GenerationResult::m_scores)
         .def_readwrite("m_status", &GenerationResult::m_status)
+        .def_readonly("perf_metrics", &GenerationResult::perf_metrics)
         .def("__repr__",
             [](const GenerationResult &r) -> py::str {
                 std::stringstream stream;
@@ -149,12 +155,13 @@ void init_continuous_batching_pipeline(py::module_& m) {
         [](GenerationResult &r) -> py::typing::List<py::str> {
             return pyutils::handle_utf8(r.m_generation_ids);
         });
-    
+
     py::class_<EncodedGenerationResult>(m, "EncodedGenerationResult", generation_result_docstring)
         .def(py::init<>())
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
-        .def_readwrite("m_scores", &EncodedGenerationResult::m_scores);
+        .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
+        .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics);
 
     py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
         .value("NONE", ov::genai::GenerationFinishReason::NONE)
@@ -210,7 +217,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
-            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
+            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage)
+            .def_readonly("total_num_scheduled_tokens", &PipelineMetrics::total_num_scheduled_tokens);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
