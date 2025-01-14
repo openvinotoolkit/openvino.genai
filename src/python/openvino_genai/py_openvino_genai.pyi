@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -440,6 +440,8 @@ class EncodedGenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[list[int]]
@@ -448,6 +450,9 @@ class EncodedGenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class EncodedResults:
     """
@@ -693,6 +698,8 @@ class GenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[str]
@@ -706,6 +713,9 @@ class GenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class GenerationStatus:
     """
@@ -1211,6 +1221,9 @@ class PipelineMetrics:
     
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
+    
+        :param total_num_scheduled_tokens: Number of tokens scheduled for processing at the previous step of the pipeline.
+        :type total_num_scheduled_tokens: int
     """
     def __init__(self) -> None:
         ...
@@ -1228,6 +1241,9 @@ class PipelineMetrics:
         ...
     @property
     def scheduled_requests(self) -> int:
+        ...
+    @property
+    def total_num_scheduled_tokens(self) -> int:
         ...
 class RawPerfMetrics:
     """
@@ -1745,7 +1761,7 @@ class UNet2DConditionModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
-class VLMDecodedResults:
+class VLMDecodedResults(DecodedResults):
     """
     
         Structure to store resulting batched text outputs and scores for each batch.
@@ -2203,4 +2219,8 @@ class WhisperRawPerfMetrics:
 def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
     device on which inference will be performed
+    """
+def get_version() -> str:
+    """
+    OpenVINO GenAI version
     """
