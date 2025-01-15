@@ -449,7 +449,7 @@ jobs:
           cp -r runtime/3rdparty/tbb/lib/* nodejs
           cp genai_node_addon.node nodejs
           OV_VERSION=$(grep -oP '(?<=CMAKE_PROJECT_VERSION:STATIC=)[^"]*' ${{ env.BUILD_DIR }}/CMakeCache.txt | sed 's/..$//')
-          patchelf --set-rpath '$ORIGIN' libopenvino.so.$OV_VERSION
+          patchelf --set-rpath '$ORIGIN' nodejs/libopenvino.so.$OV_VERSION
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Pack Node.js bindings libs
