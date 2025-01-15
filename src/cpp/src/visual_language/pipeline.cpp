@@ -208,7 +208,9 @@ public:
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        ov::Tensor position_ids = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
+        ov::Tensor position_ids;
+        std::optional<int64_t> rope_delta;
+        std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -217,7 +219,7 @@ public:
         ov::genai::EncodedResults encoded_result;
         std::optional<int64_t> last_disappeared_token;
         std::tie(encoded_result, last_disappeared_token) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                             position_ids, m_embedding);
+                                                                                             position_ids, m_embedding, rope_delta);
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
