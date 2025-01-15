@@ -109,13 +109,12 @@ jobs:
           optimum-cli export openvino --model echarlaix/tiny-random-latent-consistency --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-latent-consistency
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --optimum --num_steps 4
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI
-        run: |
-          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --num_steps 4
+        run: python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --num_steps 4
       - name: Test echarlaix/tiny-random-latent-consistency with GenAI and LoRA
         run: |
-          wget -O ./ov_models/soulcard.safetensors https://civitai.com/api/download/models/72591
-          # python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1 --lora ./ov_models/soulcard.safetensors --lora_alphas 0.7 --num_steps 4
-          rm -rf ./ov_models/ ./image_generation.jsonl
+          huggingface-cli download katuni4ka/tiny-random-latent-consistency-lora --local-dir ./lora
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-latent-consistency/ -pf ./image_generation.jsonl -d cpu -n 1  --num_steps 4 --lora ./lora/tiny-random-latent-consistency-lora.safetensors --lora_alphas 0.7
+          rm -rf ./ov_models/ ./lora ./image_generation.jsonl
       - name: Test TinyLlama-1.1B-Chat-v1.0 in Speculative Decoding via GenAI
         run: |
           optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --trust-remote-code --weight-format fp16 ov_models/TinyLlama-1.1B-Chat-v1.0/FP16

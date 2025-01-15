@@ -440,6 +440,8 @@ class EncodedGenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[list[int]]
@@ -448,6 +450,9 @@ class EncodedGenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class EncodedResults:
     """
@@ -693,6 +698,8 @@ class GenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[str]
@@ -706,6 +713,9 @@ class GenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class GenerationStatus:
     """

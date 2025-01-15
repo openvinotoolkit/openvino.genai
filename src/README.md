@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
 
 Streaming with a custom class:
 
-C++ template for a stremer.
+C++ template for a streamer.
 ```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -231,7 +231,7 @@ custom_streamer = CustomStreamer()
 
 pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
 ```
-For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/multinomial_causal_lm/README.md) sample.
+For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/text_generation/README.md) sample.
 
 
 Continuous batching with LLMPipeline:
@@ -394,7 +394,7 @@ durations = np.array(raw_metrics.m_new_token_times[1:]) - np.array(raw_metrics.m
 print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
-For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/benchmark_genai/README.md) and C++ [benchmark_genai](../samples/cpp/benchmark_genai/README.md) samples.
+For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
 
 ## How It Works
 
