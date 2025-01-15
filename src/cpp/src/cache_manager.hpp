@@ -103,7 +103,7 @@ public:
                 // so NAN * 0 returns non-zero invalid data.
                 // So we need to set zeros to all newly allocated tensors data.
                 std::memset(key_cache_roi_end, 0, key_cache.get_byte_size() - key_roi_size_byte);
-                std::memset(value_cache_roi_end, 0, value_cache.get_byte_size() - value_roi_size_byte);          
+                std::memset(value_cache_roi_end, 0, value_cache.get_byte_size() - value_roi_size_byte);
 #endif
                 // set new cache tensors
                 if (m_key_cache.size() > decoder_layer_id) {
