@@ -418,7 +418,6 @@ jobs:
     env:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
-      INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
 
@@ -441,7 +440,7 @@ jobs:
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_JS=ON -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
+          cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.OV_INSTALL_DIR }}
 
       - name: Combine binaries for Node.js package
         run: |
@@ -451,11 +450,11 @@ jobs:
           cp genai_node_addon.node nodejs
           OV_VERSION=$(grep -oP '(?<=CMAKE_PROJECT_VERSION:STATIC=)[^"]*' ${{ env.BUILD_DIR }}/CMakeCache.txt | sed 's/..$//')
           patchelf --set-rpath '$ORIGIN' libopenvino.so.$OV_VERSION
-        working-directory: ${{ env.INSTALL_DIR }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Pack Node.js bindings libs
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
-        working-directory: ${{ env.INSTALL_DIR }}/nodejs
+        working-directory: ${{ env.OV_INSTALL_DIR }}/nodejs
 
       - name: Upload Archive Package with Node.js bindings
         if: ${{ always() }}
@@ -468,7 +467,7 @@ jobs:
       - name: Run javascript tests
         working-directory: ${{ env.GENAI_REPO }}/src/js
         run: |
-          cp -R ${{ env.INSTALL_DIR }}/nodejs bin
+          cp -R ${{ env.OV_INSTALL_DIR }}/nodejs bin
           npm install
           npm test
 
