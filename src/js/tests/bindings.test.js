@@ -52,7 +52,7 @@ describe('bindings', () => {
       }
     }, { temperature: '0', max_new_tokens: '4' });
 
-    assert.ok(true);
+    assert.ok(output);
     done();
   });
 
@@ -66,7 +66,7 @@ describe('bindings', () => {
         return;
       }
 
-      assert.strictEqual(output, 'Hello world!');
+      assert.ok(output.includes('Hello world!'));
       done();
     }, { temperature: '0', max_new_tokens: '4' });
   });

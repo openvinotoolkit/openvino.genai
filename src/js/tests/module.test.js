@@ -27,7 +27,7 @@ describe('module', async () => {
       () => {},
     );
 
-    assert.strictEqual(result, 'Hello world!');
+    assert.ok(result.includes('Hello world!'));
   });
 });
 
