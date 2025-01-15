@@ -440,6 +440,27 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     serialize(detokenizer, models_path / "openvino_detokenizer.xml")
 
 
+def run_llm_pipeline_with_streamer(model_id: str, 
+                                   prompts: List[str], 
+                                   generation_config: GenerationConfig | dict, 
+                                   tmp_path: Path, 
+                                   streamer: StreamerWithResults,
+                                   use_cb : bool = False):
+    models_path : Path = tmp_path / model_id
+
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+    if type(generation_config) is dict:
+        generation_config = GenerationConfig(**generation_config)
+
+    convert_models(opt_model, hf_tokenizer, models_path)
+
+    results = run_llm_pipeline(models_path=models_path, 
+                               prompts=prompts, generation_config=generation_config, 
+                               streamer=streamer,
+                               use_cb=use_cb)
+    compare_generation_results(prompts, results, streamer.get_results(), generation_config)
+    
+
 def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_config: GenerationConfig | dict, tmp_path: Path, use_cb : bool = False):
     models_path : Path = tmp_path / model_id
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
