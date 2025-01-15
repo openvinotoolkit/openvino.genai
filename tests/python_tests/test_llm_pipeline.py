@@ -203,14 +203,18 @@ def test_callback_kwargs_one_string(callback):
 ])
 @pytest.mark.parametrize("generation_config_dict", [dict(max_new_tokens=10), dict(max_new_tokens=300)])
 @pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("use_cb", [True, False])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_streamer_compare_texts(model_descr, generation_config_dict, prompt, streamer):
+def test_streamer_compare_texts(model_descr, generation_config_dict, prompt, streamer, use_cb):
     model_id = model_descr[0]
     tmp_path = model_descr[1]
     model_path : Path = tmp_path / model_id
 
-    results = run_llm_pipeline(models_path=model_path, prompts=[prompt], generation_config=GenerationConfig(**generation_config_dict), streamer=streamer)
+    results = run_llm_pipeline(models_path=model_path, 
+                               prompts=[prompt], generation_config=GenerationConfig(**generation_config_dict), 
+                               streamer=streamer,
+                               use_cb=use_cb)
     for res in results:
         assert res.m_generation_ids[0] == streamer.get_result_str()
 
