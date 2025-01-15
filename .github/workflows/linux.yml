@@ -445,8 +445,8 @@ jobs:
       - name: Combine binaries for Node.js package
         run: |
           mkdir -p nodejs
-          cp runtime/lib/intel64/* nodejs
-          cp runtime/3rdparty/tbb/lib/* nodejs
+          cp -r runtime/lib/intel64/* nodejs
+          cp -r runtime/3rdparty/tbb/lib/* nodejs
           cp genai_node_addon.node nodejs
           OV_VERSION=$(grep -oP '(?<=CMAKE_PROJECT_VERSION:STATIC=)[^"]*' ${{ env.BUILD_DIR }}/CMakeCache.txt | sed 's/..$//')
           patchelf --set-rpath '$ORIGIN' libopenvino.so.$OV_VERSION
