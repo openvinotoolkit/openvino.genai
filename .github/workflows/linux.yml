@@ -465,7 +465,7 @@ jobs:
           if-no-files-found: 'error'
 
       - name: Run javascript tests
-        working-directory: ${{ env.GENAI_REPO }}/src/js
+        working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           cp -R ${{ env.OV_INSTALL_DIR }}/nodejs bin
           npm install
@@ -473,13 +473,13 @@ jobs:
 
       - name: Install genai-node samples dependencies
         run: npm install
-        working-directory: ${{ env.GENAI_REPO }}/samples/js/chat_sample
+        working-directory: ${{ env.SRC_DIR }}/samples/js/chat_sample
 
       - name: Run tests
         run: npm test
         env:
-          MODEL_PATH: ${{ env.GENAI_REPO }}/src/js/tests/models/Llama-3.2-3B-Instruct-openvino-8bit
-        working-directory: ${{ env.GENAI_REPO }}/samples/js/chat_sample
+          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.2-3B-Instruct-openvino-8bit
+        working-directory: ${{ env.SRC_DIR }}/samples/js/chat_sample
 
   Overall_Status:
     name: ci/gha_overall_status_linux
