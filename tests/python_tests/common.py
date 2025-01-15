@@ -335,8 +335,10 @@ class StreamerWithResults:
         self.results.append(subword)
         return False
     
-    def get_result_str(self) -> str:
-        return ''.join(self.results)
+    def get_results(self) -> List[GenerationResult]:
+        streaming_result = GenerationResult()
+        streaming_result.m_generation_ids = [''.join(self.results)]
+        return [streaming_result]
     
     def reset(self):
         self.results = []

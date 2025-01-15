@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 import torch
 
-from common import run_llm_pipeline_with_ref, convert_to_hf, run_llm_pipeline, StreamerWithResults
+from common import run_llm_pipeline_with_ref, convert_to_hf, run_llm_pipeline, compare_generation_results, StreamerWithResults
 from ov_genai_test_utils import (
     get_models_list,
     read_model,
@@ -215,8 +215,7 @@ def test_streamer_compare_texts(model_descr, generation_config_dict, prompt, str
                                prompts=[prompt], generation_config=GenerationConfig(**generation_config_dict), 
                                streamer=streamer,
                                use_cb=use_cb)
-    for res in results:
-        assert res.m_generation_ids[0] == streamer.get_result_str()
+    compare_generation_results([prompt], results, streamer.get_results(), GenerationConfig(**generation_config_dict))
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
