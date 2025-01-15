@@ -121,6 +121,7 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <type_traits>
 
 /// @brief Like std::optional it has two states: default one and set value. The difference from std::optional is that default state is not empty and contains a reference to existing object outside.
 /// @tparam T type of held value
@@ -153,9 +154,24 @@ public:
         return value();
     }
 
+    /**
+     * @brief Creates a fork of the current value.
+     *
+     * This function checks if an alternative value exists. If not, it creates an alternative
+     * by copying the value referenced by `value_ref` and then updates `value_ref` to point
+     * to the new alternative value. Returns a reference to the new alternative value.
+     */
+    std::remove_const_t<T>& fork() {
+        if (!alternative) {
+            alternative = *value_ref;
+            value_ref = &*alternative;
+        }
+        return *alternative;
+    }
+
 private:
     T* value_ref;               // Reference to the default value.
-    std::optional<T> alternative; // Optional alternative value.
+    std::optional<std::remove_const_t<T>> alternative; // Optional alternative value.
 };
 
 

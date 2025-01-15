@@ -44,12 +44,15 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+        // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
+
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
             m_clip_text_encoder = std::make_shared<CLIPTextModel>(
                 root_dir / "text_encoder",
                 device,
-                properties_for_text_encoder(properties, "lora_te1")
+                properties_for_text_encoder(updated_properties, "lora_te1")
             );
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
@@ -60,7 +63,7 @@ public:
             m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
                 root_dir / "text_encoder_2",
                 device,
-                properties_for_text_encoder(properties, "lora_te2")
+                properties_for_text_encoder(updated_properties, "lora_te2")
             );
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
@@ -68,16 +71,15 @@ public:
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, properties);
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
 
         // Temporary fix for GPU
-        ov::AnyMap updated_properties = properties;
         if (device.find("GPU") != std::string::npos &&
-            updated_properties.find("INFERENCE_PRECISION_HINT") == updated_properties.end()) {
-            updated_properties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
+            updated_properties.value().find("INFERENCE_PRECISION_HINT") == updated_properties.value().end()) {
+            updated_properties.fork()["INFERENCE_PRECISION_HINT"] = ov::element::f32;
         }
 
         const std::string vae = data["vae"][1].get<std::string>();
@@ -137,11 +139,13 @@ public:
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+        // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
 
-        m_clip_text_encoder->compile(device, properties);
-        m_clip_text_encoder_with_projection->compile(device, properties);
-        m_unet->compile(device, properties);
-        m_vae->compile(device, properties);
+        m_clip_text_encoder->compile(device, updated_properties);
+        m_clip_text_encoder_with_projection->compile(device, updated_properties);
+        m_unet->compile(device, updated_properties);
+        m_vae->compile(device, updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -288,9 +292,14 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        m_clip_text_encoder->set_adapters(adapters);
-        m_clip_text_encoder_with_projection->set_adapters(adapters);
-        m_unet->set_adapters(adapters);
+        if (adapters) {
+            if (auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            m_clip_text_encoder->set_adapters(adapters);
+            m_clip_text_encoder_with_projection->set_adapters(adapters);
+            m_unet->set_adapters(adapters);
+        }
     }
 
 private:
