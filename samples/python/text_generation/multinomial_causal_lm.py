@@ -135,6 +135,7 @@ class ChunkStreamer(IterableStreamer):
     def put(self, token_id: int) -> bool:
         if (len(self.tokens_cache) + 1) % self.tokens_len != 0:
             self.tokens_cache.append(token_id)
+            self.decoded_lengths.append(-1)
             return False
         return super().put(token_id)
 

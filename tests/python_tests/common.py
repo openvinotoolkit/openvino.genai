@@ -7,10 +7,10 @@ import pytest
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -325,19 +325,45 @@ def get_default_properties():
     }
 
 
+class StreamerWithResults:
+    # Return a streamer which accumulates results in order to compare with results returned from generate.
+    results: List[str] = []
+    def __init__(self):
+        self.results = []
+
+    def accumulate(self, subword) -> bool:
+        self.results.append(subword)
+        return False
+    
+    def get_result_str(self) -> str:
+        return ''.join(self.results)
+    
+    def reset(self):
+        self.results = []
+
+
+
 def run_llm_pipeline(
     models_path : Path,
     prompts: List[str],
     generation_config : GenerationConfig,
-    use_cb : bool = False
+    use_cb : bool = False,
+    streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
-
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
 
-    generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config)
+    if (isinstance(streamer, StreamerWithResults)):
+        # Clear the accumulated strings to avoid side effects
+        streamer.reset()
+
+    generate_outputs : DecodedResults = ov_pipe.generate(
+        inputs=prompts, 
+        generation_config=generation_config, 
+        streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
+    )
 
     index = 0
     generation_results = []
@@ -474,22 +500,3 @@ def get_image_by_link(link):
         image = image.convert('RGB')
     image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, 3, image.size[1], image.size[0])
     return Tensor(image_data)
-
-def get_streamer_with_results():
-    # Return a streamer which accumulates results in order to compare with results returned from generate.
-    class StreamerWithResults:
-        results: List[str] = []
-        def __init__(self):
-            self.results = []
-
-        def accumulate(self, subword) -> bool:
-            self.results.append(subword)
-            return False
-        
-        def get_result_str(self) -> str:
-            return ''.join(self.results)
-        
-        def reset(self):
-            self.results = []
-
-    return StreamerWithResults()
