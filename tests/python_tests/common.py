@@ -453,7 +453,7 @@ def run_llm_pipeline_with_ref(model_id: str,
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
     if (isinstance(streamer, StreamerWithResults)):
-        compare_generation_results(prompts, ov_results, streamer.s(), generation_config)
+        compare_generation_results(prompts, ov_results, streamer.get_results(), generation_config)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
 
