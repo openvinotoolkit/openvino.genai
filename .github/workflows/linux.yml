@@ -439,8 +439,8 @@ jobs:
       - name: Build with ENABLE_JS=ON
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_JS=ON -S ${{ env.SRC_DIR}} -B ${{ env.BUILD_DIR }}
-          cmake --build ${{ env.BUILD_DIR}} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_JS=ON -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
 
       - name: Combine binaries for Node.js package
@@ -449,7 +449,8 @@ jobs:
           cp runtime/lib/intel64/* nodejs
           cp runtime/3rdparty/tbb/lib/* nodejs
           cp genai_node_addon.node nodejs
-          patchelf --set-rpath '$ORIGIN' libopenvino.so.2025.0.0
+          OV_VERSION=$(grep -oP '(?<=CMAKE_PROJECT_VERSION:STATIC=)[^"]*' ${{ env.BUILD_DIR }}/CMakeCache.txt | sed 's/..$//')
+          patchelf --set-rpath '$ORIGIN' libopenvino.so.$OV_VERSION
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Pack Node.js bindings libs
