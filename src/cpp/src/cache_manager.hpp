@@ -5,11 +5,13 @@
 
 #include <vector>
 #include <list>
-#include <sys/mman.h>
 #include "openvino/runtime/tensor.hpp"
-#include "openvino/core/shape.hpp"
-
 #include "device_config.hpp"
+
+#ifndef _WIN32
+#include <sys/mman.h>
+#include "openvino/core/shape.hpp"
+#endif
 
 namespace ov::genai {
 class CacheManager {
