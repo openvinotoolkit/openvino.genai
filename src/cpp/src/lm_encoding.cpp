@@ -44,7 +44,6 @@ void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attent
             position_ids_data[dim * batch_size + batch] = pos_id;
         }
     }
-
 }
 
 void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
@@ -76,7 +75,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
-    std::optional<EmbeddingsModel> m_embedding
+    std::optional<EmbeddingsModel> m_embedding,
+    std::optional<int64_t> rope_delta
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -108,12 +108,6 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
-
-    int64_t rope_delta = 0;
-    if (position_ids.has_value() && position_ids->get_shape().size() == 3) {
-        int64_t position_ids_max_element = *std::max_element(position_ids->data<int64_t>(), position_ids->data<int64_t>() + position_ids->get_size());
-        rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
-    }
 
     // Initialize results and performance metrics.
 
@@ -220,8 +214,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
         if (position_ids.has_value()) {
-            if (position_ids->get_shape().size() == 3) {
-                update_3d_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"), rope_delta);
+            if (position_ids->get_shape().size() == 3 && rope_delta.has_value()) {
+                update_3d_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"), rope_delta.value());
             } else {
                 update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
             }
