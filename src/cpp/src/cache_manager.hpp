@@ -5,8 +5,9 @@
 
 #include <vector>
 #include <list>
-
+#include <sys/mman.h>
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/core/shape.hpp"
 
 #include "device_config.hpp"
 
@@ -56,8 +57,22 @@ public:
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
                 ov::Shape value_cache_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(decoder_layer_id), num_kv_blocks);
                 ov::Shape key_cache_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(decoder_layer_id), num_kv_blocks);
+#ifdef _WIN32
                 ov::Tensor key_cache(m_device_config.get_cache_precision(), key_cache_shape);
                 ov::Tensor value_cache(m_device_config.get_cache_precision(), value_cache_shape);
+#else
+                auto key_size = ov::shape_size(key_cache_shape) * m_device_config.get_cache_precision().size();
+                auto value_size = ov::shape_size(value_cache_shape) * m_device_config.get_cache_precision().size();
+
+                // allocate memory filled with zeros
+                auto key_ptr = mmap(NULL, key_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                auto value_ptr = mmap(NULL,  value_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                OPENVINO_ASSERT(key_ptr != MAP_FAILED);
+                OPENVINO_ASSERT(value_ptr != MAP_FAILED);
+                ov::Tensor key_cache = ov::Tensor(m_device_config.get_cache_precision(), key_cache_shape, key_ptr);
+                ov::Tensor value_cache = ov::Tensor(m_device_config.get_cache_precision(), value_cache_shape, value_ptr);
+
+#endif
 
                 auto key_cache_roi_end = static_cast<unsigned char*>(key_cache.data());
                 auto value_cache_roi_end = static_cast<unsigned char*>(value_cache.data());
@@ -82,13 +97,14 @@ public:
 
                 }
 
+#ifdef _WIN32
                 // Some optimizations like AVX2, AVX512, AMX require a minimal shape and 
                 // perform multiplying by zero on the excess data. Uninitialized tensor data contain NAN's, 
                 // so NAN * 0 returns non-zero invalid data.
                 // So we need to set zeros to all newly allocated tensors data.
                 std::memset(key_cache_roi_end, 0, key_cache.get_byte_size() - key_roi_size_byte);
-                std::memset(value_cache_roi_end, 0, value_cache.get_byte_size() - value_roi_size_byte);
-                
+                std::memset(value_cache_roi_end, 0, value_cache.get_byte_size() - value_roi_size_byte);          
+#endif
                 // set new cache tensors
                 if (m_key_cache.size() > decoder_layer_id) {
                     m_key_cache[decoder_layer_id] = key_cache;
