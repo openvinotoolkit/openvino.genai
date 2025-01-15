@@ -205,7 +205,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         m_llm.start_async();
 
         stream_generated_tokens();
-        free_non_running_requests();
+        free_non_running_requests(); // to handle streaming response
 
         m_llm.wait();
 
