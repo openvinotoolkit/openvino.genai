@@ -350,22 +350,14 @@ def run_llm_pipeline(
     prompts: List[str],
     generation_config : GenerationConfig,
     use_cb : bool = False,
-    streamer: StreamerWithResults | Callable | StreamerBase = None
+    streamer: Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
 
-    if (isinstance(streamer, StreamerWithResults)):
-        # Clear the accumulated strings to avoid side effects
-        streamer.reset()
-
-    generate_outputs : DecodedResults = ov_pipe.generate(
-        inputs=prompts, 
-        generation_config=generation_config, 
-        streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
-    )
+    generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config, streamer=streamer)
 
     index = 0
     generation_results = []
@@ -438,30 +430,14 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     serialize(tokenizer, models_path / "openvino_tokenizer.xml")
     serialize(detokenizer, models_path / "openvino_detokenizer.xml")
+ 
 
-
-def run_llm_pipeline_with_streamer(model_id: str, 
-                                   prompts: List[str], 
-                                   generation_config: GenerationConfig | dict, 
-                                   tmp_path: Path, 
-                                   streamer: StreamerWithResults,
-                                   use_cb : bool = False):
-    models_path : Path = tmp_path / model_id
-
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-    if type(generation_config) is dict:
-        generation_config = GenerationConfig(**generation_config)
-
-    convert_models(opt_model, hf_tokenizer, models_path)
-
-    results = run_llm_pipeline(models_path=models_path, 
-                               prompts=prompts, generation_config=generation_config, 
-                               streamer=streamer,
-                               use_cb=use_cb)
-    compare_generation_results(prompts, results, streamer.get_results(), generation_config)
-    
-
-def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_config: GenerationConfig | dict, tmp_path: Path, use_cb : bool = False):
+def run_llm_pipeline_with_ref(model_id: str, 
+                              prompts: List[str], 
+                              generation_config: GenerationConfig | dict, 
+                              tmp_path: Path, 
+                              use_cb : bool = False,
+                              streamer: StreamerWithResults | Callable | StreamerBase = None):
     models_path : Path = tmp_path / model_id
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
@@ -470,8 +446,14 @@ def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_conf
 
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb)
+    if (isinstance(streamer, StreamerWithResults)):
+        # Clear the accumulated strings to avoid side effects
+        streamer.reset()
+
+    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
+    if (isinstance(streamer, StreamerWithResults)):
+        compare_generation_results(prompts, ov_results, streamer.s(), generation_config)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
 
