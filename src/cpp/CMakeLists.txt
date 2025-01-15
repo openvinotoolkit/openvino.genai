@@ -178,7 +178,7 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
         RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
         INCLUDES DESTINATION runtime/include)
 
-# samples do not need to be built for NPM package
+# development files do not need to be built for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
     return()
 endif()
