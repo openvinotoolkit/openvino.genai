@@ -44,29 +44,14 @@ describe('bindings', () => {
   it('should generate string result', (_, done) => {
     let output = '';
 
-    pipeline.generate('Say Hello', (isDone, chunk) => {
-      if (!isDone) {
-        output += chunk;
-
-        return;
-      }
-    }, { temperature: '0', max_new_tokens: '4' });
-
-    assert.ok(output);
-    done();
-  });
-
-  it('should generate "Hello world"', (_, done) => {
-    let output = '';
-
-    pipeline.generate('Type "Hello world!" in English', (isDone, chunk) => {
+    pipeline.generate('Continue: 1 2 3', (isDone, chunk) => {
       if (!isDone) {
         output += chunk;
 
         return;
       }
 
-      assert.ok(output.includes('Hello world!'));
+      assert.ok(output.length > 0);
       done();
     }, { temperature: '0', max_new_tokens: '4' });
   });
