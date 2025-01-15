@@ -42,6 +42,7 @@ def load_and_save_whisper_model(params, **tokenizer_kwargs):
             compile=False,
             device="CPU",
             load_in_8bit=False,
+            stateful=False,
         )
         opt_model.generation_config.save_pretrained(path)
         opt_model.config.save_pretrained(path)
