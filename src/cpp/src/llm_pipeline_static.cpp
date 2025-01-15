@@ -55,6 +55,16 @@ void dump_tensor(const ov::Tensor& input, const std::string& base_path) {
     }
 }
 
+void dump_config(const std::string& name, const ov::AnyMap& config) {
+    std::cout << name << std::endl;
+    for (auto&& [key, value] : config) {
+        std::cout << key << " : ";
+        value.print(std::cout);
+        std::cout  << ", ";
+    }
+    std::cout << std::endl;
+}
+
 namespace opp = ov::pass::pattern;
 class TransposeValueTensors : public ov::pass::MatcherPass {
 public:
@@ -754,6 +764,7 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     KVAxesPosition axes = get_kv_axes(model_desc.type);
     update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
     update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+    pipeline_config["NPUW_LLM_PAD_TOKEN_ID"] = m_tokenizer.get_pad_token_id();
 
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
@@ -1151,14 +1162,15 @@ void StatelessLLMPipeline::setupAndCompileModels(
     set_npuw_cache_dir(prefill_config);
     set_npuw_cache_dir(generate_config);
 
-    std::cout << "CPU hardcoded" << std::endl;
+    dump_config("Stateless: Generate config", generate_config);
     auto kv_compiled_model = core.compile_model(
-        kvcache_model, "CPU"
+        kvcache_model, device, generate_config
     );
     ov::genai::utils::print_compiled_model_properties(kv_compiled_model, "Stateless LLM kv compiled model");
     m_kvcache_request = kv_compiled_model.create_infer_request();
 
-    auto prefill_compiled_model = core.compile_model(prefill_model, "CPU");
+    dump_config("Stateless: Prefill config", prefill_config);
+    auto prefill_compiled_model = core.compile_model(prefill_model, device, prefill_config);
     m_prefill_request = prefill_compiled_model.create_infer_request();
     ov::genai::utils::print_compiled_model_properties(prefill_compiled_model, "Stateless LLM prefill compiled model");
 }
