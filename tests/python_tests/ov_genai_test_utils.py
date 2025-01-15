@@ -26,7 +26,7 @@ def get_models_list():
         "facebook/opt-125m",
         "microsoft/phi-1_5",
         "microsoft/phi-2",
-        "THUDM/chatglm2-6b",
+        "THUDM/chatglm3-6b",
         "Qwen/Qwen2-0.5B-Instruct",
         "Qwen/Qwen-7B-Chat",
         "Qwen/Qwen1.5-7B-Chat",

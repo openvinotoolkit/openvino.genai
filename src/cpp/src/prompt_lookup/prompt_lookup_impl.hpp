@@ -16,6 +16,8 @@ protected:
     std::shared_ptr<ContinuousBatchingForPromptLookupImpl> m_pipeline;
     SpeculativeDecodingMetrics m_sd_metrics;
 
+    void drop_requests();
+
 public:
     PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
                      const Tokenizer& tokenizer,

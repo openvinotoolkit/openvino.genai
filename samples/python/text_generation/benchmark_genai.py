@@ -6,7 +6,7 @@ import openvino_genai as ov_genai
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")
-    parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
+    parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default="The Sky is blue because", help="Prompt")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")

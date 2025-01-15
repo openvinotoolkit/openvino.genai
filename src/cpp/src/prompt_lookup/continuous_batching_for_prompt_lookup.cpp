@@ -83,4 +83,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
     }
 }
 
+bool ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::is_requests_empty() {
+    return m_requests.empty();
+}
+
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_awaiting_requests() {
+    return m_awaiting_requests;
+}
+
 }

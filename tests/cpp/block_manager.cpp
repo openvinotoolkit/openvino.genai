@@ -10,7 +10,7 @@
 
 TEST(TestBlockManager, general_test) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(6, false, 4);
-    ov::genai::TokenIds prompt_ids;
+    ov::genai::TokenIds prompt_ids = {10, 0};
 
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
         0,
