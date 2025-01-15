@@ -464,7 +464,7 @@ jobs:
           path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
 
-      - name: Run javascript tests
+      - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           cp -R ${{ env.OV_INSTALL_DIR }}/nodejs bin
@@ -475,7 +475,7 @@ jobs:
         run: npm install
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
 
-      - name: Run tests
+      - name: Run samples tests
         run: npm test
         env:
           MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
