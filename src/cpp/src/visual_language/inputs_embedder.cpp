@@ -52,10 +52,10 @@ protected:
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
-    virtual ov::Tensor get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
+    virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
         ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
-        return position_ids;
+        return {position_ids, std::nullopt};
     }
 
     EmbeddingsModel get_embedding_model() const {
@@ -1173,6 +1173,7 @@ class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
     ov::InferRequest m_vision_embeddings_merger;
 
     ov::Tensor m_position_ids;
+    int64_t m_rope_delta = 0;
 
 public:
     InputsEmbedderQwen2VL(
@@ -1251,20 +1252,35 @@ public:
 
         m_position_ids = create_position_ids(input_ids, images_grid_thw, vision_start_token_id);
 
+        int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
+        m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+
         return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, image_embeds, images_grid_thw, image_pad_token_id);
     }
 
-    virtual ov::Tensor get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override {
-        if (m_position_ids.get_size() == 0) {
-            // No visual content - create standard position ids
+    virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override {
+        if (history_size != 0) {
             ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
+            int64_t new_pos_id = static_cast<int64_t>(history_size + m_rope_delta);
             for (size_t dim = 0; dim < 3; ++dim) {
                 int64_t* pos_data = position_ids.data<int64_t>() + dim * inputs_embeds_size;
-                std::iota(pos_data, pos_data + inputs_embeds_size, history_size);
+                std::iota(pos_data, pos_data + inputs_embeds_size, new_pos_id);
             }
-            return position_ids;
+            return {position_ids, m_rope_delta};
         }
-        return m_position_ids;
+        return {m_position_ids, m_rope_delta};
+    }
+
+    virtual void start_chat(const std::string& system_message) override {
+        IInputsEmbedder::start_chat(system_message);
+        m_position_ids = ov::Tensor();
+        m_rope_delta = 0;
+    }
+
+    virtual void finish_chat() override {
+        IInputsEmbedder::finish_chat();
+        m_position_ids = ov::Tensor();
+        m_rope_delta = 0;
     }
 protected:
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
@@ -1592,7 +1608,7 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
-ov::Tensor InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
 
