@@ -754,6 +754,7 @@ void StatefulLLMPipeline::updateStatefulConfig(
     KVAxesPosition axes = get_kv_axes(model_desc.type);
     update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
     update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+    pipeline_config["NPUW_LLM_PAD_TOKEN_ID"] = m_tokenizer.get_pad_token_id();
 
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
