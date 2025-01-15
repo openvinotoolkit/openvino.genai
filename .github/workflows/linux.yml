@@ -473,13 +473,13 @@ jobs:
 
       - name: Install genai-node samples dependencies
         run: npm install
-        working-directory: ${{ env.SRC_DIR }}/samples/js/chat_sample
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
 
       - name: Run tests
         run: npm test
         env:
           MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.2-3B-Instruct-openvino-8bit
-        working-directory: ${{ env.SRC_DIR }}/samples/js/chat_sample
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
 
   Overall_Status:
     name: ci/gha_overall_status_linux
