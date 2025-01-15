@@ -112,7 +112,16 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   python speculative_decoding_lm.py model_dir draft_model_dir prompt
   ```
 
-### 7. LLMs benchmarking sample (`benchmark_genai`)
+### 7. LoRA Greedy Causal LM (`lora_greedy_causal_lm`)
+- **Description:**
+This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-tuned causal language models. LoRA enables efficient fine-tuning, reducing resource requirements for adapting large models to specific tasks.
+- **Main Feature:** Lightweight fine-tuning with LoRA for efficient text generation
+- **Run Command:**
+  ```bash
+  ./lora_greedy_causal_lm <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> "<PROMPT>"
+  ```
+
+### 8. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 
 This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 

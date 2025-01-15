@@ -112,7 +112,16 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   ./speculative_decoding_lm <MODEL_DIR> <DRAFT_MODEL_DIR> "<PROMPT>"
   ```
 
-### 7. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
+### 7. LoRA Greedy Causal LM (`lora_greedy_causal_lm`)
+- **Description:**
+This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-tuned causal language models. LoRA enables efficient fine-tuning, reducing resource requirements for adapting large models to specific tasks.
+- **Main Feature:** Lightweight fine-tuning with LoRA for efficient text generation
+- **Run Command:**
+  ```bash
+  ./lora_greedy_causal_lm <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> "<PROMPT>"
+  ```
+
+### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
 - **Description:** 
 LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
 The following code snippet demonstrates how to load the model from the memory buffer:
@@ -128,7 +137,7 @@ For the sake of brevity the code above does not include Tokenizer decryption. Fo
   ./encrypted_model_causal_lm <MODEL_DIR> "<PROMPT>"
   ```
 
-### 8. LLMs benchmarking sample (`benchmark_genai`)
+### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 
 This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
