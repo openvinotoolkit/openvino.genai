@@ -22,6 +22,8 @@
 namespace ov {
 namespace genai {
 
+namespace {
+
 class DiagonalGaussianDistribution {
 public:
     explicit DiagonalGaussianDistribution(ov::Tensor parameters)
@@ -63,6 +65,29 @@ private:
     ov::Tensor m_parameters;
     ov::Tensor m_mean, m_std;
 };
+
+// for BW compatibility with 2024.6.0
+ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::string& device, ov::AnyMap properties) {
+    std::cout << ov::Any(properties).as<std::string>() << std::endl;
+
+    auto it = properties.find("WA_INFERENCE_PRECISION_HINT");
+    ov::element::Type wa_inference_precision = it != properties.end() ? it->second.as<ov::element::Type>() : ov::element::undefined;
+    if (it != properties.end()) {
+        properties.erase(it);
+    }
+
+    const std::vector<std::string> activation_scale_factor_path = { "runtime_options", ov::hint::activations_scale_factor.name() };
+    const bool activation_scale_factor_defined = model->has_rt_info(activation_scale_factor_path);
+
+    // convert WA inference precision to actual inference precision if activation_scale_factor is not defined in IR
+    if (device.find("GPU") != std::string::npos && !activation_scale_factor_defined && wa_inference_precision != ov::element::undefined) {
+        properties[ov::hint::inference_precision.name()] = wa_inference_precision;
+    }
+
+    return properties;
+}
+
+} // namespace
 
 size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path) {
     std::ifstream file(vae_config_path);
@@ -207,14 +232,14 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     ov::Core core = utils::singleton_core();
 
     if (m_encoder_model) {
-        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, properties);
+        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, properties));
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
         m_encoder_request = encoder_compiled_model.create_infer_request();
         // release the original model
         m_encoder_model.reset();
     }
 
-    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, properties);
+    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, properties));
     ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
