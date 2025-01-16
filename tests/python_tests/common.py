@@ -447,12 +447,11 @@ def run_llm_pipeline_with_ref(model_id: str,
     if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
         # We can use streamer only if we have a single prompt and not beam search.
         streamer = StreamerWithResults()
-
-    convert_models(opt_model, hf_tokenizer, models_path)
-
     if isinstance(streamer, StreamerWithResults):
         # Clear the accumulated strings to avoid side effects
         streamer.reset()
+
+    convert_models(opt_model, hf_tokenizer, models_path)
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
