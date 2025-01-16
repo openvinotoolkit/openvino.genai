@@ -65,7 +65,7 @@ def test_stop_strings(tmp_path, generation_config):
     'What is OpenVINO?',
     'table is made of', 
     'The Sun is yellow because', 
-    '你好！ 你好嗎？'
+    '你好！ 你好嗎？',
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
 @pytest.mark.parametrize("use_cb", [True, False])
