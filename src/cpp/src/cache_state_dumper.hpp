@@ -83,7 +83,7 @@ public:
      */
     void dump_cache_state(const Scheduler &schdl, const std::vector <SequenceGroup::Ptr> &sequence_groups,
                           size_t dump_count) {
-        dump_cache_state(schdl.m_block_manager, sequence_groups, dump_count);
+        dump_cache_state(*schdl.m_block_manager, sequence_groups, dump_count);
 
     }
 
