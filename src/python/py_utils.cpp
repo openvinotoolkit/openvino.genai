@@ -72,6 +72,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
         "PREFILL_CONFIG",
+        "++GENERATE_CONFIG",
+        "++PREFILL_CONFIG"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
