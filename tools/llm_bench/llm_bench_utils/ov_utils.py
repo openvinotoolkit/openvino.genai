@@ -243,9 +243,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     draft_model_path = kwargs.get("draft_model", '')
     cb = kwargs.get("use_cb", False)
-    if cb or draft_model_path:
+    cb_config = kwargs.get("cb_config")
+    use_streamer_metrics = False
+    if cb or cb_config is not None or draft_model_path:
         log.info("Continuous Batching mode activated")
-        ov_config["scheduler_config"] = get_scheduler_config_genai(kwargs.get("cb_config"))
+        ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
+
+        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.") 
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
@@ -292,7 +296,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb or draft_model_path else None
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if use_streamer_metrics else None
 
     return llm_pipe, tokenizer, end - start, streamer, True
 

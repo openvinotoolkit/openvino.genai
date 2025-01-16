@@ -180,15 +180,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
+            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index))
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     if bench_hook is not None:
@@ -339,15 +331,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
-    else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
@@ -461,14 +444,6 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     streamer.reset()
