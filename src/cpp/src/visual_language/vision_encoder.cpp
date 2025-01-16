@@ -645,13 +645,7 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
     return output_tensor;
 }
 
-ImageSize smart_resize_qwen2vl(
-    size_t height, 
-    size_t width, 
-    size_t factor = 28,
-    size_t min_pixels = 56 * 56, 
-    size_t max_pixels = 14 * 14 * 4 * 1280
-) {
+ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
     if (height < factor || width < factor) {
         OPENVINO_THROW("Height or width must be larger than factor");
     }
