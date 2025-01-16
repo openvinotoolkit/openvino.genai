@@ -95,6 +95,8 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     float get_alpha(const Adapter& adapter) const;
     AdapterConfig& remove(const Adapter&);
     const std::vector<Adapter>& get_adapters() const { return adapters; }
+    std::vector<std::pair<Adapter, float>> get_adapters_and_alphas() const;
+    void set_adapters_and_alphas(const std::vector<std::pair<Adapter, float>>& adapters);
 
     // Update adapters and alphas from other config. Mode and tensor_name_prefix are updated if they are set not to default values in other config.
     // It means that if other.get_mode() == MODE_AUTO, it will not override value in this config. If tensor_name_prefix is not set (== nullopt) then it won't be updated either.

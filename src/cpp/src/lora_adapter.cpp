@@ -877,10 +877,14 @@ public:
             for(size_t i = 0; i < dst_patterns.size(); ++i) {
                 ov::Coordinate begin = total_size, end = total_size;
                 begin[0] = cur_index;
+                begin[1] = 0;
                 cur_index += cur_dims[i];
                 end[0] = cur_index;
                 auto B = std::make_shared<v0::Constant>(ov::Tensor(weight.second.B->get_tensor_view(), begin, end));
-                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;  // ov::Tensor ROI constructor doesn't keep the origin reference so we need to keep a pointer to the original constant to avoid its early disposal
+
+                // ov::Tensor ROI constructor doesn't keep the origin reference so we need to keep a pointer to the original constant to avoid its early disposal
+                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;
+
                 result.emplace(
                     dst_patterns[i].format(*match),
                     LoRAWeight(
@@ -1194,8 +1198,6 @@ struct AdapterControllerImpl {
         }
 
         pm.run_passes(model);
-
-        //ov::serialize(model, "after.lora.xml");
 
         // Collect all variable names to quickly detect which state tensor belongs to this adapter controller later
         for(const auto& var: variable_ids) {
@@ -1662,6 +1664,24 @@ void AdapterConfig::update (const AdapterConfig& other) {
     }
     if(other.tensor_name_prefix) {
         tensor_name_prefix = other.tensor_name_prefix;
+    }
+}
+
+std::vector<std::pair<Adapter, float>> AdapterConfig::get_adapters_and_alphas() const {
+    OPENVINO_ASSERT(adapters.size() == alphas.size());
+    std::vector<std::pair<Adapter, float>> result;
+    for(size_t i = 0; i < adapters.size(); ++i) {
+        result.emplace_back(adapters[i], alphas[i]);
+    }
+    return result;
+}
+
+void AdapterConfig::set_adapters_and_alphas(const std::vector<std::pair<Adapter, float>>& _adapters) {
+    adapters.clear();
+    alphas.clear();
+    for(auto const& adapter_and_alpha: _adapters) {
+        adapters.push_back(adapter_and_alpha.first);
+        alphas.push_back(adapter_and_alpha.second);
     }
 }
 

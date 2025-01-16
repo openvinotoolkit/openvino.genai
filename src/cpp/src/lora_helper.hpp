@@ -17,39 +17,19 @@ utils::SharedOptional<const AnyMap> extract_adapters_from_properties (const AnyM
 // If `adapters` property is not found, do nothing and return false.
 bool update_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>& adapter_config);
 
+using AdapterConfigAction = std::function<std::optional<AdapterConfig>(const AdapterConfig&)>;
+using AdapterAction = std::function<Adapter(const Adapter&)>;
 
-template <typename OptionalAction>
-void update_adapters_in_properties(utils::SharedOptional<const AnyMap>& properties, const OptionalAction& action) {
-    std::optional<AdapterConfig> adapter_config;
-    if(update_adapters_from_properties(*properties, adapter_config)) {
-        if(auto result = action(*adapter_config)) {
-            properties.fork()[AdaptersProperty::name()] = *result;
-        }
-    }
-}
+// Update `properties` map with new `adapters` property value. If `properties` map contains `adapters` property,
+// call `action` with the value of `adapters` property and update `adapters` property with the result of `action`.
+void update_adapters_in_properties(utils::SharedOptional<const AnyMap>& properties, const AdapterConfigAction& action);
 
+// Update `properties` map with new `adapters` property value. If `properties` map contains `adapters` property,
+// call `action` with the value of `adapters` property and update `adapters` property with the result of `action`.
+utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& properties, const AdapterConfigAction& action);
 
-template <typename OptionalAction>
-inline utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& properties, const OptionalAction& action) {
-    utils::SharedOptional<const AnyMap> updated_properties(properties);
-    update_adapters_in_properties(updated_properties, action);
-    return updated_properties;
-}
-
-
-template <typename OptionalAction>
-std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const OptionalAction& action) {
-    std::optional<AdapterConfig> updated_adapters;
-    const auto& adapters_vector = adapters.get_adapters();
-    if(!adapters_vector.empty()) {
-        updated_adapters = adapters;    // it is simpler w.r.t coding to just copy the config entirely with all modes/options and adapters, and replace adapters later
-        for(const auto& adapter: adapters_vector) {
-            updated_adapters->remove(adapter);
-            updated_adapters->add(action(adapter), adapters.get_alpha(adapter));
-        }
-    }
-    return updated_adapters;
-}
+// Create a new AdapterConfig object with adapters modified by `action` function.
+std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action);
 
 }
 }

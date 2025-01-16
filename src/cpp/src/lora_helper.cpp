@@ -26,5 +26,35 @@ bool update_adapters_from_properties (const AnyMap& properties, std::optional<Ad
     return false;
 }
 
+
+void update_adapters_in_properties(utils::SharedOptional<const AnyMap>& properties, const AdapterConfigAction& action) {
+    std::optional<AdapterConfig> adapter_config;
+    if(update_adapters_from_properties(*properties, adapter_config)) {
+        if(auto result = action(*adapter_config)) {
+            properties.fork()[AdaptersProperty::name()] = *result;
+        }
+    }
+}
+
+utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& properties, const AdapterConfigAction& action) {
+    utils::SharedOptional<const AnyMap> updated_properties(properties);
+    update_adapters_in_properties(updated_properties, action);
+    return updated_properties;
+}
+
+
+std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action) {
+    std::optional<AdapterConfig> updated_adapters;
+    auto adapters_vector = adapters.get_adapters_and_alphas();
+    if(!adapters_vector.empty()) {
+        for(auto& adapter: adapters_vector) {
+            adapter.first = action(adapter.first);
+        }
+        updated_adapters = AdapterConfig(adapters_vector, adapters.get_mode());
+        updated_adapters->set_tensor_name_prefix(adapters.get_tensor_name_prefix());
+    }
+    return updated_adapters;
+}
+
 }
 }
