@@ -350,14 +350,25 @@ def run_llm_pipeline(
     prompts: List[str],
     generation_config : GenerationConfig,
     use_cb : bool = False,
-    streamer: Callable | StreamerBase = None
+    streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
+    
+    if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
+        # We can use streamer only if we have a single prompt and not beam search.
+        streamer = StreamerWithResults()
+    if isinstance(streamer, StreamerWithResults):
+        # Clear the accumulated strings to avoid side effects
+        streamer.reset()
 
-    generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config, streamer=streamer)
+    generate_outputs : DecodedResults = ov_pipe.generate(
+        inputs=prompts, 
+        generation_config=generation_config, 
+        streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
+    )
 
     index = 0
     generation_results = []
@@ -375,6 +386,9 @@ def run_llm_pipeline(
 
     del ov_pipe
     shutil.rmtree(models_path)
+    
+    if isinstance(streamer, StreamerWithResults):
+        compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
     return generation_results
 
@@ -444,19 +458,10 @@ def run_llm_pipeline_with_ref(model_id: str,
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
-        # We can use streamer only if we have a single prompt and not beam search.
-        streamer = StreamerWithResults()
-    if isinstance(streamer, StreamerWithResults):
-        # Clear the accumulated strings to avoid side effects
-        streamer.reset()
-
     convert_models(opt_model, hf_tokenizer, models_path)
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
-    if isinstance(streamer, StreamerWithResults):
-        compare_generation_results(prompts, ov_results, streamer.get_results(), generation_config)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
 

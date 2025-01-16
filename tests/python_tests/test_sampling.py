@@ -61,7 +61,6 @@ def test_stop_strings(tmp_path, generation_config):
                           dict(max_new_tokens=30, repetition_penalty=2.0),
                           dict(max_new_tokens=300)],
                          ids=["basic", "repetition_penalty", "long_max_new_tokens"])
-@pytest.mark.parametrize("streamer", [StreamerWithResults()])
 @pytest.mark.parametrize("prompt", [
     'What is OpenVINO?',
     'table is made of', 
@@ -70,14 +69,13 @@ def test_stop_strings(tmp_path, generation_config):
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
 @pytest.mark.parametrize("use_cb", [True, False])
-def test_greedy(tmp_path, generation_config, prompt, streamer, use_cb):
+def test_greedy(tmp_path, generation_config, prompt, use_cb):
     model_id : str = "katuni4ka/tiny-random-phi3"
     run_llm_pipeline_with_ref(model_id=model_id, 
                             prompts=[prompt], 
                             generation_config=generation_config, 
                             tmp_path=tmp_path,
-                            use_cb=use_cb,
-                            streamer=streamer)
+                            use_cb=use_cb)
 
 
 @pytest.mark.precommit
@@ -333,7 +331,7 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     generation_config.rng_seed = 0
     generation_configs = generation_config
 
-    # We can use streamer only if we have a single batch
+    # We can use streamer only if we have a single batch.
     streamer = StreamerWithResults() if len(prompts) == 1 else None
 
     model_id : str = "facebook/opt-125m"
@@ -342,9 +340,10 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     models_path : Path = tmp_path / model_id
     convert_models(model, hf_tokenizer, models_path)
 
-    # run multinomial without comparison with reference
+    # Run multinomial without comparison with HF reference.
     ov_results = run_llm_pipeline(models_path, prompts, generation_configs, streamer=streamer.accumulate if streamer is not None else None)
 
+    # Compare with streamers text.
     if streamer is not None:
         compare_generation_results(prompts, ov_results, streamer.get_results(), generation_config)
 
