@@ -223,7 +223,9 @@ public:
 
     ~BlockAllocator() {
         // sanity check to validate that all blocks are freed
-        // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
+        for (auto& free_block : m_free_blocks_num) {
+            OPENVINO_ASSERT(m_total_num_blocks == free_block);
+        }
     }
 
     void increase_kv_blocks_number(size_t new_kv_blocks_count) {
