@@ -89,9 +89,7 @@ public:
                            const ov::genai::GenerationConfig& generation_config,
                            bool is_validation_mode_enabled = false);
     
-    virtual ~ContinuousBatchingImpl() {
-        m_scheduler->release();
-    }
+    virtual ~ContinuousBatchingImpl();
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
