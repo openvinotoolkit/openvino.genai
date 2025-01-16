@@ -2,10 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if(NOT ENABLE_SAMPLES)
-    return()
-endif()
-
 add_subdirectory(cpp/text_generation)
 add_subdirectory(cpp/image_generation)
 add_subdirectory(cpp/visual_language_chat)

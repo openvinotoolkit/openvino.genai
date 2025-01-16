@@ -39,11 +39,6 @@ if(NOT DEFINED Python3_FIND_VIRTUALENV)
     set(Python3_FIND_VIRTUALENV FIRST)
 endif()
 
-# Disable building samples for NPM package
-if(CPACK_GENERATOR STREQUAL "NPM")
-    set(ENABLE_SAMPLES OFF)
-endif()
-
 # Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
 if(NOT CMAKE_CROSSCOMPILING)
     find_package(Python3 REQUIRED)
