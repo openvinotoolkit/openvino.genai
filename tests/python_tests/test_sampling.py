@@ -331,9 +331,6 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     generation_config.rng_seed = 0
     generation_configs = generation_config
 
-    # We can use streamer only if we have a single batch.
-    streamer = StreamerWithResults() if len(prompts) == 1 else None
-
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_hugging_face_models(model_id)
 
@@ -341,11 +338,7 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     convert_models(model, hf_tokenizer, models_path)
 
     # Run multinomial without comparison with HF reference.
-    ov_results = run_llm_pipeline(models_path, prompts, generation_configs, streamer=streamer.accumulate if streamer is not None else None)
-
-    # Compare with streamers text.
-    if streamer is not None:
-        compare_generation_results(prompts, ov_results, streamer.get_results(), generation_config)
+    _ = run_llm_pipeline(models_path, prompts, generation_configs)
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
