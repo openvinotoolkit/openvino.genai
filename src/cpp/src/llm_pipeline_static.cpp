@@ -769,9 +769,6 @@ void StatefulLLMPipeline::updateStatefulConfig(
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(pipeline_config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
-
-    // Replace CACHE_DIR option if NPUW is enabled
-    set_npuw_cache_dir(pipeline_config);
 }
 
 std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(

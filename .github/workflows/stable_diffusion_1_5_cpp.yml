@@ -45,7 +45,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: latest_available_commit
+        revision: ed470e7e40129d6b2bf728bc9527316937a69ef7
 
   openvino_download_windows:
     name: Download OpenVINO for Windows
@@ -71,7 +71,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels
-        revision: latest_available_commit
+        revision: ed470e7e40129d6b2bf728bc9527316937a69ef7
 
   stable_diffusion_1_5_cpp-linux:
     runs-on: ubuntu-22.04-8-cores
