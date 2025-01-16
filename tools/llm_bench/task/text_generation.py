@@ -223,10 +223,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get('num_assistant_tokens', None):
-            gen_config.num_assistant_tokens = args['num_assistant_tokens']
+            gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
             config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
         if args.get('assistant_confidence_threshold', None):
-            gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
+            gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
         log.info(config_info)
     start = time.perf_counter()
