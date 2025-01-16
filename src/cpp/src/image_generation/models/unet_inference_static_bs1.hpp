@@ -13,6 +13,17 @@ namespace genai {
 // Static Batch-Size 1 variant of UNetInference
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
 public:
+    UNetInferenceStaticBS1() = default;
+
+    UNetInferenceStaticBS1(const std::shared_ptr<ov::CompiledModel> & origin_compiled_model){
+        OPENVINO_ASSERT(origin_compiled_model, "Source model must be compiled first");
+        compiled_model = origin_compiled_model;
+        m_native_batch_size = compiled_model->input("sample").get_shape()[0];
+        for (int i = 0; i < m_native_batch_size; i++) {
+            m_requests[i] = compiled_model->create_infer_request();
+        }
+    }
+
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {
@@ -39,11 +50,12 @@ public:
         UNetInference::reshape(model, 1);
 
         ov::Core core = utils::singleton_core();
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
+        compiled_model = std::make_shared<ov::CompiledModel>(core.compile_model(model, device, properties));
+        ov::genai::utils::print_compiled_model_properties(*compiled_model, "UNet 2D Condition batch-1 model");
 
-        for (int i = 0; i < m_native_batch_size; i++) {
-            m_requests[i] = compiled_model.create_infer_request();
+        for (int i = 0; i < m_native_batch_size; i++)
+        {
+            m_requests[i] = compiled_model->create_infer_request();
         }
     }
 
@@ -135,10 +147,15 @@ public:
 
         return out_sample;
     }
+    std::shared_ptr<ov::CompiledModel> get_compiled_model(){
+        return compiled_model;
+    }
 
 private:
+    std::shared_ptr<ov::CompiledModel> compiled_model;
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;
+
 };
 
 }  // namespace genai

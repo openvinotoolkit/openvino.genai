@@ -59,7 +59,18 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& model,
     compile(device, properties);
 }
 
-UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
+UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel& original_model) {
+    m_config = original_model.m_config;
+    m_adapter_controller = original_model.m_adapter_controller;
+    m_model = original_model.m_model;
+    m_vae_scale_factor = original_model.m_vae_scale_factor;
+    if (typeid(m_impl) == typeid(UNet2DConditionModel::UNetInferenceStaticBS1)) {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceStaticBS1>(original_model.m_impl->get_compiled_model());
+    } else {
+        m_impl = std::make_shared<UNet2DConditionModel::UNetInferenceDynamic>(original_model.m_impl->get_compiled_model());
+    }
+
+}
 
 const UNet2DConditionModel::Config& UNet2DConditionModel::get_config() const {
     return m_config;
