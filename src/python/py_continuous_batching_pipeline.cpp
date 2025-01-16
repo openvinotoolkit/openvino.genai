@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -104,9 +104,6 @@ auto pipeline_metrics_docstring = R"(
 
     :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
     :type avg_cache_usage: float
-
-    :param total_num_scheduled_tokens: Number of tokens scheduled for processing at the previous step of the pipeline.
-    :type total_num_scheduled_tokens: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
@@ -217,8 +214,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
-            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage)
-            .def_readonly("total_num_scheduled_tokens", &PipelineMetrics::total_num_scheduled_tokens);
+            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {

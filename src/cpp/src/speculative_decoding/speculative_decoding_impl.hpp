@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -42,7 +42,7 @@ protected:
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
 
-    void drop_requests() override;
+    void drop_requests();
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     

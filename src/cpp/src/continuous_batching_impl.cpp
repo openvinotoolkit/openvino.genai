@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text_callback_streamer.hpp"
@@ -151,13 +151,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
-        m_pipeline_metrics.total_num_scheduled_tokens = scheduler_output.m_total_num_scheduled_tokens;
+
+        m_batch_size = 0; // total number of running sequences
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
+            m_batch_size += sequence_group->num_running_seqs();
+        }
 
         static ManualTimer copy_blocks_timer("scheduling");
         copy_blocks_timer.start();
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
         copy_blocks_timer.end();
     }
+
     // if no tokens were scheduled, we are out of memory => free all requests and return
     if (scheduler_output.m_total_num_scheduled_tokens == 0) {
         for (size_t i = 0; i < m_requests.size(); ++i) {
@@ -297,14 +304,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
-            auto num_generated_tokens = get_metrics().total_num_scheduled_tokens;
-            if (num_generated_tokens > 0) {
+            if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
-                const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+                const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
                 raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-                raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+                raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
@@ -360,10 +366,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
 
         result.m_status = generations[request_id]->get_status();
-        
+
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        perf_metrics.num_input_tokens = request->get_prompt_len();
         perf_metrics.evaluate_statistics(start_time);
 
         result.perf_metrics = perf_metrics;

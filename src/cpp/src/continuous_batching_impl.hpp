@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -29,6 +29,10 @@ protected:
 
     static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
     std::deque<float> m_previous_step_cache_usages;
+
+    // for perf metrics
+    float m_load_time_ms = 0.0f;
+    size_t m_batch_size = 0; // stored number of scheduled sequences on last step
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
@@ -75,7 +79,7 @@ protected:
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
 
-    void drop_requests() override;
+    virtual void drop_requests();
 
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,

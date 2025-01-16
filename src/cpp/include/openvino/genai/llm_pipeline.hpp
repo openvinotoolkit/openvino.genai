@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -121,10 +121,6 @@ public:
         const ov::genai::GenerationConfig& generation_config = {}
     );
 
-    OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
-    explicit LLMPipeline(const std::filesystem::path& path) :
-        LLMPipeline(path, "CPU") { }
-
     /**
     * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     * Accepts arbitrary list of optional properties.
@@ -153,7 +149,7 @@ public:
     LLMPipeline(
         const ov::InferRequest& request,
         const ov::genai::Tokenizer& tokenizer,
-        OptionalGenerationConfig generation_config=std::nullopt
+        OptionalGenerationConfig generation_config = std::nullopt
     );
 
     /**
@@ -171,10 +167,6 @@ public:
         const std::string& device,
         const ov::AnyMap& properties = {}
     );
-
-    OPENVINO_DEPRECATED("Please, specify device explicitly when create LLMPipeline. This overload will be removed in 2025.0.0 release")
-    LLMPipeline(const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer) :
-        LLMPipeline(models_path, tokenizer, "CPU") { }
 
     ~LLMPipeline();
 
@@ -211,7 +203,7 @@ public:
 
     DecodedResults operator()(
         StringInputs inputs,
-        OptionalGenerationConfig generation_config=std::nullopt,
+        OptionalGenerationConfig generation_config = std::nullopt,
         StreamerVariant streamer=std::monostate()
     ) {
         return generate(inputs, generation_config, streamer);

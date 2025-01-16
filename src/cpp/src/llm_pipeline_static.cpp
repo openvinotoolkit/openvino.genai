@@ -475,17 +475,16 @@ std::optional<NPUDesc> extract_npu_descriptor(ov::Core& core) {
     }
     const auto arch = core.get_property("NPU", ov::device::architecture);
     const auto max_tiles = core.get_property("NPU", ov::intel_npu::max_tiles);
-
     bool compiler_dq = false;
-    const auto device_caps = core.get_property("NPU", ov::device::capabilities);
-    if (std::find(device_caps.begin(), device_caps.end(),
-                  "COMPILER_DYNAMIC_QUANTIZATION") != device_caps.end()) {
+    const auto supported_properties = core.get_property("NPU", ov::supported_properties);
+    if (std::find(supported_properties.begin(), supported_properties.end(),
+                  "NPU_COMPILER_DYNAMIC_QUANTIZATION") != supported_properties.end()) {
         compiler_dq = true;
     }
     return std::make_optional(NPUDesc{arch, max_tiles, compiler_dq});
 }
 
-ov::AnyMap get_baseline_common_config() {
+ov::AnyMap get_baseline_common_config(const std::optional<NPUDesc>& npudesc) {
     ov::AnyMap config = {
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
         { "NPUW_DEVICES", "NPU" },
@@ -497,11 +496,20 @@ ov::AnyMap get_baseline_common_config() {
         { "NPUW_SLICE_OUT", "YES" },
         { "NPUW_FUNCALL_ASYNC", "YES" }
     };
+    // FIXME: this config logic is getting more and more complex
+    if (npudesc.has_value() && npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ", "YES");
+        config.emplace("NPUW_DQ_FULL", "NO");
+        config.emplace("NPU_COMPILER_DYNAMIC_QUANTIZATION", "YES");
+        config.erase("NPUW_DCOFF_TYPE");
+        config.erase("NPUW_DCOFF_SCALE");
+    }
     return config;
 }
 
-ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
-    auto config = get_baseline_common_config();
+ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model,
+                                     const std::optional<NPUDesc>& npudesc) {
+    auto config = get_baseline_common_config(npudesc);
     const char* npu_l0 = std::getenv("DISABLE_OPENVINO_GENAI_NPU_L0");
     if (npu_l0 && std::atoi(npu_l0) == 1) {
         config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
@@ -513,19 +521,19 @@ ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
                                       const std::optional<NPUDesc>& npudesc) {
-    auto config = get_default_common_config(model);
-    if (is_cw_compressed(model)) {
-        config.emplace("NPUW_DQ", "YES");
-    } else {
-        config.emplace("NPUW_PMM", "NO");
-    }
+    auto config = get_default_common_config(model, npudesc);
     if (npudesc.has_value() &&
         npudesc->arch == "4000" &&
         npudesc->max_tiles != -1) {
         config.emplace("NPU_DPU_GROUPS", npudesc->max_tiles);
     }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
-        config.emplace("NPUW_DQ_FULL", "NO");
+    // Specify NPUW DQ if Compiler DQ is not enabled
+    if (!npudesc.has_value() || !npudesc->compiler_dq) {
+        if (is_cw_compressed(model)) {
+            config.emplace("NPUW_DQ", "YES");
+        } else {
+            config.emplace("NPUW_PMM", "NO");
+        }
     }
     return config;
 }
@@ -533,20 +541,19 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
                                        const std::optional<NPUDesc>& npudesc,
                                        const GenerateHint hint) {
-    auto config = get_default_common_config(model);
+    auto config = get_default_common_config(model, npudesc);
     if (hint == GenerateHint::BEST_PERF) {
         config.emplace("NPUW_ONLINE_PIPELINE", "NONE");
     }
-    // NB: Unconditionally set for generation model
-    config.emplace("NPUW_DQ", "YES");
     if (npudesc.has_value() && npudesc->arch == "4000") {
         config.emplace("NPU_DPU_GROUPS", 4);
     }
     if (hint == GenerateHint::FAST_COMPILE) {
         config.emplace("NPUW_UNFOLD_IREQS", "YES");
     }
-    if (npudesc.has_value() && npudesc->compiler_dq) {
-        config.emplace("NPUW_DQ_FULL", "NO");
+    // Specify NPUW DQ if Compiler DQ is not enabled
+    if (!npudesc.has_value() || !npudesc->compiler_dq) {
+        config.emplace("NPUW_DQ", "YES");
     }
     return config;
 }
@@ -683,19 +690,38 @@ namespace static_llm {
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
-    const std::string&,
+    const std::string& device,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(models_path)),
     m_sampler(m_tokenizer) {
-
-    auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
-    ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
     ov::AnyMap properties = config;
-
-    auto compiled = setupAndCompileModel(model, model_desc, properties);
-    m_request = compiled->create_infer_request();
-    m_sampler.set_seed(m_generation_config.rng_seed);
+    const auto use_blob = pop_or_default(properties, "USE_BLOB", false);
+    if (use_blob) {
+        auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+        if (blob_path.empty()) {
+            blob_path = (models_path / "openvino_model.blob").string();
+        }
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
+        auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
+        m_max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        auto min_resp_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+        m_kvcache_total = m_max_prompt_len + min_resp_len;
+        m_request = compiled.create_infer_request();
+    } else {
+        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
+        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
+        ov::AnyMap properties = config;
+        auto compiled = setupAndCompileModel(model, model_desc, properties);
+        m_request = compiled->create_infer_request();
+        m_sampler.set_seed(m_generation_config.rng_seed);
+    }
 }
 
 
@@ -714,11 +740,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
-std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
-    const std::shared_ptr<ov::Model>& model,
+void StatefulLLMPipeline::updateStatefulConfig(
     const ModelConfigDesc& model_desc,
     ov::AnyMap& pipeline_config) {
-
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     m_max_prompt_len = kMaxPromptLen;
@@ -745,9 +769,13 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(pipeline_config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
 
-    // Replace CACHE_DIR option if NPUW is enabled
-    set_npuw_cache_dir(pipeline_config);
+std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
+    const std::shared_ptr<ov::Model>& model,
+    const ModelConfigDesc& model_desc,
+    ov::AnyMap& pipeline_config) {
+    updateStatefulConfig(model_desc, pipeline_config);
 
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
 }
