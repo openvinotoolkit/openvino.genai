@@ -1183,6 +1183,7 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, model_dir, device, device_config) {
             auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
+            ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
             m_vision_embeddings_merger = compiled_model.create_infer_request();
         }
 
