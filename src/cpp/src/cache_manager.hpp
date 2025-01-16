@@ -11,6 +11,37 @@
 #ifndef _WIN32
 #include <sys/mman.h>
 #include "openvino/core/shape.hpp"
+
+
+class TensorMmapAllocator { 
+    size_t m_total_size;
+    void* m_data;
+ 
+public: 
+    TensorMmapAllocator(size_t total_size) : 
+        m_total_size(total_size) { } 
+  
+    void* allocate(size_t bytes, size_t) { 
+        if (m_total_size == bytes) { 
+            m_data = mmap(NULL,  bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            OPENVINO_ASSERT(m_data != MAP_FAILED);
+            return m_data; 
+        } 
+        throw std::runtime_error{"Unexpected number of bytes was requested to allocate."}; 
+    } 
+  
+    void deallocate(void*, size_t bytes, size_t) { 
+        if (m_total_size != bytes) { 
+            throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."}; 
+        }
+        munmap(m_data, bytes);
+    } 
+  
+    bool is_equal(const TensorMmapAllocator& other) const noexcept { 
+        return this == &other; 
+    } 
+}; 
+
 #endif
 
 namespace ov::genai {
@@ -66,13 +97,8 @@ public:
                 auto key_size = ov::shape_size(key_cache_shape) * m_device_config.get_cache_precision().size();
                 auto value_size = ov::shape_size(value_cache_shape) * m_device_config.get_cache_precision().size();
 
-                // allocate memory filled with zeros
-                auto key_ptr = mmap(NULL, key_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                auto value_ptr = mmap(NULL,  value_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                OPENVINO_ASSERT(key_ptr != MAP_FAILED);
-                OPENVINO_ASSERT(value_ptr != MAP_FAILED);
-                ov::Tensor key_cache = ov::Tensor(m_device_config.get_cache_precision(), key_cache_shape, key_ptr);
-                ov::Tensor value_cache = ov::Tensor(m_device_config.get_cache_precision(), value_cache_shape, value_ptr);
+                ov::Tensor key_cache = ov::Tensor(m_device_config.get_cache_precision(), key_cache_shape, TensorMmapAllocator(key_size));
+                ov::Tensor value_cache = ov::Tensor(m_device_config.get_cache_precision(), value_cache_shape, TensorMmapAllocator(value_size));
 
 #endif
 
