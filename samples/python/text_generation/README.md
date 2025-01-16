@@ -17,7 +17,7 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimim-cli export openvino --model <model> <output_folder>
 ```
-If a HF model is already converted (as example [OpenVINO/TinyLlama-1.1B-Chat-v1.0-int8-ov](https://huggingface.co/OpenVINO/TinyLlama-1.1B-Chat-v1.0-int8-ov)), it can be download directly via huggingface-cli
+If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 huggingface-cli download <model> --local-dir <output_folder>
@@ -28,9 +28,9 @@ huggingface-cli download <model> --local-dir <output_folder>
 Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 Follow [build instruction](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md) to build GenAI samples
 
-GPUs usually provide better performance compared to CPUs. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a GPU. Modify the source code to change the device for inference to the GPU.
+GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
+See https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md for the list of supported models.
 
 Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
 ```sh
