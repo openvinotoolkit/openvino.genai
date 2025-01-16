@@ -898,31 +898,7 @@ public:
 };
 
 
-LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
-    if(std::all_of(tensors.begin(), tensors.end(), [](const auto& tensor) {
-        return tensor.first.find("processor") == std::string::npos;
-    })) {
-        return tensors;
-    }
-    std::cerr << "[ WARNING ] XLABS is not supported by the current version of the LoRA adapter. The result of generation can be not accurate.\n";
-    return tensors;
-}
-
-LoRATensors flux_bfl_lora_preprocessing(const LoRATensors& tensors) {
-    if(std::all_of(tensors.begin(), tensors.end(), [](const auto& tensor) {
-        return tensor.first.find("query_norm.scale") == std::string::npos;
-    })) {
-        return tensors;
-    }
-    std::cerr << "[ WARNING ] BFL is not supported by the current version of the LoRA adapter. The result of generation can be not accurate.\n";
-    return tensors;
-}
-
-
 LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
-    std::cerr << "Applied Kohya preprocessing\n";
-
-
     std::vector<ReplaceRule> replace_rules = {
         {
             "lora_unet_double_blocks_(\\d+)_img_attn_proj",
@@ -992,9 +968,7 @@ LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
             continue;
         }
         std::string name = src_tensor.first;
-        //std::cerr << "Before key conversion: " << name << "\n";
         ov::genai::convert_prefix_te(name);
-        //std::cerr << "After key conversion: " << name << "\n";
         result.emplace(std::regex_replace(name, std::regex("lora.unet"), "transformer"), src_tensor.second);
     }
 
@@ -1002,20 +976,16 @@ LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
 }
 
 LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
-    // apply all 3 flux_*_lora_preprocessing in a chain
-    return flux_bfl_lora_preprocessing(flux_xlabs_lora_preprocessing(flux_kohya_lora_preprocessing(tensors)));
+    return flux_kohya_lora_preprocessing(tensors);
 }
 
 LoRATensors diffusers_normalization (const LoRATensors& tensors) {
-    std::cerr << "Applied Diffusers normalization\n";
-
     std::set<std::string> keys;
     for(const auto& kv: tensors) {
         keys.insert(kv.first);
     }
     auto mapping = ov::genai::maybe_map_non_diffusers_lora_to_diffusers(keys);
     if(!mapping.empty()) {
-        std::cerr << "MAPPING WORKS\n";
         LoRATensors new_tensors;
         for(const auto& kv: tensors) {
             auto it = mapping.find(kv.first);
@@ -1024,7 +994,6 @@ LoRATensors diffusers_normalization (const LoRATensors& tensors) {
                 new_tensors[kv.first] = kv.second;
             } else {
                 // replace key
-                //std::cerr << kv.first << " --> " << it->second << "\n";
                 new_tensors[it->second] = kv.second;
             }
         }
@@ -1537,7 +1506,6 @@ struct AdapterControllerImpl {
             alpha_only ? ov::Tensor() : ov::Tensor(lora_var_ids.B.data_type, dynamic_to_static(lora_var_ids.B.data_shape))
         };
         auto new_tensors = prepare_lora_tensors(name, weight_getters, lora_state_tensors, /*set_empty_adapters=*/true, alpha_only);
-        std::cerr << "Setting LoRA tensors for " << name << "\n";
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         if(!alpha_only) {
             state[lora_indices.A].set_state(new_tensors.A);
