@@ -331,6 +331,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
+    else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
