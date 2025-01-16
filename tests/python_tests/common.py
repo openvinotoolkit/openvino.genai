@@ -444,15 +444,19 @@ def run_llm_pipeline_with_ref(model_id: str,
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
+    if streamer is None and (not generation_config.is_beam_search()) and len(prompts) == 1:
+        # We can use streamer only if we have a single prompt and not beam search.
+        streamer = StreamerWithResults()
+
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    if (isinstance(streamer, StreamerWithResults)):
+    if isinstance(streamer, StreamerWithResults):
         # Clear the accumulated strings to avoid side effects
         streamer.reset()
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
-    if (isinstance(streamer, StreamerWithResults)):
+    if isinstance(streamer, StreamerWithResults):
         compare_generation_results(prompts, ov_results, streamer.get_results(), generation_config)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
