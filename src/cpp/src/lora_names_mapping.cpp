@@ -337,7 +337,6 @@ NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& k
             new_key = it->second;
         }
         new_key = _convert_unet_lora_key(new_key);
-        convert_prefix_te(new_key);
         new_keys[key] = new_key;
     }
     return new_keys;
