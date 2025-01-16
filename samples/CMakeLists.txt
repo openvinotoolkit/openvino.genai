@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-# Samples do not need to be built for NPM package
-if(CPACK_GENERATOR STREQUAL "NPM")
+if(NOT ENABLE_SAMPLES)
     return()
 endif()
 

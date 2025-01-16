@@ -4,3 +4,4 @@
 
 option(ENABLE_PYTHON "Enable Python API build" ON)
 option(ENABLE_JS "Enable JS API build" OFF)
+option(ENABLE_SAMPLES "Enable samples build" ON)
