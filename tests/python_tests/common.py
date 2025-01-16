@@ -444,7 +444,7 @@ def run_llm_pipeline_with_ref(model_id: str,
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    if streamer is None and (not generation_config.is_beam_search()) and len(prompts) == 1:
+    if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
         # We can use streamer only if we have a single prompt and not beam search.
         streamer = StreamerWithResults()
 
