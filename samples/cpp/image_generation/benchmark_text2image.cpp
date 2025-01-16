@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("o,output_dir", "Path to save output image", cxxopts::value<std::string>()->default_value(""))
+    ("o,output_dir", "Path to save output image", cxxopts::value<std::string>()->default_value("."))
     ("wh,width", "The width of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
     ("ht,height", "The height of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
     ("is,num_inference_steps", "The number of inference steps used to denoise initial noised latent to final image", cxxopts::value<size_t>()->default_value(std::to_string(20)))

@@ -12,7 +12,7 @@ def main():
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
-    parser.add_argument("-o", "--output_dir", type=str, default="", help="Path to save output image")
+    parser.add_argument("-o", "--output_dir", type=str, default=".", help="Path to save output image")
     parser.add_argument("-wh", "--width", type=int, default=512, help="The width of the resulting image")
     parser.add_argument("-ht", "--height", type=int, default=512, help="The height of the resulting image")
     parser.add_argument("-is", "--num_inference_steps", type=int, default=20, help="The number of inference steps used to denoise initial noised latent to final image")
