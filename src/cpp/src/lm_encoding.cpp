@@ -29,18 +29,18 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
-void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask, const int64_t rope_delta) {
+void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
-    const size_t num_dimensions = 3;
+    const size_t thw_dim_size = 3;
 
-    position_ids.set_shape({num_dimensions, batch_size, 1});
+    position_ids.set_shape({thw_dim_size, batch_size, 1});
     int64_t* position_ids_data = position_ids.data<int64_t>();
 
     int64_t pos_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
 
     for (size_t batch = 0; batch < batch_size; batch++) {
-        for (size_t dim = 0; dim < num_dimensions; ++dim) {
+        for (size_t dim = 0; dim < thw_dim_size; ++dim) {
             position_ids_data[dim * batch_size + batch] = pos_id;
         }
     }
