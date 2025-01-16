@@ -325,6 +325,9 @@ class CacheEvictionConfig:
     
         :param aggregation_mode: The mode used to compute the importance of tokens for eviction
         :type aggregation_mode: openvino_genai.AggregationMode
+    
+        :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction
+        :type apply_rotation: bool
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
