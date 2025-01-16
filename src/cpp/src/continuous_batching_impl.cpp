@@ -46,16 +46,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
-    ov::CompiledModel compiled_model;
 
     // apply LoRA
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device_config.get_device());   // TODO: Make the prefix name configurable
-        compiled_model = core.compile_model(model, device_config.get_device(), *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(model, device_config.get_device(), properties);
     }
+    ov::CompiledModel compiled_model = core.compile_model(model, device_config.get_device(), *filtered_properties);
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();

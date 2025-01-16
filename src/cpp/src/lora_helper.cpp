@@ -5,17 +5,16 @@ namespace ov {
 namespace genai {
 
 
-std::optional<AnyMap> extract_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>* adapter_config) {
+utils::SharedOptional<const AnyMap> extract_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>* adapter_config) {
     auto adapters_iter = properties.find(AdaptersProperty::name());
+    utils::SharedOptional<const AnyMap> filtered_properties(&properties);
     if (adapters_iter != properties.end()) {
         if(adapter_config) {
             *adapter_config = adapters_iter->second.as<AdapterConfig>();
         }
-        auto filtered_properties = properties;
-        filtered_properties.erase(AdaptersProperty::name());
-        return filtered_properties;
+        filtered_properties.fork().erase(AdaptersProperty::name());
     }
-    return std::nullopt;
+    return filtered_properties;
 }
 
 bool update_adapters_from_properties (const AnyMap& properties, std::optional<AdapterConfig>& adapter_config) {

@@ -177,14 +177,14 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, updated_properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string t5_text_encoder = data["text_encoder_2"][1].get<std::string>();
         if (t5_text_encoder == "T5EncoderModel") {
-            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, updated_properties);
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", t5_text_encoder, "' text encoder type");
         }
@@ -192,9 +192,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, updated_properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, updated_properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
@@ -204,7 +204,7 @@ public:
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "FluxTransformer2DModel") {
-            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, updated_properties);
+            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
@@ -252,10 +252,10 @@ public:
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
-        m_clip_text_encoder->compile(device, updated_properties.value());
-        m_t5_text_encoder->compile(device, updated_properties.value());
-        m_vae->compile(device, updated_properties.value());
-        m_transformer->compile(device, updated_properties.value());
+        m_clip_text_encoder->compile(device, *updated_properties);
+        m_t5_text_encoder->compile(device, *updated_properties);
+        m_vae->compile(device, *updated_properties);
+        m_transformer->compile(device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {

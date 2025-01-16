@@ -108,14 +108,12 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
 FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     std::optional<AdapterConfig> adapters;
-    ov::CompiledModel compiled_model;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
         adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
         m_adapter_controller = AdapterController(m_model, *adapters, device);
-        compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
-    } else {
-        compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
     }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Flux Transformer 2D model");
     m_request = compiled_model.create_infer_request();
     // release the original model

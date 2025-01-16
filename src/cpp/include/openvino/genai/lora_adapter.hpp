@@ -23,8 +23,6 @@ class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
 class AdapterImpl;
 
-
-
 // Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
 class OPENVINO_GENAI_EXPORTS Adapter {
     std::shared_ptr<AdapterImpl> m_pimpl;
