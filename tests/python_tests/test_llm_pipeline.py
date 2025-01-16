@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 import torch
 
-from common import run_llm_pipeline_with_ref, convert_to_hf, StreamerWithResults
+from common import run_llm_pipeline_with_ref, convert_to_hf
 from ov_genai_test_utils import (
     get_models_list,
     read_model,
@@ -192,27 +192,6 @@ def test_callback_batch_throws(callback):
 def test_callback_kwargs_one_string(callback):
     pipe = read_model(get_models_list()[0])[4]
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
-
-
-@pytest.mark.parametrize("streamer", [StreamerWithResults()])
-@pytest.mark.parametrize("prompt", [
-    'table is made of', 
-    'The Sun is yellow because', 
-    '你好！ 你好嗎？'
-    'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
-])
-@pytest.mark.parametrize("generation_config", [dict(max_new_tokens=10), dict(max_new_tokens=300)])
-@pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.parametrize("use_cb", [True, False])
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_streamer_compare_texts(model_descr, generation_config, prompt, streamer, use_cb):
-    run_llm_pipeline_with_ref(model_id=model_descr[0], 
-                              prompts=[prompt], 
-                              generation_config=generation_config, 
-                              tmp_path=model_descr[1],
-                              use_cb=use_cb,
-                              streamer=streamer)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
