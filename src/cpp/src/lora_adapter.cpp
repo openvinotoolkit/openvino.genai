@@ -9,6 +9,13 @@
 #include <fstream>
 #include <regex>
 #include <optional>
+#include <numeric>
+#include <iostream>
+#include <unordered_map>
+#include <unordered_set>
+#include <functional>
+#include <memory>
+#include <cmath>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
@@ -31,6 +38,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 
 #include "utils.hpp"
+#include "lora_common.hpp"
 #include "lora_names_mapping.hpp"
 
 extern "C" {
@@ -49,6 +57,7 @@ namespace {
 using NodePtr = std::shared_ptr<ov::Node>;
 using ov::NodeVector;
 using namespace ov::op;
+using namespace ov::genai::utils;
 
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
 using Buffer = std::vector<char>;
@@ -57,22 +66,8 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
-template <typename T>
-struct LoRAParts {
-    T alpha, A, B;
-
-    LoRAParts() = default;
-    LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B) {}
-
-    template <typename Other>
-    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B) {}
-};
-
-
-using LoRAWeight = LoRAParts<std::shared_ptr<v0::Constant>>;
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
-using LoRATensors = std::map<std::string, LoRAWeight>;
 
 
 // Read binary file to memory.
@@ -155,28 +150,6 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
     }
     return tensors;
 }
-
-
-// Holds a compiled regex pattern and an index to a particular capture group
-// operator() takes a string, parses it with that regex pattern and returns the capture group value
-struct RegexParser {
-    std::regex pattern;
-    std::vector<size_t> capture_indices;
-    RegexParser (const std::string& pattern, size_t capture_index) : pattern(pattern), capture_indices(1, capture_index) {}
-    RegexParser (const std::string& pattern, const std::vector<size_t>& capture_indices) : pattern(pattern), capture_indices(capture_indices) {}
-    std::optional<std::string> operator() (const std::string& name) const {
-        std::smatch match;
-        if(std::regex_match(name, match, pattern)) {
-            for(auto capture_index: capture_indices) {
-                // check if a given capture group exists (really matched) and return the first matched group
-                if(capture_index < match.size() && match[capture_index].matched) {
-                    return match[capture_index];
-                }
-            }
-        }
-        return std::nullopt;
-    }
-};
 
 
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
@@ -815,242 +788,19 @@ std::shared_ptr<v0::Constant> alpha_as_constant(float alpha) {
 }
 
 
-class FormattedString {
-    std::string part1, part2;
-public:
-    FormattedString (const std::string& _part1, const std::string& _part2) : part1(_part1), part2(_part2) {}
-    std::string format(const std::string& subs) const {
-        return part1 + subs + part2;
-    }
-};
 
-
-class ReplaceRule {
-    RegexParser src_pattern;
-    FormattedString dst_pattern;
-public:
-    ReplaceRule (const std::string& _src_pattern, const FormattedString& _dst_pattern, size_t group = 1) :
-    src_pattern(_src_pattern, group),
-    dst_pattern(_dst_pattern) {}
-
-    std::optional<LoRATensors> operator() (const LoRATensors::value_type& weight) const {
-        if(auto match = src_pattern(weight.first)) {
-            return LoRATensors({{dst_pattern.format(*match), weight.second}});
-        }
-        return std::nullopt;
-    }
-};
-
-template <typename R>
-std::optional<LoRATensors> replace_by_rules (const LoRATensors::value_type& weight, const std::vector<R>& rules) {
-    for(auto rule: rules) {
-        if(auto dst = rule(weight)) {
-            return dst;
-        }
-    }
-    return std::nullopt;
-}
-
-
-class SplitRule {
-    RegexParser src_pattern;
-    std::vector<FormattedString> dst_patterns;
-    std::vector<size_t> dims;
-public:
-    SplitRule (const std::string& _src_pattern, const std::vector<FormattedString>& _dst_patterns, const std::vector<size_t>& _dims = {}, size_t group = 1) :
-        src_pattern(_src_pattern, group),
-        dst_patterns(_dst_patterns),
-        dims(_dims) {
-        OPENVINO_ASSERT(dims.empty() || dims.size() == dst_patterns.size());
-    }
-
-    std::optional<LoRATensors> operator() (const LoRATensors::value_type& weight) const {
-        if(auto match = src_pattern(weight.first)) {
-            std::vector<size_t> cur_dims;
-            const auto B_shape = weight.second.B->get_output_shape(0);
-            if(dims.empty()) {
-                size_t num_splits = dst_patterns.size();
-                cur_dims = std::vector<size_t>(num_splits, B_shape[0] / num_splits);
-            } else {
-                OPENVINO_ASSERT(std::accumulate(dims.begin(), dims.end(), 0u) == B_shape[0]);
-                cur_dims = dims;
-            }
-
-            // Skip checking for zero parts of the tensor for now -- TODO: save compute on zero parts
-
-            LoRATensors result;
-            ov::Coordinate total_size = B_shape;
-            size_t cur_index = 0;
-            for(size_t i = 0; i < dst_patterns.size(); ++i) {
-                ov::Coordinate begin = total_size, end = total_size;
-                begin[0] = cur_index;
-                begin[1] = 0;
-                cur_index += cur_dims[i];
-                end[0] = cur_index;
-                auto B = std::make_shared<v0::Constant>(ov::Tensor(weight.second.B->get_tensor_view(), begin, end));
-
-                // ov::Tensor ROI constructor doesn't keep the origin reference so we need to keep a pointer to the original constant to avoid its early disposal
-                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;
-
-                result.emplace(
-                    dst_patterns[i].format(*match),
-                    LoRAWeight(
-                        nullptr,
-                        weight.second.A,
-                        B
-                    )
-                );
-            }
-
-            return result;
-        }
-        return std::nullopt;
-    }
-};
-
-
-LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
-    std::vector<ReplaceRule> replace_rules = {
-        {
-            "lora_unet_double_blocks_(\\d+)_img_attn_proj",
-            { "transformer.transformer_blocks.", ".attn.to_out.0" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_img_mlp_0",
-            { "transformer.transformer_blocks.", ".ff.net.0.proj" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_img_mlp_2",
-            { "transformer.transformer_blocks.", ".ff.net.2" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_img_mod_lin",
-            { "transformer.transformer_blocks.", ".norm1.linear" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_txt_attn_proj",
-            { "transformer.transformer_blocks.", ".attn.to_add_out" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_txt_mlp_0",
-            { "transformer.transformer_blocks.", ".ff_context.net.0.proj" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_txt_mlp_2",
-            { "transformer.transformer_blocks.", ".ff_context.net.2" } },
-        {
-            "lora_unet_double_blocks_(\\d+)_txt_mod_lin",
-            { "transformer.transformer_blocks.", ".norm1_context.linear" } },
-        {
-            "lora_unet_single_blocks_(\\d+)_linear2",
-            { "transformer.single_transformer_blocks.", ".proj_out" } },
-        {
-            "lora_unet_single_blocks_(\\d+)_modulation_lin",
-            { "transformer.single_transformer_blocks.", ".norm.linear" } },
-
-    };
-
-    std::vector<SplitRule> split_rules = {
-        {
-            "lora_unet_double_blocks_(\\d+)_img_attn_qkv",
-            {
-                { "transformer.transformer_blocks.", ".attn.to_q" },
-                { "transformer.transformer_blocks.", ".attn.to_k" },
-                { "transformer.transformer_blocks.", ".attn.to_v" } } },
-        {
-            "lora_unet_double_blocks_(\\d+)_txt_attn_qkv",
-            {
-                { "transformer.transformer_blocks.", ".attn.add_q_proj" },
-                { "transformer.transformer_blocks.", ".attn.add_k_proj" },
-                { "transformer.transformer_blocks.", ".attn.add_v_proj" } } },
-        {
-            "lora_unet_single_blocks_(\\d+)_linear1",
-            {
-                { "transformer.single_transformer_blocks.", ".attn.to_q" },
-                { "transformer.single_transformer_blocks.", ".attn.to_k" },
-                { "transformer.single_transformer_blocks.", ".attn.to_v" },
-                { "transformer.single_transformer_blocks.", ".proj_mlp" } },
-            { 3072, 3072, 3072, 12288 } }
-    };
-
-    LoRATensors result;
-
-    for(const auto& src_tensor: tensors) {
-        if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
-            result.insert(new_tensors->begin(), new_tensors->end());
-            continue;
-        }
-        if(auto new_tensors = replace_by_rules(src_tensor, split_rules)) {
-            result.insert(new_tensors->begin(), new_tensors->end());
-            continue;
-        }
-        std::string name = src_tensor.first;
-        ov::genai::convert_prefix_te(name);
-        name = std::regex_replace(name, std::regex("lora.unet"), "transformer");
-        result.emplace(name, src_tensor.second);
-    }
-
-    return result;
-}
-
-LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
-    std::vector<ReplaceRule> replace_rules = {
-        {
-            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.proj_lora1",
-            { "transformer.transformer_blocks.", ".attn.to_out.0" }, 2 },
-        {
-            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.proj_lora2",
-            { "transformer.transformer_blocks.", ".attn.to_add_out" }, 2 },
-        {
-            "(diffusion_model\\.)?single_blocks\\.(\\d+).*proj_lora",
-            { "transformer.single_transformer_blocks.", ".attn.to_out.0"}, 2 },
-    };
-
-    std::vector<SplitRule> split_rules = {
-        {
-            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.qkv_lora2",
-            {
-                { "transformer.transformer_blocks.", ".attn.add_q_proj" },
-                { "transformer.transformer_blocks.", ".attn.add_k_proj" },
-                { "transformer.transformer_blocks.", ".attn.add_v_proj" } }, {}, 2 },
-        {    "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.qkv_lora1",
-            {
-                { "transformer.transformer_blocks.", ".attn.to_q" },
-                { "transformer.transformer_blocks.", ".attn.to_k" },
-                { "transformer.transformer_blocks.", ".attn.to_v" } }, {}, 2 },
-        {    "(diffusion_model\\.)?double_blocks\\.(\\d+).*qkv_lora",
-            {
-                { "transformer.single_transformer_blocks.", ".norm.linear" }, }, {}, 2 },
-    };
-
-    LoRATensors result;
-
-    std::cerr << "Number of tensors: " << tensors.size() << std::endl;
-
-    for(const auto& src_tensor: tensors) {
-        // std::cerr << "Considering tensor: " << src_tensor.first << std::endl;
-        if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
-            result.insert(new_tensors->begin(), new_tensors->end());
-            continue;
-        }
-        if(auto new_tensors = replace_by_rules(src_tensor, split_rules)) {
-            result.insert(new_tensors->begin(), new_tensors->end());
-            continue;
-        }
-        std::string name = src_tensor.first;
-        std::cerr << "Xlabs: saved as-is" << name << std::endl;
-        result.insert(src_tensor);
-    }
-
-    return result;
-}
-
-LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
+LoRATensors flux_normalization(const LoRATensors& tensors) {
     // Check for specific substrings to improve performance, equivalent to chaining the preprocessors
     // apply flux_xlabs_lora_preprocessing if at least one tensor in tensors has "processor" substring in its name
     for(const auto& src_tensor: tensors) {
         if(src_tensor.first.find("processor") != std::string::npos) {
-            return flux_xlabs_lora_preprocessing(tensors);
+            return ov::genai::flux_xlabs_lora_preprocessing(tensors);
         }
     }
     // apply flux_kohya_lora_preprocessing if at least one tensor in tensors has "lora_unet" substring in its name
     for(const auto& src_tensor: tensors) {
         if(src_tensor.first.find("lora_unet") != std::string::npos) {
-            return flux_kohya_lora_preprocessing(tensors);
+            return ov::genai::flux_kohya_lora_preprocessing(tensors);
         }
     }
     return tensors;
@@ -1174,11 +924,11 @@ Adapter diffusers_adapter_normalization(const Adapter& adapter) {
 
 Adapter flux_adapter_normalization(const Adapter& adapter) {
     auto origin = adapter.m_pimpl;
-    using FluxDerivedAdapter = DerivedAdapterImpl<decltype(&flux_lora_preprocessing)>;
+    using FluxDerivedAdapter = DerivedAdapterImpl<decltype(&flux_normalization)>;
     if(std::dynamic_pointer_cast<FluxDerivedAdapter>(origin)) {
         return adapter; // it is already derived adapter, skipping
     }
-    return Adapter(std::make_shared<FluxDerivedAdapter>(origin, flux_lora_preprocessing));
+    return Adapter(std::make_shared<FluxDerivedAdapter>(origin, flux_normalization));
 }
 
 
