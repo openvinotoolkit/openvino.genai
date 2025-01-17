@@ -59,7 +59,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019-16-core
+    runs-on: windows-2022-16-core
     env:
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
@@ -192,7 +192,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -257,7 +257,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -327,7 +327,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019-16-core
+    runs-on: windows-2022-16-core
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -388,7 +388,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
