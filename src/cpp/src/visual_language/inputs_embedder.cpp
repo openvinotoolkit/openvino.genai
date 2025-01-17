@@ -1456,6 +1456,7 @@ public:
     ov::InferRequest m_vision_projection;
     // Used to insert <|image_i|>\n per image (not a slice).
     size_t m_image_id = 1;
+    size_t m_tokens_per_image = 0;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1497,9 +1498,11 @@ public:
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
-        size_t tokens_per_image = images_features_proj.empty() ? 0 : images_features_proj.at(0).get_shape().at(1);
-        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, tokens_per_image);
-        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, tokens_per_image);
+        if (0 == m_tokens_per_image && !images_features_proj.empty()) {
+            m_tokens_per_image = images_features_proj.at(0).get_shape().at(1);
+        }
+        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_image);
+        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_image);
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
         OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1);
@@ -1507,7 +1510,7 @@ public:
         for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
             size_t text_length = tokens.at(im_id).get_shape().at(1);
             size_t im_length = images_features_proj.at(im_id).get_shape().at(1);
-            OPENVINO_ASSERT(im_length == tokens_per_image);
+            OPENVINO_ASSERT(im_length == m_tokens_per_image);
             features_length += text_length + im_length;
         }
         features_length += tokens.back().get_shape().at(1);
