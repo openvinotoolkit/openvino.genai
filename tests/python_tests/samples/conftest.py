@@ -1,11 +1,13 @@
-# Copyright (C) 2024 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
-
 import subprocess
 import os
 import tempfile
 import pytest
 import shutil
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Define model names and directories
 MODELS = {
@@ -35,15 +37,15 @@ def shared_data():
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request):
     """Fixture to set up and tear down the temporary directories."""
-    print(f"Creating directories: {MODELS_DIR} and {TEST_DATA}")
+    logger.info(f"Creating directories: {MODELS_DIR} and {TEST_DATA}")
     os.makedirs(MODELS_DIR, exist_ok=True)
     os.makedirs(TEST_DATA, exist_ok=True)
     yield
     if not os.environ.get("TEMP_DIR"):
-        print(f"Removing temporary directory: {TEMP_DIR}")
+        logger.info(f"Removing temporary directory: {TEMP_DIR}")
         shutil.rmtree(TEMP_DIR)
     else:
-        print(f"Skipping cleanup of temporary directory: {TEMP_DIR}")
+        logger.info(f"Skipping cleanup of temporary directory: {TEMP_DIR}")
 
 @pytest.fixture(scope="session")
 def convert_model(request):
@@ -53,10 +55,10 @@ def convert_model(request):
     extra_args = params.get("extra_args", [])
     model_name = MODELS[model_id]
     model_path = os.path.join(MODELS_DIR, model_name)
-    print(f"Prepearing model: {model_name}")
+    logger.info(f"Preparing model: {model_name}")
     # Convert the model if not already converted
     if not os.path.exists(model_path):
-        print(f"Converting model: {model_name}")
+        logger.info(f"Converting model: {model_name}")
         command = [
             "optimum-cli", "export", "openvino",
             "--model", model_name, model_path
@@ -68,7 +70,7 @@ def convert_model(request):
     yield model_path
     # Cleanup the model after tests
     if os.path.exists(model_path):
-        print(f"Removing converted model: {model_path}")
+        logger.info(f"Removing converted model: {model_path}")
         shutil.rmtree(model_path)
 
 @pytest.fixture(scope="session")
@@ -78,17 +80,17 @@ def download_test_content(request):
     file_name = os.path.basename(file_url)
     file_path = os.path.join(TEST_DATA, file_name)
     if not os.path.exists(file_path):
-        print(f"Downloading test content from {file_url}...")
+        logger.info(f"Downloading test content from {file_url}...")
         result = subprocess.run(
             ["wget", file_url, "-O", file_path],
             check=True
         )
         assert result.returncode == 0, "Failed to download test content"
-        print(f"Downloaded test content to {file_path}")
+        logger.info(f"Downloaded test content to {file_path}")
     else:
-        print(f"Test content already exists at {file_path}")
+        logger.info(f"Test content already exists at {file_path}")
     yield file_path
     # Cleanup the test content after tests
     if os.path.exists(file_path):
-        print(f"Removing test content: {file_path}")
+        logger.info(f"Removing test content: {file_path}")
         os.remove(file_path)

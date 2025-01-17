@@ -2,7 +2,6 @@
 Pybind11 binding for Whisper Pipeline
 """
 from __future__ import annotations
-import openvino._pyopenvino
 import os
 import typing
 __all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
@@ -202,9 +201,9 @@ class AutoencoderKL:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: ...) -> ...:
         ...
-    def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
+    def encode(self, image: ..., generator: Generator) -> ...:
         ...
     def get_config(self) -> AutoencoderKL.Config:
         ...
@@ -253,9 +252,9 @@ class CLIPTextModel:
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
-    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
+    def get_output_tensor(self, idx: int) -> ...:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> openvino._pyopenvino.Tensor:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> ...:
         ...
     def reshape(self, batch_size: int) -> CLIPTextModel:
         ...
@@ -302,9 +301,9 @@ class CLIPTextModelWithProjection:
         """
     def get_config(self) -> CLIPTextModelWithProjection.Config:
         ...
-    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
+    def get_output_tensor(self, idx: int) -> ...:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> openvino._pyopenvino.Tensor:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool) -> ...:
         ...
     def reshape(self, batch_size: int) -> CLIPTextModelWithProjection:
         ...
@@ -367,13 +366,13 @@ class ContinuousBatchingPipeline:
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
-    def add_request(self, request_id: int, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: int, input_ids: ..., generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
     def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
+    def generate(self, input_ids: list[...], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
     def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[GenerationResult]:
@@ -396,7 +395,7 @@ class CppStdGenerator(Generator):
         ...
     def next(self) -> float:
         ...
-    def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
+    def randn_tensor(self, shape: ...) -> ...:
         ...
     def seed(self, new_seed: int) -> None:
         ...
@@ -513,11 +512,11 @@ class FluxTransformer2DModel:
         """
     def get_config(self) -> FluxTransformer2DModel.Config:
         ...
-    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, sample: ..., timestep: ...) -> ...:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> FluxTransformer2DModel:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: ...) -> None:
         ...
 class GenerationConfig:
     """
@@ -795,9 +794,9 @@ class Image2ImagePipeline:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: ...) -> ...:
         ...
-    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
+    def generate(self, prompt: str, image: ..., **kwargs) -> ...:
         """
             Generates images for text-to-image models.
         
@@ -896,9 +895,9 @@ class InpaintingPipeline:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: ...) -> ...:
         ...
-    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, mask_image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
+    def generate(self, prompt: str, image: ..., mask_image: ..., **kwargs) -> ...:
         """
             Generates images for text-to-image models.
         
@@ -940,7 +939,7 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
+    def __call__(self, inputs: ... | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -1025,7 +1024,7 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
+    def generate(self, inputs: ... | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -1333,11 +1332,11 @@ class SD3Transformer2DModel:
         """
     def get_config(self) -> SD3Transformer2DModel.Config:
         ...
-    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, sample: ..., timestep: ...) -> ...:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: ...) -> None:
         ...
 class Scheduler:
     """
@@ -1528,9 +1527,9 @@ class T5EncoderModel:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
+    def get_output_tensor(self, idx: int) -> ...:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: int) -> openvino._pyopenvino.Tensor:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: int) -> ...:
         ...
     def reshape(self, batch_size: int, max_sequence_length: int) -> T5EncoderModel:
         ...
@@ -1584,9 +1583,9 @@ class Text2ImagePipeline:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: ...) -> ...:
         ...
-    def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
+    def generate(self, prompt: str, **kwargs) -> ...:
         """
             Generates images for text-to-image models.
         
@@ -1625,9 +1624,9 @@ class Text2ImagePipeline:
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
 class TokenizedInputs:
-    attention_mask: openvino._pyopenvino.Tensor
-    input_ids: openvino._pyopenvino.Tensor
-    def __init__(self, input_ids: openvino._pyopenvino.Tensor, attention_mask: openvino._pyopenvino.Tensor) -> None:
+    attention_mask: ...
+    input_ids: ...
+    def __init__(self, input_ids: ..., attention_mask: ...) -> None:
         ...
 class Tokenizer:
     """
@@ -1646,7 +1645,7 @@ class Tokenizer:
         Decode a sequence into a string prompt.
         """
     @typing.overload
-    def decode(self, tokens: openvino._pyopenvino.Tensor, skip_special_tokens: bool = True) -> list[str]:
+    def decode(self, tokens: ..., skip_special_tokens: bool = True) -> list[str]:
         """
         Decode tensor into a list of string prompts.
         """
@@ -1689,7 +1688,7 @@ class TorchGenerator(CppStdGenerator):
         ...
     def next(self) -> float:
         ...
-    def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
+    def randn_tensor(self, shape: ...) -> ...:
         ...
     def seed(self, new_seed: int) -> None:
         ...
@@ -1737,13 +1736,13 @@ class UNet2DConditionModel:
         ...
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
-    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, sample: ..., timestep: ...) -> ...:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> UNet2DConditionModel:
         ...
     def set_adapters(self, adapters: AdapterConfig | None) -> None:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: ...) -> None:
         ...
 class VLMDecodedResults:
     """
@@ -1802,7 +1801,7 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: list[...], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1825,7 +1824,7 @@ class VLMPipeline:
             :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: ..., generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -2200,7 +2199,7 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
+def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> ...:
     """
     device on which inference will be performed
     """
