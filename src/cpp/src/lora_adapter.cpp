@@ -161,12 +161,18 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
 // operator() takes a string, parses it with that regex pattern and returns the capture group value
 struct RegexParser {
     std::regex pattern;
-    size_t capture_index;
-    RegexParser (const std::string& pattern, size_t capture_index) : pattern(pattern), capture_index(capture_index) {}
+    std::vector<size_t> capture_indices;
+    RegexParser (const std::string& pattern, size_t capture_index) : pattern(pattern), capture_indices(1, capture_index) {}
+    RegexParser (const std::string& pattern, const std::vector<size_t>& capture_indices) : pattern(pattern), capture_indices(capture_indices) {}
     std::optional<std::string> operator() (const std::string& name) const {
         std::smatch match;
         if(std::regex_match(name, match, pattern)) {
-            return match[capture_index];
+            for(auto capture_index: capture_indices) {
+                // check if a given capture group exists (really matched) and return the first matched group
+                if(capture_index < match.size() && match[capture_index].matched) {
+                    return match[capture_index];
+                }
+            }
         }
         return std::nullopt;
     }
@@ -177,8 +183,8 @@ struct RegexParser {
 LoRAPartsParser default_lora_patterns () {
     return LoRAPartsParser(
         RegexParser(R"((.*)\.alpha)", 1),
-        RegexParser(R"((.*)\.(lora_(A|down)\.weight))", 1),
-        RegexParser(R"((.*)\.(lora_(B|up)\.weight))", 1)
+        RegexParser(R"((.*)\.(lora_(A|down)\.weight)|(.*lora[12])\.(down\.weight))", {1, 4}),
+        RegexParser(R"((.*)\.(lora_(B|up)\.weight)|(.*lora[12])\.(up\.weight))", {1, 4})
     );
 }
 
@@ -302,6 +308,7 @@ struct LoRAWeightGetterDefault {
 
         auto unused = get_unused_tensors();
         if(unused.empty()) {
+            std::cerr << "Used lora tensors: " << used_tensors.size() << "\n";
             return;
         }
 
@@ -869,7 +876,7 @@ public:
                 cur_dims = dims;
             }
 
-            // Skip checking for zeroed parts of the tensor for now -- TODO
+            // Skip checking for zero parts of the tensor for now -- TODO: save compute on zero parts
 
             LoRATensors result;
             ov::Coordinate total_size = B_shape;
@@ -973,14 +980,80 @@ LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
         }
         std::string name = src_tensor.first;
         ov::genai::convert_prefix_te(name);
-        result.emplace(std::regex_replace(name, std::regex("lora.unet"), "transformer"), src_tensor.second);
+        name = std::regex_replace(name, std::regex("lora.unet"), "transformer");
+        result.emplace(name, src_tensor.second);
+    }
+
+    return result;
+}
+
+LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
+    std::vector<ReplaceRule> replace_rules = {
+        {
+            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.proj_lora1",
+            { "transformer.transformer_blocks.", ".attn.to_out.0" }, 2 },
+        {
+            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.proj_lora2",
+            { "transformer.transformer_blocks.", ".attn.to_add_out" }, 2 },
+        {
+            "(diffusion_model\\.)?single_blocks\\.(\\d+).*proj_lora",
+            { "transformer.single_transformer_blocks.", ".attn.to_out.0"}, 2 },
+    };
+
+    std::vector<SplitRule> split_rules = {
+        {
+            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.qkv_lora2",
+            {
+                { "transformer.transformer_blocks.", ".attn.add_q_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_k_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_v_proj" } }, {}, 2 },
+        {    "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.qkv_lora1",
+            {
+                { "transformer.transformer_blocks.", ".attn.to_q" },
+                { "transformer.transformer_blocks.", ".attn.to_k" },
+                { "transformer.transformer_blocks.", ".attn.to_v" } }, {}, 2 },
+        {    "(diffusion_model\\.)?double_blocks\\.(\\d+).*qkv_lora",
+            {
+                { "transformer.single_transformer_blocks.", ".norm.linear" }, }, {}, 2 },
+    };
+
+    LoRATensors result;
+
+    std::cerr << "Number of tensors: " << tensors.size() << std::endl;
+
+    for(const auto& src_tensor: tensors) {
+        // std::cerr << "Considering tensor: " << src_tensor.first << std::endl;
+        if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        if(auto new_tensors = replace_by_rules(src_tensor, split_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        std::string name = src_tensor.first;
+        std::cerr << "Xlabs: saved as-is" << name << std::endl;
+        result.insert(src_tensor);
     }
 
     return result;
 }
 
 LoRATensors flux_lora_preprocessing(const LoRATensors& tensors) {
-    return flux_kohya_lora_preprocessing(tensors);
+    // Check for specific substrings to improve performance, equivalent to chaining the preprocessors
+    // apply flux_xlabs_lora_preprocessing if at least one tensor in tensors has "processor" substring in its name
+    for(const auto& src_tensor: tensors) {
+        if(src_tensor.first.find("processor") != std::string::npos) {
+            return flux_xlabs_lora_preprocessing(tensors);
+        }
+    }
+    // apply flux_kohya_lora_preprocessing if at least one tensor in tensors has "lora_unet" substring in its name
+    for(const auto& src_tensor: tensors) {
+        if(src_tensor.first.find("lora_unet") != std::string::npos) {
+            return flux_kohya_lora_preprocessing(tensors);
+        }
+    }
+    return tensors;
 }
 
 LoRATensors diffusers_normalization (const LoRATensors& tensors) {
@@ -1027,6 +1100,7 @@ public:
     SafetensorsAdapterImpl(const std::filesystem::path& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
     {
+        std::cerr << "Loaded " << tensors.size() << " tensors" << std::endl;
         // if(true) {  // FIXME: This is for Kohya fine tuned FLUX only
         //     // TODO: Move it into a separate Adapter class with name mappings
         //     tensors = flux_kohya_lora_preprocessing(tensors);
@@ -1512,6 +1586,8 @@ struct AdapterControllerImpl {
         if(!alpha_only) {
             state[lora_indices.A].set_state(new_tensors.A);
             state[lora_indices.B].set_state(new_tensors.B);
+            // std::cerr << "new_tensors.A shape: " << new_tensors.A.get_shape() << std::endl;
+            // std::cerr << "new_tensors.B shape: " << new_tensors.B.get_shape() << std::endl;
         }
     }
 
