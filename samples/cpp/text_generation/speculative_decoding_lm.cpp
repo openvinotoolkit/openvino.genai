@@ -6,6 +6,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
+    // to: remove
     if (5 != argc) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> <TYPE> '<PROMPT>'");
     }
@@ -33,7 +34,7 @@ int main(int argc, char* argv[]) try {
     };
 
     if (type == "cb") {
-        std::cout << "CB" << std::endl;
+        // std::cout << "CB" << std::endl;
 
         ov::genai::LLMPipeline pipe(
             main_model_path,
@@ -46,7 +47,7 @@ int main(int argc, char* argv[]) try {
         // be printed each time a new token is generated.
         pipe.generate(prompt, config, streamer);
     } else if (type == "sd") {
-        std::cout << "SD" << std::endl;
+        // std::cout << "SD" << std::endl;
         ov::genai::LLMPipeline pipe(
             main_model_path,
             main_device,
@@ -58,7 +59,7 @@ int main(int argc, char* argv[]) try {
         pipe.generate(prompt, config, streamer);
     } else {    
         config.max_ngram_size = 3;
-        std::cout << "PL" << std::endl;
+        // std::cout << "PL" << std::endl;
         ov::genai::LLMPipeline pipe(
             main_model_path,
             main_device,
@@ -69,6 +70,38 @@ int main(int argc, char* argv[]) try {
         // be printed each time a new token is generated.
         pipe.generate(prompt, config, streamer);
     }
+
+    // if (4 != argc) {
+    //     throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DRAFT_MODEL_DIR> '<PROMPT>'");
+    // }
+
+    // ov::genai::GenerationConfig config;
+    // config.max_new_tokens = 100;
+    // // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
+    // // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
+    // config.num_assistant_tokens = 5;
+
+    // std::string main_model_path = argv[1];
+    // std::string draft_model_path = argv[2];
+    // std::string prompt = argv[3];
+
+    // // User can run main and draft model on different devices.
+    // // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
+    // std::string main_device = "CPU", draft_device = "CPU";
+
+    // ov::genai::LLMPipeline pipe(
+    //     main_model_path,
+    //     main_device,
+    //     ov::genai::draft_model(draft_model_path, draft_device));
+
+    // auto streamer = [](std::string subword) {
+    //     std::cout << subword << std::flush;
+    //     return false;
+    // };
+
+    // // Since the streamer is set, the results will
+    // // be printed each time a new token is generated.
+    // pipe.generate(prompt, config, streamer);
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

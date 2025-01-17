@@ -112,82 +112,66 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     auto all_requests = m_pipeline->get_awaiting_requests();
 
     // todo: shouls be removed
-    float streaming_duration = 0, thread_duration = 0;
+    float streaming_duraton = 0, thread_duration = 0;
     ManualTimer streaming_timer("gen");
     streaming_timer.start();
 
-    bool continue_generation = true;
+    std::atomic<bool> continue_streaming = true, has_active_request = has_non_finished_requests();
     auto& main_generation = generations.at(0);
-    // define lamdba to stream generated tokens
-    auto stream_generated_tokens = [&main_generation, &streamer_ptr, &continue_generation, &streaming_duration]() {
-        if (streamer_ptr && main_generation->can_read()) {
-            // todo: remove
-            ManualTimer streaming_timer("streaming");
-            streaming_timer.start();
 
-            std::unordered_map<uint64_t, GenerationOutput> token = main_generation->back();
-            for (const auto& gen_token : token.begin()->second.generated_ids) {
-                continue_generation = !streamer_ptr->put(gen_token);
-                if (!continue_generation) {
-                    main_generation->drop();
-                    break;
+    // todo: remove
+    ManualTimer thread_timer("threading");
+    thread_timer.start();
+
+    // to define streaming thread
+    std::thread t_stream([&main_generation, &streamer_ptr, &continue_streaming, &streaming_duraton, &has_active_request] {
+        while (continue_streaming && (has_active_request || streamer_ptr && main_generation->can_read())) {
+            if (streamer_ptr && main_generation->can_read()) {
+                // todo: remove
+                ManualTimer streaming_timer("streaming");
+                streaming_timer.start();
+
+                std::unordered_map<uint64_t, GenerationOutput> token = main_generation->back();
+                for (const auto& gen_token : token.begin()->second.generated_ids) {
+                    continue_streaming = !streamer_ptr->put(gen_token);
+                    if (!continue_streaming) {
+                        main_generation->drop();
+                        break;
+                    }
                 }
+
+                // todo: remove
+                streaming_timer.end();
+                streaming_duraton += streaming_timer.get_duration();
             }
+        };
+    });
+    
+    // todo: remove
+    thread_timer.end();
+    thread_duration += thread_timer.get_duration();
 
-            // todo: remove
-            streaming_timer.end();
-            streaming_duration += streaming_timer.get_duration();
-        }
-    };
-
-    // to store potential exception thrown in step_thread
-    std::exception_ptr step_outputs_error = nullptr;
-
-    while (continue_generation) {
-        // todo: remove
-        ManualTimer thread_timer("threading");
-        thread_timer.start();
-
-        // to define inference thread
-        std::thread t_step([this, &step_outputs_error] {
-            try {
-                step();
-            } catch (...) {
-                // remove all requests from pipeline state in case of exception
-                drop_requests();
-                step_outputs_error = std::current_exception();
-            }
-        });
-
-        // to define streaming thread
-        std::thread t_stream([&stream_generated_tokens] {
-            stream_generated_tokens();
-        });
-        
-        // todo: remove
-        thread_timer.end();
-        thread_duration += thread_timer.get_duration();
-
-        t_stream.join();
-        t_step.join();
-
-        // throw exception in case of inference error
-        if (step_outputs_error) {
+    while (continue_streaming && has_active_request) {
+        try {
+            const auto infer_start = std::chrono::steady_clock::now();
+            step();
+        } catch (...) {
+            drop_requests(); // remove all requests from pipeline state in case of exception
+            has_active_request = false;
             throw;
         }
+        has_active_request = has_non_finished_requests();
+    }
 
-        // stream last generated tokens
-        if (!has_non_finished_requests() && continue_generation) {
-            stream_generated_tokens();
-            break;
-        }
+    if (t_stream.joinable()) {
+        t_stream.join();
     }
 
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
 
-    if (!continue_generation) {
+    if (!continue_streaming) {
         drop_requests();
     } else {
         OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
@@ -226,7 +210,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
     // todo: remove
-    std::cout << std::endl << "STREAMING DURATION: " << streaming_duration << std::endl;
+    std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
     std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
     return results;
