@@ -17,7 +17,6 @@ from common import get_default_properties
 from common import                                      \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
-    get_multinomial_temperature,                        \
     get_multinomial_all_parameters,                     \
     get_multinomial_temperature_and_presence_penalty,   \
     get_beam_search
@@ -34,7 +33,7 @@ common_config = {
                       'NPUW_ONLINE_PIPELINE': 'NONE',
                       'PREFILL_CONFIG': { },
                       'GENERATE_CONFIG': { }
-                }
+                } | get_default_properties()
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
@@ -56,7 +55,7 @@ def test_generation_compare_with_stateful(generation_config):
     prompt = 'What is OpenVINO?'
     model_path = read_model(get_models_list()[0])[1]
 
-    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU")
+    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
