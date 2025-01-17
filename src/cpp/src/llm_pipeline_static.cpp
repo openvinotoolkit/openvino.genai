@@ -34,6 +34,7 @@ namespace {
 namespace opp = ov::pass::pattern;
 class TransposeValueTensors : public ov::pass::MatcherPass {
 public:
+    OPENVINO_MATCHER_PASS_RTTI("TransposeValueTensors");
     struct Context {
         std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
         std::vector<std::shared_ptr<ov::opset13::Parameter>> old_params;
