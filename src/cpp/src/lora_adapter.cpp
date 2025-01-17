@@ -281,7 +281,6 @@ struct LoRAWeightGetterDefault {
 
         auto unused = get_unused_tensors();
         if(unused.empty()) {
-            std::cerr << "Used lora tensors: " << used_tensors.size() << "\n";
             return;
         }
 
@@ -291,7 +290,6 @@ struct LoRAWeightGetterDefault {
             std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
         }
     }
-
 };
 
 
@@ -847,15 +845,7 @@ class SafetensorsAdapterImpl : public AdapterImpl {
 public:
 
     SafetensorsAdapterImpl(const std::filesystem::path& path) :
-        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
-    {
-        std::cerr << "Loaded " << tensors.size() << " tensors" << std::endl;
-        // if(true) {  // FIXME: This is for Kohya fine tuned FLUX only
-        //     // TODO: Move it into a separate Adapter class with name mappings
-        //     tensors = flux_kohya_lora_preprocessing(tensors);
-        // }
-
-    }
+        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())) {}
 
     const LoRATensors& get_tensors() const override {
         return tensors;
@@ -1335,8 +1325,6 @@ struct AdapterControllerImpl {
         if(!alpha_only) {
             state[lora_indices.A].set_state(new_tensors.A);
             state[lora_indices.B].set_state(new_tensors.B);
-            // std::cerr << "new_tensors.A shape: " << new_tensors.A.get_shape() << std::endl;
-            // std::cerr << "new_tensors.B shape: " << new_tensors.B.get_shape() << std::endl;
         }
     }
 

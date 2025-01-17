@@ -568,10 +568,7 @@ LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
 
     LoRATensors result;
 
-    std::cerr << "Number of tensors: " << tensors.size() << std::endl;
-
     for(const auto& src_tensor: tensors) {
-        // std::cerr << "Considering tensor: " << src_tensor.first << std::endl;
         if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
             result.insert(new_tensors->begin(), new_tensors->end());
             continue;
@@ -581,7 +578,6 @@ LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
             continue;
         }
         std::string name = src_tensor.first;
-        std::cerr << "Xlabs: saved as-is" << name << std::endl;
         result.insert(src_tensor);
     }
 
