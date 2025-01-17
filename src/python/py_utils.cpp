@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "py_utils.hpp"
@@ -72,6 +72,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
         "PREFILL_CONFIG",
+        "++GENERATE_CONFIG",
+        "++PREFILL_CONFIG"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");

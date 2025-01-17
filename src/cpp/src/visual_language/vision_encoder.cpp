@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vision_encoder.hpp"
@@ -644,6 +644,158 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
     }
     return output_tensor;
 }
+
+ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
+    if (height < factor || width < factor) {
+        OPENVINO_THROW("Height or width must be larger than factor");
+    }
+    if (std::max(height, width) / std::min(height, width) > 200) {
+        OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
+    }
+
+    size_t h_bar = std::round(static_cast<float>(height) / factor) * factor;
+    size_t w_bar = std::round(static_cast<float>(width) / factor) * factor; 
+
+    if (h_bar * w_bar > max_pixels) {
+        double beta = std::sqrt((height * width) / static_cast<double>(max_pixels));
+        h_bar = std::floor(height / beta / factor) * factor;
+        w_bar = std::floor(width / beta / factor) * factor;
+    } else if (h_bar * w_bar < min_pixels) {
+        double beta = std::sqrt(min_pixels / static_cast<double>(height * width));
+        h_bar = std::ceil(height * beta / factor) * factor;
+        w_bar = std::ceil(width * beta / factor) * factor;
+    }
+    
+    return ImageSize{h_bar, w_bar};
+}
+
+ov::Tensor reshape_image_patches_qwen2vl(
+    const ov::Tensor& patches,
+    const size_t grid_t,
+    const size_t grid_h,
+    const size_t grid_w,
+    const size_t channel,
+    const size_t temporal_patch_size,
+    const size_t patch_size,
+    const size_t spatial_merge_size
+) {
+    ov::Shape output_shape{
+        grid_t,                      
+        temporal_patch_size,         
+        channel,                     
+        grid_h / spatial_merge_size, 
+        spatial_merge_size,          
+        patch_size,                  
+        grid_w / spatial_merge_size, 
+        spatial_merge_size,          
+        patch_size                   
+    };
+    
+    ov::Tensor reshaped_patches(patches.get_element_type(), output_shape);
+
+    const float* input_data = patches.data<float>();
+    float* output_data = reshaped_patches.data<float>();
+
+    size_t input_idx = 0;
+    
+    for (size_t gt = 0; gt < output_shape.at(0); ++gt) {
+        for (size_t tp = 0; tp < output_shape.at(1); ++tp) {
+            for (size_t c = 0; c < output_shape.at(2); ++c) {
+                for (size_t gh = 0; gh < output_shape.at(3); ++gh) {
+                    for (size_t ms1 = 0; ms1 < output_shape.at(4); ++ms1) {
+                        for (size_t p1 = 0; p1 < output_shape.at(5); ++p1) {
+                            for (size_t gw = 0; gw < output_shape.at(6); ++gw) {
+                                for (size_t ms2 = 0; ms2 < output_shape.at(7); ++ms2) {
+                                    for (size_t p2 = 0; p2 < output_shape.at(8); ++p2) {
+                                        size_t output_idx = gt;
+                                        output_idx = output_idx * output_shape.at(1) + tp;
+                                        output_idx = output_idx * output_shape.at(2) + c;
+                                        output_idx = output_idx * output_shape.at(3) + gh;
+                                        output_idx = output_idx * output_shape.at(4) + ms1;
+                                        output_idx = output_idx * output_shape.at(5) + p1;
+                                        output_idx = output_idx * output_shape.at(6) + gw;
+                                        output_idx = output_idx * output_shape.at(7) + ms2;
+                                        output_idx = output_idx * output_shape.at(8) + p2;
+
+                                        output_data[output_idx] = input_data[input_idx];
+                                        input_idx++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return reshaped_patches;
+}
+
+ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
+    // Input dimensions order:  [0,1,2,3,4,5,6,7,8]
+    // Output dimensions order: [0,3,6,4,7,2,1,5,8]
+    auto input_shape = reshaped_patches.get_shape();
+    
+    ov::Shape output_shape = {
+        input_shape.at(0), // grid_t
+        input_shape.at(3), // grid_h / spatial_merge_size
+        input_shape.at(6), // grid_w / spatial_merge_size
+        input_shape.at(4), // spatial_merge_size
+        input_shape.at(7), // spatial_merge_size
+        input_shape.at(2), // channel
+        input_shape.at(1), // temporal_patch_size
+        input_shape.at(5), // patch_size
+        input_shape.at(8)  // patch_size
+    };
+
+    ov::Tensor transposed_patches(reshaped_patches.get_element_type(), output_shape);
+    
+    const float* src = reshaped_patches.data<float>();
+    float* dst = transposed_patches.data<float>();
+    
+    size_t shape_size = input_shape.size();
+    std::vector<size_t> input_strides(shape_size);
+    std::vector<size_t> output_strides(shape_size);
+    
+    input_strides[shape_size - 1] = 1;
+    output_strides[shape_size - 1] = 1;
+    for(int i = 7; i >= 0; i--) {
+        input_strides[i] = input_strides[i+1] * input_shape[i+1];
+        output_strides[i] = output_strides[i+1] * output_shape[i+1];
+    }
+
+    size_t total_elements = reshaped_patches.get_size();
+    for(size_t idx = 0; idx < total_elements; idx++) {
+        size_t remaining = idx;
+        std::vector<size_t> input_indices(shape_size);
+        for(int i = 0; i < shape_size; i++) {
+            input_indices[i] = remaining / input_strides[i];
+            remaining %= input_strides[i];
+        }
+        
+        std::vector<size_t> output_indices = {
+            input_indices.at(0),
+            input_indices.at(3),
+            input_indices.at(6),
+            input_indices.at(4),
+            input_indices.at(7),
+            input_indices.at(2),
+            input_indices.at(1),
+            input_indices.at(5),
+            input_indices.at(8)
+        };
+        
+        size_t dst_idx = 0;
+        for(int i = 0; i < shape_size; i++) {
+            dst_idx += output_indices[i] * output_strides[i];
+        }
+        
+        dst[dst_idx] = src[idx];
+    }
+    
+    return transposed_patches;
+}
 }
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config) :
@@ -678,8 +830,10 @@ EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfi
         return encode_llava(image, config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
         return encode_llava_next(image, config);
-    }  else if (model_type == VLMModelType::INTERNVL_CHAT) {
+    } else if (model_type == VLMModelType::INTERNVL_CHAT) {
         return encode_internvl(image, config);
+    } else if (model_type == VLMModelType::QWEN2_VL) {
+        return encode_qwen2vl(image, config);
     } else {
         OPENVINO_THROW("Unsupported type of VisionEncoder");
     }
@@ -750,6 +904,77 @@ EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const Proce
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+
+    return {std::move(image_features), resized_source_size};
+}
+
+EncodedImage VisionEncoder::encode_qwen2vl(const ov::Tensor& image, const ProcessorConfig& config) {
+    ov::Shape image_shape = image.get_shape();
+    auto original_height = image_shape.at(1);
+    auto original_width = image_shape.at(2);
+
+    ImageSize target_image_size = smart_resize_qwen2vl(
+        original_height, 
+        original_width, 
+        config.patch_size * config.merge_size,
+        config.min_pixels,
+        config.max_pixels
+    );
+
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+    clip_image_u8 resized_image;
+    bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
+
+    clip_ctx ctx;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+
+    ov::Tensor patches = clip_image_f32_to_tensor(normalized_image);
+
+    // For single patch tile it to match temporal_patch_size
+    if (patches.get_shape().at(0) == 1) {
+        auto orig_shape = patches.get_shape();
+        ov::Tensor tiled_patches(patches.get_element_type(),
+                                 {config.temporal_patch_size, orig_shape.at(1), orig_shape.at(2), orig_shape.at(3)});
+        
+        for (size_t i = 0; i < config.temporal_patch_size; i++) {
+            std::memcpy(
+                tiled_patches.data<float>() + i * patches.get_byte_size() / sizeof(float),
+                patches.data<float>(),
+                patches.get_byte_size()
+            );
+        }
+        patches = std::move(tiled_patches);
+    }
+
+    auto patches_shape = patches.get_shape();
+    size_t channel = patches_shape.at(1);
+    
+    size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
+    size_t grid_h = target_image_size.height / config.patch_size;
+    size_t grid_w = target_image_size.width / config.patch_size;
+
+    ov::Tensor reshaped_patches = reshape_image_patches_qwen2vl(
+        patches, grid_t, grid_h, grid_w, channel, config.temporal_patch_size, config.patch_size, config.merge_size
+    );
+    ov::Tensor transposed_patches = transpose_image_patches_qwen2vl(reshaped_patches);
+
+    ov::Shape flattened_patches_shape{
+        grid_t * grid_h * grid_w,
+        channel * config.temporal_patch_size * config.patch_size * config.patch_size
+    };
+    ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
+    std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
+
+    m_vision_encoder.set_tensor("hidden_states", flattened_patches);
+    m_vision_encoder.infer();
+
+    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+
+    ImageSize resized_source_size{grid_h, grid_w};
 
     return {std::move(image_features), resized_source_size};
 }
