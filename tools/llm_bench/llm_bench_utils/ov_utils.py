@@ -17,7 +17,10 @@ from llm_bench_utils.config_class import (
     DEFAULT_MODEL_CLASSES,
     IMAGE_GEN_CLS
 )
-import openvino.opset13 as opset
+try:
+    import openvino.opset13 as opset
+except ImportError:
+    import openvino.runtime.opset13 as opset
 from transformers import pipeline
 import openvino_genai as ov_genai
 import queue
