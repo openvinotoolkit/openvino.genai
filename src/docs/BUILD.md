@@ -194,6 +194,8 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     ```
 
+> **NOTE**: You'd need to build ABI compatible OpenVINO and OpenVINO Tokenizers for Ubuntu instead of downloading them from PyPI. See [OpenVINO™ GenAI Dependencies](../README.md#openvino-genai-dependencies) for the explanation.
+
 ### Install OpenVINO GenAI From Source
 
 1. Clone OpenVINO GenAI repository and init submodules:
