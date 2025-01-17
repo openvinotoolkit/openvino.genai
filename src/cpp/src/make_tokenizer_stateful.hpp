@@ -34,7 +34,7 @@ namespace genai {
 **/
 class MakeCombineSegmentsSatateful : public ov::pass::ModelPass {
 public:
-    OPENVINO_MODEL_PASS_RTTI("MakeCombineSegmentsSatateful", "0");
+    OPENVINO_MODEL_PASS_RTTI("MakeCombineSegmentsSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
@@ -70,7 +70,7 @@ public:
 **/
 class MakeVocabDecoderSatateful : public ov::pass::ModelPass {
 public:
-    OPENVINO_MODEL_PASS_RTTI("MakeVocabDecoderSatateful", "0");
+    OPENVINO_MODEL_PASS_RTTI("MakeVocabDecoderSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
