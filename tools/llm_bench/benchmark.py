@@ -6,7 +6,7 @@ import sys
 import argparse
 import logging as log
 import llm_bench_utils.model_utils
-from openvino.runtime import get_version
+from openvino import get_version
 import torch
 import traceback
 from llm_bench_utils.memory_profile import MemConsumption
