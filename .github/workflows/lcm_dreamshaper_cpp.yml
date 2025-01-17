@@ -93,7 +93,7 @@ jobs:
           ${{ env.build_dir }}/samples/cpp/image_generation/inpainting ./models/lcm_dreamshaper_v7 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" ./image.png ./mask_image.png
 
   lcm_dreamshaper_v7_cpp-windows:
-    runs-on: windows-2019
+    runs-on: windows-2022
     defaults:
       run:
         shell: pwsh
