@@ -56,9 +56,12 @@ std::string _convert_unet_lora_key(const std::string& key) {
 
     diffusers_name = std::regex_replace(diffusers_name, std::regex("lora.unet"), "lora_unet");
 
-    if(key.find("lora_unet") != 0) {
-        std::cerr << "no lora_unet found\n";
-        return key;
+    if(diffusers_name.find("lora_unet") != 0) {
+        if(diffusers_name.find("lora_te") == std::string::npos) {
+            // converge to lora_unet naming convention because UNet expects this pattern
+            diffusers_name = "lora_unet." + std::regex_replace(diffusers_name, std::regex("\\.processor\\."), ".");
+        }
+        return diffusers_name;
     }
 
     diffusers_name = std::regex_replace(diffusers_name, std::regex("_"), ".");
@@ -114,7 +117,22 @@ std::string _convert_unet_lora_key(const std::string& key) {
 namespace ov {
 namespace genai {
 
-using namespace utils;
+namespace utils {
+
+
+std::optional<std::string> RegexParser::operator() (const std::string& name) const {
+    std::smatch match;
+    if(std::regex_match(name, match, pattern)) {
+        for(auto capture_index: capture_indices) {
+            // check if a given capture group exists (really matched) and return the first matched group
+            if(capture_index < match.size() && match[capture_index].matched) {
+                return match[capture_index];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 
 // Function to reimplement _maybe_map_sgm_blocks_to_diffusers
 NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int layers_per_block,
@@ -510,7 +528,7 @@ LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
             continue;
         }
         std::string name = src_tensor.first;
-        ov::genai::convert_prefix_te(name);
+        convert_prefix_te(name);
         name = std::regex_replace(name, std::regex("lora.unet"), "transformer");
         result.emplace(name, src_tensor.second);
     }
@@ -571,6 +589,6 @@ LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
 }
 
 
-
+}
 }
 }

@@ -155,9 +155,9 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
     return LoRAPartsParser(
-        RegexParser(R"((.*)\.alpha)", 1),
-        RegexParser(R"((.*)\.(lora_(A|down)\.weight)|(.*lora[12])\.(down\.weight))", {1, 4}),
-        RegexParser(R"((.*)\.(lora_(B|up)\.weight)|(.*lora[12])\.(up\.weight))", {1, 4})
+        RegexParser("(.*)\\.alpha", 1),
+        RegexParser("((.*)[_.](lora[_.](A|down)\\.weight))|((.*lora[12])\\.(down\\.weight))", {2, 6}),
+        RegexParser("((.*)[_.](lora[_.](B|up)\\.weight))|((.*lora[12])\\.(up\\.weight))", {2, 6})
     );
 }
 
@@ -788,19 +788,18 @@ std::shared_ptr<v0::Constant> alpha_as_constant(float alpha) {
 }
 
 
-
 LoRATensors flux_normalization(const LoRATensors& tensors) {
     // Check for specific substrings to improve performance, equivalent to chaining the preprocessors
     // apply flux_xlabs_lora_preprocessing if at least one tensor in tensors has "processor" substring in its name
     for(const auto& src_tensor: tensors) {
         if(src_tensor.first.find("processor") != std::string::npos) {
-            return ov::genai::flux_xlabs_lora_preprocessing(tensors);
+            return flux_xlabs_lora_preprocessing(tensors);
         }
     }
     // apply flux_kohya_lora_preprocessing if at least one tensor in tensors has "lora_unet" substring in its name
     for(const auto& src_tensor: tensors) {
         if(src_tensor.first.find("lora_unet") != std::string::npos) {
-            return ov::genai::flux_kohya_lora_preprocessing(tensors);
+            return flux_kohya_lora_preprocessing(tensors);
         }
     }
     return tensors;
@@ -811,7 +810,7 @@ LoRATensors diffusers_normalization (const LoRATensors& tensors) {
     for(const auto& kv: tensors) {
         keys.insert(kv.first);
     }
-    auto mapping = ov::genai::maybe_map_non_diffusers_lora_to_diffusers(keys);
+    auto mapping = maybe_map_non_diffusers_lora_to_diffusers(keys);
     if(!mapping.empty()) {
         LoRATensors new_tensors;
         for(const auto& kv: tensors) {
