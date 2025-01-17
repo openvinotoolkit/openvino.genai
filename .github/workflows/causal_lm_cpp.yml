@@ -20,6 +20,7 @@ env:
   l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/l_openvino_toolkit_ubuntu22_2025.1.0.dev20250116_x86_64.tgz
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/m_openvino_toolkit_macos_12_6_2025.1.0.dev20250116_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/w_openvino_toolkit_windows_2025.1.0.dev20250116_x86_64.zip
+
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -463,6 +464,7 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -520,6 +522,7 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -696,7 +699,6 @@ jobs:
           timeout 30s ./samples/python/text_generation/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
-
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
