@@ -232,8 +232,8 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert np.all(ov_res_add_spec == hf_res_add_spec)
     
     # Check that add_special_tokens flag indeed made any difference
-    assert np.all(ov_res_add_spec != ov_res_no_spec)
-    assert np.all(hf_res_add_spec != hf_res_no_spec)
+    assert not np.all(ov_res_add_spec == ov_res_no_spec)
+    assert not np.all(hf_res_add_spec == hf_res_no_spec)
 
     # Decode with 'skip_special_tokens'
     decoded_genai_skip_spec = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=True)[0]
@@ -243,8 +243,8 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert decoded_genai_skip_spec == decoded_hf_skip_spec
 
     # Check that skip_special_tokens indeed made any difference
-    assert decoded_genai_skip_spec != decoded_genai_no_skip
-    assert decoded_hf_skip_spec != decoded_hf_no_skip
+    assert not decoded_genai_skip_spec == decoded_genai_no_skip
+    assert not decoded_hf_skip_spec == decoded_hf_no_skip
 
 
 @pytest.mark.precommit
