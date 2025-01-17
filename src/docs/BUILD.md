@@ -191,7 +191,7 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 4. Build the wheel in the `dist` directory:
     ```sh
-    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     ```
 
 ### Install OpenVINO GenAI From Source
