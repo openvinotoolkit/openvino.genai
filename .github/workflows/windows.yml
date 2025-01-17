@@ -17,8 +17,8 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: 'ed470e7e40129d6b2bf728bc9527316937a69ef7'
-  OV_TARBALL: ''
+  OV_BRANCH: ''
+  OV_TARBALL: 'https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.0.0rc1/w_openvino_toolkit_windows_2025.0.0.dev20250116_x86_64.zip'
 
 jobs:
   openvino_download:

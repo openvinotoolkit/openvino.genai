@@ -17,8 +17,8 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.10'
-  OV_BRANCH: 'master'
-  OV_TARBALL: ''
+  OV_BRANCH: ''
+  OV_TARBALL: 'https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.0.0rc1/m_openvino_toolkit_macos_12_6_2025.0.0.dev20250116_x86_64.tgz'
 
 jobs:
   openvino_download:
