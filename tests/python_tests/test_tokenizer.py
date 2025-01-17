@@ -230,10 +230,11 @@ def test_encode_decode_with_special_tokens_option(prompt):
     hf_res_add_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=True)["input_ids"]
     hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
+    assert np.all(ov_res_no_spec == hf_res_no_spec)
     
     # Check that add_special_tokens flag indeed made any difference
-    assert not np.all(ov_res_add_spec == ov_res_no_spec)
-    assert not np.all(hf_res_add_spec == hf_res_no_spec)
+    assert ov_res_add_spec.size != ov_res_no_spec.size
+    assert hf_res_add_spec.size != hf_res_no_spec.size
 
     # Decode with 'skip_special_tokens'
     decoded_genai_skip_spec = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=True)[0]
@@ -241,10 +242,11 @@ def test_encode_decode_with_special_tokens_option(prompt):
     decoded_hf_skip_spec = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=True)
     decoded_hf_no_skip = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=False)
     assert decoded_genai_skip_spec == decoded_hf_skip_spec
+    assert decoded_genai_no_skip == decoded_hf_no_skip
 
     # Check that skip_special_tokens indeed made any difference
-    assert not decoded_genai_skip_spec == decoded_genai_no_skip
-    assert not decoded_hf_skip_spec == decoded_hf_no_skip
+    assert decoded_genai_skip_spec != decoded_genai_no_skip
+    assert decoded_hf_skip_spec != decoded_hf_no_skip
 
 
 @pytest.mark.precommit
