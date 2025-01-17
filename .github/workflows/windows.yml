@@ -235,7 +235,7 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/test_tokenizer.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -243,8 +243,8 @@ jobs:
       - name: Test bindings (wheel)
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install . --verbose --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ./tools/who_what_benchmark --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
@@ -300,7 +300,7 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k test_smoke
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -308,8 +308,8 @@ jobs:
       - name: Test bindings (wheel)
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install . --verbose --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ./tools/who_what_benchmark --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           
           # transformers 4.46.3 will enable return_timestamps tests
           # this check enabled for windows only. Ticket: 160205.
@@ -370,7 +370,7 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -431,8 +431,8 @@ jobs:
       - name: Build and Install dependencies
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pip install -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
