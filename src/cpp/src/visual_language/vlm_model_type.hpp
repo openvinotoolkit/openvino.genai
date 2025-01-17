@@ -16,6 +16,7 @@ enum class VLMModelType {
     LLAVA,
     LLAVA_NEXT,
     INTERNVL_CHAT,
+    QWEN2_VL,
 };
 
 inline VLMModelType to_vlm_model_type(const std::string& value) {
@@ -23,7 +24,8 @@ inline VLMModelType to_vlm_model_type(const std::string& value) {
         {"minicpmv", VLMModelType::MINICPM},
         {"llava", VLMModelType::LLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
-        {"internvl_chat", VLMModelType::INTERNVL_CHAT}
+        {"internvl_chat", VLMModelType::INTERNVL_CHAT},
+        {"qwen2_vl", VLMModelType::QWEN2_VL}
     };
 
     auto it = model_types_map.find(value);
