@@ -242,26 +242,34 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     ManualTimer streaming_timer("gen");
     streaming_timer.start();
 
-    std::atomic<bool> continue_streaming = true, has_active_request = has_non_finished_requests();
-    auto& main_generation = main_generations.at(0);
+    std::atomic<bool> has_active_request = has_non_finished_requests();
+    auto& generation = main_generations.at(0);
 
     // todo: remove
     ManualTimer thread_timer("threading");
     thread_timer.start();
 
-    // to define streaming thread
-    std::thread t_stream([&main_generation, &streamer_ptr, &continue_streaming, &streaming_duraton, &has_active_request] {
-        while (continue_streaming && (has_active_request || streamer_ptr && main_generation->can_read())) {
-            if (streamer_ptr && main_generation->can_read()) {
+    // create variables to make optimal thread-safe streaming
+    std::mutex mutex;
+    std::unique_lock lock(mutex);
+    std::condition_variable cv;
+
+    // define stream token lambda to use in `t_stream`
+    auto stream_tokens = [&generation, &streamer_ptr, &streaming_duraton, &has_active_request, &cv, &lock]() {
+        while (!generation->is_dropped() && (has_active_request || streamer_ptr && generation->can_read())) {
+            // waiting for any tokens or request finishing
+            cv.wait(lock, [&generation, &has_active_request]{ return generation->can_read() || !has_active_request; });
+
+            if (streamer_ptr && generation->can_read()) {
                 // todo: remove
                 ManualTimer streaming_timer("streaming");
                 streaming_timer.start();
 
-                std::unordered_map<uint64_t, GenerationOutput> token = main_generation->back();
+                std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
-                    continue_streaming = !streamer_ptr->put(gen_token);
-                    if (!continue_streaming) {
-                        main_generation->drop();
+                    if (streamer_ptr->put(gen_token)) {
+                        generation->drop();
+                        cv.notify_all();
                         break;
                     }
                 }
@@ -271,24 +279,32 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                 streaming_duraton += streaming_timer.get_duration();
             }
         };
+    };
+
+    // to define streaming thread
+    std::thread t_stream([&stream_tokens] {
+        stream_tokens();
     });
 
     // todo: remove
     thread_timer.end();
     thread_duration += thread_timer.get_duration();
 
-    while (continue_streaming && has_active_request) {
+    while (!generation->is_dropped() && has_active_request) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
             has_active_request = false;
+            cv.notify_all();
             throw;
         }
         has_active_request = has_non_finished_requests();
+        cv.notify_all();
     }
 
+    // waiting for competion of streaming
     if (t_stream.joinable()) {
         t_stream.join();
     }
@@ -297,7 +313,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         streamer_ptr->end();
     }
 
-    if (!continue_streaming) {
+    if (generation->is_dropped()) {
         drop_requests();
     } else {
         OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
@@ -337,9 +353,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     generate_timer.end();
     
     // todo: remove
-    std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
-    std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
-    std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
+    // std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
+    // std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    // std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
     return results;
 }
 

@@ -117,25 +117,30 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     streaming_timer.start();
 
     std::atomic<bool> continue_streaming = true, has_active_request = has_non_finished_requests();
-    auto& main_generation = generations.at(0);
+    auto& generation = generations.at(0);
 
-    // todo: remove
-    ManualTimer thread_timer("threading");
-    thread_timer.start();
 
-    // to define streaming thread
-    std::thread t_stream([&main_generation, &streamer_ptr, &continue_streaming, &streaming_duraton, &has_active_request] {
-        while (continue_streaming && (has_active_request || streamer_ptr && main_generation->can_read())) {
-            if (streamer_ptr && main_generation->can_read()) {
+    // create variables to make optimal thread-safe streaming
+    std::mutex mutex;
+    std::unique_lock lock(mutex);
+    std::condition_variable cv;
+
+    // define stream token lambda to use in `t_stream`
+    auto stream_tokens = [&generation, &streamer_ptr, &streaming_duraton, &has_active_request, &cv, &lock]() {
+        while (!generation->is_dropped() && (has_active_request || streamer_ptr && generation->can_read())) {
+            // waiting for any tokens or request finishing
+            cv.wait(lock, [&generation, &has_active_request]{ return generation->can_read() || !has_active_request; });
+
+            if (streamer_ptr && generation->can_read()) {
                 // todo: remove
                 ManualTimer streaming_timer("streaming");
                 streaming_timer.start();
 
-                std::unordered_map<uint64_t, GenerationOutput> token = main_generation->back();
+                std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
-                    continue_streaming = !streamer_ptr->put(gen_token);
-                    if (!continue_streaming) {
-                        main_generation->drop();
+                    if (streamer_ptr->put(gen_token)) {
+                        generation->drop();
+                        cv.notify_all();
                         break;
                     }
                 }
@@ -145,6 +150,15 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                 streaming_duraton += streaming_timer.get_duration();
             }
         };
+    };
+
+    // todo: remove
+    ManualTimer thread_timer("threading");
+    thread_timer.start();
+
+    // to define streaming thread
+    std::thread t_stream([&stream_tokens] {
+        stream_tokens();
     });
     
     // todo: remove
@@ -158,9 +172,11 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
             has_active_request = false;
+            cv.notify_all();
             throw;
         }
         has_active_request = has_non_finished_requests();
+        cv.notify_all();
     }
 
     if (t_stream.joinable()) {
@@ -171,7 +187,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         streamer_ptr->end();
     }
 
-    if (!continue_streaming) {
+    if (generation->is_dropped()) {
         drop_requests();
     } else {
         OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
@@ -210,9 +226,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
     // todo: remove
-    std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
-    std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
-    std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
+    // std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
+    // std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    // std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
     return results;
 }
 
