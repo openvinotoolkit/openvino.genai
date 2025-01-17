@@ -111,14 +111,8 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 
-    // todo: shouls be removed
-    float streaming_duraton = 0, thread_duration = 0;
-    ManualTimer streaming_timer("gen");
-    streaming_timer.start();
-
     std::atomic<bool> continue_streaming = true, has_active_request = has_non_finished_requests();
     auto& generation = generations.at(0);
-
 
     // create variables to make optimal thread-safe streaming
     std::mutex mutex;
@@ -126,16 +120,12 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     std::condition_variable cv;
 
     // define stream token lambda to use in `t_stream`
-    auto stream_tokens = [&generation, &streamer_ptr, &streaming_duraton, &has_active_request, &cv, &lock]() {
+    auto stream_tokens = [&generation, &streamer_ptr, &has_active_request, &cv, &lock]() {
         while (!generation->is_dropped() && (has_active_request || streamer_ptr && generation->can_read())) {
             // waiting for any tokens or request finishing
             cv.wait(lock, [&generation, &has_active_request]{ return generation->can_read() || !has_active_request; });
 
             if (streamer_ptr && generation->can_read()) {
-                // todo: remove
-                ManualTimer streaming_timer("streaming");
-                streaming_timer.start();
-
                 std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
                     if (streamer_ptr->put(gen_token)) {
@@ -144,26 +134,14 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                         break;
                     }
                 }
-
-                // todo: remove
-                streaming_timer.end();
-                streaming_duraton += streaming_timer.get_duration();
             }
         };
     };
-
-    // todo: remove
-    ManualTimer thread_timer("threading");
-    thread_timer.start();
 
     // to define streaming thread
     std::thread t_stream([&stream_tokens] {
         stream_tokens();
     });
-    
-    // todo: remove
-    thread_timer.end();
-    thread_duration += thread_timer.get_duration();
 
     while (continue_streaming && has_active_request) {
         try {
@@ -225,10 +203,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    // todo: remove
-    // std::cout << std::endl << "STREAMING DURATION: " << streaming_duraton << std::endl;
-    // std::cout << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
-    // std::cout << "THREAD CREATION DURATION: " << thread_duration << std::endl;
     return results;
 }
 
