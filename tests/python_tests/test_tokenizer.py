@@ -181,6 +181,12 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         print(f'ov_genai out: {ov_full_history_str}')
     assert ov_full_history_str == hf_full_history_str
 
+    # Test throwing exception for empty rendered chat template
+    # Example: Qwen2-VL chat template
+    chat_template_for_empty_output = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
+    with pytest.raises(Exception):
+        ov_tokenizer.apply_chat_template(conversation, chat_template=chat_template_for_empty_output)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly

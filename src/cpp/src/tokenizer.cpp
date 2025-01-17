@@ -575,13 +575,18 @@ public:
             {"slice", slice_callable},
         };
 
+        std::string result;
         try {
-            return tpl.RenderAsString(params).value();
+            result = tpl.RenderAsString(params).value();
         } catch (const std::exception& error) {
             OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
                            "Please apply template manually to your prompt before calling generate. "
                            "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         }
+        OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
+                                         "Please check the chat template or apply template manually to your prompt before calling generate."
+                                         "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+        return result;
     }
 
     void set_chat_template(const std::string& chat_template) {

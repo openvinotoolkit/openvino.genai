@@ -347,7 +347,7 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
     using namespace ov::op;
     class AttentionMaskInput : public ov::pass::MatcherPass {
     public:
-        OPENVINO_RTTI("AttentionMaskInput");
+        OPENVINO_MATCHER_PASS_RTTI("AttentionMaskInput");
 
         AttentionMaskInput(std::shared_ptr<ov::Model> model) {
             auto range = wrap_type<v4::Range>();
