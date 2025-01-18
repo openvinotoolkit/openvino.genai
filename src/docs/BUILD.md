@@ -164,6 +164,16 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when OpenVINO Tokenizers are built as a submodule of OpenVINO GenAI.
 For more information please refer to the [OpenVINO Tokenizers instructions](https://github.com/openvinotoolkit/openvino_tokenizers?tab=readme-ov-file#reducing-the-icu-data-size).
 
+### Build OpenVINO GenAI samples Using Archive
+
+1. Download and extract OpenVINO GenAI Archive
+Visit the [OpenVINO Download Page](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/download.html?PACKAGE=OPENVINO_GENAI&VERSION=NIGHTLY&OP_SYSTEM=WINDOWS&DISTRIBUTION=ARCHIVE) and select the latest release or Nightly Build by clicking “Download Archives with GenAI”
+2. Build samples
+Open a command window and run the setupvars.bat file from the unzipped downloaded OpenVINO with GenAI folder.
+```sh
+    <OPENVINO_GENAI_ARCHIVE_DIR`>\setupvars.bat
+```
+In the same command window, after the OpenVINO environment is initialized, navigate to the folder samples/cpp/, and run build_samples_msvc.bat or build_samples.ps1
 
 ### Build OpenVINO GenAI Wheel
 
