@@ -117,7 +117,7 @@ questions = [
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
     cb_pipe = get_continuous_batching(models_path)
 
     ov_pipe.start_chat()
