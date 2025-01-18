@@ -101,7 +101,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
-                return sg->has_finished() || sg->out_of_memory() || sg->handle_dropped();
+                return sg->has_finished();
             });
         active_sequence_groups.erase(removed_it, active_sequence_groups.end());
     };

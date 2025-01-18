@@ -356,8 +356,9 @@ public:
 
     std::vector<Sequence::Ptr> get_running_sequences() {
         std::vector<Sequence::Ptr> running_seqs;
+
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->is_running()) {
+            if (m_sequences[seq_id]->is_running() && !handle_dropped()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
@@ -366,20 +367,22 @@ public:
     }
 
     std::vector<Sequence::Ptr> get_not_finished_sequences() {
-        std::vector<Sequence::Ptr> running_seqs;
+        std::vector<Sequence::Ptr> not_finished_sequences;
+
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (!m_sequences[seq_id]->has_finished()) {
-                running_seqs.emplace_back(m_sequences[seq_id]);
+            if (!m_sequences[seq_id]->has_finished() && !handle_dropped()) {
+                not_finished_sequences.emplace_back(m_sequences[seq_id]);
             }
         }
 
-        return running_seqs;
+        return not_finished_sequences;
     }
 
     std::vector<Sequence::CPtr> get_running_sequences() const {
         std::vector<Sequence::CPtr> running_seqs;
+
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->is_running()) {
+            if (m_sequences[seq_id]->is_running() && !handle_dropped()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
