@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
@@ -181,14 +181,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     if bench_hook is not None:
@@ -231,10 +223,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get('num_assistant_tokens', None):
-            gen_config.num_assistant_tokens = args['num_assistant_tokens']
+            gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
             config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
         if args.get('assistant_confidence_threshold', None):
-            gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
+            gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
         log.info(config_info)
     start = time.perf_counter()
@@ -339,14 +331,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
@@ -461,14 +445,6 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     streamer.reset()

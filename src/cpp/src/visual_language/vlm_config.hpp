@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -54,6 +54,13 @@ public:
     std::string image_context_token = "<IMG_CONTEXT>";
     /// @brief A string token denoting end of image embeddings for InternVL2 model.
     std::string image_end_token = "</img>";
+    
+    /// @brief A string token denoting start of vision embeddings for Qwen2VL model.
+    std::string vision_start_token = "<|vision_start|>";
+    /// @brief A placeholder for image embeddings in text for Qwen2VL model.
+    std::string image_pad_token = "<|image_pad|>";
+    /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
+    std::string vision_end_token = "<|vision_end|>";
     
     /// @brief Default constructor.
     VLMConfig() = default;

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -137,25 +137,17 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        // Temporary fix for GPU
-        ov::AnyMap updated_properties = properties;
-        if (device.find("GPU") != std::string::npos &&
-            updated_properties.find("INFERENCE_PRECISION_HINT") == updated_properties.end()) {
-            updated_properties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
-        }
-
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_1 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device, updated_properties);
+                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_2 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, updated_properties);
+            m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
@@ -164,7 +156,7 @@ public:
         if (!text_encoder_3_json.is_null()) {
             const std::string text_encoder_3 = text_encoder_3_json.get<std::string>();
             if (text_encoder_3 == "T5EncoderModel") {
-                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, updated_properties);
+                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
             } else {
                 OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
             }
@@ -180,9 +172,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, updated_properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, updated_properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
