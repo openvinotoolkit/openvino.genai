@@ -698,11 +698,15 @@ StatefulLLMPipeline::StatefulLLMPipeline(
                         utils::from_config_json_if_exists(models_path)),
     m_sampler(m_tokenizer) {
     ov::AnyMap properties = config;
-    const auto use_blob = pop_or_default(properties, "USE_BLOB", false);
-    if (use_blob) {
-        auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+
+    bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
         if (blob_path.empty()) {
-            blob_path = (models_path / "openvino_model.blob").string();
+            OPENVINO_THROW("Please provide a path to blob in BLOB_PATH: " + blob_path);
         }
         if (!std::filesystem::exists(blob_path)) {
             OPENVINO_THROW("Blob file is not found at: " + blob_path);
@@ -722,9 +726,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         ov::AnyMap properties = config;
         auto compiled = setupAndCompileModel(model, model_desc, properties);
         // Also export compiled model if required
-        const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
         if (export_blob) {
-            auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
             if (blob_path.empty()) {
                 blob_path = (models_path / "openvino_model.blob").string();
             }
