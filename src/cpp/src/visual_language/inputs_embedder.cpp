@@ -1454,7 +1454,7 @@ std::vector<ov::Tensor> drop_image_placeholders(const ov::Tensor& tokens) {
     return chunks;
 }
 }  // namespace phi3_v
-}
+}  // anonymous namespace
 
 class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
 public:
