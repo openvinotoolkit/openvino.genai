@@ -101,9 +101,9 @@ The usage of this sample is:
 
 For example:
 
-`python heterogeneous_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
+`python heterogeneous_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU GPU GPU`
 
-The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
+The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet and VAE decoder on the GPU.
 
 ## Run image to image pipeline
 
