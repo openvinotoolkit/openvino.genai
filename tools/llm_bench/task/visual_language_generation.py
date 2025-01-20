@@ -215,7 +215,7 @@ def run_visual_language_generation_genai(
     if len(images) >= 1:
         kwargs["images"] = images[0]
     start = time.perf_counter()
-    generation_result = model.generate(prompts[0], generation_config=gen_config)
+    generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
