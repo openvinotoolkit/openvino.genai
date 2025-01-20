@@ -672,6 +672,7 @@ enum StaticPipelineKind {
     STATEFUL,
     STATELESS
 };
+
 StaticPipelineKind str_to_pipeline(const std::string& str) {
     if (str == "STATEFUL") {
         return StaticPipelineKind::STATEFUL;
@@ -935,7 +936,7 @@ EncodedResults StatefulLLMPipeline::generate(
     m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 
-    while (sequence_group->is_running()) {
+    while (sequence_group->is_running() && !sequence_group->handle_dropped()) {
         // KV Cache is full, no further generation is possible
         if (position_ids_data + 1 == m_kvcache_total) {
             sequence_group->set_out_of_memory();
@@ -959,12 +960,11 @@ EncodedResults StatefulLLMPipeline::generate(
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
-        SamplerOutput sampler_output = m_sampler.sample(
-            {sequence_group}, m_request.get_tensor("logits"));
+        SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
         stream_generated_tokens(streamer_ptr, handle);
     }
 
-    if (streamer_ptr) {
+    if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
 
@@ -1441,7 +1441,7 @@ EncodedResults StatelessLLMPipeline::generate(
     std::fill(attention_mask_data, attention_mask_data + m_kvcache_desc.num_stored_tokens - 1u, 1u);
     attention_mask_data[m_kvcache_desc.total_size - 1] = 1u;
 
-    while (sequence_group->is_running()) {
+    while (sequence_group->is_running() && !sequence_group->handle_dropped()) {
         sequence_group->schedule_tokens(1);
         const auto running_sequences = sequence_group->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() == 1u);
@@ -1459,6 +1459,9 @@ EncodedResults StatelessLLMPipeline::generate(
         SamplerOutput sampler_output = m_sampler.sample(
             {sequence_group}, m_kvcache_request.get_tensor("logits"));
         stream_generated_tokens(streamer_ptr, handle);
+
+        if (sequence_group->handle_dropped())
+            break;
 
         // NB: KV-cache is full, further generation is impossible
         if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
@@ -1482,7 +1485,7 @@ EncodedResults StatelessLLMPipeline::generate(
         }
     }
 
-    if (streamer_ptr) {
+    if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
 

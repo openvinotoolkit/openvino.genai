@@ -186,22 +186,10 @@ def analyze_args(args):
 
 
 def get_use_case(model_name_or_path):
-    # 1. try to get use_case from model name
-    path = os.path.normpath(model_name_or_path)
-    model_names = path.split(os.sep)
-    for model_name in reversed(model_names):
-        for case, model_ids in USE_CASES.items():
-            for model_id in model_ids:
-                if model_name.lower().startswith(model_id):
-                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
-                    return case, model_name
-
-    # 2. try to get use_case from model config
-    try:
-        config_file = Path(model_name_or_path) / "config.json"
+    config_file = Path(model_name_or_path) / "config.json"
+    config = None
+    if config_file.exists():
         config = json.loads(config_file.read_text())
-    except Exception:
-        config = None
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
@@ -214,6 +202,15 @@ def get_use_case(model_name_or_path):
                 if config.get("model_type").lower().replace('_', '-').startswith(model_id):
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_id}')
                     return case, model_ids[idx]
+    # try to get use_case from model name
+    path = os.path.normpath(model_name_or_path)
+    model_names = path.split(os.sep)
+    for model_name in reversed(model_names):
+        for case, model_ids in USE_CASES.items():
+            for model_id in model_ids:
+                if model_name.lower().startswith(model_id):
+                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
+                    return case, model_name
 
     raise RuntimeError('==Failure FOUND==: no use_case found')
 
