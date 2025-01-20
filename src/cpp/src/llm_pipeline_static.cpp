@@ -728,6 +728,13 @@ StatefulLLMPipeline::StatefulLLMPipeline(
             if (blob_path.empty()) {
                 blob_path = (models_path / "openvino_model.blob").string();
             }
+            // Check the path is full
+            if (blob_path.size() < 5) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - 5], 5) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
             std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
             if (!fout.is_open()) {
                 OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
