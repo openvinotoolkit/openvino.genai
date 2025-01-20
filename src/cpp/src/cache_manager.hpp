@@ -8,42 +8,6 @@
 #include "openvino/runtime/tensor.hpp"
 #include "device_config.hpp"
 
-#ifndef _WIN32
-#include <sys/mman.h>
-#include "openvino/core/shape.hpp"
-
-
-class TensorMmapAllocator { 
-    size_t m_total_size;
-    void* m_data;
- 
-public: 
-    TensorMmapAllocator(size_t total_size) : 
-        m_total_size(total_size) { } 
-  
-    void* allocate(size_t bytes, size_t) { 
-        if (m_total_size == bytes) { 
-            m_data = mmap(NULL,  bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            OPENVINO_ASSERT(m_data != MAP_FAILED);
-            return m_data; 
-        } 
-        throw std::runtime_error{"Unexpected number of bytes was requested to allocate."}; 
-    } 
-  
-    void deallocate(void*, size_t bytes, size_t) { 
-        if (m_total_size != bytes) { 
-            throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."}; 
-        }
-        munmap(m_data, bytes);
-    } 
-  
-    bool is_equal(const TensorMmapAllocator& other) const noexcept { 
-        return this == &other; 
-    } 
-}; 
-
-#endif
-
 namespace ov::genai {
 class CacheManager {
     DeviceConfig m_device_config;
@@ -90,17 +54,8 @@ public:
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
                 ov::Shape value_cache_shape = set_first_dim_and_make_static(m_device_config.get_value_cache_shape(decoder_layer_id), num_kv_blocks);
                 ov::Shape key_cache_shape = set_first_dim_and_make_static(m_device_config.get_key_cache_shape(decoder_layer_id), num_kv_blocks);
-#ifdef _WIN32
                 ov::Tensor key_cache(m_device_config.get_cache_precision(), key_cache_shape);
                 ov::Tensor value_cache(m_device_config.get_cache_precision(), value_cache_shape);
-#else
-                auto key_size = ov::shape_size(key_cache_shape) * m_device_config.get_cache_precision().size();
-                auto value_size = ov::shape_size(value_cache_shape) * m_device_config.get_cache_precision().size();
-
-                ov::Tensor key_cache = ov::Tensor(m_device_config.get_cache_precision(), key_cache_shape, TensorMmapAllocator(key_size));
-                ov::Tensor value_cache = ov::Tensor(m_device_config.get_cache_precision(), value_cache_shape, TensorMmapAllocator(value_size));
-
-#endif
 
                 auto key_cache_roi_end = static_cast<unsigned char*>(key_cache.data());
                 auto value_cache_roi_end = static_cast<unsigned char*>(value_cache.data());
@@ -125,14 +80,13 @@ public:
 
                 }
 
-#ifdef _WIN32
                 // Some optimizations like AVX2, AVX512, AMX require a minimal shape and 
                 // perform multiplying by zero on the excess data. Uninitialized tensor data contain NAN's, 
                 // so NAN * 0 returns non-zero invalid data.
                 // So we need to set zeros to all newly allocated tensors data.
-                std::memset(key_cache_roi_end, 0, key_cache.get_byte_size() - key_roi_size_byte);
-                std::memset(value_cache_roi_end, 0, value_cache.get_byte_size() - value_roi_size_byte);
-#endif
+                std::memset(key_cache_roi_end, 143, key_cache.get_byte_size() - key_roi_size_byte);
+                std::memset(value_cache_roi_end, 52, value_cache.get_byte_size() - value_roi_size_byte);
+                
                 // set new cache tensors
                 if (m_key_cache.size() > decoder_layer_id) {
                     m_key_cache[decoder_layer_id] = key_cache;
