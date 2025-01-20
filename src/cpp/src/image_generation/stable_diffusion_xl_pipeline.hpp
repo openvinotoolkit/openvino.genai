@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -79,7 +79,7 @@ public:
         // Temporary fix for GPU
         if (device.find("GPU") != std::string::npos &&
             updated_properties->find("INFERENCE_PRECISION_HINT") == updated_properties->end()) {
-            updated_properties.fork()["INFERENCE_PRECISION_HINT"] = ov::element::f32;
+            updated_properties.fork()["WA_INFERENCE_PRECISION_HINT"] = ov::element::f32;
         }
 
         const std::string vae = data["vae"][1].get<std::string>();

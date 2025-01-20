@@ -1,9 +1,10 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "imwrite.hpp"
+#include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
@@ -16,7 +17,8 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::width(512),
         ov::genai::height(512),
         ov::genai::num_inference_steps(20),
-        ov::genai::num_images_per_prompt(1));
+        ov::genai::num_images_per_prompt(1),
+        ov::genai::callback(progress_bar));
 
     // writes `num_images_per_prompt` images by pattern name
     imwrite("image_%d.bmp", image, true);

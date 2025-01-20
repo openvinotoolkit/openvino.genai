@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
@@ -183,7 +183,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"], OV_MODEL_CLASSES_MAPPING["chatglm"]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
+                log.warning(f"OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
@@ -363,10 +363,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
 
     class PerfCollector:
-        def __init__(self) -> types.NoneType:
+        def __init__(self, main_model_name="unet") -> types.NoneType:
             self.iteration_time = []
             self.start_time = time.perf_counter()
             self.duration = -1
+            self.main_model_name = main_model_name
 
         def __call__(self, step, num_steps, latents):
             self.iteration_time.append(time.perf_counter() - self.start_time)
@@ -405,8 +406,6 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         def get_vae_decoder_step_count(self):
             return 1
 
-    callback = PerfCollector()
-
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
     if adapter_config:
         ov_config['adapters'] = adapter_config
@@ -416,6 +415,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         data = json.load(f)
 
     model_class_name = data.get("_class_name", "")
+    main_model_name = "unet" if "unet" in data else "transformer"
+    callback = PerfCollector(main_model_name)
+
+    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+    callback.orig_tokenizer = orig_tokenizer
 
     start = time.perf_counter()
 
@@ -701,7 +705,7 @@ class GenaiChunkStreamer(ov_genai.StreamerBase):
                 word = text[self.print_len:]
                 self.tokens_cache = []
                 self.print_len = 0
-            elif len(text) >= 3 and text[-3:] == chr(65533):
+            elif len(text) >= 3 and text[-1] == chr(65533):
                 # Don't print incomplete text.
                 pass
             elif len(text) > self.print_len:

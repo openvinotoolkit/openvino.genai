@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -21,7 +21,8 @@ public:
 protected:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
-    size_t print_len = 0;
+    std::vector<int64_t> m_decoded_lengths;
+    size_t m_printed_len = 0;
 };
 
 }  // namespace genai

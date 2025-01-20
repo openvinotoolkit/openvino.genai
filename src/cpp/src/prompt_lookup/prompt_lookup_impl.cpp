@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "prompt_lookup_impl.hpp"
@@ -101,63 +101,82 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
-    std::vector<GenerationHandle> main_generations;
+    std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
         OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
-        main_generations.push_back(m_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+        generations.push_back(m_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
     }
-
-    std::vector<EncodedGenerationResult> results;
-    results.reserve(input_ids.size());
+    auto all_requests = m_pipeline->get_awaiting_requests();
 
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
-        step();
+        try {
+            step();
+        } catch (...) {
+            drop_requests(); // remove all requests from pipeline state in case of exception
+            throw;
+        }
         if (streamer_ptr) {
             // not generated tokens like several prompt phase
-            if (!main_generations.at(0).get()->can_read()) {
+            auto& generation = generations.at(0);
+            if (!generation->can_read()) {
                 continue;
             }
-            std::unordered_map<uint64_t, GenerationOutput> token = main_generations.at(0).get()->back();
+            std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
             OPENVINO_ASSERT(1 <= token.size());
             OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 continue_generation = !streamer_ptr->put(gen_token);
                 if (!continue_generation) {
+                    generation->drop();
                     break;
                 }
             }
         }
     }
-    if (streamer_ptr) {
+
+    if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
     }
 
-    for (size_t generation_idx = 0; generation_idx < main_generations.size(); ++generation_idx) {
-        const auto& generation = main_generations[generation_idx];
-        EncodedGenerationResult result;
-        result.m_request_id = 1;
-        std::vector<GenerationOutput> generation_outputs = generation->read_all();
-        std::sort(generation_outputs.begin(), generation_outputs.end(), [=] (GenerationOutput& r1, GenerationOutput& r2) {
-            return r1.score > r2.score;
-        });
+    if (!continue_generation) {
+        drop_requests();
+    } else {
+        OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
+    }
 
-        auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
-        for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-            const auto& generation_output = generation_outputs[generation_output_idx];
-            m_sd_metrics.set_generated_len(generation_idx, generation_outputs[generation_output_idx].generated_ids.size());
-            result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
-            result.m_scores.push_back(generation_output.score);
+    std::vector<EncodedGenerationResult> results;
+    results.reserve(all_requests.size());
+
+    for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
+        const auto& request = all_requests[request_id];
+        auto sampling_params = request->get_sampling_parameters();
+        const auto& sequences = request->get_finished_sequences();
+        size_t num_outputs = std::min(sampling_params.num_return_sequences, sequences.size());
+
+        EncodedGenerationResult result;
+        result.m_request_id = request_id;
+        result.m_generation_ids.resize(num_outputs);
+        result.m_scores.resize(num_outputs);
+
+        for (size_t i = 0; i < num_outputs; ++i) {
+            const auto & sequence = sequences[i];
+            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
+            const auto & generated_ids = sequence->get_generated_ids();
+
+            if (sampling_params.echo) {
+                result.m_generation_ids[i] = request->get_prompt_ids();
+            }
+            std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
+            result.m_scores[i] = score;
         }
-        result.m_status = generation->get_status();
+
+        result.m_status = generations[request_id]->get_status();
         results.push_back(std::move(result));
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
-    generate_timer.end();
-    m_sd_metrics.total_duration = generate_timer.get_duration();
-
     return results;
 }
 
@@ -165,4 +184,8 @@ SpeculativeDecodingMetrics
 ContinuousBatchingPipeline::PromptLookupImpl::get_metrics() {
     return m_sd_metrics;
 };
+
+void ContinuousBatchingPipeline::PromptLookupImpl::drop_requests() {
+    m_pipeline->drop_requests();
+}
 }

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
@@ -102,7 +102,9 @@ USE_CASES = {
         "olmo",
         "phi3",
         "starcoder",
-        "instruct-gpt"
+        "instruct-gpt",
+        "granite",
+        "granitemoe",
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

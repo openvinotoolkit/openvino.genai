@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -397,8 +397,8 @@ public:
         infer_request_guard.get().wait();
 
         return get_copied_results(
-            infer_request_guard.get().get_output_tensor(0),
-            infer_request_guard.get().get_output_tensor(1)
+            infer_request_guard.get().get_tensor("input_ids"),
+            infer_request_guard.get().get_tensor("attention_mask")
         );
     }
 
@@ -416,8 +416,8 @@ public:
             infer_request_guard.get().wait();
 
             unpadded = get_copied_results(
-                infer_request_guard.get().get_output_tensor(0),
-                infer_request_guard.get().get_output_tensor(1)
+                infer_request_guard.get().get_tensor("input_ids"),
+                infer_request_guard.get().get_tensor("attention_mask")
             );
         }
 

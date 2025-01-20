@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -117,22 +117,22 @@ public:
         }
 
         for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
-            m_key_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
-                                                         ov::Dimension(m_num_kv_heads[layer_id]),
-                                                         ov::Dimension(m_block_size),
-                                                         ov::Dimension(m_head_size)});
-
             m_value_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
                                                            ov::Dimension(m_num_kv_heads[layer_id]),
                                                            ov::Dimension(m_block_size),
                                                            ov::Dimension(m_head_size)});
 
-            if (m_device.find("GPU") != std::string::npos) {
+            if (m_device.find("GPU") == std::string::npos) {
+                m_key_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
+                                                             ov::Dimension(m_num_kv_heads[layer_id]),
+                                                             ov::Dimension(m_block_size),
+                                                             ov::Dimension(m_head_size)});
+            } else  if (m_device.find("GPU") != std::string::npos) {
                 // Update key shape, as the key's shape is different from the value's shape
                 m_key_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
-                                                     ov::Dimension(m_num_kv_heads[layer_id]),
-                                                     ov::Dimension(m_head_size),
-                                                     ov::Dimension(m_block_size)});
+                                                             ov::Dimension(m_num_kv_heads[layer_id]),
+                                                             ov::Dimension(m_head_size),
+                                                             ov::Dimension(m_block_size)});
             }
         }
     }

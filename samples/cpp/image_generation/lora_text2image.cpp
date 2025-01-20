@@ -1,9 +1,10 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "imwrite.hpp"
+#include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...]]");
@@ -27,7 +28,8 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20),
-        ov::genai::rng_seed(42));
+        ov::genai::rng_seed(42),
+        ov::genai::callback(progress_bar));
     imwrite("lora.bmp", image, true);
 
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
@@ -36,7 +38,8 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::width(512),
         ov::genai::height(896),
         ov::genai::num_inference_steps(20),
-        ov::genai::rng_seed(42));
+        ov::genai::rng_seed(42),
+        ov::genai::callback(progress_bar));
     imwrite("baseline.bmp", image, true);
 
     return EXIT_SUCCESS;

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text_callback_streamer.hpp"
@@ -33,6 +33,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     initialize_pipeline(model, scheduler_config, properties, device_config, core);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    if (m_scheduler) {
+        m_scheduler->release();
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
@@ -59,7 +65,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
-    m_cache_manager = std::make_shared<CacheManager>(device_config, infer_request, core);
+    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(device_config, infer_request, core);
 
     SchedulerConfig updated_config = scheduler_config;
     // update KV blocks number in scheduler config
@@ -73,8 +79,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
     }
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), m_cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
-
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     // model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
@@ -150,10 +155,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
 
-        static ManualTimer copy_blocks_timer("scheduling");
-        copy_blocks_timer.start();
-        m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
-        copy_blocks_timer.end();
+        m_batch_size = 0; // total number of running sequences
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
+            m_batch_size += sequence_group->num_running_seqs();
+        }
     }
 
     // if no tokens were scheduled, we are out of memory => free all requests and return
@@ -168,7 +175,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         return;
     }
-
     ov::Tensor logits;
     {
         static ManualTimer timer("forward");
@@ -255,6 +261,11 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const StreamerVariant& streamer) {
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+    
+    auto start_time =  std::chrono::steady_clock::now();
+    PerfMetrics perf_metrics;
+    auto& raw_perf_counters = perf_metrics.raw_metrics;
+    raw_perf_counters.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -275,18 +286,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
     }, streamer);
 
-    auto drop_requests = [&] () {
-        for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
-            for (const auto& sequence: request->get_sequences()) {
-                if (m_scheduler->has_block_table(sequence->get_id())) {
-                    m_scheduler->free_sequence(sequence->get_id());
-                }
-            }
-            m_sampler->clear_request_info(request->get_request_id());
-        }
-        m_requests.clear();
-    };
-
     OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
@@ -301,13 +300,22 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         try {
+            const auto infer_start = std::chrono::steady_clock::now();
             step();
+            if (m_batch_size > 0) {
+                const auto infer_end = std::chrono::steady_clock::now();
+                const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+                raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+                raw_perf_counters.m_new_token_times.emplace_back(infer_end);
+                raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
+            }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
             throw;
         }
 
-        auto & generation = generations.at(0);
+        GenerationHandle & generation = generations.at(0);
         if (streamer_ptr && generation->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
             for (const auto& gen_token : token.begin()->second.generated_ids) {
@@ -356,6 +364,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         }
 
         result.m_status = generations[request_id]->get_status();
+
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        perf_metrics.raw_metrics.generate_durations.clear();
+        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        perf_metrics.num_input_tokens = request->get_prompt_len();
+        perf_metrics.evaluate_statistics(start_time);
+
+        result.perf_metrics = perf_metrics;
         results.push_back(std::move(result));
     }
 
@@ -399,6 +415,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_us
 
 float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_average_cache_usage() const {
     return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {
+    for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
+        for (const auto& sequence: request->get_sequences()) {
+            if (m_scheduler->has_block_table(sequence->get_id())) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+        }
+        m_sampler->clear_request_info(request->get_request_id());
+    }
+    m_requests.clear();
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {

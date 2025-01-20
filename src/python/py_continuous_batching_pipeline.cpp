@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -80,6 +80,8 @@ auto generation_result_docstring = R"(
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
         DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
         DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+    perf_metrics:
+                        Performance metrics for each generation result.
 
 )";
 
@@ -138,6 +140,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             })
         .def_readwrite("m_scores", &GenerationResult::m_scores)
         .def_readwrite("m_status", &GenerationResult::m_status)
+        .def_readonly("perf_metrics", &GenerationResult::perf_metrics)
         .def("__repr__",
             [](const GenerationResult &r) -> py::str {
                 std::stringstream stream;
@@ -149,12 +152,13 @@ void init_continuous_batching_pipeline(py::module_& m) {
         [](GenerationResult &r) -> py::typing::List<py::str> {
             return pyutils::handle_utf8(r.m_generation_ids);
         });
-    
+
     py::class_<EncodedGenerationResult>(m, "EncodedGenerationResult", generation_result_docstring)
         .def(py::init<>())
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
-        .def_readwrite("m_scores", &EncodedGenerationResult::m_scores);
+        .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
+        .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics);
 
     py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
         .value("NONE", ov::genai::GenerationFinishReason::NONE)
@@ -223,15 +227,14 @@ void init_continuous_batching_pipeline(py::module_& m) {
         py::arg("properties") = ov::AnyMap({}),
         py::arg("tokenizer_properties") = ov::AnyMap({}))
 
-        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::properties_to_any_map(plugin_config));
+            return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"),
         py::arg("tokenizer"),
         py::arg("scheduler_config"),
-        py::arg("device"),
-        py::arg("properties") = ov::AnyMap({}))
+        py::arg("device"))
 
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)

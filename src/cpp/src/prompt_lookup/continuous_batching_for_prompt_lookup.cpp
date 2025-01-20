@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching_for_prompt_lookup.hpp"
@@ -81,6 +81,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
         }
         request->set_num_validated_tokens(max_validation_len);
     }
+}
+
+bool ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::is_requests_empty() {
+    return m_requests.empty();
+}
+
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_awaiting_requests() {
+    return m_awaiting_requests;
 }
 
 }

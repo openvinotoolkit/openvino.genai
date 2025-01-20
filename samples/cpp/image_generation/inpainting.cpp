@@ -1,10 +1,11 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
 
-#include "load_image.hpp"
 #include "imwrite.hpp"
+#include "load_image.hpp"
+#include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 5, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' <IMAGE> <MASK_IMAGE>");
@@ -16,7 +17,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor mask_image = utils::load_image(mask_image_path);
 
     ov::genai::InpaintingPipeline pipe(models_path, device);
-    ov::Tensor generated_image = pipe.generate(prompt, image, mask_image);
+    ov::Tensor generated_image = pipe.generate(prompt, image, mask_image, ov::genai::callback(progress_bar));
 
     // writes `num_images_per_prompt` images by pattern name
     imwrite("image_%d.bmp", generated_image, true);

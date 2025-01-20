@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -54,9 +54,18 @@ FetchContent_MakeAvailable(safetensors.h)
 
 ov_genai_build_jinja2cpp()
 
+# generate version files
+
+configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.hpp.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp" @ONLY)
+
+configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/version.cpp" @ONLY)
+
 # Library
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 set(TARGET_NAME openvino_genai)
 
@@ -68,7 +77,9 @@ if(TARGET openvino_tokenizers)
 endif()
 
 target_include_directories(${TARGET_NAME}
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+           "$<INSTALL_INTERFACE:runtime/include>"
+           "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
@@ -101,7 +112,7 @@ endif()
 
 if(OpenVINODeveloperPackage_FOUND)
     # must be called after all target_link_libraries
-    # ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
+    ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
 
     ov_ncc_naming_style(FOR_TARGET ${TARGET_NAME}
                         SOURCE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -145,6 +156,9 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
         DESTINATION runtime/include COMPONENT core_genai_dev)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp
+        DESTINATION runtime/include/openvino/genai COMPONENT core_genai_dev)
+
 install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake
         NAMESPACE openvino:: DESTINATION runtime/cmake
         COMPONENT core_genai_dev)

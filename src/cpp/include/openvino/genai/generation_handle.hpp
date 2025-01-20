@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -8,6 +8,7 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov::genai {
 enum class GenerationStatus {
@@ -30,6 +31,9 @@ struct EncodedGenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
+    
+    // PerfMetrics but with empty tokenization/detokenization durations.
+    PerfMetrics perf_metrics;
 };
 
 enum class GenerationFinishReason {
@@ -50,6 +54,9 @@ struct GenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
+
+    // PerfMetrics
+    PerfMetrics perf_metrics;
 };
 
 struct GenerationOutput {

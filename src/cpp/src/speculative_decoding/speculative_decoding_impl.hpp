@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -41,6 +41,10 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
+
+    void drop_requests();
+    bool is_requests_empty();
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     
 public:
     SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
