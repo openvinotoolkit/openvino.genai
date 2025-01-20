@@ -705,9 +705,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     bool do_import = (!blob_path.empty() && !export_blob);
 
     if (do_import) {
-        if (blob_path.empty()) {
-            OPENVINO_THROW("Please provide a path to blob in BLOB_PATH: " + blob_path);
-        }
         if (!std::filesystem::exists(blob_path)) {
             OPENVINO_THROW("Blob file is not found at: " + blob_path);
         }
