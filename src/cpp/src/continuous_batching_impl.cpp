@@ -327,8 +327,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
                     if (streamer_ptr->put(gen_token)) {
                         generation->drop();
-                        drop_requests();
-                        has_active_requests = false;
                         break;
                     }
                 }

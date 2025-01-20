@@ -133,8 +133,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
                     if (streamer_ptr->put(gen_token)) {
                         generation->drop();
-                        drop_requests();
-                        has_active_requests = false;
                         break;
                     }
                 }
@@ -205,7 +203,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
