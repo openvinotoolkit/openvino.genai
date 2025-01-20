@@ -76,7 +76,7 @@ SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32,
 @pytest.mark.parametrize("test_struct", [
     # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
     CacheOptTestStruct(test_id="prompts_longer_than_eviction_arena",
-                       prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=1000, use_cache_eviction=True,
+                       prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=500, use_cache_eviction=True,
                        cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
                        similarity_threshold=0.8,
                        max_cache_usage_optimization_ratio=2.0,
@@ -84,7 +84,7 @@ SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32,
 
     # prompts + generation length are shorter than the eviction arena, no eviction expected
     CacheOptTestStruct(test_id="prompts_and_gen_shorter_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=1000, use_cache_eviction=True,
+                       prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=500, use_cache_eviction=True,
                        cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
                        similarity_threshold=0.98,
                        max_cache_usage_optimization_ratio=0.95,  # no improvement expected
@@ -92,7 +92,7 @@ SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32,
 
     # short prompts, long generation - eviction expected
     CacheOptTestStruct(test_id="gen_longer_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=1000, use_cache_eviction=True,
+                       prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=500, use_cache_eviction=True,
                        cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
                        similarity_threshold=0.94,
                        max_cache_usage_optimization_ratio=1.4,
