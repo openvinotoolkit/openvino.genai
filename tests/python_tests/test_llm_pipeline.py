@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_genai as ov_genai
@@ -363,7 +363,7 @@ def test_unicode_pybind_decoding_one_string_streamer():
     ov_pipe = read_model((model_id, path))[4]
     res_str = []
     ov_pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
-    assert '�' == res_str[-1]
+    assert '�' == ''.join(res_str)[-1]
 
 #
 # Perf metrics

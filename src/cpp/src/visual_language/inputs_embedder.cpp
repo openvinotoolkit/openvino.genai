@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/visual_language/perf_metrics.hpp"
@@ -221,6 +221,10 @@ protected:
                 if (m_last_disappeared_token.has_value())
                     encoded_input_ids = ov::genai::utils::push_front_inputs(encoded_input_ids, *m_last_disappeared_token);
             }
+<<<<<<< HEAD
+=======
+            m_templated_chat_history = std::move(new_templated_chat_history);
+>>>>>>> phi-3.5-vision-instruct
             m_tokenized_history.clear();
             std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
             return encoded_input_ids;

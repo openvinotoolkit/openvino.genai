@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text_callback_streamer.hpp"
@@ -33,6 +33,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     initialize_pipeline(model, scheduler_config, properties, device_config, core);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    if (m_scheduler) {
+        m_scheduler->release();
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
@@ -61,7 +67,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // setup KV caches
-    m_cache_manager = std::make_shared<CacheManager>(device_config, infer_request, core);
+    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(device_config, infer_request, core);
 
     SchedulerConfig updated_config = scheduler_config;
     // update KV blocks number in scheduler config
@@ -75,8 +81,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
     }
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), m_cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
-
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     // model runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     m_model_runner = std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), device_config.get_num_layers(), is_use_cache_eviction);
@@ -158,11 +163,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
             m_batch_size += sequence_group->num_running_seqs();
         }
-
-        static ManualTimer copy_blocks_timer("scheduling");
-        copy_blocks_timer.start();
-        m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
-        copy_blocks_timer.end();
     }
 
     // if no tokens were scheduled, we are out of memory => free all requests and return

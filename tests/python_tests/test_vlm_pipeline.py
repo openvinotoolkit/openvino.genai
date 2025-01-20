@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_tokenizers
@@ -50,6 +50,8 @@ image_links_for_testing = [
 ])
 def test_vlm_pipeline(model_id, cache):
     def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
         return False
 
     models_path = get_ov_model(model_id, cache)
@@ -63,10 +65,14 @@ def test_vlm_pipeline(model_id, cache):
         ov_pipe = VLMPipeline(models_path, "CPU")
         ov_pipe.start_chat()
 
-        ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        result_from_streamer = []
+        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        assert res.texts[0] == ''.join(result_from_streamer)
 
         for prompt in prompts[1:]:
-            ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+            result_from_streamer = []
+            res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+            assert res.texts[0] == ''.join(result_from_streamer)
 
         ov_pipe.finish_chat()
 

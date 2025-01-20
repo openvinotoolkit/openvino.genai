@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -7,10 +7,10 @@ import pytest
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -325,19 +325,50 @@ def get_default_properties():
     }
 
 
+class StreamerWithResults:
+    # Return a streamer which accumulates results in order to compare with results returned from generate.
+    results: List[str] = []
+    def __init__(self):
+        self.results = []
+
+    def accumulate(self, subword) -> bool:
+        self.results.append(subword)
+        return False
+    
+    def get_results(self) -> List[GenerationResult]:
+        streaming_result = GenerationResult()
+        streaming_result.m_generation_ids = [''.join(self.results)]
+        return [streaming_result]
+    
+    def reset(self):
+        self.results = []
+
+
+
 def run_llm_pipeline(
     models_path : Path,
     prompts: List[str],
     generation_config : GenerationConfig,
-    use_cb : bool = False
+    use_cb : bool = False,
+    streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
-
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
+    
+    if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
+        # We can use streamer only if we have a single prompt and not beam search.
+        streamer = StreamerWithResults()
+    if isinstance(streamer, StreamerWithResults):
+        # Clear the accumulated strings to avoid side effects
+        streamer.reset()
 
-    generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config)
+    generate_outputs : DecodedResults = ov_pipe.generate(
+        inputs=prompts, 
+        generation_config=generation_config, 
+        streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
+    )
 
     index = 0
     generation_results = []
@@ -355,6 +386,9 @@ def run_llm_pipeline(
 
     del ov_pipe
     shutil.rmtree(models_path)
+    
+    if isinstance(streamer, StreamerWithResults):
+        compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
     return generation_results
 
@@ -410,9 +444,14 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     serialize(tokenizer, models_path / "openvino_tokenizer.xml")
     serialize(detokenizer, models_path / "openvino_detokenizer.xml")
+ 
 
-
-def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_config: GenerationConfig | dict, tmp_path: Path, use_cb : bool = False):
+def run_llm_pipeline_with_ref(model_id: str, 
+                              prompts: List[str], 
+                              generation_config: GenerationConfig | dict, 
+                              tmp_path: Path, 
+                              use_cb : bool = False,
+                              streamer: StreamerWithResults | Callable | StreamerBase = None):
     models_path : Path = tmp_path / model_id
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
@@ -421,7 +460,7 @@ def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_conf
 
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb)
+    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
