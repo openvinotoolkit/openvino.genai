@@ -29,6 +29,8 @@ bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
 }
 
 void ContinuousBatchingPipeline::PromptLookupImpl::step() {
+    auto& raw_perf_counters = m_perf_metrics.raw_metrics;
+
     ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
     candidates_timer.start();
     m_pipeline->generate_candidates();
@@ -63,6 +65,15 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         m_sd_metrics.update_draft_accepted_tokens(request_id, num_matches);
     }
 
+    // update perf metrics
+    if (m_pipeline->get_scheduled_sequences_cnt() > 0) {
+        auto infer_duration = main_timer.get_duration_microsec();
+        raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
+        raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
+        raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
+        raw_perf_counters.m_batch_sizes.emplace_back(infer_duration);
+    }
+
     if (generated_len_after.empty() && 0) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
@@ -73,6 +84,9 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer) {
+    m_perf_metrics = PerfMetrics();
+    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
 
@@ -173,6 +187,13 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         }
 
         result.m_status = generations[request_id]->get_status();
+
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        m_perf_metrics.raw_metrics.generate_durations.clear();
+        m_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
+        m_perf_metrics.num_input_tokens = request->get_prompt_len();
+        m_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
+
         results.push_back(std::move(result));
     }
 

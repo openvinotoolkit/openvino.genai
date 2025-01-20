@@ -37,6 +37,8 @@ public:
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 
+    size_t get_scheduled_sequences_cnt();
+
     using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);

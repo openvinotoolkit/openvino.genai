@@ -292,6 +292,10 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingFo
     return m_awaiting_requests;
 }
 
+size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_scheduled_sequences_cnt() {
+    return m_batch_size;
+}
+
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_awaiting_requests(bool is_pause_request) {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
