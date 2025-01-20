@@ -101,7 +101,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
-                return sg->has_finished() || sg->out_of_memory() || sg->handle_dropped();
+                return sg->has_finished() || sg->handle_dropped();
             });
         active_sequence_groups.erase(removed_it, active_sequence_groups.end());
     };
@@ -152,7 +152,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
-    free_non_running_requests();
+    free_non_running_requests(); // handle sampler output
 
     // "Generation" phase
 
@@ -239,7 +239,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         raw_perf_counters.m_batch_sizes.emplace_back(current_batch_size);
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
-        free_non_running_requests();
+        free_non_running_requests(); // handle sampler output
     }
 
     stream_generated_tokens();
