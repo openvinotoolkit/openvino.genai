@@ -188,7 +188,7 @@ def analyze_args(args):
 def get_use_case(model_name_or_path):
     config_file = Path(model_name_or_path) / "config.json"
     config = None
-    if config_file.exist():
+    if config_file.exists():
         config = json.loads(config_file.read_text())
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
