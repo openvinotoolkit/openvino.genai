@@ -20,7 +20,7 @@ from diffusers import (
 from diffusers import UNet2DConditionModel, AutoencoderTiny, LCMScheduler
 from nncf.torch.model_creation import is_wrapped_model
 from openvino import Type as OVType, PartialShape, save_model, convert_model
-from openvino.runtime import Core, get_version
+from openvino import Core, get_version
 from optimum.exporters import TasksManager
 from optimum.utils import DEFAULT_DUMMY_SHAPES
 from optimum.intel.openvino.configuration import OVConfig
