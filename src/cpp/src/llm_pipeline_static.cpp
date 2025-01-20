@@ -34,6 +34,7 @@ namespace {
 namespace opp = ov::pass::pattern;
 class TransposeValueTensors : public ov::pass::MatcherPass {
 public:
+    OPENVINO_MATCHER_PASS_RTTI("TransposeValueTensors");
     struct Context {
         std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
         std::vector<std::shared_ptr<ov::opset13::Parameter>> old_params;
@@ -95,7 +96,7 @@ public:
 
 class ScaledDotProductAttentionDecomposition : public ov::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("ScaledDotProductAttentionDecomposition", "0");
+    OPENVINO_MATCHER_PASS_RTTI("ScaledDotProductAttentionDecomposition");
     ScaledDotProductAttentionDecomposition() {
         auto pattern_node = ov::pass::pattern::wrap_type<ov::op::v13::ScaledDotProductAttention>();
 
