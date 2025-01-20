@@ -32,6 +32,10 @@ public:
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 
+    size_t get_scheduled_sequences_cnt() {
+        return m_batch_size;
+    }
+
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
 protected:
