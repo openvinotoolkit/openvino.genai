@@ -38,7 +38,7 @@ public:
     }
 
     bool can_read() {
-        return !m_output_queue.empty() && !m_output_queue.full();
+        return !m_output_queue.empty();
     }
 
     void set_generation_status(GenerationStatus status) {

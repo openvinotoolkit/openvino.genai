@@ -13,7 +13,6 @@ class SynchronizedQueue
     std::queue<T> m_queue;
     std::mutex m_mutex;
     std::condition_variable m_cv;
-    size_t m_taken_element_cnt = 0;
 
 public:
     SynchronizedQueue() = default;
@@ -24,7 +23,6 @@ public:
     T back() {
         std::unique_lock<std::mutex> lock(m_mutex);
         m_cv.wait(lock, [this]{return !m_queue.empty(); });
-        m_taken_element_cnt = m_queue.size();
         return m_queue.back();
     }
 
@@ -45,10 +43,5 @@ public:
     bool empty() {
         std::unique_lock<std::mutex> lock(m_mutex);
         return m_queue.empty();
-    }
-
-    bool full() {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        return m_taken_element_cnt == m_queue.size();
     }
 };

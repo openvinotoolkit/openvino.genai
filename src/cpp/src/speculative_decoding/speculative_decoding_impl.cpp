@@ -247,15 +247,12 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     // define stream token lambda to use in `t_stream`
     auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-        if (streamer_ptr == nullptr) {
-            return;
-        }
         while (has_active_requests || generation->can_read()) {
             // waiting for any tokens or request finishing
             cv.wait(lock, [&generation, &has_active_requests]{ return generation->can_read() || !has_active_requests; });
 
             if (generation->can_read()) {
-                std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
+                std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
                     if (streamer_ptr->put(gen_token)) {
                         generation->drop();
@@ -266,31 +263,32 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         };
     };
 
-    // to define streaming thread
-    std::thread t_stream([&stream_tokens] {
-        stream_tokens();
-    });
+    std::shared_ptr<std::thread> t_stream_ptr = nullptr;
+    if (streamer_ptr) {
+        t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
+            stream_tokens();
+        }));
+    }
 
-
-    bool is_throw_exception = false;
+    std::exception_ptr thrown_exception = nullptr;
     while (has_active_requests) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            is_throw_exception = true;
+            thrown_exception = std::current_exception();
         }
         has_active_requests = has_non_finished_requests();
         cv.notify_one();
-        if (is_throw_exception) {
-            throw;
+        if (thrown_exception) {
+            throw thrown_exception;
         }
     }
 
     // waiting for competion of streaming
-    if (t_stream.joinable()) {
-        t_stream.join();
+    if (t_stream_ptr && t_stream_ptr->joinable()) {
+        t_stream_ptr->join();
     }
 
     if (streamer_ptr) { // push streamer's cache
