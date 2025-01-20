@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: ''
+  OV_BRANCH: 'releases/2025/0'
   OV_TARBALL: 'https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.0.0rc1/w_openvino_toolkit_windows_2025.0.0.dev20250116_x86_64.zip'
 
 jobs:
@@ -59,7 +59,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest-16-cores
     env:
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
@@ -192,7 +192,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -257,7 +257,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -327,7 +327,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest-16-cores
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -388,7 +388,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
