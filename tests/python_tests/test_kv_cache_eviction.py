@@ -144,6 +144,13 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
     print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
 
+    del model_cb_opt
+    del model_cb_noopt
+    del evaluator
+    del data_dict
+    import gc
+    gc.collect()  # without gc.collect() each case leaks 300 MB of RAM
+
     is_similar = similarity_metric > test_struct.similarity_threshold
 
     if apply_rotation and not is_similar:
@@ -153,8 +160,6 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
 
-    del model_cb_opt
-    del model_cb_noopt
 
 
 def get_greedy_seq_len_300() -> GenerationConfig:
