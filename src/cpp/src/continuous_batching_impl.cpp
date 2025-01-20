@@ -305,7 +305,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
 
-    std::atomic<bool> has_active_request = has_non_finished_requests();
+    std::atomic<bool> has_active_requests = has_non_finished_requests();
     GenerationHandle& generation = generations.at(0);
 
     // create variables to make optimal thread-safe streaming
@@ -314,16 +314,21 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::condition_variable cv;
 
     // define stream token lambda to use in `t_stream`
-    auto stream_tokens = [&generation, &streamer_ptr, &has_active_request, &cv, &lock]() {
-        while (!generation->is_dropped() && (has_active_request || streamer_ptr && generation->can_read())) {
+    auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
+        if (streamer_ptr == nullptr) {
+            return;
+        }
+        while (has_active_requests || generation->can_read()) {
             // waiting for any tokens or request finishing
-            cv.wait(lock, [&generation, &has_active_request]{ return generation->can_read() || !has_active_request; });
-            if (streamer_ptr && generation->can_read()) {
+            cv.wait(lock, [&generation, &has_active_requests]{ return generation->can_read() || !has_active_requests; });
+
+            if (generation->can_read()) {
                 std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
                 for (const auto& gen_token : token.begin()->second.generated_ids) {
                     if (streamer_ptr->put(gen_token)) {
                         generation->drop();
-                        cv.notify_all();
+                        drop_requests();
+                        has_active_requests = false;
                         break;
                     }
                 }
@@ -336,7 +341,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         stream_tokens();
     });
 
-    while (!generation->is_dropped() && has_active_request) {
+    bool is_throw_exception = false;
+    while (has_active_requests) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
             step();
@@ -350,12 +356,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            has_active_request = false;
-            cv.notify_all();
+            is_throw_exception = true;
+        }
+        has_active_requests = has_non_finished_requests();
+        cv.notify_one();
+        if (is_throw_exception) {
             throw;
         }
-        has_active_request = has_non_finished_requests();
-        cv.notify_all();
     }
 
     if (t_stream.joinable()) {
@@ -366,11 +373,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         streamer_ptr->end();
     }
 
-    if (generation->is_dropped()) {
-        drop_requests();
-    } else {
-        OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
-    }
+    OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());
@@ -412,6 +415,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     OPENVINO_ASSERT(results.size() == input_ids.size());
 
     generate_timer.end();
+    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
