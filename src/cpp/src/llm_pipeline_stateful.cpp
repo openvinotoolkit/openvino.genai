@@ -87,8 +87,14 @@ DecodedResults StatefulLLMPipeline::generate(
     TokenizedInputs encoded_input;
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
-        encoded_input = m_tokenizer.encode(*input_vector);
+        std::vector<std::string> templated_input_vector;
+        for (auto& input : *input_vector) {
+            ChatHistory history({{{"role", "user"}, {"content", input}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            templated_input_vector.push_back(templated_prompt);
+        }
+        encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
     } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
         std::string& prompt = *input_prompt;
 
