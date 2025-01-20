@@ -373,6 +373,17 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
         </ul>
       </td>
     </tr>
+    <tr>
+      <td><code>Qwen2-VL</code></td>
+      <td>Qwen2-VL</td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct"><code>Qwen/Qwen2-VL-2B-Instruct</code></a></li>
+          <li><a href="https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct"><code>Qwen/Qwen2-VL-7B-Instruct</code></a></li>
+        </ul>
+      </td>
+    </tr>
   </tbody>
 </table>
 

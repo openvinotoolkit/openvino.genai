@@ -162,5 +162,9 @@ private:
     EncodedImage encode_phi3_v(
         const ov::Tensor& image, const ProcessorConfig& config
     );
+
+    EncodedImage encode_qwen2vl(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
 };
 }

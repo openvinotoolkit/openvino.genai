@@ -129,7 +129,7 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
 
     ov_generation_config = GenerationConfig(**generation_config_kwargs)
     hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)

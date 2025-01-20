@@ -6,7 +6,7 @@ import sys
 import argparse
 import logging as log
 import llm_bench_utils.model_utils
-from openvino.runtime import get_version
+from openvino import get_version
 import torch
 import traceback
 from llm_bench_utils.memory_profile import MemConsumption
@@ -147,9 +147,9 @@ def get_argprser():
     parser.add_argument("--draft_device", required=False, default=None, help="Inference device for Speculative decoding of draft model")
     parser.add_argument("--draft_cb_config", required=False, default=None,
                         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
-    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding")
+    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding", type=int)
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Speculative decoding")
+                        help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
