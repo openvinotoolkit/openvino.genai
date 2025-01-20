@@ -37,12 +37,12 @@ def get_param_from_file(args, input_key):
             if args["use_case"] != "vlm":
                 raise RuntimeError("Multiple sources for benchmarking supported only for Visual Language Models")
             data_dict = {}
-            if args["media"] is None:
+            if args["media"] is None and args["image"] is None:
                 log.warn("Input image is not provided. Only text generation part will be evaluated")
             else:
-                data_dict["media"] = args["media"]
+                data_dict["media"] = args["media"] if args["media"] is not None else args["image"]
             if args["prompt"] is None:
-                data_dict["prompt"] = "What is OpenVINO?" if args["media"] is None else "Describe image"
+                data_dict["prompt"] = "What is OpenVINO?" if data_dict["media"] is None else "Describe image"
             else:
                 data_dict["prompt"] = args["prompt"]
             data_list.append(data_dict)
@@ -113,6 +113,7 @@ def analyze_args(args):
     model_args['torch_compile_options'] = args.torch_compile_options
     model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['media'] = args.media
+    model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
 
     optimum = args.optimum
 
