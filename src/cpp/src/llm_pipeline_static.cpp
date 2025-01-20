@@ -720,6 +720,19 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
         ov::AnyMap properties = config;
         auto compiled = setupAndCompileModel(model, model_desc, properties);
+        // Also export compiled model if required
+        const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+        if (export_blob) {
+            auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+            if (blob_path.empty()) {
+                blob_path = (models_path / "openvino_model.blob").string();
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled->export_model(fout);
+        }
         m_request = compiled->create_infer_request();
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
