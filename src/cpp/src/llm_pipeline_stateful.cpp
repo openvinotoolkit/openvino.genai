@@ -41,7 +41,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     utils::apply_slice_before_matmul_transformation(model);
     m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
-    ov::CompiledModel compiled_model;
     if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
@@ -398,5 +397,11 @@ void StatefulLLMPipeline::finish_chat() {
         m_tokenized_chat_history.clear();
     }
 }
+
+StatefulLLMPipeline::~StatefulLLMPipeline(){
+    std::cout << "~StatefulLLMPipeline() called!\n";
+    std::cout << "compiled_model.release_memory() called!\n";
+    compiled_model.release_memory();
+};
 
 } // namespace ov::genai

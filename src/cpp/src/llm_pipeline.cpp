@@ -83,6 +83,10 @@ std::pair<std::string, Any> draft_model(
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
+void clear_core_device(const std::string &device_name){
+    std::cout << "utils::singleton_core().unload_plugin(" << device_name << ") called!\n";
+    utils::singleton_core().unload_plugin(device_name);
+};
 // Public LLMPipeline
 
 ov::genai::LLMPipeline::LLMPipeline(

@@ -288,6 +288,8 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
     const std::string& device = {},
     const ov::AnyMap& properties = {});
 
+OPENVINO_GENAI_EXPORTS void clear_core_device(const std::string &device_name);
+
 template <typename... Properties,
           typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
 inline std::pair<std::string, Any> draft_model(
