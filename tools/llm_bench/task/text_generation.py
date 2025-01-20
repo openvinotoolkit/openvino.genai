@@ -209,7 +209,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
 
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
-        log.warning("Enabled input prompt permutations. It means that generation results can be vary on different steps. If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behaviour")
+        log.warning(
+            "Enabled input prompt permutations. It means that generation results can be vary on different steps. "
+            "If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behavior"
+        )
         from openvino_genai import TokenizedInputs
         import openvino as ov
 
@@ -217,7 +220,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         input_ids[:, 0] = num + 1
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
-        
     num_input_tokens = input_data.input_ids.shape[1]
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
@@ -379,7 +381,10 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.do_sample = False
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
-        log.warning("Enabled input prompt permutations. It means that generation results can be vary on different steps. If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behaviour")
+        log.warning(
+            "Enabled input prompt permutations. It means that generation results can be vary on different steps. "
+            "If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behavior"
+        )
         from openvino_genai import TokenizedInputs
         import openvino as ov
 
@@ -460,7 +465,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
+    if num > 0 and not enable_prompt_permutations:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "

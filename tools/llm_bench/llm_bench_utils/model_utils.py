@@ -37,10 +37,10 @@ def get_param_from_file(args, input_key):
             if args["use_case"] != "vlm":
                 raise RuntimeError("Multiple sources for benchmarking supported only for Visual Language Models")
             data_dict = {}
-            if args["media"] is None and args["image"] is None:
+            if args["media"] is None and args["images"] is None:
                 log.warn("Input image is not provided. Only text generation part will be evaluated")
             else:
-                data_dict["media"] = args["media"] if args["media"] is not None else args["image"]
+                data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
             if args["prompt"] is None:
                 data_dict["prompt"] = "What is OpenVINO?" if data_dict["media"] is None else "Describe image"
             else:
