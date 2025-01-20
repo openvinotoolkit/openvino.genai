@@ -34,6 +34,7 @@ namespace {
 namespace opp = ov::pass::pattern;
 class TransposeValueTensors : public ov::pass::MatcherPass {
 public:
+    OPENVINO_MATCHER_PASS_RTTI("TransposeValueTensors");
     struct Context {
         std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
         std::vector<std::shared_ptr<ov::opset13::Parameter>> old_params;
@@ -95,7 +96,7 @@ public:
 
 class ScaledDotProductAttentionDecomposition : public ov::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("ScaledDotProductAttentionDecomposition", "0");
+    OPENVINO_MATCHER_PASS_RTTI("ScaledDotProductAttentionDecomposition");
     ScaledDotProductAttentionDecomposition() {
         auto pattern_node = ov::pass::pattern::wrap_type<ov::op::v13::ScaledDotProductAttention>();
 
@@ -1507,7 +1508,7 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
                            const std::string& device,
                            const ov::AnyMap& config) {
     auto properties = config;
-    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "STATIC_PIPELINE", std::string("STATELESS")));
+    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties, "STATIC_PIPELINE", std::string("STATEFUL")));
     if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
@@ -1528,7 +1529,7 @@ std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::share
                                                                 const ov::AnyMap& properties,
                                                                 const ov::genai::GenerationConfig& generation_config) {
     auto properties_copy = properties;
-    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATELESS")));
+    const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATEFUL")));
     if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
                                                                             model_desc,
