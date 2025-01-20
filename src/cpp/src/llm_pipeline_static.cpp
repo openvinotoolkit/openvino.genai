@@ -731,10 +731,11 @@ StatefulLLMPipeline::StatefulLLMPipeline(
                 blob_path = (models_path / "openvino_model.blob").string();
             }
             // Check the path is full
-            if (blob_path.size() < 5) {
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
                 OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
             }
-            if (strncmp(".blob", &blob_path[blob_path.size() - 5], 5) != 0) {
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
                 OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
             }
             std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
