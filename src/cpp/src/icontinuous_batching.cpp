@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "icontinuous_batching.hpp"
@@ -62,6 +62,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     }
 
     std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
+
     std::vector<GenerationResult> decoded;
     decoded.reserve(encoded.size());
     for (size_t i = 0; i < encoded.size(); ++i) {

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -48,11 +48,6 @@ struct PipelineMetrics {
     * Running average of the KV cache usage during the lifetime of the pipeline, with max window size of 1000 steps
     */
     float avg_cache_usage = 0.0;
-
-    /**
-     * Number of tokens scheduled for processing at the previous step of the pipeline.
-     */
-    size_t total_num_scheduled_tokens;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {

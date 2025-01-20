@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/op/constant.hpp"
@@ -34,7 +34,7 @@ namespace genai {
 **/
 class MakeCombineSegmentsSatateful : public ov::pass::ModelPass {
 public:
-    OPENVINO_RTTI("MakeCombineSegmentsSatateful", "0");
+    OPENVINO_MODEL_PASS_RTTI("MakeCombineSegmentsSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
@@ -70,7 +70,7 @@ public:
 **/
 class MakeVocabDecoderSatateful : public ov::pass::ModelPass {
 public:
-    OPENVINO_RTTI("MakeVocabDecoderSatateful", "0");
+    OPENVINO_MODEL_PASS_RTTI("MakeVocabDecoderSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 

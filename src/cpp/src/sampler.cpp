@@ -129,7 +129,7 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                 }
 
                 // find token cnt to be removed from sequence by decoding token by token
-                std::string decoded_partially_string = "";
+                std::string decoded_partially_string;
                 for (size_t i = 0; i < buffer.size(); ++i) {
                     decoded_partially_string += tokenizer.decode(TokenIds{buffer[i]});
                     if (decoded_partially_string.find(decoded_buffer) != std::string::npos) {

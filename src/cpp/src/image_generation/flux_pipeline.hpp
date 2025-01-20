@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -252,7 +252,7 @@ public:
         m_vae->compile(device, properties);
         m_transformer->compile(device, properties);
     }
-    
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
