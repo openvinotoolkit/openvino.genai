@@ -940,8 +940,8 @@ EncodedResults StatefulLLMPipeline::generate(
 
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
@@ -1412,8 +1412,8 @@ EncodedResults StatelessLLMPipeline::generate(
     //       Retrive only useful logits and work only with them here.
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, padded_input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(m_kvcache_desc.max_prompt_size - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(m_kvcache_desc.max_prompt_size);
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
