@@ -30,7 +30,6 @@ class OPENVINO_GENAI_EXPORTS Adapter {
     friend AdapterController;
     friend AdapterControllerImpl;
     friend bool operator== (const Adapter& a, const Adapter& b);
-    friend bool operator< (const Adapter& a, const Adapter& b);
 
     friend Adapter flux_adapter_normalization(const Adapter& adapter);
     friend Adapter diffusers_adapter_normalization(const Adapter& adapter);
@@ -44,12 +43,6 @@ public:
         return bool(m_pimpl);
     }
 };
-
-Adapter flux_adapter_normalization(const Adapter& adapter);
-Adapter diffusers_adapter_normalization(const Adapter& adapter);
-
-// bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
-// bool OPENVINO_GENAI_EXPORTS operator< (const Adapter& a, const Adapter& b);
 
 
 struct OPENVINO_GENAI_EXPORTS AdapterConfig {

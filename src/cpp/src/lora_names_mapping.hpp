@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <set>
 
+#include <openvino/genai/lora_adapter.hpp>
+
 #include "lora_common.hpp"
 
 namespace ov {
@@ -34,5 +36,10 @@ utils::LoRATensors flux_kohya_lora_preprocessing(const utils::LoRATensors& tenso
 utils::LoRATensors flux_xlabs_lora_preprocessing(const utils::LoRATensors& tensors);
 
 }
+
+Adapter flux_adapter_normalization(const Adapter& adapter);
+
+Adapter diffusers_adapter_normalization(const Adapter& adapter);
+
 }
 }

@@ -9,6 +9,7 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "lora_helper.hpp"
+#include "lora_names_mapping.hpp"
 
 #include "json_utils.hpp"
 namespace {

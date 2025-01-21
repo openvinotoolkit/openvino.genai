@@ -896,12 +896,6 @@ private:
 };
 
 
-// struct FluxKohyaDerivation {
-//     static LoRATensors operator(const LoRATensors& tensors) {
-//         return flux_kohya_lora_preprocessing()
-//     }
-// };
-
 Adapter diffusers_adapter_normalization(const Adapter& adapter) {
     auto origin = adapter.m_pimpl;
     using DiffusersDerivedAdapter = DerivedAdapterImpl<decltype(&diffusers_normalization)>;
@@ -932,11 +926,6 @@ Adapter::Adapter(const std::filesystem::path& path) :
 bool operator== (const Adapter& a, const Adapter& b) {
     return a.m_pimpl->eq(b.m_pimpl.get());
 }
-
-
-// bool operator< (const Adapter& a, const Adapter& b) {
-//     return a.m_pimpl < b.m_pimpl;
-// }
 
 
 struct AdapterControllerImpl {
