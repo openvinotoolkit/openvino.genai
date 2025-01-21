@@ -84,7 +84,6 @@ std::pair<std::string, Any> draft_model(
 }
 
 void clear_core_device(const std::string &device_name){
-    std::cout << "utils::singleton_core().unload_plugin(" << device_name << ") called!\n";
     utils::singleton_core().unload_plugin(device_name);
 };
 // Public LLMPipeline

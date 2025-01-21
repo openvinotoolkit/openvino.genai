@@ -399,8 +399,6 @@ void StatefulLLMPipeline::finish_chat() {
 }
 
 StatefulLLMPipeline::~StatefulLLMPipeline(){
-    std::cout << "~StatefulLLMPipeline() called!\n";
-    std::cout << "compiled_model.release_memory() called!\n";
     compiled_model.release_memory();
 };
 
