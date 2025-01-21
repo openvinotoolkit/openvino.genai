@@ -14,10 +14,13 @@
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
+namespace {
 
-namespace ov {
-namespace genai {
-
+/**
+ * Set position ids tensor data for next token inference based on provided attention mask
+ * Supports multi batch
+ * Supports sparse attention_mask
+ */
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
@@ -48,7 +51,10 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
         attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
     }
 }
+}
 
+namespace ov {
+namespace genai {
 
 std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     ov::InferRequest& m_llm,

@@ -51,7 +51,8 @@ public:
     WhisperPipelineStatefulImpl(const std::filesystem::path& models_path,
                                 const std::string& device,
                                 const ov::AnyMap& properties)
-        : WhisperPipelineImplBase{models_path} {
+        : WhisperPipelineImplBase{models_path},
+          m_sampler(m_tokenizer) {
         ov::Core core = utils::singleton_core();
 
         ov::CompiledModel compiled_model =
@@ -65,6 +66,8 @@ public:
         if (m_generation_config.eos_token_id == -1) {
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
+
+        m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
@@ -96,7 +99,8 @@ public:
                                                            m_encoder,
                                                            m_decoder,
                                                            m_feature_extractor,
-                                                           streamer_ptr);
+                                                           streamer_ptr,
+                                                           m_sampler);
         auto decode_start_time = std::chrono::steady_clock::now();
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
@@ -135,6 +139,7 @@ public:
 private:
     ov::InferRequest m_encoder;
     std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
+    Sampler m_sampler;
 };
 
 std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {

@@ -53,8 +53,6 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
 
 ov::Tensor extend_attention(ov::Tensor attention_mask);
 
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
-
 template <typename T> struct OmitOptional { using value = T; };
 template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
 

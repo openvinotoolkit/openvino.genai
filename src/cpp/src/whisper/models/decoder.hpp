@@ -15,12 +15,12 @@ public:
                                                      const std::string& device,
                                                      const ov::AnyMap& properties);
 
-    virtual std::pair<int64_t, float> detect_language(const ov::Tensor& encoder_hidden_state,
+    virtual std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state,
                                                       const int64_t decoder_start_token_id) = 0;
 
-    virtual std::pair<ov::Tensor, float> decode(const ov::Tensor& encoder_hidden_state,
-                                                const std::vector<int64_t>& input_ids,
-                                                const size_t cache_position) = 0;
+    virtual std::pair<Tensor, float> decode(const Tensor& encoder_hidden_state,
+                                            const Tensor& input_ids,
+                                            const Tensor& beam_idx) = 0;
 
     virtual void reset_state() = 0;
 
