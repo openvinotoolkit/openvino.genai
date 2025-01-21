@@ -160,10 +160,15 @@ public:
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+        // If stop_token_ids were not provided, take value from default m_generation_config
+        if (generation_config.stop_token_ids.empty())
+            generation_config.stop_token_ids = m_generation_config.stop_token_ids;
         // If eos_token_id was not provided, take value from default m_generation_config
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+        
+        m_inputs_embedder->set_stop_token_ids(generation_config.stop_token_ids);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
