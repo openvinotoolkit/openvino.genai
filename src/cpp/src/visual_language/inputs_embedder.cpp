@@ -46,6 +46,7 @@ protected:
     // True if chat template should be applied for non-chat scenario
     bool m_apply_chat_template = true;
 
+    std::set<int64_t> m_stop_token_ids;
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
@@ -69,6 +70,10 @@ public:
 
     size_t get_num_tokens_to_remove_from_hist() const {
         return m_kv_history_manager.num_tokens_to_remove_from_kv_cache;
+    }
+
+    void set_stop_token_ids(const std::set<int64_t>& stop_token_ids) {
+        m_stop_token_ids = stop_token_ids;
     }
 
     void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len) {
@@ -215,8 +220,8 @@ protected:
             // so let's check it out, find the trusted part and use it in on the next step
             size_t trusted_history_length = 0;
             if (!m_tokenized_history.empty()) {
-                std::set<int64_t> stop_tokens = {m_tokenizer.get_eos_token_id()};
-                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, stop_tokens);
+                OPENVINO_ASSERT(!m_stop_token_ids.empty(), "Stop tokens are not set for InputsEmbedder");
+                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, m_stop_token_ids);
             }
 
             if (m_tokenized_history.empty()) {
@@ -2035,6 +2040,10 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(c
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
+}
+
+void InputsEmbedder::set_stop_token_ids(const std::set<int64_t>& stop_token_ids) {
+    return m_impl->set_stop_token_ids(stop_token_ids);
 }
 
 std::vector<int64_t> InputsEmbedder::get_tokenized_history() const {
