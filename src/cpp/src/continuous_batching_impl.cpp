@@ -313,30 +313,29 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::unique_lock lock(mutex);
     std::condition_variable cv;
 
-    // define stream token lambda to use in `t_stream`
-    auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-        if (streamer_ptr == nullptr) {
-            return;
-        }
-        while (has_active_requests || generation->can_read()) {
-            // waiting for any tokens or request finishing
-            cv.wait(lock, [&generation, &has_active_requests]{ return generation->can_read() || !has_active_requests; });
-
-            if (generation->can_read()) {
-                std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                for (const auto& gen_token : token.begin()->second.generated_ids) {
-                    if (streamer_ptr->put(gen_token)) {
-                        generation->drop();
-                        break;
-                    }
-                }
-            }
-        };
-    };
-
     // to define streaming thread
     std::shared_ptr<std::thread> t_stream_ptr = nullptr;
     if (streamer_ptr) {
+        // define stream token lambda to use in `t_stream_ptr`
+        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
+            while (has_active_requests || generation->can_read()) {
+                // waiting for any tokens or request finishing
+                cv.wait(lock, [&generation, &has_active_requests]{
+                    return generation->can_read() || generation->get_status() != GenerationStatus::RUNNING || !has_active_requests;
+                });
+
+                while (generation->can_read()) {
+                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
+                    for (const auto& gen_token : token.begin()->second.generated_ids) {
+                        if (streamer_ptr->put(gen_token)) {
+                            generation->drop();
+                            break;
+                        }
+                    }
+                }
+            };
+        };
+
         // to define streaming thread
         t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
             stream_tokens();

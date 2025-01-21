@@ -245,26 +245,31 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     std::unique_lock lock(mutex);
     std::condition_variable cv;
 
-    // define stream token lambda to use in `t_stream`
-    auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-        while (has_active_requests || generation->can_read()) {
-            // waiting for any tokens or request finishing
-            cv.wait(lock, [&generation, &has_active_requests]{ return generation->can_read() || !has_active_requests; });
-
-            if (generation->can_read()) {
-                std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                for (const auto& gen_token : token.begin()->second.generated_ids) {
-                    if (streamer_ptr->put(gen_token)) {
-                        generation->drop();
-                        break;
-                    }
-                }
-            }
-        };
-    };
-
     std::shared_ptr<std::thread> t_stream_ptr = nullptr;
     if (streamer_ptr) {
+        // define stream token lambda to use in `t_stream_ptr`
+        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
+            while (has_active_requests || generation->can_read()) {
+                std::cout << std::endl << "BEFORE CV" << std::endl;
+                // waiting for any tokens or request finishing
+                cv.wait(lock, [&generation, &has_active_requests]{
+                    return generation->can_read() || generation->get_status() != GenerationStatus::RUNNING || !has_active_requests;
+                });
+                std::cout << std::endl << "AFTER CV" << std::endl;
+
+                while (generation->can_read()) {
+                    std::cout <<std::endl << "STREAMING" << std::endl;
+                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
+                    for (const auto& gen_token : token.begin()->second.generated_ids) {
+                        if (streamer_ptr->put(gen_token)) {
+                            generation->drop();
+                            break;
+                        }
+                    }
+                }
+            };
+        };
+
         t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
             stream_tokens();
         }));
@@ -273,7 +278,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     std::exception_ptr thrown_exception = nullptr;
     while (has_active_requests) {
         try {
-            const auto infer_start = std::chrono::steady_clock::now();
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
@@ -329,7 +333,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
