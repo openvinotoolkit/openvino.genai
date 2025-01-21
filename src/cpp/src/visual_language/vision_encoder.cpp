@@ -992,7 +992,7 @@ ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
     
     return transposed_patches;
 }
-}  // anonymous namespace
+}
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config) :
     model_type(model_type) {
