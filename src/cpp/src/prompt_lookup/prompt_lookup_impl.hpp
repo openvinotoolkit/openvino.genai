@@ -15,6 +15,7 @@ class ContinuousBatchingPipeline::PromptLookupImpl : public ContinuousBatchingPi
 protected:
     std::shared_ptr<ContinuousBatchingForPromptLookupImpl> m_pipeline;
     SpeculativeDecodingMetrics m_sd_metrics;
+    PerfMetrics m_perf_metrics;
 
     void drop_requests();
 
