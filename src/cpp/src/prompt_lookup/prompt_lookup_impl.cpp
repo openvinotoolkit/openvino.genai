@@ -31,6 +31,9 @@ bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
 void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     auto& raw_perf_counters = m_perf_metrics.raw_metrics;
 
+    ManualTimer step_timer("prompt_lookup_decoding: step()");
+    step_timer.start();
+
     ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
     candidates_timer.start();
     m_pipeline->generate_candidates();
@@ -38,7 +41,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     m_sd_metrics.draft_duration += candidates_timer.get_duration();
     auto generated_len_before = m_pipeline->get_generated_request_len();
 
-    ManualTimer main_timer("prompt_lookup_decoding: step()");
+    ManualTimer main_timer("prompt_lookup_decoding: pipeline: step()");
     main_timer.start();
     m_pipeline->step();
     main_timer.end();
@@ -66,12 +69,15 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     }
 
     // update perf metrics
-    if (m_pipeline->get_scheduled_sequences_cnt() > 0) {
-        auto infer_duration = main_timer.get_duration_microsec();
+    const auto num_generated_tokens = m_pipeline->get_processed_tokens_per_iteration();
+    if (num_generated_tokens > 0) {    
+        raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+    
+        auto infer_duration = step_timer.get_duration_microsec();
+
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
-        raw_perf_counters.m_batch_sizes.emplace_back(infer_duration);
     }
 
     if (generated_len_after.empty() && 0) {

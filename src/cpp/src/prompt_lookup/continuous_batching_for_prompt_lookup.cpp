@@ -91,7 +91,7 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingFo
     return m_awaiting_requests;
 }
 
-size_t ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_scheduled_sequences_cnt() {
+size_t ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
 }
 

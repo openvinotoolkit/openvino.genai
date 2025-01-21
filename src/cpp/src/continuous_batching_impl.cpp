@@ -156,13 +156,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
-
-        m_batch_size = 0; // total number of running sequences
-        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
-            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
-            m_batch_size += sequence_group->num_running_seqs();
-        }
     }
 
     // if no tokens were scheduled, we are out of memory => free all requests and return
@@ -210,6 +203,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         static ManualTimer timer("sample");
         timer.start();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
+        m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
 

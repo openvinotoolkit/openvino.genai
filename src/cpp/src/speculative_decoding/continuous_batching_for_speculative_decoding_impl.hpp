@@ -32,7 +32,7 @@ public:
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 
-    size_t get_scheduled_sequences_cnt();
+    size_t get_processed_tokens_per_iteration();
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 

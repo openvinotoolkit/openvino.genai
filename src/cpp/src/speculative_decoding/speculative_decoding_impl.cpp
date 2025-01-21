@@ -134,6 +134,9 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     auto& raw_perf_counters = m_perf_metrics.raw_metrics;
 
+    ManualTimer step_timer("speculative_decoding: step()");
+    step_timer.start();
+
     m_draft_pipeline->pull_awaiting_requests(true);
     m_main_pipeline->pull_awaiting_requests();
 
@@ -186,12 +189,15 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     }
 
     // update perf metrics
-    if (m_main_pipeline->get_scheduled_sequences_cnt() > 0) {
-        auto infer_duration = main_timer.get_duration_microsec();
+    const auto num_generated_tokens = m_main_pipeline->get_processed_tokens_per_iteration();
+    if (num_generated_tokens > 0) {
+        auto infer_duration = step_timer.get_duration_microsec();
+    
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
         raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
-        raw_perf_counters.m_batch_sizes.emplace_back(infer_duration);
+
+        raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
     }
 
     if (main_generated_requests.empty() && 0) {
