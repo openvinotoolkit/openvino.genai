@@ -447,6 +447,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           echo Running speculative_decoding_lm C++ sample...
+          ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a"
           ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
           echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
