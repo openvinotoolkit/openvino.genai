@@ -1,0 +1,202 @@
+// Copyright (C) 2024 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "with_past_decoder.hpp"
+
+#include <regex>
+
+#include "logger.hpp"
+#include "utils.hpp"
+
+namespace {
+
+bool are_past_key_values_empty(ov::InferRequest& request) {
+    for (const auto& input : request.get_compiled_model().inputs()) {
+        const std::string name = input.get_any_name();
+        if (name.find("past_key_values") == std::string::npos) {
+            continue;
+        }
+
+        ov::Tensor tensor = request.get_tensor(name);
+
+        return tensor.get_size() == 0;
+    }
+
+    OPENVINO_THROW("Past key value tensor not found");
+}
+
+void reset_past_key_values(ov::InferRequest& request) {
+    for (const auto& input : request.get_compiled_model().inputs()) {
+        const std::string name = input.get_any_name();
+        if (name.find("past_key_values") == std::string::npos) {
+            continue;
+        }
+
+        ov::Shape shape{request.get_tensor(name).get_shape()};
+        shape[0] = 0;
+
+        request.set_tensor(name, ov::Tensor{ov::element::f32, shape});
+    }
+}
+
+void copy_with_beam_gather(const ov::Tensor& source, ov::Tensor& dest, const ov::Tensor& beam_idx) {
+    const size_t dest_batch_size = beam_idx.get_shape().at(0);
+
+    ov::Shape dest_shape{source.get_shape()};
+    dest_shape[0] = dest_batch_size;
+    dest.set_shape(dest_shape);
+
+    OPENVINO_ASSERT(dest_shape.size() == 4);
+
+    const size_t batch_dim_size = dest_shape[1] * dest_shape[2] * dest_shape[3];
+
+    const auto beam_idx_data = beam_idx.data<int32_t>();
+    const auto source_data = source.data<float>();
+    auto dest_data = dest.data<float>();
+
+    for (size_t dest_batch = 0; dest_batch < dest_batch_size; dest_batch++) {
+        const size_t source_batch = beam_idx_data[dest_batch];
+
+        const auto source_start = source_data + (source_batch * batch_dim_size);
+        const auto dest_start = dest_data + (dest_batch * batch_dim_size);
+        std::memcpy(dest_start, source_start, sizeof(float) * batch_dim_size);
+    }
+}
+
+void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest, const ov::Tensor& beam_idx) {
+    // source outputs:
+    // present.0.decoder.key
+    // present.0.decoder.value
+    // present.0.encoder.key
+    // present.0.encoder.value
+
+    // dest inputs:
+    // past_key_values.0.decoder.key
+    // past_key_values.0.decoder.value
+    // past_key_values.0.encoder.key
+    // past_key_values.0.encoder.value
+
+    for (auto& source_output : source.get_compiled_model().outputs()) {
+        std::string source_output_name = source_output.get_any_name();
+        if (source_output_name.find("present") == std::string::npos) {
+            continue;
+        }
+
+        std::string dest_input_name = std::regex_replace(source_output_name, std::regex("present"), "past_key_values");
+
+        auto source_tensor = source.get_tensor(source_output_name);
+        auto dest_tensor = dest.get_tensor(dest_input_name);
+
+        copy_with_beam_gather(source_tensor, dest_tensor, beam_idx);
+    }
+}
+}  // namespace
+
+namespace ov::genai {
+WhisperWithPastDecoder::WhisperWithPastDecoder(const std::filesystem::path& models_path,
+                                               const std::string& device,
+                                               const ov::AnyMap& properties) {
+    Logger::warn("Whisper decoder models with past is deprecated. Support will be removed in 2026.0.0 release.\n"
+                 "To obtain stateful decoder model use latest `optimum-intel` package:\n"
+                 "pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git\n"
+                 "optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny");
+    ov::Core core = utils::singleton_core();
+
+    auto compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
+    utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
+    m_request_decoder = compiled_model.create_infer_request();
+
+    compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, properties);
+    utils::print_compiled_model_properties(compiled_model, "whisper decoder with past model");
+    m_request_decoder_with_past = compiled_model.create_infer_request();
+}
+
+std::pair<int64_t, float> WhisperWithPastDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
+                                                                  const int64_t decoder_start_token_id) {
+    Tensor input_ids_tensor{ov::element::i64, {1, 1}};
+    input_ids_tensor.data<int64_t>()[0] = decoder_start_token_id;
+
+    Tensor beam_idx_tensor{ov::element::i32, {1}};
+    beam_idx_tensor.data<int32_t>()[0] = 0;
+
+    auto [output_tensor, infer_ms] = decode(encoder_hidden_state, input_ids_tensor, beam_idx_tensor);
+
+    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+
+    reset_state();
+
+    return {output_token, infer_ms};
+}
+
+std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hidden_state,
+                                                        const Tensor& input_ids,
+                                                        const Tensor& beam_idx) {
+    ov::InferRequest& request = m_initial_step ? m_request_decoder : m_request_decoder_with_past;
+
+    const size_t batch_size = input_ids.get_shape().at(0);
+    const size_t seq_length = input_ids.get_shape().at(1);
+
+    _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, request);
+    request.set_tensor("input_ids", input_ids);
+
+    if (!m_initial_step) {
+        ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
+        cache_position_tensor.set_shape({1});
+        cache_position_tensor.data<int64_t>()[0] = m_cache_position;
+    }
+
+    if (!m_initial_step) {
+        if (are_past_key_values_empty(m_request_decoder_with_past)) {
+            set_past_key_value(m_request_decoder, m_request_decoder_with_past, beam_idx);
+        } else {
+            set_past_key_value(m_request_decoder_with_past, m_request_decoder_with_past, beam_idx);
+        }
+    }
+
+    const auto infer_start = std::chrono::steady_clock::now();
+    request.infer();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+
+    auto output_tensor = request.get_tensor("logits");
+
+    m_initial_step = false;
+    m_cache_position += seq_length;
+
+    return {output_tensor, infer_ms};
+}
+
+/**
+ * Encoder hidden states expected to be with batch 1
+ * Copy encoder hidden state tensor from batch 1 to requested batch_size.
+ * Set new encoder hidden states tensor to infer request.
+ */
+void WhisperWithPastDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
+                                                               const size_t batch_size,
+                                                               InferRequest& request) {
+    OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1);
+    Shape shape{encoder_hidden_state.get_shape()};
+    shape[0] = batch_size;
+
+    Tensor new_encoder_hidden_states{ov::element::f32, shape};
+
+    auto new_encoder_hidden_states_data = new_encoder_hidden_states.data<float>();
+    auto encoder_hidden_state_data = encoder_hidden_state.data<float>();
+
+    for (size_t batch = 0; batch < batch_size; batch++) {
+        const size_t batch_offset = batch * encoder_hidden_state.get_size();
+        std::memcpy(new_encoder_hidden_states_data + batch_offset,
+                    encoder_hidden_state_data,
+                    encoder_hidden_state.get_byte_size());
+    }
+
+    request.set_tensor("encoder_hidden_states", new_encoder_hidden_states);
+}
+
+void WhisperWithPastDecoder::reset_state() {
+    reset_past_key_values(m_request_decoder_with_past);
+    m_request_decoder_with_past.reset_state();
+    m_decoder_with_past_kv_value_set = false;
+    m_initial_step = true;
+    m_cache_position = 0;
+}
+}  // namespace ov::genai

@@ -33,7 +33,6 @@ private:
     void _set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
                                            const size_t batch_size,
                                            InferRequest& request);
-    void _set_cache_position_tensor(const size_t seq_len);
 };
 
 }  // namespace ov::genai
