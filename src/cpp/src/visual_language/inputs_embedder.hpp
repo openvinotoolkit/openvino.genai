@@ -65,6 +65,7 @@ private:
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderLLaVANext;
     friend class InputsEmbedderInternVLChat;
+    friend class InputsEmbedderPhi3V;
 };
 
 } // namespace ov::genai

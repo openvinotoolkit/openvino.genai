@@ -158,5 +158,9 @@ private:
     EncodedImage encode_internvl(
         const ov::Tensor& image, const ProcessorConfig& config
     );
+
+    EncodedImage encode_phi3_v(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
 };
 }

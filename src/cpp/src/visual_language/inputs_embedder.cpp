@@ -7,15 +7,10 @@
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/embedding_model.hpp"
+#include "openvino/opsets/opset13.hpp"
 
 #include "utils.hpp"
-
-
-namespace {
-
-constexpr size_t BATCH_SIZE = 1;
-
-} // namespace
+#include <regex>
 
 namespace ov::genai {
 
@@ -149,17 +144,8 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}) {
-        ov::Tensor encoded_input_ids;
+    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}) {
         if (m_is_chat_conversation) {
-            // KV cache in model already contains prompts and answers from previous iterations.
-            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
-            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
-            // <bos token> will be inserted on every iteration.
-            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
-            // and takes only the difference between them.
-            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
-            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history;
@@ -171,9 +157,31 @@ protected:
             }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
-            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
+            ov::Tensor prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+            m_templated_chat_history = std::move(new_templated_chat_history);
+            return {new_chat_tokens, prev_chat_tokens};
+        } else {
+            auto start_tokenizer_time = std::chrono::steady_clock::now();
+            ov::Tensor encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+            return {encoded_input_ids, ov::Tensor()};
+        }
+    }
+
+    ov::Tensor update_history(const ov::Tensor& new_chat_tokens, const ov::Tensor& prev_chat_tokens) {
+        if (m_is_chat_conversation) {
+            ov::Tensor encoded_input_ids;
+            // KV cache in model already contains prompts and answers from previous iterations.
+            // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+            // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+            // <bos token> will be inserted on every iteration.
+            // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+            // and takes only the difference between them.
+            // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+            // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
 
             // some symbols combinations can be encoded by the tokenizer in different ways
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
@@ -181,7 +189,7 @@ protected:
             size_t trusted_history_length = 0;
             if (!m_tokenized_history.empty()) {
                 std::set<int64_t> stop_tokens = {m_tokenizer.get_eos_token_id()};
-                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_history, stop_tokens);
+                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, stop_tokens);
             }
 
             if (m_tokenized_history.empty()) {
@@ -207,25 +215,25 @@ protected:
                 new_tensor.copy_to(encoded_input_ids);
             } else {
                 encoded_input_ids = utils::subtract_chat_tokenized_inputs(
-                    {new_chat_tokens}, prev_chat_tokens
+                    {new_chat_tokens}, {prev_chat_tokens}
                 ).input_ids;
 
                 if (m_last_disappeared_token.has_value())
                     encoded_input_ids = ov::genai::utils::push_front_inputs(encoded_input_ids, *m_last_disappeared_token);
             }
-            m_templated_chat_history = std::move(new_templated_chat_history);
             m_tokenized_history.clear();
             std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
+            return encoded_input_ids;
         } else {
-            auto start_tokenizer_time = std::chrono::steady_clock::now();
-            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
-            auto end_tokenizer_time = std::chrono::steady_clock::now();
-            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_tokenized_history.clear();
-            std::copy_n(encoded_input_ids.data<int64_t>(), encoded_input_ids.get_size(), std::back_inserter(m_tokenized_history));
+            std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
+            return new_chat_tokens;
         }
+    }
 
-        return encoded_input_ids;
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
+        const auto [new_chat_tokens, prev_chat_tokens] = apply_chat_template_tokenize(prompt, metrics, chat_template_fallback);
+        return update_history(new_chat_tokens, prev_chat_tokens);
     }
 
     /**
@@ -681,6 +689,7 @@ protected:
         }
         size_t merged_seq_length = text_embeds_seq_length + total_image_seq_length - num_image_tokens;
 
+        constexpr size_t BATCH_SIZE = 1;
         ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
         float* merged_data = merged_embeds.data<float>();
 
@@ -1157,6 +1166,400 @@ protected:
     }
 };
 
+namespace {
+namespace phi3_v {
+// Reimplementation of python
+// N, L, C = image_features.shape
+// assert L == 24 * 24 and C == 1024 and N % (h_crop * w_crop) == 0
+// num_images = N // (h_crop * w_crop)
+// H = int(L**0.5)
+// print(L, H)
+// image_features_hd = (
+//     image_features.reshape(N, H, H, C)  # N, 24, 24, 1024
+//     .reshape(N, H // 2, 2, H // 2, 2, C)  # N, 12, 2, 12, 2, 1024
+//     .permute(0, 1, 3, 2, 4, 5)  # N, 12, 12, 2, 2, 1024
+//     .reshape(N, -1, 4 * C)  # N, 144, 4096
+//     .reshape(num_images, h_crop, w_crop, H // 2, H // 2, -1)  # n_img, h_crop, w_crop, 12, 12, 4096
+//     .permute(0, 1, 3, 2, 4, 5)  # n_img, h_crop, 12, w_crop, 12, 4096
+//     .reshape(num_images, h_crop * H // 2, w_crop * H // 2, 4 * C)  # n_img, h_crop*12, w_crop*12, 4096
+// )
+// Obtained in the following way
+// import torch
+// import openvino as ov
+// import numpy as np
+// class Model(torch.nn.Module):
+//     def forward(self, image_features, h_crop, w_crop):
+//         """
+//         image_features: (num_images*num_crops, 24*24, 1024)
+//         output: (num_images, h_crop*12, w_crop*12, 4096), h_crop*w_crop == num_crops
+//         """
+//         N, L, C = image_features.shape
+//         num_images = N // (h_crop * w_crop)
+//         H = (torch.tensor(L, dtype=torch.float32)**0.5).int()
+//         image_features_hd = (
+//             image_features.reshape(N, H, H, C)  # N, 24, 24, 1024
+//             .reshape(N, H // 2, 2, H // 2, 2, C)  # N, 12, 2, 12, 2, 1024
+//             .permute(0, 1, 3, 2, 4, 5)  # N, 12, 12, 2, 2, 1024
+//             .reshape(N, -1, 4 * C)  # N, 144, 4096
+//             .reshape(num_images, h_crop, w_crop, H // 2, H // 2, -1)  # n_img, h_crop, w_crop, 12, 12, 4096
+//             .permute(0, 1, 3, 2, 4, 5)  # n_img, h_crop, 12, w_crop, 12, 4096
+//             .reshape(num_images, h_crop * H // 2, w_crop * H // 2, 4 * C)  # n_img, h_crop*12, w_crop*12, 4096
+//         return {"o": image_features_hd}
+// model = Model()
+// example_input = {"image_features": torch.rand((4, 576, 1024), dtype=torch.float32), "h_crop": torch.tensor(2, dtype=torch.int32), "w_crop": torch.tensor(2, dtype=torch.int32)}
+// ov_model = ov.convert_model(model, example_input=example_input, input=ov.PartialShape([-1, 576, 1024]))
+// # ov_model.outputs[0].get_tensor().set_names({"out"})
+// ov.save_model(ov_model, "reshape_hd_patches_2x2merge.xml")
+// inp = np.arange(4 * 576 * 1024).reshape([4, 576, 1024])
+// test = ov.Core().compile_model(ov_model, "CPU")
+// print(ov_model)
+// print(test([inp, 2, 2])["o"].flatten())
+// 2. Run https://github.com/slyalin/openvino_devtools/blob/bcd4a51b1354b24b2316ac3e1c77b2f87ae7a497/openvino_devtools/ov2py.py with the IR.
+// 3. Translate the printed Python implementation to C++.
+ov::InferRequest create_hd_feature_transformer() {
+    using namespace ov;
+    using namespace element;
+    using namespace opset13;
+    using namespace std;
+    auto t0 = make_shared<Parameter>(f32, PartialShape{-1, 576, 1024});
+    auto t1 = make_shared<Parameter>(i32, PartialShape{});
+    auto t2 = make_shared<Parameter>(i32, PartialShape{});
+    auto t3 = make_shared<ShapeOf>(t0);
+    auto t4 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t5 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t6 = make_shared<Gather>(t3, t4, t5);
+    auto t7 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{1});
+    auto t8 = make_shared<Reshape>(t6, t7, false);
+    auto t9 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{1});
+    auto t10 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t11 = make_shared<Gather>(t3, t9, t10);
+    auto t12 = make_shared<Convert>(t11, element::f32);
+    auto t13 = make_shared<Constant>(f32, Shape{}, vector<float>{0.5});
+    auto t14 = make_shared<Power>(t12, t13, "numpy");
+    auto t15 = make_shared<Convert>(t14, element::i32);
+    auto t16 = make_shared<Convert>(t15, element::i64);
+    auto t17 = make_shared<Constant>(i32, Shape{}, vector<int32_t>{0});
+    auto t18 = make_shared<Unsqueeze>(t16, t17);
+    auto t19 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{2});
+    auto t20 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t21 = make_shared<Gather>(t3, t19, t20);
+    auto t22 = make_shared<Concat>(NodeVector{t8, t18, t18, t21}, 0);
+    auto t23 = make_shared<Reshape>(t0, t22, false);
+    auto t24 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{2});
+    auto t25 = make_shared<Divide>(t16, t24, "numpy");
+    auto t26 = make_shared<Floor>(t25);
+    auto t27 = make_shared<Constant>(i32, Shape{}, vector<int32_t>{0});
+    auto t28 = make_shared<Unsqueeze>(t26, t27);
+    auto t29 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{2});
+    auto t30 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{2});
+    auto t31 = make_shared<Concat>(NodeVector{t8, t28, t29, t28, t30, t21}, 0);
+    auto t32 = make_shared<Reshape>(t23, t31, false);
+    auto t33 = make_shared<Constant>(i64, Shape{6}, vector<int64_t>{0, 1, 3, 2, 4, 5});
+    auto t34 = make_shared<Transpose>(t32, t33);
+    auto t35 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{-1});
+    auto t36 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{4});
+    auto t37 = make_shared<Multiply>(t21, t36, "numpy");
+    auto t38 = make_shared<Concat>(NodeVector{t8, t35, t37}, 0);
+    auto t39 = make_shared<Reshape>(t34, t38, false);
+    auto t40 = make_shared<Multiply>(t1, t2, "numpy");
+    auto t41 = make_shared<Convert>(t40, element::i64);
+    auto t42 = make_shared<Divide>(t6, t41, "numpy");
+    auto t43 = make_shared<Floor>(t42);
+    auto t44 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{0});
+    auto t45 = make_shared<Unsqueeze>(t43, t44);
+    auto t46 = make_shared<Convert>(t1, element::i64);
+    auto t47 = make_shared<Unsqueeze>(t46, t44);
+    auto t48 = make_shared<Convert>(t2, element::i64);
+    auto t49 = make_shared<Unsqueeze>(t48, t44);
+    auto t50 = make_shared<Constant>(i64, Shape{1}, vector<int64_t>{-1});
+    auto t51 = make_shared<Concat>(NodeVector{t45, t47, t49, t28, t28, t50}, 0);
+    auto t52 = make_shared<Reshape>(t39, t51, false);
+    auto t53 = make_shared<Constant>(i64, Shape{6}, vector<int64_t>{0, 1, 3, 2, 4, 5});
+    auto t54 = make_shared<Transpose>(t52, t53);
+    auto t55 = make_shared<Multiply>(t1, t15, "numpy");
+    auto t56 = make_shared<Convert>(t55, element::i64);
+    auto t57 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{2});
+    auto t58 = make_shared<Divide>(t56, t57, "numpy");
+    auto t59 = make_shared<Floor>(t58);
+    auto t60 = make_shared<Constant>(i32, Shape{}, vector<int32_t>{0});
+    auto t61 = make_shared<Unsqueeze>(t59, t60);
+    auto t62 = make_shared<Multiply>(t2, t15, "numpy");
+    auto t63 = make_shared<Convert>(t62, element::i64);
+    auto t64 = make_shared<Constant>(i64, Shape{}, vector<int64_t>{2});
+    auto t65 = make_shared<Divide>(t63, t64, "numpy");
+    auto t66 = make_shared<Floor>(t65);
+    auto t67 = make_shared<Unsqueeze>(t66, t60);
+    auto t68 = make_shared<Concat>(NodeVector{t45, t61, t67, t37}, 0);
+    auto t69 = make_shared<Reshape>(t54, t68, false);
+    shared_ptr<Model> model = make_shared<Model>(make_shared<Result>(t69), ParameterVector{t0, t1, t2});
+    return utils::singleton_core().compile_model(
+        model, "CPU"
+    ).create_infer_request();
+}
+
+ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop, InferRequest& hd_feature_transformer) {
+    ov::Shape shape = image_features.get_shape();
+    OPENVINO_ASSERT(3 == shape.size());
+    OPENVINO_ASSERT(24 * 24 == shape.at(1));
+    OPENVINO_ASSERT(1024 == shape.at(2));
+    hd_feature_transformer.set_input_tensor(0, image_features);
+    ov::Tensor height{ov::element::i32, {}, &h_crop};
+    hd_feature_transformer.set_input_tensor(1, height);
+    ov::Tensor width{ov::element::i32, {}, &w_crop};
+    hd_feature_transformer.set_input_tensor(2, width);
+    hd_feature_transformer.infer();
+    return hd_feature_transformer.get_output_tensor();
+}
+
+// image_features_hd: (num_images, h_crop*12, w_crop*12, 4096)
+// output: (num_images, (h_crop*12) * (w_crop*12+1), 4096)
+ov::Tensor add_image_newline(const ov::Tensor& image_features_hd, const std::vector<float>& sub_GN) {
+    const ov::Shape& nhwc = image_features_hd.get_shape();  // [N, 12*h_crop, 12*w_crop, 4096]
+    const float* in = image_features_hd.data<float>();
+    ov::Tensor image_features_hd_new_line{ov::element::f32, {nhwc.at(0), nhwc.at(1) * (nhwc.at(2) + 1), nhwc.at(3)}};
+    float* out = image_features_hd_new_line.data<float>();
+    for (size_t batch_id = 0; batch_id < nhwc.at(0); ++batch_id) {
+        for (size_t row_id = 0; row_id < nhwc.at(1); ++row_id) {
+            for (size_t col_id = 0; col_id < nhwc.at(2); ++col_id) {
+                std::copy_n(
+                    in + batch_id * nhwc.at(1) * nhwc.at(2) * nhwc.at(3) + row_id * nhwc.at(2) * nhwc.at(3) + col_id * nhwc.at(3),
+                    nhwc.at(3),
+                    out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) + row_id * (nhwc.at(2) + 1) * nhwc.at(3) + col_id * nhwc.at(3)
+                );
+            }
+            std::copy(
+                sub_GN.begin(),
+                sub_GN.end(),
+                out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) + row_id * (nhwc.at(2) + 1) * nhwc.at(3) + nhwc.at(2) * nhwc.at(3)
+            );
+        }
+    }
+    return image_features_hd_new_line;
+}
+
+ov::Tensor concatenate_2d(const ov::Tensor& first_1lf, const std::vector<float>& second_f, const ov::Tensor& third_1lf) {
+    size_t first_l = first_1lf.get_shape().at(1);
+    constexpr size_t second_l = 1;
+    size_t third_l = third_1lf.get_shape().at(1);
+    size_t features = first_1lf.get_shape().at(2);
+    OPENVINO_ASSERT(second_f.size() == features);
+    ov::Tensor out_1lf{ov::element::f32, {1, first_l + second_l + third_l, features}};
+    float* out = out_1lf.data<float>();
+    std::copy_n(first_1lf.data<float>(), first_l * features, out);
+    std::copy(second_f.begin(), second_f.end(), out + first_l * features);
+    std::copy_n(third_1lf.data<float>(), third_l * features, out + (first_l + second_l) * features);
+    return out_1lf;
+}
+
+// image_features.resized_source: (num_crops+1, 24*24, 1024)
+ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer, const std::vector<float>& sub_GN, const std::vector<float>& glb_GN, ov::InferRequest& vision_projection) {
+    const ov::Shape& image_features_shape = image_features.resized_source.get_shape();
+    ov::Tensor global_image_features{ov::element::f32, {1, image_features_shape.at(1), image_features_shape.at(2)}, image_features.resized_source.data<float>()};
+    // global feature can be viewed as a special HD case with num_crops 1x1
+    ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1, hd_feature_transformer);
+    ov::Tensor global_image_features_hd_newline = add_image_newline(global_image_features_hd, sub_GN);  // [1,12*(12+1),4096]
+    constexpr size_t INPUT_IMAGE_SIZE = 336;
+    size_t h_crop = image_features.resized_source_size.height / INPUT_IMAGE_SIZE;
+    size_t w_crop = image_features.resized_source_size.width / INPUT_IMAGE_SIZE;
+    size_t num_crops = h_crop * w_crop;
+
+    // NOTE: real num_crops is padded
+    // (num_crops, 24*24, 1024)
+    ov::Tensor sub_image_features{ov::element::f32, {
+        num_crops,
+        image_features_shape.at(1),
+        image_features_shape.at(2)
+    }, image_features.resized_source.data<float>() + image_features_shape.at(1) * image_features_shape.at(2)};
+    ov::Tensor sub_image_features_hd = reshape_hd_patches_2x2merge(sub_image_features, h_crop, w_crop, hd_feature_transformer);  // [1, 24, 24, 4096]
+    ov::Tensor sub_image_features_hd_newline = add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
+    ov::Tensor image_embeddings = concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
+    vision_projection.set_input_tensor(image_embeddings);
+    vision_projection.infer();
+    ov::Tensor out = vision_projection.get_output_tensor();
+    ov::Tensor res{out.get_element_type(), out.get_shape()};
+    out.copy_to(res);
+    return res;
+}
+
+std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer) {
+    constexpr int make_suffix_iterator = -1;
+    std::regex rgx{R"(<\|image_\d+\|>)"};
+    std::sregex_token_iterator iter{
+        text.begin(),
+        text.end(),
+        rgx,
+        make_suffix_iterator
+    };
+    std::vector<ov::Tensor> tokenized;
+    for ( ; iter != std::sregex_token_iterator{}; ++iter) {
+        if (iter->str().empty()) {
+            continue;
+        }
+        std::string substr = *iter;
+        tokenized.push_back(tokenizer.encode(substr, ov::genai::add_special_tokens(true)).input_ids);
+    }
+    return tokenized;
+}
+
+ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, size_t tokens_per_image) {
+    size_t merged_length = 0;
+    for (const ov::Tensor& chunk : chunks) {
+        merged_length += chunk.get_shape().at(1);
+    }
+    merged_length += chunks.empty() ? 0 : (chunks.size() - 1) * tokens_per_image;
+    ov::Tensor merged{ov::element::i64, {1, merged_length}};
+    size_t offset = 0;
+    int64_t image_id = -1;
+    for (const ov::Tensor& chunk : chunks) {
+        size_t length = chunk.get_shape().at(1);
+        std::copy_n(
+            chunk.data<int64_t>(),
+            length,
+            merged.data<int64_t>() + offset
+        );
+        offset += length;
+        if (offset < merged_length) {
+            std::fill_n(
+                merged.data<int64_t>() + offset,
+                tokens_per_image,
+                image_id
+            );
+            offset += tokens_per_image;
+            --image_id;
+        }
+    }
+    return merged;
+}
+
+std::vector<ov::Tensor> drop_image_placeholders(const ov::Tensor& tokens) {
+    std::vector<ov::Tensor> chunks;
+    size_t offset = 0;
+    while (offset < tokens.get_shape().at(1)) {
+        size_t length = 0;
+        while (offset + length < tokens.get_shape().at(1) && tokens.data<int64_t>()[offset + length] >= 0) {
+            ++length;
+        }
+        chunks.emplace_back(ov::element::i64, ov::Shape{1, length}, tokens.data<int64_t>() + offset);
+        offset += length;
+        while (offset < tokens.get_shape().at(1) && tokens.data<int64_t>()[offset] < 0) {
+            ++offset;
+        }
+    }
+    return chunks;
+}
+}  // namespace phi3_v
+}  // anonymous namespace
+
+class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
+public:
+    ov::InferRequest m_hd_feature_transformer;
+    ov::InferRequest m_vision_projection;
+    // Used to insert <|image_i|>\n per image (not a slice).
+    size_t m_image_id = 1;
+    size_t m_tokens_per_image = 0;
+
+    InputsEmbedderPhi3V(
+        const VLMConfig& vlm_config,
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap device_config
+    ):
+        IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
+        m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()},
+        m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
+
+    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
+        OPENVINO_ASSERT(images.empty() || m_history.empty(), "Images can only be provided for initial prompt");
+        std::vector<ov::Tensor> images_features_proj;
+        std::stringstream images_prompt;
+        for (const ov::Tensor& image : to_single_image_tensors(images)) {
+            EncodedImage encoded_image = m_vision_encoder.encode(image);
+            images_features_proj.push_back(phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
+            images_prompt << "<|image_" << m_image_id << "|>\n";
+            ++m_image_id;
+        }
+        images_prompt << prompt;
+        std::vector<ov::Tensor> new_chat_tokens;
+        std::vector<ov::Tensor> prev_chat_tokens;
+        if (m_is_chat_conversation) {
+            m_history.push_back({{"role", "user"}, {"content", images_prompt.str()}});
+            constexpr bool add_generation_prompt = true;
+            std::string new_templated_chat_history;
+            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            auto start_tokenizer_time = std::chrono::steady_clock::now();
+            new_chat_tokens = phi3_v::split_tokenize(new_templated_chat_history, m_tokenizer);
+            prev_chat_tokens = phi3_v::split_tokenize(m_templated_chat_history, m_tokenizer);
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+            m_templated_chat_history = std::move(new_templated_chat_history);
+        } else {
+            auto start_tokenizer_time = std::chrono::steady_clock::now();
+            new_chat_tokens = phi3_v::split_tokenize(images_prompt.str(), m_tokenizer);
+            auto end_tokenizer_time = std::chrono::steady_clock::now();
+            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        }
+        if (0 == m_tokens_per_image && !images_features_proj.empty()) {
+            m_tokens_per_image = images_features_proj.at(0).get_shape().at(1);
+        }
+        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_image);
+        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_image);
+        ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
+        std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
+        OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1);
+        size_t features_length = 0;
+        for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
+            size_t text_length = tokens.at(im_id).get_shape().at(1);
+            size_t im_length = images_features_proj.at(im_id).get_shape().at(1);
+            OPENVINO_ASSERT(im_length == m_tokens_per_image);
+            features_length += text_length + im_length;
+        }
+        features_length += tokens.back().get_shape().at(1);
+        ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
+        size_t offset = 0;
+        for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
+            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
+            const ov::Tensor& image_embeds = images_features_proj.at(im_id);
+            size_t text_length = text_embeds.get_shape().at(1);
+            size_t im_length = image_embeds.get_shape().at(1);
+            std::copy_n(
+                text_embeds.data<float>(),
+                text_embeds.get_size(),
+                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+            );
+            offset += text_length;
+            std::copy_n(
+                image_embeds.data<float>(),
+                image_embeds.get_size(),
+                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+            );
+            offset += im_length;
+        }
+        const ov::Tensor& text_embeds = m_embedding.infer(tokens.back());
+        size_t text_length = text_embeds.get_shape().at(1);
+        std::copy_n(
+            text_embeds.data<float>(),
+            text_embeds.get_size(),
+            inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+        );
+
+        if (!m_is_chat_conversation) {
+            m_image_id = 0;
+        }
+
+        return inputs_embeds;
+    }
+
+    virtual void start_chat(const std::string& system_message) override {
+        IInputsEmbedder::start_chat(system_message);
+        m_image_id = 0;
+    }
+
+    virtual void finish_chat() override {
+        IInputsEmbedder::finish_chat();
+        m_image_id = 0;
+    }
+};
+
 InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
                                const std::filesystem::path& model_dir,
                                const std::string& device,
@@ -1169,6 +1572,8 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
         m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
         m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::PHI3_V) {
+        m_impl = std::make_shared<InputsEmbedderPhi3V>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
