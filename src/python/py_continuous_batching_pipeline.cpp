@@ -44,7 +44,9 @@ auto cache_eviction_config_docstring = R"(
     :param aggregation_mode: The mode used to compute the importance of tokens for eviction
     :type aggregation_mode: openvino_genai.AggregationMode
 
-    :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction
+    :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction.
+      Set this to false if your model has different RoPE scheme from the one used in the
+      original llama model and you experience accuracy issues with cache eviction enabled.
     :type apply_rotation: bool
 )";
 

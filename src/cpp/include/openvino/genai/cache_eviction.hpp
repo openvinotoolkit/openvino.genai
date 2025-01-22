@@ -61,7 +61,10 @@ namespace ov::genai {
         /** The mode used to compute the importance of tokens for eviction */
         AggregationMode aggregation_mode = AggregationMode::NORM_SUM;
 
-        /** Whether to apply cache rotation (RoPE-based) after each eviction **/
+        /** Whether to apply cache rotation (RoPE-based) after each eviction.
+         *  Set this to false if your model has different RoPE scheme from the one used in the
+         *  original llama model and you experience accuracy issues with cache eviction enabled
+         *  and apply_rotation=true.**/
         bool apply_rotation = false;
     private:
         /** Number of tokens in the *beginning* of KV cache that should be retained
