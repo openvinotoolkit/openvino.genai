@@ -7,9 +7,7 @@
 
 struct TsfnContext {
     TsfnContext(std::string prompt) : prompt(prompt) {};
-    ~TsfnContext() {
-    //   std::cout << "Tsfn destructed" << std::endl;
-    };
+    ~TsfnContext() {};
 
     std::thread native_thread;
     Napi::ThreadSafeFunction tsfn;
@@ -20,34 +18,38 @@ struct TsfnContext {
 };
 
 void performInferenceThread(TsfnContext* context) {
-    auto callback = [](Napi::Env env, Napi::Function js_callback, TsfnContext* context) {
-        try {
-            std::function<bool(std::string)> streamer = [env, js_callback](std::string word) {
-                js_callback.Call({
-                    Napi::Boolean::New(env, false),
-                    Napi::String::New(env, word)
-                });
-
-                // Return flag corresponds whether generation should be stopped.
-                // false means continue generation.
-                return false;
-            };
-
-            ov::genai::GenerationConfig config;
-
-            config.update_generation_config(*context->options);
-
-            context->pipe->generate(context->prompt, config, streamer);
-            js_callback.Call({
-                Napi::Boolean::New(env, true)
-            });
-        } catch(std::exception& err) {
-            Napi::Error::Fatal("performInferenceThread callback error. Details:" , err.what());
-        }
-    };
-
     try {
-        napi_status status = context->tsfn.BlockingCall(context, callback);
+        ov::genai::GenerationConfig config;
+        config.update_generation_config(*context->options);
+
+        std::function<bool(std::string)> streamer = [context](std::string word) {
+            napi_status status = context->tsfn.BlockingCall([word](Napi::Env env, Napi::Function jsCallback) {
+                try {
+                    jsCallback.Call({
+                        Napi::Boolean::New(env, false),
+                        Napi::String::New(env, word)
+                    });
+                } catch(std::exception& err) {
+                    Napi::Error::Fatal("performInferenceThread callback error. Details:" , err.what());
+                }
+            });
+            if (status != napi_ok) {
+                // Handle error
+                Napi::Error::Fatal("performInferenceThread error", "napi_status != napi_ok");
+            }
+
+            // Return flag corresponds whether generation should be stopped.
+            // false means continue generation.
+            return false;
+        };
+
+        context->pipe->generate(context->prompt, config, streamer);
+        napi_status status = context->tsfn.BlockingCall([](Napi::Env env, Napi::Function jsCallback) {
+            jsCallback.Call({
+                Napi::Boolean::New(env, true),
+            });
+        });
+
         if (status != napi_ok) {
             // Handle error
             Napi::Error::Fatal("performInferenceThread error", "napi_status != napi_ok");
