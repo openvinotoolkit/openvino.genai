@@ -123,7 +123,6 @@ std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hi
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_length = input_ids.get_shape().at(1);
 
-    // todo: skip copy if already set and batch didn't changed
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, request);
     request.set_tensor("input_ids", input_ids);
 
