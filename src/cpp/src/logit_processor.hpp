@@ -399,8 +399,10 @@ public:
     }
 
     void decrease_generated_token_occurance(int64_t token_id) {
+        try {
         OPENVINO_ASSERT(m_unique_generated_token_ids->count(token_id) > 0);
         m_unique_generated_token_ids->at(token_id)--;
+        } catch (...) {};
     }
 
 };

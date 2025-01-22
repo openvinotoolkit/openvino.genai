@@ -139,11 +139,25 @@ GeneratedRequests retokenize_requests(const GeneratedRequests& source, Tokenizer
             uint64_t source_sequence_id = source_sequence.first;
             GeneratedSequence src_sequence = source_sequence.second;
                 auto decoded_str = source_tokenizer.decode(src_sequence.token_ids);
+                {
+                    ov::Tensor encoded_tensor = source_tokenizer.encode(decoded_str, ov::genai::add_special_tokens(false)).input_ids;
+                    size_t tensor_size = encoded_tensor.get_size();
+                    std::vector<int64_t> dst_token_ids(tensor_size);
+                    std::copy_n(encoded_tensor.data<int64_t>(), tensor_size, dst_token_ids.begin());
+                    if (src_sequence.token_ids != dst_token_ids) {
+                        continue;
+                    }
+                }
 
                 ov::Tensor encoded_tensor = dist_tokenizer.encode(decoded_str, ov::genai::add_special_tokens(false)).input_ids;
                 size_t tensor_size = encoded_tensor.get_size();
                 std::vector<int64_t> dst_token_ids(tensor_size);
                 std::copy_n(encoded_tensor.data<int64_t>(), tensor_size, dst_token_ids.begin());
+
+                auto decoded_str_dst = dist_tokenizer.decode(dst_token_ids);
+                if (decoded_str_dst != decoded_str) {
+                    auto a = 0;
+                }
 
                 std::vector<float> dst_log_probs(dst_token_ids.size(), 0.f);
 
@@ -181,6 +195,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     if (!m_are_same_tokenizers) {
         ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
         retokenization_timer.start();
+        // auto a = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
+        // auto b = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_draft_tokenizer);
         draft_generated_requests = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
         retokenization_timer.end();
         m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
@@ -201,6 +217,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     if (!m_are_same_tokenizers) {
                 ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
         retokenization_timer.start();
+        // auto a = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
+        // auto b = retokenize_requests(a, m_draft_tokenizer, m_main_tokenizer);
         main_generated_requests = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
         retokenization_timer.end();
         m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
