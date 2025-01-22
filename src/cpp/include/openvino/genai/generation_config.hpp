@@ -143,7 +143,7 @@ public:
     OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
     bool is_speculative_decoding() const;
 
-    virtual void update_generation_config(const ov::AnyMap& properties);
+    void update_generation_config(const ov::AnyMap& properties);
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -152,7 +152,7 @@ public:
 
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
-    virtual void validate() const;
+    void validate() const;
 };
 
 /*

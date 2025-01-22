@@ -90,12 +90,10 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     process_whisper_logits(logits, config, return_timestamps, {});
 
-    // since we have applied `Slice` operation to last MatMul, model output sequence length is 1
-    // so, we need to update sequence groups to think that they already have processed all prompt tokens except last
-    // ones and schedule only `output_sequence_len` ones
+    // sample last token only
     int64_t output_sequence_len = logits.get_shape().at(1);
-    sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     sampler.sample({sequence_group}, logits);
     stream_generated_tokens();
