@@ -377,7 +377,10 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/microsoft/Phi-3.5-vision-instruct"><code>microsoft/Phi-3.5-vision-instruct</code></a></li>
         </ul>
       </td>
-      <td>GPU is not supported</td>
+      <td>
+          <li>GPU isn't supported</li>
+          <li>These models' configs aren't consistent. It's required to override the default <code>eos_token_id</code> with the one from a tokenizer: <code>generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())</code>.</li>
+      </td>
     </tr>
     <tr>
       <td><code>Qwen2-VL</code></td>
