@@ -41,7 +41,9 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_len = input_ids.get_shape().at(1);
 
+    // todo: skip copy if already set and batch didn't changed
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size);
+
     _set_cache_position_tensor(seq_len);
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("beam_idx", beam_idx);

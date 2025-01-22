@@ -26,13 +26,14 @@ public:
 private:
     ov::InferRequest m_request_decoder;
     ov::InferRequest m_request_decoder_with_past;
-    bool m_initial_step = true;
-    bool m_decoder_with_past_kv_value_set = false;
     size_t m_cache_position = 0;
+    bool m_initial_past_key_value_set = false;
+    bool m_past_key_value_linked = false;
 
     void _set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
                                            const size_t batch_size,
                                            InferRequest& request);
+    void _set_past_key_value(const Tensor& beam_idx);
 };
 
 }  // namespace ov::genai

@@ -10,35 +10,6 @@
 
 namespace {
 
-bool are_past_key_values_empty(ov::InferRequest& request) {
-    for (const auto& input : request.get_compiled_model().inputs()) {
-        const std::string name = input.get_any_name();
-        if (name.find("past_key_values") == std::string::npos) {
-            continue;
-        }
-
-        ov::Tensor tensor = request.get_tensor(name);
-
-        return tensor.get_size() == 0;
-    }
-
-    OPENVINO_THROW("Past key value tensor not found");
-}
-
-void reset_past_key_values(ov::InferRequest& request) {
-    for (const auto& input : request.get_compiled_model().inputs()) {
-        const std::string name = input.get_any_name();
-        if (name.find("past_key_values") == std::string::npos) {
-            continue;
-        }
-
-        ov::Shape shape{request.get_tensor(name).get_shape()};
-        shape[0] = 0;
-
-        request.set_tensor(name, ov::Tensor{ov::element::f32, shape});
-    }
-}
-
 void copy_with_beam_gather(const ov::Tensor& source, ov::Tensor& dest, const ov::Tensor& beam_idx) {
     const size_t dest_batch_size = beam_idx.get_shape().at(0);
 
@@ -63,7 +34,7 @@ void copy_with_beam_gather(const ov::Tensor& source, ov::Tensor& dest, const ov:
     }
 }
 
-void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest, const ov::Tensor& beam_idx) {
+void copy_past_key_value(ov::InferRequest& source, ov::InferRequest& dest, const ov::Tensor& beam_idx) {
     // source outputs:
     // present.0.decoder.key
     // present.0.decoder.value
@@ -90,6 +61,21 @@ void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest, const 
         copy_with_beam_gather(source_tensor, dest_tensor, beam_idx);
     }
 }
+
+void link_past_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
+    for (auto& source_output : source.get_compiled_model().outputs()) {
+        std::string source_output_name = source_output.get_any_name();
+        if (source_output_name.find("present") == std::string::npos) {
+            continue;
+        }
+
+        std::string dest_input_name = std::regex_replace(source_output_name, std::regex("present"), "past_key_values");
+        auto source_tensor = source.get_tensor(source_output_name);
+
+        dest.set_tensor(dest_input_name, source_tensor);
+    }
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -131,27 +117,23 @@ std::pair<int64_t, float> WhisperWithPastDecoder::detect_language(const ov::Tens
 std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hidden_state,
                                                         const Tensor& input_ids,
                                                         const Tensor& beam_idx) {
-    ov::InferRequest& request = m_initial_step ? m_request_decoder : m_request_decoder_with_past;
+    const bool is_initial_step = m_cache_position == 0;
+    ov::InferRequest& request = is_initial_step ? m_request_decoder : m_request_decoder_with_past;
 
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_length = input_ids.get_shape().at(1);
 
+    // todo: skip copy if already set and batch didn't changed
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, request);
     request.set_tensor("input_ids", input_ids);
 
-    if (!m_initial_step) {
+    if (!is_initial_step) {
         ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
         cache_position_tensor.set_shape({1});
         cache_position_tensor.data<int64_t>()[0] = m_cache_position;
     }
 
-    if (!m_initial_step) {
-        if (are_past_key_values_empty(m_request_decoder_with_past)) {
-            set_past_key_value(m_request_decoder, m_request_decoder_with_past, beam_idx);
-        } else {
-            set_past_key_value(m_request_decoder_with_past, m_request_decoder_with_past, beam_idx);
-        }
-    }
+    _set_past_key_value(beam_idx);
 
     const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
@@ -159,7 +141,6 @@ std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hi
 
     auto output_tensor = request.get_tensor("logits");
 
-    m_initial_step = false;
     m_cache_position += seq_length;
 
     return {output_tensor, infer_ms};
@@ -192,11 +173,43 @@ void WhisperWithPastDecoder::_set_encoder_hidden_states_tensor(const Tensor& enc
     request.set_tensor("encoder_hidden_states", new_encoder_hidden_states);
 }
 
+void WhisperWithPastDecoder::_set_past_key_value(const Tensor& beam_idx) {
+    const bool is_initial_step = m_cache_position == 0;
+    if (is_initial_step) {
+        return;
+    }
+
+    const size_t batch_size = beam_idx.get_shape().at(0);
+    // no copy needed, just 'link' output tensor with input tensor
+    const bool can_link_past_key_value = batch_size == 1 && beam_idx.data<int32_t>()[0] == 0;
+
+    if (!m_initial_past_key_value_set) {
+        if (can_link_past_key_value) {
+            link_past_key_value(m_request_decoder, m_request_decoder_with_past);
+        } else {
+            copy_past_key_value(m_request_decoder, m_request_decoder_with_past, beam_idx);
+        }
+
+        m_initial_past_key_value_set = true;
+        return;
+    }
+
+    if (m_past_key_value_linked) {
+        return;
+    }
+
+    if (can_link_past_key_value) {
+        link_past_key_value(m_request_decoder_with_past, m_request_decoder_with_past);
+        m_past_key_value_linked = true;
+    } else {
+        copy_past_key_value(m_request_decoder_with_past, m_request_decoder_with_past, beam_idx);
+    }
+};
+
 void WhisperWithPastDecoder::reset_state() {
-    reset_past_key_values(m_request_decoder_with_past);
     m_request_decoder_with_past.reset_state();
-    m_decoder_with_past_kv_value_set = false;
-    m_initial_step = true;
     m_cache_position = 0;
+    m_initial_past_key_value_set = false;
+    m_past_key_value_linked = false;
 }
 }  // namespace ov::genai
