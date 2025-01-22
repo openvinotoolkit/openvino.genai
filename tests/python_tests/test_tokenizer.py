@@ -6,6 +6,7 @@ import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
+import openvino
 import openvino_genai
 import json
 
@@ -18,6 +19,20 @@ from ov_genai_test_utils import (
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
+    # rt_info has the highest priority. Delete it to respect configs.
+    core = openvino.Core()
+    core.set_property({'ENABLE_MMAP': False})
+    for model_path in temp_path / "openvino_tokenizer.xml", temp_path / "openvino_detokenizer.xml":
+        tokenizer = core.read_model(model_path)
+        rt_info = tokenizer.get_rt_info()
+        for config, _ in configs:
+            for key in config.keys():
+                try:
+                    del rt_info[key]
+                except KeyError:
+                    pass
+        openvino.save_model(tokenizer, model_path)
+
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 
