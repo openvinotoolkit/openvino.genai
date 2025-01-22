@@ -312,6 +312,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
       <th>Models</th>
       <th>LoRA support</th>
       <th>Example HuggingFace Models</th>
+      <th>Notes</th>
     </tr>
     <tr>
       <td><code>InternVL2</code></td>
@@ -329,6 +330,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-8B"><code>OpenGVLab/InternVL2_5-8B</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>LLaVA</code></td>
@@ -339,6 +341,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/llava-hf/llava-1.5-7b-hf"><code>llava-hf/llava-1.5-7b-hf</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>LLaVA-NeXT</code></td>
@@ -351,6 +354,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/llava-hf/llama3-llava-next-8b-hf"><code>llava-hf/llama3-llava-next-8b-hf</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>MiniCPMV</code></td>
@@ -361,6 +365,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/openbmb/MiniCPM-V-2_6"><code>openbmb/MiniCPM-V-2_6</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>Phi3VForCausalLM</code></td>
@@ -372,6 +377,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/microsoft/Phi-3.5-vision-instruct"><code>microsoft/Phi-3.5-vision-instruct</code></a></li>
         </ul>
       </td>
+      <td>GPU is not supported</td>
     </tr>
     <tr>
       <td><code>Qwen2-VL</code></td>
@@ -383,6 +389,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct"><code>Qwen/Qwen2-VL-7B-Instruct</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
   </tbody>
 </table>
