@@ -100,7 +100,7 @@ describe('generation parameters validation', () => {
     await pipeline.startChat();
 
     await assert.rejects(
-      async () => await pipeline.generate('prompt'),
+      async () => await pipeline.generate('prompt', {}, false),
       {
         name: 'Error',
         message: 'Generation callback must be a function',
@@ -120,7 +120,7 @@ describe('generation parameters validation', () => {
 
   it('should perform generation with default options', async () => {
     try {
-      await pipeline.generate('prompt', { max_new_tokens: 1 }, () => {});
+      await pipeline.generate('prompt', { max_new_tokens: 1 });
     } catch (error) {
       assert.fail(error);
     }
@@ -129,7 +129,7 @@ describe('generation parameters validation', () => {
   });
 
   it('should return a string as generation result', async () => {
-    const reply = await pipeline.generate('prompt', { max_new_tokens: 1 }, () => {});
+    const reply = await pipeline.generate('prompt', { max_new_tokens: 1 });
 
     assert.strictEqual(typeof reply, 'string');
   });
