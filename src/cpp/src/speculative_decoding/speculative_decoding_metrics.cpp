@@ -43,6 +43,10 @@ float SpeculativeDecodingMetrics::get_draft_duration_percentage() {
     return (draft_duration / total_duration) * 100;
 }
 
+float SpeculativeDecodingMetrics::get_retokenization_duration_percentage() {
+    return (retokenization_duration / total_duration) * 100;
+}
+
 float SpeculativeDecodingMetrics::get_main_duration_percentage() {
     return (main_duration / total_duration) * 100;
 }
@@ -126,6 +130,8 @@ void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
     std::cout << "Draft model duration, ms: " << draft_duration << std::endl;
     std::cout << "Main model duration, ms: " << main_duration << std::endl;
     std::cout << "Draft model duration, %: " << get_draft_duration_percentage() << std::endl;
+    std::cout << "Retokenization_duration duration, ms: " << retokenization_duration << std::endl;
+    std::cout << "Retokenization_duration duration, %: " << get_retokenization_duration_percentage() << std::endl;
     std::cout << "Main model duration, %: " << get_main_duration_percentage() << std::endl;
     std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(-1) << std::endl;
     std::cout << "=============================== " << std::endl;

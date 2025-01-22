@@ -18,7 +18,7 @@ class SpeculativeDecodingMetrics {
     std::map<int64_t, size_t> m_generated_len;
 
 public:
-    float draft_duration = 0, main_duration = 0, total_duration = 0;
+    float draft_duration = 0, main_duration = 0, total_duration = 0, retokenization_duration = 0;
 
     float get_avg_acceptance_rate(int64_t request_id);
     void update_acceptance_rate(int64_t request_id, float acceptance_rate);
@@ -33,6 +33,7 @@ public:
     size_t get_iteration_number(int64_t request_id);
 
     float get_draft_duration_percentage();
+    float get_retokenization_duration_percentage();
     float get_main_duration_percentage();
     float get_inference_duration_percentage();
 

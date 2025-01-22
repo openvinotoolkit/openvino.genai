@@ -179,8 +179,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
     if (!m_are_same_tokenizers) {
-        auto a = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
+        ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
+        retokenization_timer.start();
         draft_generated_requests = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
+        retokenization_timer.end();
+        m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
     }
     for (const auto& candidate : draft_generated_requests) {
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
@@ -196,8 +199,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     if (!m_are_same_tokenizers) {
-        auto a = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
+                ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
+        retokenization_timer.start();
         main_generated_requests = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
+        retokenization_timer.end();
+        m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
     }
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
@@ -234,7 +240,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
     }
 
-    if (main_generated_requests.empty() && 0) {
+    // if (main_generated_requests.empty() && 0) {
+    if (main_generated_requests.empty()) {
         std::cout << std::endl;
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
