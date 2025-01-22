@@ -40,6 +40,8 @@ protected:
     // Metrics
     SpeculativeDecodingMetrics m_sd_metrics;
     PerfMetrics m_perf_metrics;
+    bool m_are_same_tokenizers = true;
+    Tokenizer m_main_tokenizer, m_draft_tokenizer;
 
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;

@@ -68,15 +68,16 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     utils::set_kv_cache_type_and_shape(main_model, main_device_config);
     utils::set_kv_cache_type_and_shape(draft_model, draft_device_config);
 
-    // main and draft model can have different tokenizers
-    // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
     Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
     // todo: remove this condition after support of CVS-154103
-    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
+    m_are_same_tokenizers = are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer);
     
     m_tokenizer = main_model_tokenizer;
+
+    m_main_tokenizer = main_model_tokenizer;
+    m_draft_tokenizer = draft_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
@@ -128,6 +129,31 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
     }
 }
 
+GeneratedRequests retokenize_requests(const GeneratedRequests& source, Tokenizer& source_tokenizer, Tokenizer& dist_tokenizer) {
+    GeneratedRequests dist;
+    for (const auto& source_request : source) {
+        uint64_t source_request_id = source_request.first;
+        GeneratedSequences source_sequences = source_request.second;
+        dist.insert({{ source_request_id, {{}} }});
+        for (const auto& source_sequence : source_sequences) {
+            uint64_t source_sequence_id = source_sequence.first;
+            GeneratedSequence src_sequence = source_sequence.second;
+                auto decoded_str = source_tokenizer.decode(src_sequence.token_ids);
+
+                ov::Tensor encoded_tensor = dist_tokenizer.encode(decoded_str, ov::genai::add_special_tokens(false)).input_ids;
+                size_t tensor_size = encoded_tensor.get_size();
+                std::vector<int64_t> dst_token_ids(tensor_size);
+                std::copy_n(encoded_tensor.data<int64_t>(), tensor_size, dst_token_ids.begin());
+
+                std::vector<float> dst_log_probs(dst_token_ids.size(), 0.f);
+
+                GeneratedSequence dst_sequence(dst_token_ids, dst_log_probs);
+                dist[source_request_id].insert({ source_sequence_id, dst_sequence });
+        }
+    }
+    return dist;
+}
+
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
@@ -152,7 +178,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
-    for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
+    if (!m_are_same_tokenizers) {
+        auto a = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
+        draft_generated_requests = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
+    }
+    for (const auto& candidate : draft_generated_requests) {
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
@@ -165,6 +195,10 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
+    if (!m_are_same_tokenizers) {
+        auto a = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
+        main_generated_requests = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
+    }
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
@@ -201,6 +235,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     }
 
     if (main_generated_requests.empty() && 0) {
+        std::cout << std::endl;
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
