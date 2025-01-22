@@ -99,8 +99,9 @@ SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32,
                        avg_cache_usage_optimization_ratio=1.1),
 
     ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("enable_prefix_caching", [True, False])  # prefix caching shouldn't impact similarity
-@pytest.mark.parametrize("apply_rotation", [True, False])         # rotation should improve similarity
+@pytest.mark.parametrize("enable_prefix_caching", [True, False],
+                                                  ids=["with_prefix_caching", "no_prefix_caching"])  # prefix caching shouldn't impact similarity
+@pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
 def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, test_struct, enable_prefix_caching, apply_rotation):
     import whowhatbench
 
