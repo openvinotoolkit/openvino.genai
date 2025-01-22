@@ -31,6 +31,11 @@ bool ContinuousBatchingPipeline::PromptLookupImpl::has_non_finished_requests() {
 }
 
 void ContinuousBatchingPipeline::PromptLookupImpl::step() {
+    auto& raw_perf_counters = m_perf_metrics.raw_metrics;
+
+    ManualTimer step_timer("prompt_lookup_decoding: step()");
+    step_timer.start();
+
     ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
     candidates_timer.start();
     m_pipeline->generate_candidates();
@@ -38,7 +43,7 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     m_sd_metrics.draft_duration += candidates_timer.get_duration();
     auto generated_len_before = m_pipeline->get_generated_request_len();
 
-    ManualTimer main_timer("prompt_lookup_decoding: step()");
+    ManualTimer main_timer("prompt_lookup_decoding: pipeline: step()");
     main_timer.start();
     m_pipeline->step();
     main_timer.end();
@@ -65,6 +70,18 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
         m_sd_metrics.update_draft_accepted_tokens(request_id, num_matches);
     }
 
+    // update perf metrics
+    const auto num_generated_tokens = m_pipeline->get_processed_tokens_per_iteration();
+    if (num_generated_tokens > 0) {    
+        raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+    
+        auto infer_duration = step_timer.get_duration_microsec();
+
+        raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
+        raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
+        raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
+    }
+
     if (generated_len_after.empty() && 0) {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
@@ -75,6 +92,9 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer) {
+    m_perf_metrics = PerfMetrics();
+    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
 
@@ -199,6 +219,13 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         }
 
         result.m_status = generations[request_id]->get_status();
+
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        m_perf_metrics.raw_metrics.generate_durations.clear();
+        m_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
+        m_perf_metrics.num_input_tokens = request->get_prompt_len();
+        m_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
+
         results.push_back(std::move(result));
     }
 

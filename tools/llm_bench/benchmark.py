@@ -161,6 +161,7 @@ def get_argprser():
     parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
     parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
     parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
     return parser.parse_args()
 
 

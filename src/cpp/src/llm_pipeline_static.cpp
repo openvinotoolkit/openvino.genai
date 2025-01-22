@@ -698,12 +698,13 @@ StatefulLLMPipeline::StatefulLLMPipeline(
                         utils::from_config_json_if_exists(models_path)),
     m_sampler(m_tokenizer) {
     ov::AnyMap properties = config;
-    const auto use_blob = pop_or_default(properties, "USE_BLOB", false);
-    if (use_blob) {
-        auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
-        if (blob_path.empty()) {
-            blob_path = (models_path / "openvino_model.blob").string();
-        }
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+
+    bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
         if (!std::filesystem::exists(blob_path)) {
             OPENVINO_THROW("Blob file is not found at: " + blob_path);
         }
@@ -721,6 +722,25 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
         ov::AnyMap properties = config;
         auto compiled = setupAndCompileModel(model, model_desc, properties);
+        // Also export compiled model if required
+        if (export_blob) {
+            if (blob_path.empty()) {
+                blob_path = (models_path / "openvino_model.blob").string();
+            }
+            // Check the path is full
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled->export_model(fout);
+        }
         m_request = compiled->create_infer_request();
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
@@ -920,8 +940,8 @@ EncodedResults StatefulLLMPipeline::generate(
 
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
@@ -1392,8 +1412,8 @@ EncodedResults StatelessLLMPipeline::generate(
     //       Retrive only useful logits and work only with them here.
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, padded_input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(m_kvcache_desc.max_prompt_size - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(m_kvcache_desc.max_prompt_size);
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(

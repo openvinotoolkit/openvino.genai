@@ -31,7 +31,7 @@ protected:
 
     // for perf metrics
     float m_load_time_ms = 0.0f;
-    size_t m_batch_size = 0; // stored number of scheduled sequences on last step
+    size_t m_batch_size = 0; // stored number of processed tokens on last step
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;

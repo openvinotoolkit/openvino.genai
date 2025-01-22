@@ -138,13 +138,10 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     auto logits = m_llm.get_tensor("logits");
 
-    // since we have applied `Slice` operation to last MatMul, model output sequence lenght is 1
-    // so, we need to update sequence groups to think that they already have processed all prompt tokens except last ones
-    // and schedule only `output_sequence_len` ones
     int64_t output_sequence_len = logits.get_shape().at(1);
     for (auto& sequence_group : sequence_groups) {
-        sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-        sequence_group->schedule_tokens(output_sequence_len);
+        sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+        sequence_group->set_output_seq_len(output_sequence_len);
     }
 
     std::map<size_t, size_t> beam_offets;
