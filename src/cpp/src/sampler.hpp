@@ -38,6 +38,8 @@ struct SamplerOutput {
     // IDs of sequences that need to be forked (note, the same sequence can be forked multiple times)
     // it will later be used by scheduler to fork block_tables for child sequences
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
+    // store number of generated_tokens
+    size_t num_generated_tokens = 0;
 };
 
 class Sampler {
