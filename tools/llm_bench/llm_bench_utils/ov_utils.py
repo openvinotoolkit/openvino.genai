@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
-from openvino.runtime import Core
+from openvino import Core
 import openvino as ov
 import logging as log
 import torch
@@ -17,7 +17,10 @@ from llm_bench_utils.config_class import (
     DEFAULT_MODEL_CLASSES,
     IMAGE_GEN_CLS
 )
-import openvino.runtime.opset13 as opset
+try:
+    import openvino.opset13 as opset
+except ImportError:
+    import openvino.runtime.opset13 as opset
 from transformers import pipeline
 import openvino_genai as ov_genai
 import queue
@@ -183,7 +186,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"], OV_MODEL_CLASSES_MAPPING["chatglm"]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
+                log.warning(f"OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
@@ -243,9 +246,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     draft_model_path = kwargs.get("draft_model", '')
     cb = kwargs.get("use_cb", False)
-    if cb or draft_model_path:
+    cb_config = kwargs.get("cb_config")
+    use_streamer_metrics = False
+    if cb or cb_config is not None or draft_model_path:
         log.info("Continuous Batching mode activated")
-        ov_config["scheduler_config"] = get_scheduler_config_genai(kwargs.get("cb_config"))
+        ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
+
+        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.") or draft_model_path
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
@@ -292,7 +299,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb or draft_model_path else None
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if use_streamer_metrics else None
 
     return llm_pipe, tokenizer, end - start, streamer, True
 
@@ -363,10 +370,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
 
     class PerfCollector:
-        def __init__(self) -> types.NoneType:
+        def __init__(self, main_model_name="unet") -> types.NoneType:
             self.iteration_time = []
             self.start_time = time.perf_counter()
             self.duration = -1
+            self.main_model_name = main_model_name
 
         def __call__(self, step, num_steps, latents):
             self.iteration_time.append(time.perf_counter() - self.start_time)
@@ -405,8 +413,6 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         def get_vae_decoder_step_count(self):
             return 1
 
-    callback = PerfCollector()
-
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
     if adapter_config:
         ov_config['adapters'] = adapter_config
@@ -416,6 +422,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         data = json.load(f)
 
     model_class_name = data.get("_class_name", "")
+    main_model_name = "unet" if "unet" in data else "transformer"
+    callback = PerfCollector(main_model_name)
+
+    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+    callback.orig_tokenizer = orig_tokenizer
 
     start = time.perf_counter()
 

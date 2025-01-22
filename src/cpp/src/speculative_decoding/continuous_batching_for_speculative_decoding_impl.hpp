@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -29,6 +29,10 @@ public:
     void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
+    bool is_requests_empty();
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
+
+    size_t get_processed_tokens_per_iteration();
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 

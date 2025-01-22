@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching_for_speculative_decoding_impl.hpp"
@@ -32,14 +32,19 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(int64_t request_id) {
-    for (size_t i = 0; i < m_requests.size(); ++i) {
-        auto& request = m_requests[i];
-        if (request->get_request_id() != request_id) {
+    auto it = m_requests.begin();
+    while (it != m_requests.end()) {
+        auto& request = *it;
+        if (request->get_request_id() != request_id && request_id != -1) {
+            it++;
             continue;
         }
         finish_request(request);
-        m_requests.erase(m_requests.begin() + i);
-        break;
+        m_requests.erase(it);
+        it = request_id == -1 ? m_requests.begin() : m_requests.end();
+    }
+    if (request_id == -1) {
+        OPENVINO_ASSERT(m_requests.empty());
     }
 }
 
@@ -277,6 +282,18 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         break;
     }
     return result;
+}
+
+bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::is_requests_empty() {
+    return m_requests.empty();
+}
+
+std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_awaiting_requests() {
+    return m_awaiting_requests;
+}
+
+size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_processed_tokens_per_iteration() {
+    return m_batch_size;
 }
 
 void

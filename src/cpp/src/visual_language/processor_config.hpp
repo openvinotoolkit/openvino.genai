@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -44,6 +44,12 @@ public:
 
     // llava-next specific config params
     std::vector<std::pair<int, int>> image_grid_pinpoints{{336, 672}, {672, 336}, {672, 672}, {1008, 336}, {336, 1008}};
+
+    // qwen2vl specific params
+    size_t min_pixels = 3136;
+    size_t max_pixels = 12845056;
+    size_t temporal_patch_size = 2;
+    size_t merge_size = 2;
 
     /// @brief Default constructor
     ProcessorConfig() = default;

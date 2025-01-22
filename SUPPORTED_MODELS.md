@@ -323,6 +323,10 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-2B"><code>OpenGVLab/InternVL2-2B</code></a></li>
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-4B"><code>OpenGVLab/InternVL2-4B</code></a></li>
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2-8B"><code>OpenGVLab/InternVL2-8B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-1B"><code>OpenGVLab/InternVL2_5-1B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-2B"><code>OpenGVLab/InternVL2_5-2B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-4B"><code>OpenGVLab/InternVL2_5-4B</code></a></li>
+          <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-8B"><code>OpenGVLab/InternVL2_5-8B</code></a></li>
         </ul>
       </td>
     </tr>
@@ -355,6 +359,17 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
       <td>
         <ul>
           <li><a href="https://huggingface.co/openbmb/MiniCPM-V-2_6"><code>openbmb/MiniCPM-V-2_6</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>Qwen2-VL</code></td>
+      <td>Qwen2-VL</td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct"><code>Qwen/Qwen2-VL-2B-Instruct</code></a></li>
+          <li><a href="https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct"><code>Qwen/Qwen2-VL-7B-Instruct</code></a></li>
         </ul>
       </td>
     </tr>

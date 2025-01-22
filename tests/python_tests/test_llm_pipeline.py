@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_genai as ov_genai
@@ -97,6 +97,14 @@ def test_batch_size_switch():
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
 
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_empty_encoded_inputs_throw():
+    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    with pytest.raises(RuntimeError):
+        ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
+
 #
 # Chat scenario
 #
@@ -121,7 +129,7 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
 
     ov_generation_config = GenerationConfig(**generation_config_kwargs)
     hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
@@ -355,7 +363,7 @@ def test_unicode_pybind_decoding_one_string_streamer():
     ov_pipe = read_model((model_id, path))[4]
     res_str = []
     ov_pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
-    assert '�' == res_str[-1]
+    assert '�' == ''.join(res_str)[-1]
 
 #
 # Perf metrics

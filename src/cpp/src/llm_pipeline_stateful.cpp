@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "llm_pipeline_stateful.hpp"
@@ -181,7 +181,7 @@ DecodedResults StatefulLLMPipeline::generate(
 
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     auto stop_time = std::chrono::steady_clock::now();
-    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
     raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
@@ -361,7 +361,7 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     if (!m_tokenized_chat_history.empty()) {
         reset_kv_state();
         m_history = {};
-        m_templated_chat_history = "";
+        m_templated_chat_history.clear();
         m_tokenized_chat_history.clear();
     }
     if (system_message.empty())

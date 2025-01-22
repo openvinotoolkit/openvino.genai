@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/perf_metrics.hpp"
@@ -93,17 +93,17 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         return;
     }
     // If start_item is specified then recalculate durations according to start times and calculate statistics only after that.
-    if (start_time.has_value()) {
+    if (start_time.has_value() && raw_metrics.m_new_token_times.size() > 0 && raw_metrics.m_batch_sizes.size() > 0) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
         raw_metrics.m_durations.reserve(tok_times.size());
 
         auto ttft = tok_times[0] - start_time_val;
-        raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
+        raw_metrics.m_times_to_first_token.clear();
         raw_metrics.m_times_to_first_token.emplace_back(ttft);
         num_generated_tokens = batch_sizes[0];
-        
+
         // The very first infer request (prefill stage) is slower than subsequent ones since we process a sequence of tokens.
         // To have a clearer TPOT number, the time taken to generate the very first token at the prefill stage 
         // must not be included in the TPOT calculation. The first duration used for TPOT is from the first token 
@@ -114,7 +114,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
             num_generated_tokens += batch_sizes[i];
         }
     }
-    
+
     // calc_mean_and_std will convert microsecond to milliseconds.
     tpot = calc_mean_and_std(raw_metrics.m_durations);
     ipot = calc_mean_and_std(raw_metrics.m_token_infer_durations);

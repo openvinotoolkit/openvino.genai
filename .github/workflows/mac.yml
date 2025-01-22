@@ -235,7 +235,7 @@ jobs:
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
           python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -395,7 +395,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          ${OV_INSTALL_DIR}/samples/python/text_generation/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         timeout-minutes: 1
 
       - name: Test python samples (whisper_speech_recognition)

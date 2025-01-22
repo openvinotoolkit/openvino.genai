@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "llm_pipeline_base.hpp"
@@ -77,6 +77,9 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        // Get the currrent timestamp in order to evaluate total generate duration.
+        auto start_time =  std::chrono::steady_clock::now();
+        
         std::vector<std::string> prompts = std::visit(overloaded{
             [](const std::string& prompt) {
                 return std::vector{prompt};
@@ -87,8 +90,7 @@ public:
         }, inputs);
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<GenerationResult> generated = m_impl.generate(
-            prompts,
+        std::vector<GenerationResult> generated = m_impl.generate(prompts,
             std::vector<GenerationConfig>{prompts.size(), config},
             streamer
         );
@@ -99,7 +101,35 @@ public:
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
-        return {std::move(plain_replies), std::move(plain_scores)};
+
+        PerfMetrics perf_metrics;
+        // For GenerationResults, all perf_metrics are the same except tokenization and detokenization durations.
+        // Since we return here only one perf_metrics, we should accumulate all tokenization and detokenization times.
+        if (generated.size() > 0) {
+            perf_metrics = generated[0].perf_metrics;
+        }
+
+        // Tokenizations and detokenization times are dispersed across GenerationResult vector.
+        // Need to collect them into a single perf_metric for DecodedResult.
+        auto& raw_metrics = perf_metrics.raw_metrics;
+        for (size_t i = 1; i < generated.size(); ++i){
+            auto tok_durations = generated[i].perf_metrics.raw_metrics.tokenization_durations;
+            auto detok_durations = generated[i].perf_metrics.raw_metrics.detokenization_durations;
+            for (size_t j = 0; j < tok_durations.size(); ++j) {
+                raw_metrics.tokenization_durations.emplace_back(tok_durations[j]);
+            }
+            for (size_t j = 0; j < detok_durations.size(); ++j) {
+                raw_metrics.detokenization_durations.emplace_back(detok_durations[j]);
+            }
+        }
+
+        raw_metrics.generate_durations.clear();
+        raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        // Need to reevaluate statistics with the updated start_time which includes tokenization/detokenization durations.
+        perf_metrics.m_evaluated = false;
+        perf_metrics.evaluate_statistics(start_time);
+
+        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics)};
     }
 
     EncodedResults generate(
@@ -107,6 +137,9 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        // Get the currrent timestamp in order to evaluate total generate duration.
+        auto start_time =  std::chrono::steady_clock::now();
+
         std::vector<ov::Tensor> input_ids = std::visit(overloaded{
             [](const ov::Tensor& inp) {
                 size_t batch_size = inp.get_shape().at(0);
@@ -148,7 +181,11 @@ public:
 
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config}, streamer);
+        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, 
+            std::vector<GenerationConfig>{input_ids.size(), config}, 
+            streamer
+        );
+               
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
@@ -156,7 +193,20 @@ public:
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
-        return {std::move(plain_tokens), std::move(plain_scores)};
+        
+        PerfMetrics perf_metrics;
+        // For EncodedGenerationResults, all perf_metrics are the same.
+        if (generated.size() > 0) {
+            perf_metrics = generated[0].perf_metrics;
+        }
+        auto& raw_counters = perf_metrics.raw_metrics;
+        raw_counters.generate_durations.clear();
+        raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        // Reevaluate statistics with the new start_time which includes time for preparing inputs
+        perf_metrics.m_evaluated = false;
+        perf_metrics.evaluate_statistics(start_time);
+
+        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics)};
     }
 
     void start_chat(const std::string& system_message) override {

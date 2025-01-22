@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -25,6 +25,10 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
     OPENVINO_ASSERT(src_shape.size() == 3 && src_shape.size() == res_shape.size(), "Rank of tensors within 'padding_right' must be 3");
     OPENVINO_ASSERT(src_shape[0] == res_shape[0] && src_shape[1] == res_shape[1], "Tensors for padding_right must have the same dimensions");
 
+    // since torch.nn.functional.pad can also perform trancation in case of negative pad size value
+    // we need to find minimal amoung src and res and respect it
+    size_t min_size = std::min(src_shape[2], res_shape[2]);
+
     const float* src_data = src.data<const float>();
     float* res_data = res.data<float>();
 
@@ -33,8 +37,11 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
             size_t offset_1 = (i * res_shape[1] + j) * res_shape[2];
             size_t offset_2 = (i * src_shape[1] + j) * src_shape[2];
 
-            std::memcpy(res_data + offset_1, src_data + offset_2, src_shape[2] * sizeof(float));
-            std::fill_n(res_data + offset_1 + src_shape[2], res_shape[2] - src_shape[2], 0.0f);
+            std::memcpy(res_data + offset_1, src_data + offset_2, min_size * sizeof(float));
+            if (res_shape[2] > src_shape[2]) {
+                // peform actual padding if required
+                std::fill_n(res_data + offset_1 + src_shape[2], res_shape[2] - src_shape[2], 0.0f);
+            }
         }
     }
 }
@@ -130,25 +137,17 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        // Temporary fix for GPU
-        ov::AnyMap updated_properties = properties;
-        if (device.find("GPU") != std::string::npos &&
-            updated_properties.find("INFERENCE_PRECISION_HINT") == updated_properties.end()) {
-            updated_properties["INFERENCE_PRECISION_HINT"] = ov::element::f32;
-        }
-
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_1 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device, updated_properties);
+                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_2 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, updated_properties);
+            m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
@@ -157,7 +156,7 @@ public:
         if (!text_encoder_3_json.is_null()) {
             const std::string text_encoder_3 = text_encoder_3_json.get<std::string>();
             if (text_encoder_3 == "T5EncoderModel") {
-                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, updated_properties);
+                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
             } else {
                 OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
             }
@@ -173,9 +172,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, updated_properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, updated_properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }

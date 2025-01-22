@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -15,6 +15,9 @@ class ContinuousBatchingPipeline::PromptLookupImpl : public ContinuousBatchingPi
 protected:
     std::shared_ptr<ContinuousBatchingForPromptLookupImpl> m_pipeline;
     SpeculativeDecodingMetrics m_sd_metrics;
+    PerfMetrics m_perf_metrics;
+
+    void drop_requests();
 
 public:
     PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
