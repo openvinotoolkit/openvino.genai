@@ -240,8 +240,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
     }
 
-    // if (main_generated_requests.empty() && 0) {
-    if (main_generated_requests.empty()) {
+    if (main_generated_requests.empty() && 0) {
         std::cout << std::endl;
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
@@ -374,6 +373,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
+    generate_timer.end();
+    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
