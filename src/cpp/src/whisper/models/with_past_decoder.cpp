@@ -154,6 +154,12 @@ std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hi
 void WhisperWithPastDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
                                                                const size_t batch_size,
                                                                InferRequest& request) {
+    const size_t current_batch_size = request.get_tensor("encoder_hidden_states").get_shape().at(0);
+    // batch hasn't changed, skip
+    if (current_batch_size == batch_size) {
+        return;
+    }
+
     OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1);
     Shape shape{encoder_hidden_state.get_shape()};
     shape[0] = batch_size;
@@ -211,5 +217,11 @@ void WhisperWithPastDecoder::reset_state() {
     m_cache_position = 0;
     m_initial_past_key_value_set = false;
     m_past_key_value_linked = false;
+
+    Shape encoder_hidden_states_shape{m_request_decoder_with_past.get_tensor("encoder_hidden_states").get_shape()};
+    encoder_hidden_states_shape[0] = 0;
+    m_request_decoder.set_tensor("encoder_hidden_states", ov::Tensor{ov::element::f32, encoder_hidden_states_shape});
+    m_request_decoder_with_past.set_tensor("encoder_hidden_states",
+                                           ov::Tensor{ov::element::f32, encoder_hidden_states_shape});
 }
 }  // namespace ov::genai

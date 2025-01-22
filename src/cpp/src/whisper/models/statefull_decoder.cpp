@@ -41,7 +41,6 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_len = input_ids.get_shape().at(1);
 
-    // todo: skip copy if already set and batch didn't changed
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size);
 
     _set_cache_position_tensor(seq_len);
@@ -64,7 +63,15 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
  */
 void WhisperStatefullDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
                                                                 const size_t batch_size) {
-    _reset_encoder_past_key_values_states(encoder_hidden_state, batch_size);
+    const size_t current_batch_size = m_request.get_tensor("encoder_hidden_states").get_shape().at(0);
+    // batch hasn't changed, skip
+    if (current_batch_size == batch_size) {
+        return;
+    }
+
+    if (current_batch_size != 0) {
+        _reset_encoder_past_key_values_states(encoder_hidden_state, batch_size);
+    }
 
     OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1);
     Shape shape{encoder_hidden_state.get_shape()};
@@ -85,15 +92,10 @@ void WhisperStatefullDecoder::_set_encoder_hidden_states_tensor(const Tensor& en
     m_request.set_tensor("encoder_hidden_states", new_encoder_hidden_states);
 }
 
-// Ensure encoder past_key values states are reset if batch size changed. This is workaround for Ticket:
+// Past_key value states are not shring/grow when batch is changed. Reset past_key values states as a workaround.
+// Ticket:
 void WhisperStatefullDecoder::_reset_encoder_past_key_values_states(const Tensor& encoder_hidden_state,
                                                                     const size_t batch_size) {
-    const size_t current_batch_size = m_request.get_tensor("encoder_hidden_states").get_shape().at(0);
-    // batch hasn't changed, skip
-    if (current_batch_size == 0 || current_batch_size == batch_size) {
-        return;
-    }
-
     const size_t encoder_state_length_dim = encoder_hidden_state.get_shape().at(1);
     for (auto& state : m_request.query_state()) {
         // find encoder states by dimension
@@ -122,6 +124,10 @@ void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
 void WhisperStatefullDecoder::reset_state() {
     m_request.reset_state();
     m_request.set_tensor("cache_position", ov::Tensor{ov::element::i64, {0}});
+
+    Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
+    encoder_hidden_states_shape[0] = 0;
+    m_request.set_tensor("encoder_hidden_states", ov::Tensor{ov::element::f32, encoder_hidden_states_shape});
 };
 
 }  // namespace ov::genai
