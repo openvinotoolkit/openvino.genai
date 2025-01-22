@@ -473,7 +473,7 @@ struct LoRAWeightStateGetter {
 class LoRATransformBase : public ov::pass::MatcherPass {
 public:
 
-    OPENVINO_RTTI("LoRATransformBase");
+    OPENVINO_MATCHER_PASS_RTTI("LoRATransformBase");
 
     LoRATransformBase(const LoRAWeightByNodeGetter& lora_weight_getter) {
         register_matcher(
@@ -693,7 +693,7 @@ class LoRAFuseTransform : public LoRATransformBase {
 
 public:
 
-    OPENVINO_RTTI("LoRAFuseTransform");
+    OPENVINO_RTTI("LoRAFuseTransform", "genai", LoRATransformBase);
 
     LoRAFuseTransform(const LoRAWeightByNodeGetter& lora_weight_getter, const std::string& device_for_fusion = "CPU") :
         LoRATransformBase(lora_weight_getter),
@@ -763,7 +763,7 @@ public:
 class LoRASeparateTransform : public LoRATransformBase {
 public:
 
-    OPENVINO_RTTI("LoRASeparateTransform");
+    OPENVINO_RTTI("LoRASeparateTransform", "genai", LoRATransformBase);
 
     LoRASeparateTransform(const LoRAWeightByNodeGetter& lora_getter) : LoRATransformBase(lora_getter) {}
 

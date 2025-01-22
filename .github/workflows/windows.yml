@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: 'ed470e7e40129d6b2bf728bc9527316937a69ef7'
+  OV_BRANCH: 'master'
   OV_TARBALL: ''
 
 jobs:
@@ -245,7 +245,7 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
           python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -315,7 +315,7 @@ jobs:
           # this check enabled for windows only. Ticket: 160205.
           python -m pip install transformers==4.46.3
           
-          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "not test_smoke"
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke"
 
   genai_python_lib_vlm:
     name: OpenVINO genai VLM tests (cmake + wheel)

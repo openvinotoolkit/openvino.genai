@@ -181,12 +181,18 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         print(f'ov_genai out: {ov_full_history_str}')
     assert ov_full_history_str == hf_full_history_str
 
+    # Test throwing exception for empty rendered chat template
+    # Example: Qwen2-VL chat template
+    chat_template_for_empty_output = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
+    with pytest.raises(Exception):
+        ov_tokenizer.apply_chat_template(conversation, chat_template=chat_template_for_empty_output)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_set_chat_template():
     model_descr = get_chat_models_list()[0]
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
 
     prompt = "how are you?"
     dummy_conversation = [
@@ -217,24 +223,36 @@ prompts = [
 ]
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("add_special_tokens", [True, False])
-@pytest.mark.parametrize("skip_special_tokens", [True, False])
 @pytest.mark.parametrize("prompt", prompts)
-def test_encode_decode_with_special_tokens_option(add_special_tokens, skip_special_tokens, prompt):
+def test_encode_decode_with_special_tokens_option(prompt):
     import numpy as np
-    model_descr = get_chat_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_descr = get_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
     ov_tokenzier = ov_pipe.get_tokenizer()
 
     # Calling encode with 'add_special_tokens' will set state flag.
-    ov_res = ov_tokenzier.encode(prompt, add_special_tokens=add_special_tokens).input_ids.data
-    hf_res = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
-    assert np.all(ov_res == hf_res)
+    ov_res_add_spec = ov_tokenzier.encode(prompt, add_special_tokens=True).input_ids.data
+    ov_res_no_spec = ov_tokenzier.encode(prompt, add_special_tokens=False).input_ids.data
+    hf_res_add_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=True)["input_ids"]
+    hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
+    assert np.all(ov_res_add_spec == hf_res_add_spec)
+    assert np.all(ov_res_no_spec == hf_res_no_spec)
+    
+    # Check that add_special_tokens flag indeed made any difference
+    assert ov_res_add_spec.size != ov_res_no_spec.size
+    assert hf_res_add_spec.size != hf_res_no_spec.size
 
     # Decode with 'skip_special_tokens'
-    decoded_genai = ov_tokenzier.decode(ov_res, skip_special_tokens=skip_special_tokens)[0]
-    decoded_hf = hf_tokenizer.decode(hf_res[0], skip_special_tokens=skip_special_tokens)
-    assert decoded_genai == decoded_hf
+    decoded_genai_skip_spec = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=True)[0]
+    decoded_genai_no_skip = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=False)[0]
+    decoded_hf_skip_spec = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=True)
+    decoded_hf_no_skip = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=False)
+    assert decoded_genai_skip_spec == decoded_hf_skip_spec
+    assert decoded_genai_no_skip == decoded_hf_no_skip
+
+    # Check that skip_special_tokens indeed made any difference
+    assert decoded_genai_skip_spec != decoded_genai_no_skip
+    assert decoded_hf_skip_spec != decoded_hf_no_skip
 
 
 @pytest.mark.precommit
