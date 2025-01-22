@@ -29,7 +29,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     DeviceConfig device_config(core, scheduler_config, device, properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
-    utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
+    utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control, allow_cache_rotation);
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, properties, device_config, core);

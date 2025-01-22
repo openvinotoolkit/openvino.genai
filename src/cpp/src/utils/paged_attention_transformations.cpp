@@ -21,13 +21,12 @@ size_t get_hidden_size(const std::shared_ptr<ov::Model> model) {
     return num_kv_heads * head_size;
 }
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control) {
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control, bool allow_cache_rotation) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
 
     bool use_block_indices_inputs = per_layer_cache_control;
     bool use_score_outputs = per_layer_cache_control;
-    bool allow_cache_rotation = per_layer_cache_control;
     ov::pass::SDPAToPagedAttention(use_block_indices_inputs, use_score_outputs, allow_cache_rotation)
         .run_on_model(model);
 }
@@ -73,8 +72,8 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
     model->validate_nodes_and_infer_types();
 }
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control) {
-    apply_paged_attention_transformations(model, per_layer_cache_control);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control, bool allow_cache_rotation) {
+    apply_paged_attention_transformations(model, per_layer_cache_control, allow_cache_rotation);
     set_kv_cache_type_and_shape(model, device_config);
 }
 
