@@ -295,11 +295,13 @@ void init_whisper_pipeline(py::module_& m) {
         .def("put",
              &ChunkStreamerBase::put,
              "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
-             "should be stopped, if return true generation stops")
+             "should be stopped, if return true generation stops",
+             py::arg("token"))
         .def("put_chunk",
              &ChunkStreamerBase::put_chunk,
              "Put is called every time new token chunk is generated. Returns a bool flag to indicate whether "
-             "generation should be stopped, if return true generation stops")
+             "generation should be stopped, if return true generation stops",
+             py::arg("tokens"))
         .def("end",
              &ChunkStreamerBase::end,
              "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
