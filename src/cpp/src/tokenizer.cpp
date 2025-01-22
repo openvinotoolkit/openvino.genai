@@ -176,12 +176,10 @@ public:
 
         read_config(models_path);
         read_special_tokens_map(models_path);
+        setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(models_path);
         m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
-
-        setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
-
     }
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
