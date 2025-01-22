@@ -568,9 +568,9 @@ public:
      */
     const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
-        auto running_sequences = sequence_group->get_not_finished_sequences();
-        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
-            auto seq_id = running_sequences[idx]->get_id();
+        auto not_finished_sequences = sequence_group->get_not_finished_sequences();
+        for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
+            auto seq_id = not_finished_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             free_sequence_partially(seq_id, blocks_num);
         }
@@ -579,9 +579,9 @@ public:
 
     const size_t free_last_block_from_each_sequence(SequenceGroup::Ptr sequence_group) {
         size_t blocks_released = 0;
-        auto running_sequences = sequence_group->get_not_finished_sequences();
-        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
-            auto seq_id = running_sequences[idx]->get_id();
+        auto not_finished_sequences = sequence_group->get_not_finished_sequences();
+        for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
+            auto seq_id = not_finished_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             if (free_last_block(seq_id)) {
                 blocks_released++;

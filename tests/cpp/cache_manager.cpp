@@ -56,9 +56,9 @@ TEST(TestCacheManager, test_cache_size_param) {
 
     const std::string device = "CPU";
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
-    size_t num_decoder_layers = 12;
-    std::vector<size_t> num_kv_heads(12, 12);
-    device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
+    const size_t num_decoder_layers = 12;
+    const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
+    device_config.set_kv_head_configs(kv_heads_config);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
@@ -79,9 +79,9 @@ TEST(TestCacheManager, test_kv_blocks_param) {
 
     const std::string device = "CPU";
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
-    size_t num_decoder_layers = 12;
-    std::vector<size_t> num_kv_heads(12, 12);
-    device_config.set_model_params(num_kv_heads, 64, num_decoder_layers);
+    const size_t num_decoder_layers = 12;
+    const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
+    device_config.set_kv_head_configs(kv_heads_config);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
@@ -100,15 +100,16 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
 
     const std::string device = "CPU";
     ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
-    size_t num_decoder_layers = 12;
-    size_t head_size = 64;
-    std::vector<size_t> num_kv_heads(12, 12);
-    device_config.set_model_params(num_kv_heads, head_size, num_decoder_layers);
+    const size_t num_decoder_layers = 12;
+    const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
+    device_config.set_kv_head_configs(kv_heads_config);
+
     size_t block_size_in_bytes = 0;
     for (size_t layer_id = 0; layer_id < num_decoder_layers; layer_id++) {
-        block_size_in_bytes += 2 * num_kv_heads[layer_id] * device_config.get_block_size() * head_size * device_config.get_cache_precision().size();
+        KVHeadConfig config = kv_heads_config[layer_id];
+        block_size_in_bytes += config.k_head_size * config.num_k_heads + config.v_head_size * config.num_v_heads;
     }
-
+    block_size_in_bytes *= device_config.get_block_size() * device_config.get_cache_precision().size();
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
