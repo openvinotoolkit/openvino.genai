@@ -71,7 +71,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
     Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
-    // todo: remove this condition after support of CVS-154103
     m_are_same_tokenizers = are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer);
     
     m_tokenizer = main_model_tokenizer;
