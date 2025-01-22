@@ -316,26 +316,6 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     ov::genai::StreamerVariant streamer = std::monostate();
 
     std::visit(overloaded {
-    // [&streamer](py::function py_callback){
-    //     // Wrap python streamer with manual utf-8 decoding. Do not rely
-    //     // on pybind automatic decoding since it raises exceptions on incomplete strings.
-    //     auto py_sp_callback = std::shared_ptr<py::function>(
-    //         new py::function(std::move(py_callback)),
-    //         [](py::function* py_callback) {
-    //             py::gil_scoped_acquire acquire;
-    //             delete py_callback;
-    //         }
-    //     );
-
-    //     auto callback_wrapped = [py_sp_callback](const std::string& subword) -> bool {
-    //         py::gil_scoped_acquire acquire;
-    //         auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-    //         return (*py_sp_callback)(py::reinterpret_borrow<py::str>(py_str)).cast<bool>();
-
-    //     };
-
-    //     streamer = callback_wrapped;
-    // },
         [&streamer](const std::function<bool(py::str)>& py_callback){
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
