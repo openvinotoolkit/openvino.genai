@@ -82,12 +82,10 @@ void WhisperGenerationConfig::validate() const {
         OPENVINO_ASSERT(!task.has_value(), "Cannot specify 'task' for not multilingual model.");
     }
 
-    if (is_beam_search()) {
-        OPENVINO_ASSERT(num_return_sequences == 1,
-                        "'num_return_sequences' must be 1. Provided: ",
-                        num_return_sequences,
-                        ".");
-    }
+    OPENVINO_ASSERT(num_return_sequences == 1,
+                    "'num_return_sequences' must be 1. Provided: ",
+                    num_return_sequences,
+                    ".");
 
     OPENVINO_ASSERT(!is_assisting_generation(), "Assisted generation is not supported.");
 }

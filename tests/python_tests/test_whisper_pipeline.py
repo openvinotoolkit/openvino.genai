@@ -126,9 +126,14 @@ def run_huggingface(
 
     return pipeline(
         sample,
-        max_new_tokens=min(config.max_new_tokens, 444),
         return_timestamps=config.return_timestamps,
-        generate_kwargs={"language": config.language, "task": config.task},
+        generate_kwargs={
+            "language": config.language,
+            "task": config.task,
+            "max_new_tokens": min(config.max_new_tokens, 444),
+            "top_p": config.top_p,
+            "do_sample": config.do_sample,
+        },
     )
 
 
@@ -147,6 +152,8 @@ def run_genai(
     genai_config.return_timestamps = config.return_timestamps
     genai_config.task = config.task
     genai_config.language = f"<|{config.language}|>" if config.language else None
+    genai_config.do_sample = config.do_sample
+    genai_config.top_p = config.top_p
 
     return pipeline.generate(sample, genai_config, streamer=streamer)
 
@@ -553,6 +560,45 @@ def test_initial_prompt_hotwords(model_descr, test_sample):
 
     assert "Joel Keaton" not in result.texts[0]
     assert "Joel Kyton" in result.texts[0]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("test_sample", get_samples_from_dataset(length=1))
+@pytest.mark.precommit
+def test_random_sampling(model_descr, test_sample):
+    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+
+    config = ov_genai.WhisperGenerationConfig(do_sample=True, top_p=0.01)
+
+    genai_result = run_genai(
+        genai_pipe,
+        test_sample,
+        config=config,
+    )
+
+    hf_result = run_huggingface(
+        hf_pipe,
+        test_sample,
+        config=config,
+    )
+
+    compare_results(hf_result, genai_result)
+
+    config.top_p = 0.6
+
+    genai_result = run_genai(
+        genai_pipe,
+        test_sample,
+        config=config,
+    )
+
+    hf_result = run_huggingface(
+        hf_pipe,
+        test_sample,
+        config=config,
+    )
+
+    assert genai_result.texts[0] != hf_result["text"]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))

@@ -101,7 +101,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     stream_generated_tokens();
 
     // "Generation" phase
-    while (!sequence_group->has_finished()) {
+    while (!sequence_group->has_finished() && !sequence_group->handle_dropped()) {
         std::map<size_t, std::vector<int64_t>> batch_to_generated_ids{};
 
         sequence_group->schedule_tokens(1);
