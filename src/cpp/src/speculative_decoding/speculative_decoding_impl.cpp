@@ -271,24 +271,18 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         // define stream token lambda to use in `t_stream_ptr`
         auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
             while (has_active_requests || generation->can_read()) {
-                std::cout << std::endl << "BEFORE CV" << std::endl;
                 // waiting for any tokens or request finishing
                 cv.wait(lock, [&generation, &has_active_requests]{
                     return generation->can_read() || !has_active_requests;
                 });
-                std::cout << std::endl << "AFTER CV" << std::endl;
 
                 if (generation->can_read()) {
-                    std::cout <<std::endl << "STREAMING" << std::endl;
                     std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    std::cout <<std::endl << "STREAMING_1" << std::endl;
                     for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        std::cout <<std::endl << "STREAMING_2" << std::endl;
                         if (streamer_ptr->put(gen_token)) {
                             generation->drop();
                             break;
                         }
-                        std::cout <<std::endl << "STREAMING_3" << std::endl;
                     }
                 }
             };
@@ -365,7 +359,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
+    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
