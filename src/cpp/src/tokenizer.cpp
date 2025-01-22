@@ -265,8 +265,6 @@ public:
         if (!std::filesystem::exists(config_file_path))
             return ;
         std::ifstream file(config_file_path);
-        if (!file.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(file);
         using ov::genai::utils::read_json_param;
@@ -282,8 +280,6 @@ public:
         if (!std::filesystem::exists(special_tokens_file_path))
             return ;
         std::ifstream f(special_tokens_file_path);
-        if (!f.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -311,8 +307,6 @@ public:
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return ;
         std::ifstream f(tokenizer_config_file_path);
-        if (!f.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -368,21 +362,6 @@ public:
         if (m_pad_token_id == -1 && m_eos_token_id != -1) {
             m_pad_token_id = m_eos_token_id;
         }
-    }
-
-    // tokenize str representation to get special tokens integer values
-    void infer_special_tokens_if_necessary() {
-        auto get_id_from_str = [this](std::string token_str, int64_t& token_val) {
-            if (token_val != -1 || token_str.empty())
-                return ;
-            auto token_ids_tensor = this->encode(token_str).input_ids;
-            auto data = token_ids_tensor.data<int64_t>();
-            auto data_len = token_ids_tensor.get_shape()[1];
-            token_val = data[data_len - 1];
-        };
-        get_id_from_str(m_pad_token, m_pad_token_id);
-        get_id_from_str(m_bos_token, m_bos_token_id);
-        get_id_from_str(m_eos_token, m_eos_token_id);
     }
 
     TokenizedInputs encode(std::string prompt, const ov::AnyMap& tokenization_params = {}) {
@@ -518,10 +497,7 @@ public:
         auto tokenizer_config_file_path = path / "tokenizer_config.json";
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return "";
-
         std::ifstream file(tokenizer_config_file_path);
-        if (!file.is_open())
-            return "";
 
         std::string res;
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
