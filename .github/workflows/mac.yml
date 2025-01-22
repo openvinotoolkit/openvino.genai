@@ -17,8 +17,8 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.10'
-  OV_BRANCH: 'master'
-  OV_TARBALL: ''
+  OV_BRANCH: 'releases/2025/0'
+  OV_TARBALL: 'https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2025.0.0rc1/m_openvino_toolkit_macos_12_6_2025.0.0.dev20250116_x86_64.tgz'
 
 jobs:
   openvino_download:
@@ -224,7 +224,7 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/test_tokenizer.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -232,9 +232,9 @@ jobs:
       - name: Test bindings (wheel)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install . --verbose --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -c "from openvino_genai import LLMPipeline"
-          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./tools/who_what_benchmark --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
@@ -289,7 +289,7 @@ jobs:
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k test_smoke
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -297,9 +297,9 @@ jobs:
       - name: Test bindings (wheel)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install . --verbose --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -c "from openvino_genai import LLMPipeline"
-          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./tools/who_what_benchmark --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "not test_smoke"
 
   genai_package:
@@ -355,8 +355,8 @@ jobs:
       - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pip install -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
