@@ -253,21 +253,26 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                 std::cout << std::endl << "BEFORE CV" << std::endl;
                 // waiting for any tokens or request finishing
                 cv.wait(lock, [&generation, &has_active_requests]{
-                    return generation->can_read() || generation->get_status() != GenerationStatus::RUNNING || !has_active_requests;
+                    return generation->can_read() || !has_active_requests;
                 });
                 std::cout << std::endl << "AFTER CV" << std::endl;
 
-                while (generation->can_read()) {
+                if (generation->can_read()) {
                     std::cout <<std::endl << "STREAMING" << std::endl;
                     std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
+                    std::cout <<std::endl << "STREAMING_1" << std::endl;
                     for (const auto& gen_token : token.begin()->second.generated_ids) {
+                        std::cout <<std::endl << "STREAMING_2" << std::endl;
                         if (streamer_ptr->put(gen_token)) {
                             generation->drop();
                             break;
                         }
+                        std::cout <<std::endl << "STREAMING_3" << std::endl;
                     }
                 }
             };
+            
+            streamer_ptr->end();
         };
 
         t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
@@ -293,10 +298,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     // waiting for competion of streaming
     if (t_stream_ptr && t_stream_ptr->joinable()) {
         t_stream_ptr->join();
-    }
-
-    if (streamer_ptr) { // push streamer's cache
-        streamer_ptr->end();
     }
 
     OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

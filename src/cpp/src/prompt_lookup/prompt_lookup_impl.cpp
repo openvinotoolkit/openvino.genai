@@ -127,10 +127,10 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
             while (has_active_requests || generation->can_read()) {
                 // waiting for any tokens or request finishing
                 cv.wait(lock, [&generation, &has_active_requests]{
-                    return generation->can_read() || generation->get_status() != GenerationStatus::RUNNING || !has_active_requests;
+                    return generation->can_read() || !has_active_requests;
                 });
 
-                while (generation->can_read()) {
+                if (generation->can_read()) {
                     std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
                     for (const auto& gen_token : token.begin()->second.generated_ids) {
                         if (streamer_ptr->put(gen_token)) {
@@ -140,6 +140,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                     }
                 }
             };
+            streamer_ptr->end();
         };
 
         // to define streaming thread
@@ -167,10 +168,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     // waiting for competion of streaming
     if (t_stream_ptr && t_stream_ptr->joinable()) {
         t_stream_ptr->join();
-    }
-
-    if (streamer_ptr) { // push streamer's cache
-        streamer_ptr->end();
     }
 
     OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

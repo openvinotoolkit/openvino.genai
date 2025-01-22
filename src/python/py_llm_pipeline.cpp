@@ -130,6 +130,9 @@ void init_llm_pipeline(py::module_& m) {
             const std::map<std::string, py::object>& config,
             const py::kwargs& kwargs
         ) {
+            std::cout << "Constructor" << std::endl;
+            // py::gil_scoped_release release;
+// 
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
             if (config.size()) {

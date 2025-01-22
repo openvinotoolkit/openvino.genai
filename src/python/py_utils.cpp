@@ -317,18 +317,29 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
 
     std::visit(overloaded {
     [&streamer](const std::function<bool(py::str)>& py_callback){
+        std::cout << "PY2CPP" << std::endl;
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
         auto callback_wrapped = [py_callback](std::string subword) -> bool {
+            std::cout << "CALLBACK" << std::endl;
             auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-            return py_callback(py::reinterpret_borrow<py::str>(py_str));
+            std::cout << "PY0: " << py_str << std::endl;
+            py::gil_scoped_release release;
+            py::gil_scoped_acquire acquire;
+            // py::call_guard<py::gil_scoped_acquire>();
+            auto reinterpreted_str = py::reinterpret_borrow<py::str>(py_str);
+            std::cout << "PY: " << reinterpreted_str << std::endl;
+            return py_callback(reinterpreted_str);
         };
-        streamer = callback_wrapped;
+        streamer = ov::genai::StreamerVariant(std::move(callback_wrapped));
+        // py::gil_scoped_release release;
     },
     [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
         streamer = streamer_cls;
     },
-    [](std::monostate none){ /*streamer is already a monostate */ }
+    [](std::monostate none){ /*streamer is already a monostate */ 
+    
+        std::cout << "PY2CPP1" << std::endl;}
     }, py_streamer);
     return streamer;
 }
