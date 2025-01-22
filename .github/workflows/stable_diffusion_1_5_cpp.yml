@@ -153,7 +153,7 @@ jobs:
 
   stable_diffusion_1_5_cpp-windows:
     needs: [ openvino_download_windows ]
-    runs-on: windows-2019
+    runs-on: windows-2022
     defaults:
       run:
         shell: pwsh
