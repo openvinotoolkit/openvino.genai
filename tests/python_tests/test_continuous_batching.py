@@ -18,11 +18,7 @@ from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_tex
 from ov_genai_test_utils import (
     get_chat_models_list,
     read_model,
-    get_continuous_batching,
-    # get_pipeline_types,
-    # get_pipeline_by_type,
-    # get_generation_config_by_pipeline_type,
-    # get_input_by_pipeline_type
+    get_continuous_batching
 )
 
 def read_models_list(file_name: str):
