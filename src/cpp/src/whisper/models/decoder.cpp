@@ -22,6 +22,23 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
     return std::make_shared<WhisperStatefullDecoder>(models_path, device, properties);
 }
 
+std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
+                                                          const int64_t decoder_start_token_id) {
+    Tensor input_ids_tensor{ov::element::i64, {1, 1}};
+    input_ids_tensor.data<int64_t>()[0] = decoder_start_token_id;
+
+    Tensor beam_idx_tensor{ov::element::i32, {1}};
+    beam_idx_tensor.data<int32_t>()[0] = 0;
+
+    auto [output_tensor, infer_ms] = decode(encoder_hidden_state, input_ids_tensor, beam_idx_tensor);
+
+    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+
+    reset_state();
+
+    return {output_token, infer_ms};
+}
+
 /**
  * Encoder hidden states expected to be with batch 1
  * Copy encoder hidden state tensor from batch 1 to requested batch_size.

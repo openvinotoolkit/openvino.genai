@@ -18,23 +18,6 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     m_request = compiled_model.create_infer_request();
 }
 
-std::pair<int64_t, float> WhisperStatefullDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
-                                                                   const int64_t decoder_start_token_id) {
-    Tensor input_ids_tensor{ov::element::i64, {1, 1}};
-    input_ids_tensor.data<int64_t>()[0] = decoder_start_token_id;
-
-    Tensor beam_idx_tensor{ov::element::i32, {1}};
-    beam_idx_tensor.data<int32_t>()[0] = 0;
-
-    auto [output_tensor, infer_ms] = decode(encoder_hidden_state, input_ids_tensor, beam_idx_tensor);
-
-    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
-
-    reset_state();
-
-    return {output_token, infer_ms};
-}
-
 std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encoder_hidden_state,
                                                              const Tensor& input_ids,
                                                              const Tensor& beam_idx) {
