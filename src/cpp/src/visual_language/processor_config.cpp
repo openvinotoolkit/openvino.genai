@@ -41,6 +41,10 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     if (parsed.contains("image_grid_pinpoints")) {
         image_grid_pinpoints = parsed.at("image_grid_pinpoints").get<std::vector<std::pair<int, int>>>();
     }
+    read_json_param(parsed, "num_crops", phi3_v.num_crops);
+    if (parsed.contains("img_processor")) {
+        phi3_v.num_img_tokens = parsed.at("img_processor").at("num_img_tokens");
+    }
 
     // Setting qwen2vl config params
     read_json_param(parsed, "min_pixels", min_pixels);

@@ -16,6 +16,7 @@ enum class VLMModelType {
     LLAVA,
     LLAVA_NEXT,
     INTERNVL_CHAT,
+    PHI3_V,
     QWEN2_VL,
 };
 
@@ -25,6 +26,7 @@ inline VLMModelType to_vlm_model_type(const std::string& value) {
         {"llava", VLMModelType::LLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
+        {"phi3_v", VLMModelType::PHI3_V},
         {"qwen2_vl", VLMModelType::QWEN2_VL}
     };
 
