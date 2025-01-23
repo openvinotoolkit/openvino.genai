@@ -11,7 +11,11 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
 
-    auto compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
+    auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+
+    utils::apply_slice_before_matmul_transformation(model);
+
+    auto compiled_model = core.compile_model(model, device, properties);
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request = compiled_model.create_infer_request();
