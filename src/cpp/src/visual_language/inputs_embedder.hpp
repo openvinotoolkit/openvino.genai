@@ -34,6 +34,9 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
+    // compute position ids for language model input
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel get_embedding_model() const;
 
@@ -66,6 +69,7 @@ private:
     friend class InputsEmbedderLLaVANext;
     friend class InputsEmbedderInternVLChat;
     friend class InputsEmbedderPhi3V;
+    friend class InputsEmbedderQwen2VL;
 };
 
 } // namespace ov::genai

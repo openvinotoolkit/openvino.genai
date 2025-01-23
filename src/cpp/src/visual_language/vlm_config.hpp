@@ -58,6 +58,13 @@ public:
     std::vector<float> sub_GN = std::vector(4096, 0.0f);
     std::vector<float> glb_GN = std::vector(4096, 0.0f);
     
+    /// @brief A string token denoting start of vision embeddings for Qwen2VL model.
+    std::string vision_start_token = "<|vision_start|>";
+    /// @brief A placeholder for image embeddings in text for Qwen2VL model.
+    std::string image_pad_token = "<|image_pad|>";
+    /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
+    std::string vision_end_token = "<|vision_end|>";
+    
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

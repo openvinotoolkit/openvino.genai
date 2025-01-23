@@ -50,6 +50,11 @@ public:
         size_t num_crops = 4;
         size_t num_img_tokens = 144;
     } phi3_v;
+    // qwen2vl specific params
+    size_t min_pixels = 3136;
+    size_t max_pixels = 12845056;
+    size_t temporal_patch_size = 2;
+    size_t merge_size = 2;
 
     /// @brief Default constructor
     ProcessorConfig() = default;
