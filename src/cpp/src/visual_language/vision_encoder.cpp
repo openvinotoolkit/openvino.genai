@@ -924,6 +924,7 @@ ov::Tensor reshape_image_patches_qwen2vl(
             }
         }
     }
+
     return reshaped_patches;
 }
 
