@@ -215,6 +215,7 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
         // to avoid selecting the same tokens for beams within group, let's just initialize score
         // for the front one
         group.ongoing.front().m_score = 0.0f;
+        group.prompt_len = this->m_sequence_group->get_prompt_len();
     }
 }
 
@@ -408,7 +409,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
         }
 
         // check whether group has finished
-        group.is_done(m_parameters, this->m_sequence_group->get_prompt_len());
+        group.is_done(m_parameters);
 
         // group cannot continue if there are no valid child beams
         if (child_beams_per_group[group_id].size() == 0) {
@@ -956,7 +957,7 @@ int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::Ge
     return preeempted_sequence_id;
 }
 
-void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfig& sampling_params, size_t prompt_len) {
+void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfig& sampling_params) {
     assert(sampling_params.num_beams % sampling_params.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
