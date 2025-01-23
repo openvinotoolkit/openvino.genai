@@ -50,8 +50,6 @@ public:
 
     size_t get_begin_index() override;
 
-
-
 private:
     Config m_config;
 

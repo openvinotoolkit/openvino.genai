@@ -429,15 +429,6 @@ private:
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
 
-        // in case of image to image generation_config_value is just ignored and computed based on initial image
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
-            OPENVINO_ASSERT(initial_image, "Initial image is empty for image to image pipeline");
-            ov::Shape shape = initial_image.get_shape();
-            int64_t dim_val = shape[dim_idx];
-
-            generation_config_value = dim_val - (dim_val % vae_scale_factor);
-        }
-
         if (generation_config_value < 0)
             generation_config_value = transformer_config.m_default_sample_size * vae_scale_factor;
     }
@@ -451,6 +442,9 @@ private:
 
         m_generation_config = ImageGenerationConfig();
 
+        m_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
+        m_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
+
         if (class_name == "FluxPipeline" || class_name == "FluxImg2ImgPipeline" || class_name == "FluxInpaintPipeline" ) {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
                 m_generation_config.guidance_scale = 3.5f;
@@ -460,8 +454,6 @@ private:
                 m_generation_config.guidance_scale = 7.0f;
                 m_generation_config.num_inference_steps = 28;
                 m_generation_config.strength = 0.6f;
-                m_generation_config.height = 1024;
-                m_generation_config.width = 1024;
             }
             m_generation_config.max_sequence_length = 512;
         } else {
