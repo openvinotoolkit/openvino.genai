@@ -31,6 +31,7 @@ struct clip_image_f32 {
 };
 
 void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
+void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overridden to false depending on model configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
