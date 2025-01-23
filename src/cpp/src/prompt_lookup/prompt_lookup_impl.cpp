@@ -164,15 +164,14 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         };
 
         // to define streaming thread
-        t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
+        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
             stream_tokens();
-        }));
+        });
     }
 
     std::exception_ptr thrown_exception = nullptr;
     while (has_active_requests) {
         try {
-            const auto infer_start = std::chrono::steady_clock::now();
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
@@ -231,7 +230,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 

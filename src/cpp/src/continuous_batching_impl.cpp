@@ -332,9 +332,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         };
 
         // to define streaming thread
-        t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
+        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
             stream_tokens();
-        }));
+        });
     }
 
     std::exception_ptr thrown_exception = nullptr;
@@ -408,7 +408,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     OPENVINO_ASSERT(results.size() == input_ids.size());
 
     generate_timer.end();
-    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 

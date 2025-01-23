@@ -245,14 +245,41 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def(
             "generate",
-            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            [](
+                ContinuousBatchingPipeline& pipe,
+                const std::vector<ov::Tensor>& input_ids,
+                const std::vector<ov::genai::GenerationConfig>& sampling_params,
+                const pyutils::PyBindStreamerVariant& py_streamer
+            ) -> py::typing::List<std::vector<ov::genai::EncodedResults>> {
+                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+                std::vector<EncodedGenerationResult> results;
+                {
+                    py::gil_scoped_release rel;
+                    results = pipe.generate(input_ids, sampling_params, streamer);
+                }
+                return py::cast(results);
+
+            },
             py::arg("input_ids"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         )
         .def(
             "generate",
-            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            [](
+                ContinuousBatchingPipeline& pipe,
+                const std::vector<std::string>& prompts,
+                const std::vector<ov::genai::GenerationConfig>& sampling_params,
+                const pyutils::PyBindStreamerVariant& py_streamer
+            ) -> py::typing::List<std::vector<GenerationResult>> {
+                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+                std::vector<GenerationResult> results;
+                {
+                    py::gil_scoped_release rel;
+                    results = pipe.generate(prompts, sampling_params, streamer);
+                }
+                return py::cast(results);
+            },
             py::arg("prompts"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}

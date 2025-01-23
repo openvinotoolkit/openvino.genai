@@ -278,7 +278,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
                 if (generation->can_read()) {
                     std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    for (const auto& gen_token : token.begin()->second.generated_ids) {
+                for (const auto& gen_token : token.begin()->second.generated_ids) {
                         if (streamer_ptr->put(gen_token)) {
                             generation->drop();
                             break;
@@ -290,9 +290,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
             streamer_ptr->end();
         };
 
-        t_stream_ptr = std::shared_ptr<std::thread>(new std::thread([&stream_tokens] {
+        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
             stream_tokens();
-        }));
+        });
     }
 
     std::exception_ptr thrown_exception = nullptr;
@@ -359,7 +359,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
     generate_timer.end();
-    // std::cout << std::endl << "GENERATION DURATION: " << generate_timer.get_duration() << std::endl;
     return results;
 }
 
