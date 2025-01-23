@@ -38,9 +38,7 @@ int main(int argc, char* argv[]) try {
 
     // Since the streamer is set, the results will
     // be printed each time a new token is generated.
-    auto m_start = std::chrono::steady_clock::now();
     pipe.generate(prompt, config, streamer);
-    std::cout << std::endl << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - m_start).count() / 1e6 << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

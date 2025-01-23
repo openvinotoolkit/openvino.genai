@@ -71,13 +71,13 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
     Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
 
-    // todo: remove this condition after support of CVS-154103
     m_are_same_tokenizers = are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer);
+    if (!m_are_same_tokenizers) {
+        m_main_tokenizer = main_model_tokenizer;
+        m_draft_tokenizer = draft_model_tokenizer;
+    }
     
     m_tokenizer = main_model_tokenizer;
-
-    m_main_tokenizer = main_model_tokenizer;
-    m_draft_tokenizer = draft_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core,
@@ -96,6 +96,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
+    if (!m_are_same_tokenizers) {
+        draft_sampling_params.max_new_tokens = std::numeric_limits<size_t>::max() - 10;
+        m_main_max_generation_len.insert({ request_id, std::min(sampling_params.max_length, sampling_params.max_new_tokens) });
+    }
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
@@ -108,6 +112,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
+    if (!m_are_same_tokenizers) {
+        draft_sampling_params.max_new_tokens = std::numeric_limits<size_t>::max() - 10;  
+        m_main_max_generation_len.insert({ request_id, std::min(sampling_params.max_length, sampling_params.max_new_tokens) });
+    }
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
@@ -129,43 +137,90 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
     }
 }
 
-GeneratedRequests retokenize_requests(const GeneratedRequests& source, Tokenizer& source_tokenizer, Tokenizer& dist_tokenizer) {
-    GeneratedRequests dist;
-    for (const auto& source_request : source) {
-        uint64_t source_request_id = source_request.first;
-        GeneratedSequences source_sequences = source_request.second;
-        dist.insert({{ source_request_id, {{}} }});
-        for (const auto& source_sequence : source_sequences) {
-            uint64_t source_sequence_id = source_sequence.first;
-            GeneratedSequence src_sequence = source_sequence.second;
-                auto decoded_str = source_tokenizer.decode(src_sequence.token_ids);
-                {
-                    ov::Tensor encoded_tensor = source_tokenizer.encode(decoded_str, ov::genai::add_special_tokens(false)).input_ids;
-                    size_t tensor_size = encoded_tensor.get_size();
-                    std::vector<int64_t> dst_token_ids(tensor_size);
-                    std::copy_n(encoded_tensor.data<int64_t>(), tensor_size, dst_token_ids.begin());
-                    if (src_sequence.token_ids != dst_token_ids) {
-                        continue;
-                    }
+TokenIds get_difference_generated_token_id(const TokenIds& before, const TokenIds& after) {
+    OPENVINO_ASSERT(before.size() <= after.size());
+    return TokenIds(after.begin() + before.size(), after.end());
+}
+
+std::vector<int64_t> encode_string(const std::string& input_str, ov::genai::Tokenizer& tokenizer) {
+    // encode input_str
+    std::string input_str_copy = input_str;
+    ov::Tensor ov_encoded_input_str = tokenizer.encode(input_str_copy, ov::genai::add_special_tokens(false)).input_ids;
+    size_t tensor_size = ov_encoded_input_str.get_size();
+    std::vector<int64_t> encoded_input_str(tensor_size);
+    std::copy_n(ov_encoded_input_str.data<int64_t>(), tensor_size, encoded_input_str.begin());
+    return encoded_input_str;
+}
+
+GeneratedRequests retokenize_requests(const GeneratedRequests& src_before_inference,
+                                      const GeneratedRequests& src_after_inference,
+                                      const GeneratedRequests& dst_before_inference,
+                                      Tokenizer& src_tokenizer,
+                                      Tokenizer& dst_tokenizer,
+                                      const std::map<int64_t, size_t>& max_generated_len = {}) {
+    GeneratedRequests dst_to_inference;
+    for (const auto& src_request : src_after_inference) {
+        const auto req_id = src_request.first;
+        dst_to_inference.insert({{ req_id, {{}} }});
+        auto& dst_request = dst_to_inference[req_id];
+
+        for (const auto& src_sequence : src_request.second) {
+            const auto seq_id = src_sequence.first;
+
+
+            // to get generated token_ids to decode
+            TokenIds diff_to_decode;
+            if (src_before_inference.count(req_id) && src_before_inference.at(req_id).count(seq_id)) {
+                const auto& token_ids_before = src_before_inference.at(req_id).at(seq_id).token_ids;
+                const auto& token_ids_after = src_sequence.second.token_ids;
+                diff_to_decode = get_difference_generated_token_id(token_ids_before, token_ids_after);
+            } else {
+                diff_to_decode = src_sequence.second.token_ids;
+            }
+            
+            std::string diff_to_encode = src_tokenizer.decode(diff_to_decode, ov::genai::skip_special_tokens(true));
+            
+            GeneratedSequence res_seq({}, {});
+            if (dst_before_inference.count(req_id) && dst_before_inference.at(req_id).count(seq_id)) {
+                res_seq = dst_before_inference.at(req_id).at(seq_id);
+            }
+
+            TokenIds encoded_diff = encode_string(diff_to_encode, dst_tokenizer);
+            if (!encoded_diff.empty()) {
+                LogProbs log_prob_diff(encoded_diff.size(), 0.f);
+                res_seq.token_ids.insert(res_seq.token_ids.end(), encoded_diff.begin(), encoded_diff.end());
+                res_seq.log_probs.insert(res_seq.log_probs.end(), log_prob_diff.begin(), log_prob_diff.end());
+            }
+
+            if (max_generated_len.count(req_id)) {
+                size_t max_len = max_generated_len.at(req_id) - 1;
+                if (res_seq.token_ids.size() > max_len) {
+                    res_seq.token_ids.resize(max_len);
+                    res_seq.token_ids.resize(max_len);
                 }
+            }
 
-                ov::Tensor encoded_tensor = dist_tokenizer.encode(decoded_str, ov::genai::add_special_tokens(false)).input_ids;
-                size_t tensor_size = encoded_tensor.get_size();
-                std::vector<int64_t> dst_token_ids(tensor_size);
-                std::copy_n(encoded_tensor.data<int64_t>(), tensor_size, dst_token_ids.begin());
-
-                auto decoded_str_dst = dist_tokenizer.decode(dst_token_ids);
-                if (decoded_str_dst != decoded_str) {
-                    auto a = 0;
-                }
-
-                std::vector<float> dst_log_probs(dst_token_ids.size(), 0.f);
-
-                GeneratedSequence dst_sequence(dst_token_ids, dst_log_probs);
-                dist[source_request_id].insert({ source_sequence_id, dst_sequence });
+            dst_request.insert({ seq_id, res_seq });
         }
     }
-    return dist;
+    return dst_to_inference;
+}
+
+size_t get_removed_tokens_per_seq(
+    const GeneratedSequences& before,
+    const GeneratedSequences& after
+) {
+    size_t result = 0;
+    for (const auto& sequence : before) {
+        if (!after.count(sequence.first)) {
+            continue;
+        }
+        if (sequence.second.token_ids.size() < after.at(sequence.first).token_ids.size()) {
+            continue;
+        }
+        result = std::max((sequence.second.token_ids.size() - after.at(sequence.first).token_ids.size() + 1), result);
+    }
+    return result;
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
@@ -176,6 +231,12 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     ManualTimer step_timer("speculative_decoding: step()");
     step_timer.start();
+
+    ov::genai::GeneratedRequests draft_req_before_inference, main_req_before_inference;
+    if (!m_are_same_tokenizers) {
+        draft_req_before_inference = m_draft_pipeline->get_generated_requests();
+        main_req_before_inference = m_main_pipeline->get_generated_requests();
+    }
 
     m_draft_pipeline->pull_awaiting_requests(true);
     m_main_pipeline->pull_awaiting_requests();
@@ -195,9 +256,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     if (!m_are_same_tokenizers) {
         ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
         retokenization_timer.start();
-        // auto a = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
-        // auto b = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_draft_tokenizer);
-        draft_generated_requests = retokenize_requests(draft_generated_requests, m_draft_tokenizer, m_main_tokenizer);
+        draft_generated_requests = retokenize_requests(draft_req_before_inference, draft_generated_requests, main_req_before_inference, m_draft_tokenizer, m_main_tokenizer, m_main_max_generation_len);
         retokenization_timer.end();
         m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
     }
@@ -215,17 +274,23 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     if (!m_are_same_tokenizers) {
-                ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
-        retokenization_timer.start();
-        // auto a = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
-        // auto b = retokenize_requests(a, m_draft_tokenizer, m_main_tokenizer);
-        main_generated_requests = retokenize_requests(main_generated_requests, m_main_tokenizer, m_draft_tokenizer);
-        retokenization_timer.end();
-        m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
+        auto buffer = draft_generated_requests;
+        draft_generated_requests = m_draft_pipeline->get_generated_requests();
+        if (!main_generated_requests.empty()) {
+            ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
+            retokenization_timer.start();
+            draft_generated_requests = retokenize_requests(main_req_before_inference, main_generated_requests, draft_generated_requests, m_main_tokenizer, m_draft_tokenizer); 
+            retokenization_timer.end();
+            m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
+        }
+        main_req_before_inference = buffer;
     }
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
+        if (!m_are_same_tokenizers && main_req_before_inference.count(checked_sequence.first)) {
+            update_sequence_info[checked_sequence.first].removed_tokens_cnt = get_removed_tokens_per_seq(main_req_before_inference.at(checked_sequence.first), checked_sequence.second);
+        }
     }
 
     // finish draft request if the generation was completed
@@ -310,6 +375,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
+        if (!m_are_same_tokenizers) {
+            m_main_max_generation_len.insert({ request_id, std::min(sampling_params[request_id].max_length, sampling_params[request_id].max_new_tokens) });
+            draft_sampling_params.max_new_tokens = std::numeric_limits<size_t>::max() - 10;
+        }
         std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
