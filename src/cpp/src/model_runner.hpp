@@ -30,10 +30,12 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
 class ModelRunner {
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
-    size_t m_num_decoder_layers, m_block_size;
+    size_t m_block_size;
+    size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
     bool m_is_use_per_layer_cache_control;
 
+    bool m_is_use_rotation_inputs;
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
     ov::Tensor m_cache_rotation_trig_lut;
@@ -53,13 +55,17 @@ public:
                 size_t block_size,
                 size_t num_decoder_layers = 1,
                 bool collect_attention_scores = false,
-                bool is_use_per_layer_cache_control = false)
+                bool is_use_per_layer_cache_control = false,
+                bool is_use_rotation_inputs = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
           m_collect_attention_scores(collect_attention_scores),
-          m_is_use_per_layer_cache_control(is_use_per_layer_cache_control) {
+          m_is_use_per_layer_cache_control(is_use_per_layer_cache_control),
+          m_is_use_rotation_inputs(is_use_rotation_inputs),
+          m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
+        _reset_cache_rotation_coefficients();
     }
 
     /**
@@ -216,14 +222,13 @@ public:
         m_request.set_tensor("subsequence_begins", subsequence_begins);
 
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
-
-        if (!m_cache_rotation_deltas_for_each_layer.empty()) {
-            _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
-            m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
-        }
-
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
+
+        if (m_is_use_rotation_inputs) {
+            m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
+            _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
+        }
 
         if (matmul_gathering_is_available) {
             ov::Tensor gather_indices(ov::element::i64, {gather_indices_values.size()});
@@ -250,6 +255,8 @@ public:
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
+
+        _reset_cache_rotation_coefficients();
 
         // return logits
         return m_request.get_tensor("logits");
@@ -369,6 +376,13 @@ private:
                                         sequence_groups,
                                         scheduler_output,
                                         m_rotated_block_logical_indices_per_sequence_for_each_layer);
+    }
+
+    void _reset_cache_rotation_coefficients() {
+        m_cache_rotation_deltas_for_each_layer.clear();
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
+            m_cache_rotation_deltas_for_each_layer.push_back(ov::Tensor());
+        }
     }
 
     void _collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {

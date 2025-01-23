@@ -89,12 +89,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     if (is_use_cache_eviction) {
+        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+        bool is_apply_rotation = eviction_config.apply_rotation;
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
                                                        m_scheduler->get_block_size(),
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
-                                                       /* is_use_per_layer_cache_control = */ true);
-        const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
+                                                       /* is_use_per_layer_cache_control = */ true,
+                                                       /* is_use_rotation_inputs = */ is_apply_rotation);
         if (eviction_config.apply_rotation) {
             m_rotation_deltas_stores.reserve(m_num_decoder_layers);
             ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
