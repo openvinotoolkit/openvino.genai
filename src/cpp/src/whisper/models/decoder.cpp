@@ -6,7 +6,7 @@
 #include <filesystem>
 
 #include "statefull_decoder.hpp"
-#include "utils.hpp"
+#include "whisper/whisper_utils.hpp"
 #include "with_past_decoder.hpp"
 
 namespace ov::genai {

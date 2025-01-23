@@ -41,6 +41,22 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
     filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
 }
 
+int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
+    if (logits.get_shape()[0] <= batch_idx) {
+        OPENVINO_THROW("logits batch size doesn't match the number of beams");
+    }
+
+    size_t vocab_size = logits.get_shape().back();
+    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
+    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
+    const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
+
+    int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
+    float max_logit = logits_data[out_token];
+
+    return out_token;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
