@@ -25,5 +25,10 @@ public:
     virtual void reset_state() = 0;
 
     virtual ~WhisperDecoder();
+
+protected:
+    void _set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
+                                           const size_t batch_size,
+                                           InferRequest& request);
 };
 }  // namespace ov::genai

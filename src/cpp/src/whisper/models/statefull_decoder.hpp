@@ -24,8 +24,6 @@ public:
     void reset_state() override;
 
 private:
-    void _set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state, const size_t batch_size);
-    void _reset_encoder_past_key_values_states(const Tensor& encoder_hidden_state, const size_t batch_size);
     void _set_cache_position_tensor(const size_t seq_len);
 
 private:

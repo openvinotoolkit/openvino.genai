@@ -41,7 +41,7 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_len = input_ids.get_shape().at(1);
 
-    _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size);
+    _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, m_request);
 
     _set_cache_position_tensor(seq_len);
     m_request.set_tensor("input_ids", input_ids);
@@ -55,56 +55,6 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
 
     return {output_tensor, infer_ms};
 };
-
-/**
- * Encoder hidden states expected to be with batch 1
- * Copy encoder hidden state tensor from batch 1 to requested batch_size.
- * Set new encoder hidden states tensor to infer request.
- */
-void WhisperStatefullDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
-                                                                const size_t batch_size) {
-    const size_t current_batch_size = m_request.get_tensor("encoder_hidden_states").get_shape().at(0);
-    // batch hasn't changed, skip
-    if (current_batch_size == batch_size) {
-        return;
-    }
-
-    if (current_batch_size != 0) {
-        _reset_encoder_past_key_values_states(encoder_hidden_state, batch_size);
-    }
-
-    OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1);
-    Shape shape{encoder_hidden_state.get_shape()};
-    shape[0] = batch_size;
-
-    Tensor new_encoder_hidden_states{ov::element::f32, shape};
-
-    auto new_encoder_hidden_states_data = new_encoder_hidden_states.data<float>();
-    auto encoder_hidden_state_data = encoder_hidden_state.data<float>();
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        const size_t batch_offset = batch * encoder_hidden_state.get_size();
-        std::memcpy(new_encoder_hidden_states_data + batch_offset,
-                    encoder_hidden_state_data,
-                    encoder_hidden_state.get_byte_size());
-    }
-
-    m_request.set_tensor("encoder_hidden_states", new_encoder_hidden_states);
-}
-
-// Past_key value states are not shring/grow when batch is changed. Reset past_key values states as a workaround.
-// Ticket:
-void WhisperStatefullDecoder::_reset_encoder_past_key_values_states(const Tensor& encoder_hidden_state,
-                                                                    const size_t batch_size) {
-    const size_t encoder_state_length_dim = encoder_hidden_state.get_shape().at(1);
-    for (auto& state : m_request.query_state()) {
-        // find encoder states by dimension
-        const Shape& state_shape = state.get_state().get_shape();
-        if (state_shape.at(2) == encoder_state_length_dim) {
-            state.reset();
-        }
-    }
-}
 
 void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
     ov::Tensor cache_position_tensor = m_request.get_tensor("cache_position");

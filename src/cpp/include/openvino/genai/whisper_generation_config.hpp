@@ -97,7 +97,7 @@ public:
     // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
 
-    void update_generation_config(const ov::AnyMap& config_map = {}) override;
+    void update_generation_config(const ov::AnyMap& config_map = {});
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -106,7 +106,7 @@ public:
 
     /// @brief checks that are no conflicting parameters.
     /// @throws Exception if config is invalid.
-    void validate() const override;
+    void validate() const;
 };
 
 /*
