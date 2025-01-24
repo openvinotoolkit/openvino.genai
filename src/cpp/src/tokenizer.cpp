@@ -364,6 +364,21 @@ public:
         }
     }
 
+    // tokenize str representation to get special tokens integer values
+    void infer_special_tokens_if_necessary() {
+        auto get_id_from_str = [this](std::string token_str, int64_t& token_val) {
+            if (token_val != -1 || token_str.empty())
+                return ;
+            auto token_ids_tensor = this->encode(token_str).input_ids;
+            auto data = token_ids_tensor.data<int64_t>();
+            auto data_len = token_ids_tensor.get_shape()[1];
+            token_val = data[data_len - 1];
+        };
+        get_id_from_str(m_pad_token, m_pad_token_id);
+        get_id_from_str(m_bos_token, m_bos_token_id);
+        get_id_from_str(m_eos_token, m_eos_token_id);
+    }
+
     TokenizedInputs encode(std::string prompt, const ov::AnyMap& tokenization_params = {}) {
         OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
                                                 "Tokenizer::encode is not available");
