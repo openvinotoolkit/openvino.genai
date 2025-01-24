@@ -14,7 +14,7 @@ import shutil
 import json
 
 import openvino_genai as ov_genai
-from common import get_default_properties
+from common import get_default_properties, delete_rt_info
 
 def get_models_list():
     precommit_models = [
@@ -173,6 +173,7 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
+    delete_rt_info(configs, temp_path)
 
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
