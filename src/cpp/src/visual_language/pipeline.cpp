@@ -186,6 +186,7 @@ public:
 
         auto tokenized_history = m_inputs_embedder->get_tokenized_history();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
+        OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
         std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
