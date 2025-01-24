@@ -112,6 +112,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
 
     // stop conditions
     read_anymap_param(properties, "eos_token_id", eos_token_id);
+    set_eos_token_id(eos_token_id);
     read_anymap_param(properties, "max_new_tokens", max_new_tokens);
     read_anymap_param(properties, "max_length", max_length);
     read_anymap_param(properties, "ignore_eos", ignore_eos);
