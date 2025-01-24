@@ -205,7 +205,7 @@ def get_use_case(model_name_or_path):
                     return case, model_ids[idx]
 
     case, model_name = get_model_name(model_name_or_path)
-    if case == None:
+    if case is None:
         raise RuntimeError('==Failure FOUND==: no use_case found')
     else:
         log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
