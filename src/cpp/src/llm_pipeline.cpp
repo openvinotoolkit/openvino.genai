@@ -97,7 +97,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& properties) :
+    m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
         properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
@@ -115,7 +116,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& properties) :
+    m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
 
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
@@ -138,7 +140,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config) {
+    const ov::genai::GenerationConfig& generation_config) :
+    m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
 
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
@@ -232,7 +235,9 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     m_pimpl->set_generation_config(config);
 }
 
-ov::genai::LLMPipeline::~LLMPipeline() = default;
+ov::genai::LLMPipeline::~LLMPipeline() {
+    utils::release_core_plugin(m_device);
+}
 
 } // namespace genai
 } // namespace ov

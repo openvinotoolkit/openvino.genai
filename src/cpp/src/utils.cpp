@@ -329,6 +329,15 @@ ov::Core singleton_core() {
     return core;
 }
 
+void release_core_plugin(const std::string& device) {
+    try {
+        singleton_core().unload_plugin(device);
+    } catch (const ov::Exception&) {
+        // Note: in a theory it can throw an exception when 2 different pipelines are created from
+        // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
+
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();

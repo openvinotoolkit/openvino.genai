@@ -37,6 +37,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     if (m_scheduler) {
         m_scheduler->release();
     }
+
+    utils::release_core_plugin(m_device);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -52,6 +54,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const ov::AnyMap& properties,
     const DeviceConfig& device_config,
     ov::Core& core) {
+    m_device = device_config.get_device();
     ov::CompiledModel compiled_model;
 
     // apply LoRA

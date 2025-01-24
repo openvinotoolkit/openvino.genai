@@ -25,6 +25,8 @@ protected:
 
     PipelineMetrics m_pipeline_metrics;
 
+    std::string m_device;
+
     struct PerfTime {
         float m_paged_attention_time_ms = 0.0f;
         float m_matmul_time_ms = 0.0f;

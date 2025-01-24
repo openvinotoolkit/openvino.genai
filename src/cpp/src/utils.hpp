@@ -105,6 +105,8 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core singleton_core();
 
+void release_core_plugin(const std::string& device);
+
 template <typename T>
 void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
 
