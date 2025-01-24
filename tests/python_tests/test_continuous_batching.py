@@ -371,7 +371,7 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
     model_id : str = "facebook/opt-125m"
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
-    models_path : Path = tmp_path / model_id
+    models_path : Path = tmp_path / "t_streaming" / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
 
     pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type)
