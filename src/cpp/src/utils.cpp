@@ -46,22 +46,6 @@ void print_tensor(const ov::Tensor& tensor) {
     std::cout << "]" << std::endl;
 }
 
-int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
-    if (logits.get_shape()[0] <= batch_idx) {
-        OPENVINO_THROW("logits batch size doesn't match the number of beams");
-    }
-
-    size_t vocab_size = logits.get_shape().back();
-    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
-    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
-    const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
-
-    int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-    float max_logit = logits_data[out_token];
-
-    return out_token;
-}
-
 /**
  * Initializes position ids based on attention mask and starting position
  */
@@ -125,23 +109,6 @@ void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_b
 
         std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
         attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
-    }
-}
-
-/**
- * Set position ids tensor data for next token inference based on provided attention mask
- * Supports multi batch
- * Supports sparse attention_mask
- */
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape().at(0);
-    const size_t atten_length = attention_mask.get_shape().at(1);
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* start = attention_mask.data<int64_t>() + batch * atten_length;
-        // todo: be careful with start + atten_length, probably need to replace with start + atten_length -1
-        position_ids.data<int64_t>()[batch] = std::accumulate(start, start + atten_length, 0);
     }
 }
 

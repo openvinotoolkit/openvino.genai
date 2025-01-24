@@ -47,13 +47,9 @@ Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);
 
-int64_t argmax(const ov::Tensor& logits, const size_t batch_idx);
-
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
 
 ov::Tensor extend_attention(ov::Tensor attention_mask);
-
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
 
 template <typename T> struct OmitOptional { using value = T; };
 template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };

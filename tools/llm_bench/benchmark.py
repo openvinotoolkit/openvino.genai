@@ -191,7 +191,7 @@ def main():
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
         exit(1)
-    model_path, framework, model_args, model_name = (
+    model_path, framework, model_args, model_name_or_id = (
         llm_bench_utils.model_utils.analyze_args(args)
     )
     # Set the device for running OpenVINO backend for torch.compile()
@@ -239,10 +239,11 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parts)
+                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name_or_id, model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
                 model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
+            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,

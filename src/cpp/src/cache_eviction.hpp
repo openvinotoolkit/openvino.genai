@@ -117,4 +117,88 @@ private:
     std::vector<std::vector<size_t>> m_cache_counter;
 };
 
+/**
+ * @brief Computes, based on the logical indices of the blocks to be evicted, the rotation coefficients for the
+ * remaining cache blocks.
+ *
+ * The rotation assumes that the executed model applies rotary positional embedding (RoPE) during the execution of
+ * the attention operation. Each cache block therefore has the RoPE values already "baked in", with positions equivalent
+ * to the point in time when the cache block values were originally computed in one of the previous attention
+ * operations. When blocks are evicted, the logical index space of the remaining blocks is in general no longer
+ * contiguous with respect to the effective positions of tokens in the blocks. Cache rotation allows to remedy this by
+ * effectively adjusting the RoPE positions of certain blocks in the cache after eviction, by additionally "rotating"
+ * them (in the same sense as in RoPE) by such angles that the cache blocks in the logical index space are again
+ * contiguous in terms of the RoPE positions. This is supposed to make the eviction process less impactful on the
+ * accuracy of the generation.
+ *
+ * Currently only the basic RoPE method is supported (as applied in the Llama original models). Each model in general
+ * may have its own RoPE method (e.g. non-linear/NTK frequency scaling), and ideally the cache rotation calculator
+ * should be adjusted based on the specifics of the RoPE defined by the LLM.
+ */
+class CacheRotationCalculator {
+public:
+    /**
+     * Constructs a CacheRotationCalculator.
+     * @param block_size Block size of the KV cache to evict from.
+     * @param max_context_length Maximum length possible for a sequence in the current pipeline.
+     * @param kv_head_size The size (in elements) of the embedding dimension in the attention operation.
+     * @param rope_theta The base RoPE angle used in the original LLM.
+     */
+    CacheRotationCalculator(size_t block_size,
+                            size_t max_context_length,
+                            size_t kv_head_size,
+                            double rope_theta = 10000.0f);
+
+    using RotationCoefficientsPerToken = std::vector<std::vector<float>>;  // dimensions: [BLOCK_SIZE, head_size / 2]
+
+    /**
+     * Basic output structure for the calculator.
+     */
+    struct BlockRotationData {
+        bool operator==(const BlockRotationData& rhs) const {
+            return (logical_block_idx == rhs.logical_block_idx) && (sines == rhs.sines) && (cosines == rhs.cosines);
+        }
+        size_t logical_block_idx;             /** Logical index of the block AFTER eviction to which the rotation
+                                                 should be applied */
+        size_t rotation_delta;                /** Delta, in token positions, that should be applied to block contents
+                                                via rotation **/
+
+        // Fields below are currently only used for testing purposes
+        RotationCoefficientsPerToken sines;   /** The sine coefficients to be applied to this block's contents for
+                                                 rotation, in order of the block's elements */
+        RotationCoefficientsPerToken cosines; /** The cosine coefficients to be applied to this block's contents for
+                                                 rotation, in order of the block's elements */
+    };
+
+    /**
+     * Computes the rotation coefficients for the given state of the logical block space when eviction is about to take
+     * place.
+     * @param evicted_block_logical_indices The logical block indices that the prior cache eviction algorithm step
+     * determined to be necessary to evict.
+     * @param num_logical_blocks_before_eviction Number of logical blocks that the evicted-from sequence occupied before
+     * the eviction step.
+     * @param deltas_only If true, the sines and cosines fields in each returned BlockRotationData will be left empty.
+     * @return A vector of per-block rotation data, including the indices of blocks after eviction that should be
+     * rotated, and the pre-computed trigonometric coefficients necessary for rotation.
+     */
+    std::vector<BlockRotationData> get_rotation_data(const std::set<size_t>& evicted_block_logical_indices,
+                                                             size_t num_logical_blocks_before_eviction,
+                                                             bool deltas_only = true);
+
+    /**
+     * @return The size of the embedding dimension that this CacheRotationCalculator was initialized with.
+     */
+    size_t get_head_size() const {
+        return m_head_size;
+    }
+
+    const std::vector<std::vector<float>>& get_sin_lut() const;
+    const std::vector<std::vector<float>>& get_cos_lut() const;
+
+private:
+    size_t m_block_size;
+    size_t m_head_size;
+    std::vector<std::vector<float>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
+    std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
+};
 }
