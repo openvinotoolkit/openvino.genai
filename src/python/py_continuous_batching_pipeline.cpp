@@ -118,6 +118,35 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
     return stream << std::endl;
 }
 
+py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
+                              const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
+                              const std::vector<ov::genai::GenerationConfig>& sampling_params,
+                              const pyutils::PyBindStreamerVariant& py_streamer) {
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    py::object results;
+
+    std::visit(pyutils::overloaded {
+    [&](std::vector<ov::Tensor> input_ids) {
+        std::vector<ov::genai::EncodedGenerationResult> encoded_results;
+        {
+            py::gil_scoped_release rel;
+            encoded_results = pipe.generate(input_ids, sampling_params, streamer);
+        }  
+        results = py::cast(encoded_results);
+    },
+    [&](std::vector<std::string> prompts) {
+        std::vector<ov::genai::GenerationResult> generated_results;
+        {
+            py::gil_scoped_release rel;
+            generated_results = pipe.generate(prompts, sampling_params, streamer);
+        }  
+        results = py::cast(generated_results);
+    }},
+    inputs);
+
+    return results;
+}
+
 } // namespace
 
 void init_continuous_batching_pipeline(py::module_& m) {
@@ -243,38 +272,30 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
+
+
         .def(
             "generate",
-            [](
-                ContinuousBatchingPipeline& pipe,
-                const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
-                const std::vector<ov::genai::GenerationConfig>& sampling_params,
-                const pyutils::PyBindStreamerVariant& py_streamer
-            ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>, std::vector<ov::genai::GenerationResult>> {
-                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                py::object results;
-
-                std::visit(pyutils::overloaded {
-                [&](std::vector<ov::Tensor> input_ids) {
-                    std::vector<ov::genai::EncodedGenerationResult> encoded_results;
-                    {
-                        py::gil_scoped_release rel;
-                        encoded_results = pipe.generate(input_ids, sampling_params, streamer);
-                    }  
-                    results = py::cast(encoded_results);
-                },
-                [&](std::vector<std::string> prompts) {
-                    std::vector<ov::genai::GenerationResult> generated_results;
-                    {
-                        py::gil_scoped_release rel;
-                        generated_results = pipe.generate(prompts, sampling_params, streamer);
-                    }  
-                    results = py::cast(generated_results);
-                }},
-                inputs);
-                return results;
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<ov::Tensor>& input_ids,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer){
+                return __call_cb_generate(pipe, input_ids, generation_config, streamer);
             },
-            py::arg("inputs"),
+            py::arg("input_ids"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<std::string>& prompts,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer){
+                return __call_cb_generate(pipe, prompts, generation_config, streamer);
+            },
+            py::arg("prompts"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         );

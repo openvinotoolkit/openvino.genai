@@ -376,6 +376,6 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 
     pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type)
     py_streamer = lambda x: False
-    _ = pipe.generate(input, gen_config, py_streamer)
+    _ = pipe.generate(prompts=input, generation_config=gen_config, streamer=py_streamer)
 
     rmtree(models_path)
