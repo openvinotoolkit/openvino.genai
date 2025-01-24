@@ -408,7 +408,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
         }
 
         // check whether group has finished
-        group.is_done(m_parameters);
+        group.is_done();
 
         // group cannot continue if there are no valid child beams
         if (child_beams_per_group[group_id].size() == 0) {
@@ -549,14 +549,14 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     std::vector<int64_t> dropped_seq_ids;
     for (auto& running_sequence : sequence_group->get_running_sequences()) {
         const auto generated_len = running_sequence->get_generated_len();
-        if (sampling_params.max_new_tokens <= generated_len || 
+        if (sequence_group->get_max_new_tokens() <= generated_len || 
             is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // stop sequence by max_new_tokens or stop token (eos included)
             running_sequence->set_status(SequenceStatus::FINISHED);
 
             if (is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-            } else if (sampling_params.max_new_tokens == generated_len) {
+            } else if (sequence_group->get_max_new_tokens() == generated_len) {
                 running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
             }
 
@@ -800,8 +800,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                         // max counter of needed to be sampled tokens
                         OPENVINO_ASSERT(running_sequence->get_generated_len() >= token_offset);
                         size_t generated_and_verified_len = running_sequence->get_generated_len() - token_offset;
-                        OPENVINO_ASSERT(sampling_params.max_new_tokens >= generated_and_verified_len);
-                        size_t max_num_sampled_token = sampling_params.max_new_tokens - generated_and_verified_len;
+                        OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
+                        size_t max_num_sampled_token = sequence_group->get_max_new_tokens() - generated_and_verified_len;
                         if (max_num_sampled_token == 0) {
                             stop_sample_tokens(running_sequence, token_offset, max_num_sampled_token, max_removed_tokens_per_request);
                             break;
@@ -887,7 +887,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                 // check max length stop criteria
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (!sequence_group->has_finished() &&
-                    running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
+                    running_sequences[0]->get_generated_len() == sequence_group->get_max_new_tokens()) {
                     // stop sequence by max_new_tokens
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
@@ -956,7 +956,10 @@ int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::Ge
     return preeempted_sequence_id;
 }
 
-void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfig& sampling_params) {
+void Sampler::GroupBeamSearcher::Group::is_done() {
+    const auto sequence_group = ongoing.front().m_sequence->get_sequence_group_ptr();
+    const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+
     assert(sampling_params.num_beams % sampling_params.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
@@ -977,7 +980,7 @@ void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfi
         return;
     }
     case ov::genai::StopCriteria::NEVER: {
-        size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : cur_len;
+        size_t length = sampling_params.length_penalty > 0.0 ? sequence_group->get_max_new_tokens() : cur_len;
         float highest_attainable_score = best_sum_logprobs / std::pow(float(length), sampling_params.length_penalty);
         done = worst_score >= highest_attainable_score;
         return;
