@@ -203,6 +203,15 @@ def get_use_case(model_name_or_path):
                 if config.get("model_type").lower().replace('_', '-').startswith(model_id):
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_id}')
                     return case, model_ids[idx]
+
+    case, model_name = get_model_name(model_name_or_path)
+    if case == None:
+        raise RuntimeError('==Failure FOUND==: no use_case found')
+    else:
+        log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
+
+
+def get_model_name(model_name_or_path):
     # try to get use_case from model name
     path = os.path.normpath(model_name_or_path)
     model_names = path.split(os.sep)
@@ -210,11 +219,8 @@ def get_use_case(model_name_or_path):
         for case, model_ids in USE_CASES.items():
             for model_id in model_ids:
                 if model_name.lower().startswith(model_id):
-                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
                     return case, model_name
-
-    raise RuntimeError('==Failure FOUND==: no use_case found')
-
+    return None, None
 
 def get_config(config):
     if Path(config).is_file():
