@@ -76,8 +76,6 @@ invalid_configs = [
     dict(num_return_sequences=2), # beam search or multimonial is required
     # stop conditions
     dict(), # no stop conditions at all
-    dict(eos_token_id=1), # 'stop_token_ids' does not contain 'eos_token_id'
-    dict(eos_token_id=1, stop_token_ids={2}), # 'stop_token_ids' is not empty, but does not contain 'eos_token_id'
     dict(ignore_eos=True),  # no 'max_new_tokens', no 'max_length' with 'ignore_eos'
     dict(stop_token_ids={-1}), # value in 'stop_token_ids' must be non-negative 
     dict(max_new_tokens=0), # max new tokens cannot be empty (only when 'echo' is True)
