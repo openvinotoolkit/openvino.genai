@@ -222,6 +222,7 @@ def get_model_name(model_name_or_path):
                     return case, model_name
     return None, None
 
+
 def get_config(config):
     if Path(config).is_file():
         with open(config, 'r') as f:
