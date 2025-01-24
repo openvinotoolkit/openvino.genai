@@ -7,11 +7,21 @@ import json
 import os
 import pytest
 
+
+def verify_set_values(generation_config, kwargs):
+    generation_config.validate()
+    for key, value in kwargs.items():
+        assert getattr(generation_config, key) == value
+    if "stop_token_id" in kwargs:
+        assert kwargs["stop_token_id"] in generation_config["stop_token_ids"]
+
+
 configs = [
     # stop conditions
     dict(max_new_tokens=12),
     dict(max_length=12),
     dict(stop_token_ids={2}),
+    dict(eos_token_id=1),
     dict(eos_token_id=1, stop_token_ids={1}),
     dict(stop_strings={"a", "b"}),
     dict(ignore_eos=True, max_new_tokens=10),
@@ -49,11 +59,11 @@ configs = [
 @pytest.mark.nightly
 def test_valid_configs(generation_config_kwargs):
     config = GenerationConfig(**generation_config_kwargs)
-    config.validate()
+    verify_set_values(config, generation_config_kwargs)
 
     config = GenerationConfig()
     config.update_generation_config(**generation_config_kwargs)
-    config.validate()
+    verify_set_values(config, generation_config_kwargs)
 
 
 invalid_configs = [

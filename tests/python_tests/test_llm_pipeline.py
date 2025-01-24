@@ -451,17 +451,6 @@ def test_perf_metrics(generation_config, prompt):
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
 
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_eos_token_with_property_passes_config_validation():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
-    ov_pipe.generate(
-        "",
-        max_new_tokens=1,
-        eos_token_id=ov_pipe.get_generation_config().eos_token_id + 1
-    )
-
 #
 # Misc
 #
