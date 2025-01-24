@@ -325,6 +325,17 @@ def get_default_properties():
         hints.kv_cache_precision : ov.Type.f16,
     }
 
+def get_models_list_from_path(file_name: str):
+    models = []
+    with open(file_name) as f:
+        for model_name in f:
+            model_name = model_name.strip()
+            # skip comment in model scope file
+            if model_name.startswith('#'):
+                continue
+            models.append(model_name)
+    return models
+
 
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
