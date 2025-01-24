@@ -269,9 +269,10 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
+          - name: 'Cacheopt E2E'
+            cmd: 'tests/python_tests/test_kv_cache_eviction.py'
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py'
-
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py tests/python_tests/test_whisper_pipeline_static.py'
     defaults:
       run:
         shell: bash
