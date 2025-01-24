@@ -53,7 +53,7 @@ PT_MODEL_CLASSES_MAPPING = {
 
 USE_CASES = {
     'image_gen': ['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"],
-    "vlm": ["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v"],
+    "vlm": ["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v", "minicpm-v"],
     'speech2text': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
