@@ -378,4 +378,5 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
     py_streamer = lambda x: False
     _ = pipe.generate(input, generation_config=gen_config, streamer=py_streamer)
 
+    del pipe
     rmtree(models_path)
