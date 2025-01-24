@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching_for_prompt_lookup.hpp"
@@ -89,6 +89,10 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::is_reque
 
 std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_awaiting_requests() {
     return m_awaiting_requests;
+}
+
+size_t ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_processed_tokens_per_iteration() {
+    return m_batch_size;
 }
 
 }

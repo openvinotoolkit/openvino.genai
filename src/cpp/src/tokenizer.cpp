@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -173,22 +173,12 @@ public:
             ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, properties);
         }
 
+        read_config(models_path);
+        read_special_tokens_map(models_path);
+        // Try to read tokenizer_config if some token ids or token str are not defined.
+        read_tokenizer_config_if_necessary(models_path);
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
-
-        // If special tokens were not found from IR, try to read them from config.
-        // This will be triggered only for IRs older than 2024.3.
-        if (m_pad_token_id == -1 || m_bos_token_id == -1 || m_eos_token_id == -1 ||
-            m_pad_token.empty() || m_bos_token.empty() || m_eos_token.empty()) {
-            read_config(models_path);
-            read_special_tokens_map(models_path);
-            // Try to read tokenizer_config if some token ids or token str are not defined.
-            read_tokenizer_config_if_necessary(models_path);
-        }
-
-        // If chat_template was not found in IR, try to read them from config.
-        if (m_chat_template.empty()) {
-            m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
-        }
+        m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
     }
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
@@ -250,12 +240,12 @@ public:
         m_chat_template = patch_chat_template(m_chat_template);
         if (m_detokenizer) {
             // Unset/-1 token causes exception in SentencePiece detokenization.
-            if (m_pad_token_id != -1)
-                m_pad_token = decode(std::vector{m_pad_token_id});
-            if (m_bos_token_id != -1)
-                m_bos_token = decode(std::vector{m_bos_token_id});
-            if (m_eos_token_id != -1)
-                m_eos_token = decode(std::vector{m_eos_token_id});
+            if (m_pad_token_id != -1 && m_pad_token.empty())
+                m_pad_token = decode(std::vector{m_pad_token_id}, {ov::genai::add_special_tokens(true)});
+            if (m_bos_token_id != -1 && m_bos_token.empty())
+                m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::add_special_tokens(true)});
+            if (m_eos_token_id != -1 && m_eos_token.empty())
+                m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::add_special_tokens(true)});
         }
     }
 
@@ -575,13 +565,18 @@ public:
             {"slice", slice_callable},
         };
 
+        std::string result;
         try {
-            return tpl.RenderAsString(params).value();
+            result = tpl.RenderAsString(params).value();
         } catch (const std::exception& error) {
             OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
                            "Please apply template manually to your prompt before calling generate. "
                            "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         }
+        OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
+                                         "Please check the chat template or apply template manually to your prompt before calling generate."
+                                         "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+        return result;
     }
 
     void set_chat_template(const std::string& chat_template) {

@@ -14,10 +14,13 @@
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
+namespace {
 
-namespace ov {
-namespace genai {
-
+/**
+ * Set position ids tensor data for next token inference based on provided attention mask
+ * Supports multi batch
+ * Supports sparse attention_mask
+ */
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
@@ -26,6 +29,23 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     for (size_t batch = 0; batch < batch_size; batch++) {
         int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
         position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
+    }
+}
+
+void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
+    const size_t batch_size = attention_mask.get_shape().at(0);
+    const size_t sequence_length = attention_mask.get_shape().at(1);
+    const size_t thw_dim_size = 3;
+
+    position_ids.set_shape({thw_dim_size, batch_size, 1});
+    int64_t* position_ids_data = position_ids.data<int64_t>();
+
+    int64_t pos_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
+
+    for (size_t batch = 0; batch < batch_size; batch++) {
+        for (size_t dim = 0; dim < thw_dim_size; ++dim) {
+            position_ids_data[dim * batch_size + batch] = pos_id;
+        }
     }
 }
 
@@ -48,7 +68,10 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
         attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
     }
 }
+}
 
+namespace ov {
+namespace genai {
 
 std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     ov::InferRequest& m_llm,
@@ -58,7 +81,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     Sampler& sampler,
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
-    std::optional<EmbeddingsModel> m_embedding
+    std::optional<EmbeddingsModel> m_embedding,
+    std::optional<int64_t> rope_delta
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -83,7 +107,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
-                return sg->has_finished() || sg->out_of_memory() || sg->handle_dropped();
+                return sg->has_finished() || sg->handle_dropped();
             });
         active_sequence_groups.erase(removed_it, active_sequence_groups.end());
     };
@@ -120,13 +144,10 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     auto logits = m_llm.get_tensor("logits");
 
-    // since we have applied `Slice` operation to last MatMul, model output sequence lenght is 1
-    // so, we need to update sequence groups to think that they already have processed all prompt tokens except last ones
-    // and schedule only `output_sequence_len` ones
     int64_t output_sequence_len = logits.get_shape().at(1);
     for (auto& sequence_group : sequence_groups) {
-        sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-        sequence_group->schedule_tokens(output_sequence_len);
+        sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+        sequence_group->set_output_seq_len(output_sequence_len);
     }
 
     std::map<size_t, size_t> beam_offets;
@@ -134,7 +155,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
-    free_non_running_requests();
+    free_non_running_requests(); // handle sampler output
 
     // "Generation" phase
 
@@ -196,7 +217,11 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
         if (position_ids.has_value()) {
-            update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
+            if (position_ids->get_shape().size() == 3 && rope_delta.has_value()) {
+                update_3d_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"), rope_delta.value());
+            } else {
+                update_position_ids(m_llm.get_tensor("position_ids"), m_llm.get_tensor("attention_mask"));
+            }
         }
 
         m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
@@ -205,6 +230,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         m_llm.start_async();
 
         stream_generated_tokens();
+        free_non_running_requests(); // to handle streaming response
 
         m_llm.wait();
 
@@ -216,7 +242,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         raw_perf_counters.m_batch_sizes.emplace_back(current_batch_size);
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
-        free_non_running_requests();
+        free_non_running_requests(); // handle sampler output
     }
 
     stream_generated_tokens();

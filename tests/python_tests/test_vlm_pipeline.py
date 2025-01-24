@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino_tokenizers
@@ -9,17 +9,17 @@ from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
 from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters, get_default_properties
 
-def get_ov_model(cache):
-    model_dir = cache.mkdir("tiny-random-minicpmv-2_6")
+def get_ov_model(model_id, cache):
+    model_dir = cache.mkdir(model_id.split('/')[-1])
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    model_id = "katuni4ka/tiny-random-minicpmv-2_6"
     processor = transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
     processor.tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
     model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
+    processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
@@ -44,11 +44,17 @@ image_links_for_testing = [
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_vlm_pipeline(cache):
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-minicpmv-2_6",
+    "katuni4ka/tiny-random-phi3-vision",
+])
+def test_vlm_pipeline(model_id, cache):
     def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
         return False
 
-    models_path = get_ov_model(cache)
+    models_path = get_ov_model(model_id, cache)
     generation_config = GenerationConfig(max_new_tokens=30)
 
     for links in image_links_for_testing:
@@ -59,10 +65,14 @@ def test_vlm_pipeline(cache):
         ov_pipe = VLMPipeline(models_path, "CPU")
         ov_pipe.start_chat()
 
-        ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        result_from_streamer = []
+        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        assert res.texts[0] == ''.join(result_from_streamer)
 
         for prompt in prompts[1:]:
-            ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+            result_from_streamer = []
+            res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+            assert res.texts[0] == ''.join(result_from_streamer)
 
         ov_pipe.finish_chat()
 
@@ -70,7 +80,7 @@ def test_vlm_pipeline(cache):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_vlm_get_tokenizer(cache):
-    models_path = get_ov_model(cache)
+    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6", cache)
     pipe = VLMPipeline(models_path, "CPU")
     tokenizer = pipe.get_tokenizer()
     tokenizer.encode("")
@@ -83,15 +93,16 @@ def test_vlm_get_tokenizer(cache):
     get_multinomial_all_parameters(),
 ])
 def test_sampling(config, cache):
-    models_path = get_ov_model(cache)
+    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6", cache)
     image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(models_path, "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_perf_metrics(cache):
     import numpy as np
-    models_path = get_ov_model(cache)
+    models_path = get_ov_model("katuni4ka/tiny-random-minicpmv-2_6", cache)
 
     images = [get_image_by_link(image_links[0])]
 

@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 from openvino_genai import GenerationConfig
@@ -7,12 +7,27 @@ import json
 import os
 import pytest
 
+
+def verify_set_values(generation_config, kwargs):
+    generation_config.validate()
+    for key, value in kwargs.items():
+        if key == "stop_token_ids":
+            continue
+        assert getattr(generation_config, key) == value
+    if "eos_token_id" in kwargs:
+        assert kwargs["eos_token_id"] in generation_config.stop_token_ids
+        if "stop_token_ids" in kwargs:
+            for stop_id in kwargs["stop_token_ids"]:
+                assert stop_id in generation_config.stop_token_ids
+
 configs = [
     # stop conditions
     dict(max_new_tokens=12),
     dict(max_length=12),
     dict(stop_token_ids={2}),
+    dict(eos_token_id=1),
     dict(eos_token_id=1, stop_token_ids={1}),
+    dict(eos_token_id=1, stop_token_ids={2}),
     dict(stop_strings={"a", "b"}),
     dict(ignore_eos=True, max_new_tokens=10),
     dict(ignore_eos=True, max_length=10),
@@ -49,11 +64,11 @@ configs = [
 @pytest.mark.nightly
 def test_valid_configs(generation_config_kwargs):
     config = GenerationConfig(**generation_config_kwargs)
-    config.validate()
+    verify_set_values(config, generation_config_kwargs)
 
     config = GenerationConfig()
     config.update_generation_config(**generation_config_kwargs)
-    config.validate()
+    verify_set_values(config, generation_config_kwargs)
 
 
 invalid_configs = [
@@ -61,8 +76,6 @@ invalid_configs = [
     dict(num_return_sequences=2), # beam search or multimonial is required
     # stop conditions
     dict(), # no stop conditions at all
-    dict(eos_token_id=1), # 'stop_token_ids' does not contain 'eos_token_id'
-    dict(eos_token_id=1, stop_token_ids={2}), # 'stop_token_ids' is not empty, but does not contain 'eos_token_id'
     dict(ignore_eos=True),  # no 'max_new_tokens', no 'max_length' with 'ignore_eos'
     dict(stop_token_ids={-1}), # value in 'stop_token_ids' must be non-negative 
     dict(max_new_tokens=0), # max new tokens cannot be empty (only when 'echo' is True)

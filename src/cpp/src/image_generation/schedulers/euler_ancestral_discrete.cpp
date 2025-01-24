@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cassert>
@@ -208,7 +208,7 @@ std::map<std::string, ov::Tensor> EulerAncestralDiscreteScheduler::step(ov::Tens
     return {{"latent", prev_sample}, {"denoised", pred_original_sample}};
 }
 
-size_t EulerAncestralDiscreteScheduler::_index_for_timestep(int64_t timestep) const{
+size_t EulerAncestralDiscreteScheduler::_index_for_timestep(int64_t timestep) const {
     for (size_t i = 0; i < m_schedule_timesteps.size(); ++i) {
         if (timestep == m_schedule_timesteps[i]) {
             return i;

@@ -242,7 +242,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <tr>
       <td><code>Flux</code></td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Supported</td>
       <td>Not supported</td>
       <td>
         <ul>
@@ -312,6 +312,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
       <th>Models</th>
       <th>LoRA support</th>
       <th>Example HuggingFace Models</th>
+      <th>Notes</th>
     </tr>
     <tr>
       <td><code>InternVL2</code></td>
@@ -329,6 +330,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/OpenGVLab/InternVL2_5-8B"><code>OpenGVLab/InternVL2_5-8B</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>LLaVA</code></td>
@@ -339,6 +341,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/llava-hf/llava-1.5-7b-hf"><code>llava-hf/llava-1.5-7b-hf</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>LLaVA-NeXT</code></td>
@@ -351,6 +354,7 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/llava-hf/llama3-llava-next-8b-hf"><code>llava-hf/llama3-llava-next-8b-hf</code></a></li>
         </ul>
       </td>
+      <td></td>
     </tr>
     <tr>
       <td><code>MiniCPMV</code></td>
@@ -361,6 +365,34 @@ In addition to image generation models, `InpaintingPipeline` supports specialize
           <li><a href="https://huggingface.co/openbmb/MiniCPM-V-2_6"><code>openbmb/MiniCPM-V-2_6</code></a></li>
         </ul>
       </td>
+      <td></td>
+    </tr>
+    <tr>
+      <td><code>Phi3VForCausalLM</code></td>
+      <td>phi3_v</td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/microsoft/Phi-3-vision-128k-instruct"><code>microsoft/Phi-3-vision-128k-instruct</code></a></li>
+          <li><a href="https://huggingface.co/microsoft/Phi-3.5-vision-instruct"><code>microsoft/Phi-3.5-vision-instruct</code></a></li>
+        </ul>
+      </td>
+      <td>
+          <li>GPU isn't supported</li>
+          <li>These models' configs aren't consistent. It's required to override the default <code>eos_token_id</code> with the one from a tokenizer: <code>generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())</code>.</li>
+      </td>
+    </tr>
+    <tr>
+      <td><code>Qwen2-VL</code></td>
+      <td>Qwen2-VL</td>
+      <td>Not supported</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct"><code>Qwen/Qwen2-VL-2B-Instruct</code></a></li>
+          <li><a href="https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct"><code>Qwen/Qwen2-VL-7B-Instruct</code></a></li>
+        </ul>
+      </td>
+      <td></td>
     </tr>
   </tbody>
 </table>

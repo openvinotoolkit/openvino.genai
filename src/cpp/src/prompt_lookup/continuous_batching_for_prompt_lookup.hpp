@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -36,6 +36,8 @@ public:
 
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
+
+    size_t get_processed_tokens_per_iteration();
 
     using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
 protected:
