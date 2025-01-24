@@ -689,7 +689,11 @@ public:
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
-    } 
+    }
+
+    size_t get_max_new_tokens() {
+        return m_sampling_params.get_max_new_tokens(get_prompt_len());
+    }
 };
 
 inline std::shared_ptr<SequenceGroup> Sequence::get_sequence_group_ptr() const {

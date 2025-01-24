@@ -9,6 +9,7 @@ from typing import Dict, Tuple, List
 import openvino_genai
 import json
 
+from common import delete_rt_info
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
@@ -18,6 +19,8 @@ from ov_genai_test_utils import (
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
+    delete_rt_info(configs, temp_path)
+
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 

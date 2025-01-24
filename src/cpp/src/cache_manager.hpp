@@ -50,8 +50,8 @@ class CacheManager {
     std::vector<ov::Tensor> m_key_cache;
     std::vector<ov::Tensor> m_value_cache;
     size_t m_num_allocated_kv_blocks = 0;
-    ov::Core m_core;
     ov::InferRequest m_request;
+    ov::Core m_core;
 
     ov::Shape set_first_dim_and_make_static(const ov::PartialShape& shape, size_t dim) {
         ov::PartialShape res_shape = shape;
