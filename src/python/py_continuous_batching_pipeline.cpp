@@ -279,7 +279,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<ov::Tensor>& input_ids,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer){
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
                 return __call_cb_generate(pipe, input_ids, generation_config, streamer);
             },
             py::arg("input_ids"),
@@ -292,7 +293,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<std::string>& prompts,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer){
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 return __call_cb_generate(pipe, prompts, generation_config, streamer);
             },
             py::arg("prompts"),
