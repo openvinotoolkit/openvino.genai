@@ -11,10 +11,14 @@ import pytest
 def verify_set_values(generation_config, kwargs):
     generation_config.validate()
     for key, value in kwargs.items():
+        if key == "stop_token_ids":
+            continue
         assert getattr(generation_config, key) == value
-    if "stop_token_id" in kwargs:
-        assert kwargs["stop_token_id"] in generation_config["stop_token_ids"]
-
+    if "eos_token_id" in kwargs:
+        assert kwargs["eos_token_id"] in generation_config.stop_token_ids
+        if "stop_token_ids" in kwargs:
+            for stop_id in kwargs["stop_token_ids"]:
+                assert stop_id in generation_config.stop_token_ids
 
 configs = [
     # stop conditions
@@ -23,6 +27,7 @@ configs = [
     dict(stop_token_ids={2}),
     dict(eos_token_id=1),
     dict(eos_token_id=1, stop_token_ids={1}),
+    dict(eos_token_id=1, stop_token_ids={2}),
     dict(stop_strings={"a", "b"}),
     dict(ignore_eos=True, max_new_tokens=10),
     dict(ignore_eos=True, max_length=10),
