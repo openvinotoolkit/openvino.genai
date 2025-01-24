@@ -95,6 +95,8 @@ ov::Core singleton_core();
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
 
+void release_core_plugin(const std::string& device);
+
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
 struct KVAxesPosition {
