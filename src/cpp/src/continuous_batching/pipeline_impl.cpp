@@ -68,6 +68,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     if (m_scheduler) {
         m_scheduler->release();
     }
+
+    utils::release_core_plugin(m_device);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -81,7 +83,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& properties,
+    const std::vector<KVHeadConfig>& kv_cache_config) {
+    m_device = device;
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {

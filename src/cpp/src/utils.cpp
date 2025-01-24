@@ -531,6 +531,15 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
     return {plugin_config, scheduler_config};
 };
 
+void release_core_plugin(const std::string& device) {
+    try {
+        singleton_core().unload_plugin(device);
+    } catch (const ov::Exception&) {
+        // Note: in a theory it can throw an exception when 2 different pipelines are created from
+        // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
