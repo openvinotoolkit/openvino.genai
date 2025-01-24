@@ -137,74 +137,49 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
     }
 }
 
-TokenIds get_difference_generated_token_id(const TokenIds& before, const TokenIds& after) {
-    OPENVINO_ASSERT(before.size() <= after.size());
-    return TokenIds(after.begin() + before.size(), after.end());
-}
-
-std::vector<int64_t> encode_string(const std::string& input_str, ov::genai::Tokenizer& tokenizer) {
+std::vector<int64_t> encode_string(const std::string& input_str, ov::genai::Tokenizer& tokenizer, bool a = false) {
     // encode input_str
     std::string input_str_copy = input_str;
-    ov::Tensor ov_encoded_input_str = tokenizer.encode(input_str_copy, ov::genai::add_special_tokens(false)).input_ids;
+    // ov::Tensor ov_encoded_input_str = tokenizer.encode(input_str_copy, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor ov_encoded_input_str = tokenizer.encode(input_str_copy, ov::genai::add_special_tokens(a)).input_ids;
     size_t tensor_size = ov_encoded_input_str.get_size();
     std::vector<int64_t> encoded_input_str(tensor_size);
     std::copy_n(ov_encoded_input_str.data<int64_t>(), tensor_size, encoded_input_str.begin());
     return encoded_input_str;
 }
 
-GeneratedRequests retokenize_requests(const GeneratedRequests& src_before_inference,
-                                      const GeneratedRequests& src_after_inference,
-                                      const GeneratedRequests& dst_before_inference,
-                                      Tokenizer& src_tokenizer,
-                                      Tokenizer& dst_tokenizer,
-                                      const std::map<int64_t, size_t>& max_generated_len = {}) {
-    GeneratedRequests dst_to_inference;
-    for (const auto& src_request : src_after_inference) {
-        const auto req_id = src_request.first;
-        dst_to_inference.insert({{ req_id, {{}} }});
-        auto& dst_request = dst_to_inference[req_id];
+// GeneratedRequests retokenize_requests(const GeneratedRequests& src,
+//                                       Tokenizer& src_tokenizer,
+//                                       Tokenizer& dst_tokenizer,
+//                                       const std::map<int64_t, size_t>& max_generated_len = {}) {
+//     GeneratedRequests dist;
+//     for (const auto& src_request : src) {
+//         uint64_t request_id = src_request.first;
+//         dist.insert({{ request_id, {{}} }});
+//         for (const auto& src_sequence : src_request.second) {
+//             uint64_t sequence_id = src_sequence.first;
+//             auto decoded_str = src_tokenizer.decode(src_sequence.second.token_ids);
+//             TokenIds dst_token_ids = encode_string(decoded_str, dst_tokenizer, true);
 
-        for (const auto& src_sequence : src_request.second) {
-            const auto seq_id = src_sequence.first;
+//             std::string a = dst_tokenizer.decode(dst_token_ids);
+//             if (a != decoded_str) {
+//                 auto b = 0;
+//             }
+//             std::vector<float> dst_log_probs(dst_token_ids.size(), 0.f);
+//             if (max_generated_len.count(request_id)) {
+//                 size_t max_len = max_generated_len.at(request_id) - 1;
+//                 if (dst_token_ids.size() > max_len) {
+//                     dst_token_ids.resize(max_len);
+//                     dst_log_probs.resize(max_len);
+//                 }
+//             }
+//             GeneratedSequence dst_sequence(dst_token_ids, dst_log_probs);
 
-
-            // to get generated token_ids to decode
-            TokenIds diff_to_decode;
-            if (src_before_inference.count(req_id) && src_before_inference.at(req_id).count(seq_id)) {
-                const auto& token_ids_before = src_before_inference.at(req_id).at(seq_id).token_ids;
-                const auto& token_ids_after = src_sequence.second.token_ids;
-                diff_to_decode = get_difference_generated_token_id(token_ids_before, token_ids_after);
-            } else {
-                diff_to_decode = src_sequence.second.token_ids;
-            }
-            
-            std::string diff_to_encode = src_tokenizer.decode(diff_to_decode, ov::genai::skip_special_tokens(true));
-            
-            GeneratedSequence res_seq({}, {});
-            if (dst_before_inference.count(req_id) && dst_before_inference.at(req_id).count(seq_id)) {
-                res_seq = dst_before_inference.at(req_id).at(seq_id);
-            }
-
-            TokenIds encoded_diff = encode_string(diff_to_encode, dst_tokenizer);
-            if (!encoded_diff.empty()) {
-                LogProbs log_prob_diff(encoded_diff.size(), 0.f);
-                res_seq.token_ids.insert(res_seq.token_ids.end(), encoded_diff.begin(), encoded_diff.end());
-                res_seq.log_probs.insert(res_seq.log_probs.end(), log_prob_diff.begin(), log_prob_diff.end());
-            }
-
-            if (max_generated_len.count(req_id)) {
-                size_t max_len = max_generated_len.at(req_id) - 1;
-                if (res_seq.token_ids.size() > max_len) {
-                    res_seq.token_ids.resize(max_len);
-                    res_seq.token_ids.resize(max_len);
-                }
-            }
-
-            dst_request.insert({ seq_id, res_seq });
-        }
-    }
-    return dst_to_inference;
-}
+//             dist[request_id].insert({ sequence_id, dst_sequence });
+//         }
+//     }
+//     return dist;
+// }
 
 size_t get_removed_tokens_per_seq(
     const GeneratedSequences& before,
@@ -223,6 +198,58 @@ size_t get_removed_tokens_per_seq(
     return result;
 }
 
+GeneratedRequests func_0(
+    const GeneratedRequests& draft_req_before,
+    const GeneratedRequests& draft_req_after,
+    Tokenizer& draft_tokenizer,
+    Tokenizer& main_tokenizer,
+    const GeneratedRequests& main_req) {
+    GeneratedRequests updated_main_requests;
+    for (const auto& request : draft_req_after) {
+        const auto request_id = request.first;
+        updated_main_requests.insert({ request_id, {{}} });
+        
+        for (const auto& sequence : request.second) {
+            const auto sequence_id = sequence.first;
+
+            TokenIds draft_token_id_before = draft_req_before.count(request_id) && draft_req_before.at(request_id).count(sequence_id) ? draft_req_before.at(request_id).at(sequence_id).token_ids : TokenIds{};
+            TokenIds draft_token_id_after = sequence.second.token_ids;
+
+            OPENVINO_ASSERT (draft_token_id_before.size() <= draft_token_id_after.size());
+
+            TokenIds draft_token_id_delta;
+            {
+                // to add special to beginning & end of decoded string to handle spaces
+                // auto special_symbol = encode_string("_", draft_tokenizer).front();
+                // draft_token_id_delta.push_back(special_symbol);
+                draft_token_id_delta.insert(draft_token_id_delta.end(), draft_token_id_after.begin() + draft_token_id_before.size(), draft_token_id_after.end());
+                // draft_token_id_delta.push_back(special_symbol);
+            }
+
+            std::string decoded_draft_delta = draft_tokenizer.decode(draft_token_id_delta, ov::genai::skip_special_tokens(false));
+            {
+                // to remove special symbol from begin and end of sequence
+                // decoded_draft_delta = decoded_draft_delta.substr(0, decoded_draft_delta.length() - 1);
+            }
+
+            TokenIds encoded_draft_token_id_delta = encode_string(decoded_draft_delta, main_tokenizer, true);
+            LogProbs encoded_draft_log_prob_delta(encoded_draft_token_id_delta.size(), 0.f);
+
+            TokenIds main_token_id_before = main_req.count(request_id) && main_req.at(request_id).count(sequence_id) ? main_req.at(request_id).at(sequence_id).token_ids : TokenIds{};
+            LogProbs main_log_probs_before = main_req.count(request_id) && main_req.at(request_id).count(sequence_id) ? main_req.at(request_id).at(sequence_id).log_probs : LogProbs{};
+
+            TokenIds main_token_id_after = main_token_id_before;
+            LogProbs main_log_prob_after = main_log_probs_before;
+            main_token_id_after.insert(main_token_id_after.end(), encoded_draft_token_id_delta.begin(), encoded_draft_token_id_delta.end());
+            main_log_prob_after.insert(main_log_prob_after.end(), encoded_draft_log_prob_delta.begin(), encoded_draft_log_prob_delta.end());
+
+            GeneratedSequence main_updated_sequence(main_token_id_after, main_log_prob_after);
+            updated_main_requests[request_id].insert({ sequence_id, main_updated_sequence });
+        }
+    }
+    return updated_main_requests;
+}
+
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
@@ -232,14 +259,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     ManualTimer step_timer("speculative_decoding: step()");
     step_timer.start();
 
-    ov::genai::GeneratedRequests draft_req_before_inference, main_req_before_inference;
-    if (!m_are_same_tokenizers) {
-        draft_req_before_inference = m_draft_pipeline->get_generated_requests();
-        main_req_before_inference = m_main_pipeline->get_generated_requests();
-    }
-
     m_draft_pipeline->pull_awaiting_requests(true);
     m_main_pipeline->pull_awaiting_requests();
+
+    GeneratedRequests main_requests_0, draft_requests_0;
+    if (!m_are_same_tokenizers) {
+        main_requests_0 = m_main_pipeline->get_generated_requests();
+        draft_requests_0 = m_draft_pipeline->get_generated_requests();
+    }
 
     // generate candidates by draft model
     ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
@@ -253,16 +280,28 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
+
+    GeneratedRequests draft_requests_1, main_requests_1;
     if (!m_are_same_tokenizers) {
-        ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
-        retokenization_timer.start();
-        draft_generated_requests = retokenize_requests(draft_req_before_inference, draft_generated_requests, main_req_before_inference, m_draft_tokenizer, m_main_tokenizer, m_main_max_generation_len);
-        retokenization_timer.end();
-        m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
-    }
-    for (const auto& candidate : draft_generated_requests) {
-        auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
-        update_sequence_info.insert({{candidate.first, update_result}});
+        draft_requests_1 = m_draft_pipeline->get_generated_requests();
+
+        // get delta, retokenize & insert to main requests
+        main_requests_1 = func_0(draft_requests_0, draft_requests_1, m_draft_tokenizer, m_main_tokenizer, main_requests_0);
+        
+        auto b = m_draft_tokenizer.decode(draft_requests_1.begin()->second.begin()->second.token_ids);
+        auto a = m_main_tokenizer.decode(main_requests_1.begin()->second.begin()->second.token_ids);
+
+        for (const auto& candidate : main_requests_1) {
+            auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
+            update_sequence_info.insert({{candidate.first, update_result}});
+        }
+        auto tmp = m_main_pipeline->get_generated_requests();
+        // OPENVINO_ASSERT(main_requests_1 == tmp);
+    } else {
+        for (const auto& candidate : draft_generated_requests) {
+            auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
+            update_sequence_info.insert({{candidate.first, update_result}});
+        }
     }
 
     ManualTimer main_timer("speculative_decoding: main_model: step()");
@@ -272,31 +311,35 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     m_sd_metrics.main_duration += main_timer.get_duration();
     m_pipeline_metrics = m_main_pipeline->get_metrics();
 
-    auto main_generated_requests = m_main_pipeline->get_generated_requests();
+    GeneratedRequests draft_requests_2, main_requests_2;
     if (!m_are_same_tokenizers) {
-        auto buffer = draft_generated_requests;
-        draft_generated_requests = m_draft_pipeline->get_generated_requests();
-        if (!main_generated_requests.empty()) {
-            ManualTimer retokenization_timer("speculative_decoding: retokenize_requests()");
-            retokenization_timer.start();
-            draft_generated_requests = retokenize_requests(main_req_before_inference, main_generated_requests, draft_generated_requests, m_main_tokenizer, m_draft_tokenizer); 
-            retokenization_timer.end();
-            m_sd_metrics.retokenization_duration += retokenization_timer.get_duration();
+        main_requests_2 = m_main_pipeline->get_generated_requests();
+        draft_requests_2 = func_0(main_requests_0, main_requests_2, m_main_tokenizer, m_draft_tokenizer, draft_requests_0);
+
+        for (const auto& candidate : draft_requests_2) {
+            auto update_result = m_draft_pipeline->update_request(candidate.first, candidate.second, false);
         }
-        main_req_before_inference = buffer;
+        auto tmp = m_draft_pipeline->get_generated_requests();
+        // OPENVINO_ASSERT(draft_requests_2 == tmp);
     }
+    auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
-        auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
-        update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
-        if (!m_are_same_tokenizers && main_req_before_inference.count(checked_sequence.first)) {
-            update_sequence_info[checked_sequence.first].removed_tokens_cnt = get_removed_tokens_per_seq(main_req_before_inference.at(checked_sequence.first), checked_sequence.second);
+        size_t removed_token_cnt;
+        if (!m_are_same_tokenizers) {
+            removed_token_cnt = get_removed_tokens_per_seq(main_requests_1.at(checked_sequence.first), checked_sequence.second);
+        } else {
+            removed_token_cnt = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true).removed_tokens_cnt;
         }
+        update_sequence_info[checked_sequence.first].removed_tokens_cnt = removed_token_cnt;
     }
 
     // finish draft request if the generation was completed
     for (const auto& draft_request : draft_generated_requests) {
         auto request_id = draft_request.first;
         if (!main_generated_requests.count(request_id)) {
+            auto draft_r = m_draft_pipeline->get_generated_requests().begin()->second.begin()->second.token_ids;
+            std::string diff_to_encode = m_draft_tokenizer.decode(draft_r);
+            std::cout << std::endl << "===============" << std::endl << diff_to_encode << std::endl;
             m_draft_pipeline->finish_request(request_id);
             // remove draft_generation_handle from queue
             m_draft_generations.erase(request_id);
@@ -323,7 +366,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
     }
 
-    if (main_generated_requests.empty() && 0) {
+    if (main_generated_requests.empty()) {
         std::cout << std::endl;
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
@@ -407,6 +450,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                 }
             }
         }
+        auto a = 0;
     }
 
     if (streamer_ptr) { // push streamer's cache

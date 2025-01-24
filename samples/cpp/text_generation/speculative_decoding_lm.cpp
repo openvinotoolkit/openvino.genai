@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) try {
     }
 
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 500;
+    config.max_new_tokens = 100;
     // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
     // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
     config.num_assistant_tokens = 5;
@@ -36,9 +36,11 @@ int main(int argc, char* argv[]) try {
         return false;
     };
 
+    auto m_start = std::chrono::steady_clock::now();
     // Since the streamer is set, the results will
     // be printed each time a new token is generated.
     pipe.generate(prompt, config, streamer);
+    std::cout << std::endl << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - m_start).count() / 1e6 << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
