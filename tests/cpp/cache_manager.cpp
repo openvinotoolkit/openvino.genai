@@ -11,7 +11,7 @@
 
 using namespace ov::genai;
 
-size_t get_total_allocated_bytes(std::shared_ptr<ov::genai::CacheManager> cache_manager) {
+size_t get_total_allocated_bytes(std::shared_ptr<CacheManager> cache_manager) {
     size_t allocated_bytes = 0;
     for (size_t i = 0; i < cache_manager->get_num_decoder_layers(); i++) {
         auto key_cache = cache_manager->get_key_cache(i);
@@ -28,20 +28,20 @@ size_t get_num_kv_blocks(size_t cache_size, size_t block_size_bytes) {
 
 TEST(TestCacheManager, test_cache_size_param) {
     ov::Core core;
-    ov::genai::SchedulerConfig scheduler_config;
+    SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 0;
     scheduler_config.cache_size = 2;
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
-    ov::genai::DeviceConfig device_config(scheduler_config, "CPU");
+    DeviceConfig device_config("CPU");
     const size_t num_decoder_layers = 12;
     const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
     device_config.set_kv_head_configs(kv_heads_config);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<ov::genai::CacheManager>(request);
+    auto cache_manager = std::make_shared<CacheManager>(request, device_config);
     ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, cache_manager->get_block_size_in_bytes());
 
@@ -57,14 +57,14 @@ TEST(TestCacheManager, test_cache_size_param) {
 
 TEST(TestCacheManager, test_kv_blocks_param) {
     ov::Core core;
-    ov::genai::SchedulerConfig scheduler_config;
+    SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 150;
     scheduler_config.cache_size = 0;
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
-    ov::genai::DeviceConfig device_config(scheduler_config, "CPU");
+    DeviceConfig device_config("CPU");
     const size_t num_decoder_layers = 12;
     const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
     device_config.set_kv_head_configs(kv_heads_config);
@@ -76,20 +76,20 @@ TEST(TestCacheManager, test_kv_blocks_param) {
 
 TEST(TestCacheManager, test_dynamic_cache_increase) {
     ov::Core core;
-    ov::genai::SchedulerConfig scheduler_config;
+    SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 0;
     scheduler_config.cache_size = 0;
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
-    ov::genai::DeviceConfig device_config(scheduler_config, "CPU");
+    DeviceConfig device_config("CPU");
     const size_t num_decoder_layers = 12;
     const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
     device_config.set_kv_head_configs(kv_heads_config);
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<ov::genai::CacheManager>(request);
+    auto cache_manager = std::make_shared<CacheManager>(request, device_config);
     size_t block_size_in_bytes = cache_manager->get_block_size_in_bytes();
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, block_size_in_bytes);
 

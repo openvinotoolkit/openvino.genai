@@ -20,11 +20,8 @@ struct KVHeadConfig {
 };
 
 class DeviceConfig {
-    ov::element::Type m_kv_cache_type;
     std::vector<ov::PartialShape> m_key_cache_shape, m_value_cache_shape;
     std::vector<KVHeadConfig> m_kv_heads_config;
-    size_t m_num_decoder_layers = 0;
-    size_t m_num_kv_blocks = 0, m_cache_size = 0; // KV cache sizes in either blocks or GBs
     size_t m_block_size = 0; // block size is per inference device 
     std::string m_device;
 
@@ -35,40 +32,17 @@ class DeviceConfig {
     }
 
 public:
-    DeviceConfig(const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
+    explicit DeviceConfig(const std::string& device) {
         m_device = device;
-
-        // keep information about blocsk
         m_block_size = get_block_size_by_device(device);
-
-        if (scheduling_config.num_kv_blocks > 0) {
-            m_num_kv_blocks = scheduling_config.num_kv_blocks;
-        } else if (scheduling_config.cache_size > 0) {
-            m_cache_size = scheduling_config.cache_size;
-        }
     }
 
     void set_kv_head_configs(const std::vector<KVHeadConfig>& kv_heads_config) {
         m_kv_heads_config = kv_heads_config;
-        m_num_decoder_layers = m_kv_heads_config.size();
-        m_key_cache_shape.reserve(m_num_decoder_layers);
-        m_value_cache_shape.reserve(m_num_decoder_layers);
+        m_key_cache_shape.reserve(m_kv_heads_config.size());
+        m_value_cache_shape.reserve(m_kv_heads_config.size());
 
-        if (m_device == "CPU") {
-            // Scale, zero point and quantized data will be stored together.
-            // The layout for per token per head:
-            // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
-            // so, we have to extend head_size by 8, which is sizeof(float)
-            // for scale and sizeof(float) for zeropoint
-            if (m_kv_cache_type == ov::element::u8) {
-                for (size_t layer_id = 0; layer_id < m_num_decoder_layers; ++layer_id) {
-                    m_kv_heads_config[layer_id].k_head_size += 8;
-                    m_kv_heads_config[layer_id].v_head_size += 8;
-                }
-            }
-        }
-
-        for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
+        for (size_t layer_id = 0; layer_id < kv_heads_config.size(); layer_id++) {
             const KVHeadConfig& config = m_kv_heads_config[layer_id];
 
             m_value_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
@@ -76,7 +50,7 @@ public:
                                                            ov::Dimension(m_block_size),
                                                            ov::Dimension(config.v_head_size)});
 
-            if (m_device.find("GPU") == std::string::npos) {
+            if (m_device.find("CPU") != std::string::npos) {
                 m_key_cache_shape.push_back(ov::PartialShape{ov::Dimension::dynamic(),
                                                              ov::Dimension(config.num_k_heads),
                                                              ov::Dimension(m_block_size),

@@ -65,8 +65,23 @@ class CacheManager {
         m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
     }
 
+    ov::PartialShape patch_shape(ov::PartialShape pshape, ov::element::Type cache_type) {
+        OPENVINO_ASSERT(!m_device.empty(), "Internal error: device is not set");
+
+        if (m_device.find("CPU") != std::string::npos && cache_type == ov::element::u8) {
+            // Scale, zero point and quantized data will be stored together.
+            // The layout for per token per head:
+            // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
+            // so, we have to extend head_size by 8, which is sizeof(float)
+            // for scale and sizeof(float) for zeropoint
+            pshape[3] += 2 * sizeof(float);
+        }
+
+        return pshape;
+    }
+
 public:
-    explicit CacheManager(ov::InferRequest request) :
+    explicit CacheManager(ov::InferRequest request, const DeviceConfig& device_config) :
         m_request(request) {
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
@@ -75,20 +90,23 @@ public:
         m_device = execution_devices[0];
 
         // extract information about KV cache precisions and shapes
+        size_t kv_input_index = 0;
         for (const auto& input : compiled_model.inputs()) {
             for (auto & name : input.get_names()) {
-                const auto& pshape = input.get_partial_shape();
-                auto element_type = input.get_element_type();
+                auto cache_precision = input.get_element_type();
 
                 if (name.find("key_cache.") == 0) {
+                    auto pshape = patch_shape(device_config.get_key_cache_shape(kv_input_index), cache_precision);
                     m_key_shapes.push_back(pshape);
-                    m_key_precisions.push_back(element_type);
-                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * element_type.size();
+                    m_key_precisions.push_back(cache_precision);
+                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     break;
                 } else if (name.find("value_cache.") == 0) {
+                    auto pshape = patch_shape(device_config.get_value_cache_shape(kv_input_index), cache_precision);
                     m_value_shapes.push_back(pshape);
-                    m_value_precisions.push_back(element_type);
-                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * element_type.size();
+                    m_value_precisions.push_back(cache_precision);
+                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
+                    ++kv_input_index;
                     break;
                 }
             }
@@ -134,15 +152,19 @@ public:
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
                 ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
                 ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
-#ifdef _WIN32
-                ov::Tensor key_cache(get_key_cache_precision(decoder_layer_id), key_cache_shape);
-                ov::Tensor value_cache(m_device_config.get_cache_precision(decoder_layer_id), value_cache_shape);
-#else
-                auto key_size = ov::shape_size(key_cache_shape) * get_key_cache_precision(decoder_layer_id).size();
-                auto value_size = ov::shape_size(value_cache_shape) * get_value_cache_precision(decoder_layer_id).size();
 
-                ov::Tensor key_cache = ov::Tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape, TensorMmapAllocator(key_size));
-                ov::Tensor value_cache = ov::Tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape, TensorMmapAllocator(value_size));
+                ov::element::Type key_precision = get_key_cache_precision(decoder_layer_id);
+                ov::element::Type value_precision = get_value_cache_precision(decoder_layer_id);
+
+#ifdef _WIN32
+                ov::Tensor key_cache(key_precision, key_cache_shape);
+                ov::Tensor value_cache(value_precision, value_cache_shape);
+#else
+                auto key_size = ov::shape_size(key_cache_shape) * key_precision.size();
+                auto value_size = ov::shape_size(value_cache_shape) * value_precision.size();
+
+                ov::Tensor key_cache(key_precision, key_cache_shape, TensorMmapAllocator(key_size));
+                ov::Tensor value_cache(value_precision, value_cache_shape, TensorMmapAllocator(value_size));
 #endif
 
                 auto key_cache_roi_end = static_cast<unsigned char*>(key_cache.data());
@@ -180,8 +202,7 @@ public:
                 if (m_key_cache.size() > decoder_layer_id) {
                     m_key_cache[decoder_layer_id] = key_cache;
                     m_value_cache[decoder_layer_id] = value_cache;
-                }
-                else {
+                } else {
                     m_key_cache.emplace_back(key_cache);
                     m_value_cache.emplace_back(value_cache);
                 }
@@ -190,9 +211,11 @@ public:
             }
         } else {
             auto remote_context = m_request.get_compiled_model().get_context();
+
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
                 ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
                 ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
+
                 ov::Tensor key_cache = remote_context.create_tensor(get_key_cache_precision(decoder_layer_id), key_cache_shape);
                 ov::Tensor value_cache = remote_context.create_tensor(get_value_cache_precision(decoder_layer_id), value_cache_shape);
 
@@ -208,11 +231,11 @@ public:
 
                     m_key_cache[decoder_layer_id] = key_cache;
                     m_value_cache[decoder_layer_id] = value_cache;
-                }
-                else {
+                } else {
                     m_key_cache.emplace_back(key_cache);
                     m_value_cache.emplace_back(value_cache);
                 }
+
                 update_request_tensor(decoder_layer_id);
             }
         }

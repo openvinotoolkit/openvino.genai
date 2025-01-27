@@ -5,8 +5,8 @@
 
 #include "text_callback_streamer.hpp"
 #include "speculative_decoding_impl.hpp"
+#include "paged_attention_transformations.hpp"
 #include "utils.hpp"
-#include "utils/paged_attention_transformations.hpp"
 
 
 namespace ov::genai {
@@ -64,8 +64,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
 
-    DeviceConfig main_device_config(main_scheduler_config_updated, main_device, main_model_desc.properties),
-                 draft_device_config(draft_scheduler_config, draft_device, draft_properties);
+    DeviceConfig main_device_config(main_device), draft_device_config(draft_device);
 
     utils::set_kv_cache_type_and_shape(main_model, main_device_config);
     utils::set_kv_cache_type_and_shape(draft_model, draft_device_config);

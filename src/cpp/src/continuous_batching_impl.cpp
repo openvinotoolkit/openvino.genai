@@ -7,7 +7,7 @@
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
-#include "utils/paged_attention_transformations.hpp"
+#include "paged_attention_transformations.hpp"
 #include "lora_helper.hpp"
 #include "cache_state_dumper.hpp"
 #include "utils.hpp"
@@ -86,6 +86,8 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
         k->set_element_type(m_kv_cache_type);
         v->set_element_type(m_kv_cache_type);
     }
+
+    model->validate_nodes_and_infer_types();
 }
 
 } // namespace
@@ -106,7 +108,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    DeviceConfig device_config(scheduler_config, device, properties);
+    DeviceConfig device_config(device);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
@@ -153,7 +155,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Cache manager
-    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request);
+    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request, device_config);
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
 
     // Scheduler

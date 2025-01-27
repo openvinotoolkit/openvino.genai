@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "utils/paged_attention_transformations.hpp"
+#include "paged_attention_transformations.hpp"
 
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
@@ -69,12 +69,12 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
         auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
 
         // allow a plugin to automatically set KV cache precisions
-        k->set_element_type(ov::element::undefined);
-        v->set_element_type(ov::element::undefined);
+        k->set_element_type(ov::element::dynamic);
+        v->set_element_type(ov::element::dynamic);
 
         // set device specific KV cache shapes back to a PA model
-        k->set_partial_shape(device_config.get_key_cache_shape(idx));
-        v->set_partial_shape(device_config.get_value_cache_shape(idx));
+        k->set_partial_shape(ov::PartialShape::dynamic(4));
+        v->set_partial_shape(ov::PartialShape::dynamic(4));
     }
 
     model->validate_nodes_and_infer_types();

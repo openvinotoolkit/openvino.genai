@@ -5,13 +5,11 @@
 #include "openvino/op/concat.hpp"
 
 std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
-    ov::NodeVector keys;
-    ov::NodeVector values;
+    ov::NodeVector keys, values;
     ov::ParameterVector params;
-    ov::element::Type inference_precision = core.get_property("CPU", ov::hint::inference_precision);
     ov::element::Type kv_cache_type = core.get_property("CPU", ov::hint::kv_cache_precision);
 
-    auto shape = ov::PartialShape({ov::Dimension::dynamic(), 12 /* num_heads */, 32 /* block_size */, 64 /* head_size */});
+    auto shape = ov::PartialShape::dynamic(4);
     for (size_t i = 0; i < num_layers; i++) {
         auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
         auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
