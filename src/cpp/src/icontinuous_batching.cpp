@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "icontinuous_batching.hpp"
+#include "debug_utils.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 namespace ov::genai {
 
@@ -64,8 +66,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 encoded_inputs = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
-                encoded_inputs = m_tokenizer.encode(prompt).input_ids;
+                std::string str_input(prompt);
+                encoded_inputs = m_tokenizer.encode(str_input, ov::genai::add_special_tokens(true)).input_ids;
             }
+            print_tensor("encoded_inputs", encoded_inputs);
             input_ids.push_back(encoded_inputs);
             tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
         }
@@ -81,6 +85,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto& perf_metrics = res.perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+
+        print_array(res.m_generation_ids.at(0).data(), res.m_generation_ids.at(0).size());
 
         std::vector<std::string> generated;
         generated.reserve(res.m_generation_ids.size());

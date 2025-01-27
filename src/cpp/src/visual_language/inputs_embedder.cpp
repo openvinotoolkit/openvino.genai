@@ -11,7 +11,7 @@
 
 #include "utils.hpp"
 #include <regex>
-
+#include "debug_utils.hpp"
 namespace ov::genai {
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
@@ -250,6 +250,7 @@ protected:
             }
             m_tokenized_history.clear();
             std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(m_tokenized_history));
+
             return encoded_input_ids;
         } else {
             m_tokenized_history.clear();

@@ -253,13 +253,17 @@ def run_hugging_face(
         for prompt, generation_config in zip(prompts, generation_configs):
             hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
             inputs = {}
-            if hf_tokenizer.chat_template:
+            if hf_tokenizer.chat_template and generation_config.apply_chat_template:
                 prompt = hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
                 inputs = hf_tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
             else:
                 inputs = hf_tokenizer(prompt, return_tensors="pt")
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
+            
+            if (not generation_config.apply_chat_template):
+                print("prompt: ", prompt)
+                print("inputs: ", inputs)
 
             generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
             all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
@@ -272,7 +276,7 @@ def run_hugging_face(
             generation_results.append(generation_result)
     else:
         inputs = {}
-        if hf_tokenizer.chat_template:
+        if hf_tokenizer.chat_template and generation_configs.apply_chat_template:
             processed_prompts = []
             for prompt in prompts:
                 processed_prompts.append(hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True))
@@ -280,6 +284,11 @@ def run_hugging_face(
             inputs = hf_tokenizer(processed_prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=False, padding_side='left')
         else:
             inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
+
+        if (not generation_configs.apply_chat_template):
+            print("prompt: ", prompts)
+            print("inputs: ", inputs['input_ids'])
+
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = convert_to_hf(opt_model.generation_config, generation_configs)
         hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
@@ -412,6 +421,7 @@ def run_llm_pipeline(
     shutil.rmtree(models_path)
     
     if isinstance(streamer, StreamerWithResults):
+        print(" ====  compare_generation_results streamer and resutls ==== ")
         compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
     return generation_results
@@ -429,8 +439,10 @@ def compare_generation_result(hf_result: GenerationResult, ov_result: Generation
         for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
             assert ov_text in hf_text
     else:
+        print("len: ", len(hf_result.m_generation_ids), " ", len(hf_result.m_generation_ids))
         assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
         for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
+            print("hf_text: ", hf_text, " ov_text ", ov_text)
             assert hf_text == ov_text
 
 
@@ -487,6 +499,10 @@ def run_llm_pipeline_with_ref(model_id: str,
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
 
+    if (not generation_config.apply_chat_template):
+        print("ov_results ", ov_results)
+        print("hf_results: ", hf_results)
+    print(" ====  compare_generation_results hf_results and ov_results ==== ")
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
 
 

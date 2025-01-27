@@ -12,7 +12,7 @@
 template <typename T>
 void print_array(T * array, size_t size) {
     std::cout << " => [ ";
-    for (size_t i = 0; i < std::min(size, size_t(10)); ++i) {
+    for (size_t i = 0; i < size; ++i) {
         std::cout << array[i] << " ";
     }
     std::cout << " ] " << std::endl;

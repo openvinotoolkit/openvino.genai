@@ -340,6 +340,7 @@ def test_unicode_pybind_decoding_one_string():
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
     res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
+    print(res_str)
     assert '�' == res_str[-1]
 
 
@@ -351,7 +352,9 @@ def test_unicode_pybind_decoding_batched():
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
     res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
+    print(res_str.texts)
     assert '�' == res_str.texts[0][-1]
+    assert '�' == res_str.texts[0][-2]
 
 
 @pytest.mark.precommit

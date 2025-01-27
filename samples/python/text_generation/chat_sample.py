@@ -24,15 +24,16 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    pipe.start_chat()
+    # pipe.start_chat()
     while True:
         try:
             prompt = input('question:\n')
         except EOFError:
             break
-        pipe.generate(prompt, config, streamer)
+        res = pipe.generate(prompt, max_new_tokens=30, apply_chat_template=False)
+        print(res)
         print('\n----------')
-    pipe.finish_chat()
+    # pipe.finish_chat()
 
 
 if '__main__' == __name__:

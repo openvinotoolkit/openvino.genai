@@ -30,6 +30,8 @@ from common import get_hugging_face_models, convert_models, run_llm_pipeline_wit
                               ])
 def test_basic_stop_criteria(tmp_path, generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
+    if 'apply_chat_template' in generation_config:
+        print("apply_chat_template ", generation_config['apply_chat_template'])
     run_llm_pipeline_with_ref(model_id, [prompt], generation_config, tmp_path)
 
 

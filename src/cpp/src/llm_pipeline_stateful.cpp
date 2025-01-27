@@ -91,6 +91,7 @@ DecodedResults StatefulLLMPipeline::generate(
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
         if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            std::cout << " input_vector apply_chat_template true " << std::endl;
             std::vector<std::string> templated_input_vector;
             for (auto& input : *input_vector) {
                 ChatHistory history({{{"role", "user"}, {"content", input}}});
@@ -100,8 +101,10 @@ DecodedResults StatefulLLMPipeline::generate(
             }
             encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
         } else {
-            encoded_input = m_tokenizer.encode(*input_vector);
+            std::cout << " input_vector apply_chat_template false " << std::endl;
+            encoded_input = m_tokenizer.encode(*input_vector, ov::genai::add_special_tokens(true));
         }
+        print_tensor("encoded_input", encoded_input.input_ids);
     } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
         std::string& prompt = *input_prompt;
 
@@ -172,14 +175,17 @@ DecodedResults StatefulLLMPipeline::generate(
         } else {
             std::string& prompt = *input_prompt;
             if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                std::cout << " apply_chat_template true " << std::endl;
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
                 encoded_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
-                encoded_input = m_tokenizer.encode(prompt);
+                std::cout << " apply_chat_template false 1" << std::endl;
+                encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
             }
+            print_tensor("encoded_input", encoded_input.input_ids);
         }
     }
 
