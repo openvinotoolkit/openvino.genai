@@ -255,8 +255,6 @@ public:
         if (!std::filesystem::exists(config_file_path))
             return ;
         std::ifstream file(config_file_path);
-        if (!file.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(file);
         using ov::genai::utils::read_json_param;
@@ -272,8 +270,6 @@ public:
         if (!std::filesystem::exists(special_tokens_file_path))
             return ;
         std::ifstream f(special_tokens_file_path);
-        if (!f.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -301,8 +297,6 @@ public:
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return ;
         std::ifstream f(tokenizer_config_file_path);
-        if (!f.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -508,10 +502,7 @@ public:
         auto tokenizer_config_file_path = path / "tokenizer_config.json";
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return "";
-
         std::ifstream file(tokenizer_config_file_path);
-        if (!file.is_open())
-            return "";
 
         std::string res;
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
