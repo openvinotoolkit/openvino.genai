@@ -396,6 +396,34 @@ print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 
 For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
 
+### Tokenization
+
+OpenVINO™ GenAI provides a simple way to tokenize and detokenize text using the `ov::genai::Tokenizer` class. The `Tokenizer` is a high level abstraction over the OpenVINO Tokenizers library, which is used to tokenize and detokenize text. The `Tokenizer` class provides a simple interface to tokenize and detokenize text.
+
+It can be initialized from the path as a string or from the `ov::genai::LLMPipeline` object.
+
+```cpp
+#include "openvino/genai/llm_pipeline.hpp"
+auto tokenizer = ov::genai::Tokenizer(models_path);
+
+// Or from LLMPipeline.
+auto pipe = ov::genai::LLMPipeline pipe(models_path, "CPU");
+auto tokenzier = pipe.get_tokenizer();
+
+````
+
+```python
+import openvino_genai as ov_genai
+tokenizer = ov_genai.Tokenizer(models_path)
+
+// Or from LLMPipeline.
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+tokenizer = pipe.get_tokenizer()
+```
+
+`Tokenizer` has `encode` and `decode` methods which support the following arguments: `add_special_tokens`, `skip_special_tokens`, `padding_mode`, `max_length` arguments.
+
+For padding use 
 ## How It Works
 
 For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](./docs/HOW_IT_WORKS.md).

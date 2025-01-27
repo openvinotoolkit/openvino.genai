@@ -11,6 +11,7 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
+#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
@@ -97,6 +98,8 @@ public:
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;
     bool m_skip_special_tokens = true;
+    int m_max_pad_length = std::numeric_limits<int>::max();
+    int m_max_trunc_length = std::numeric_limits<int>::max();
     bool m_older_than_24_5 = false;
 
     int64_t m_pad_token_id = -1;
@@ -109,17 +112,46 @@ public:
 
     std::string m_chat_template = {};
 
+    std::pair<int, int> get_padding_values(PaddingMode padding_mode, size_t max_length) {
+        switch (padding_mode) {
+            case PaddingMode::TRUNCATE:
+                return {max_length, 0};
+            case PaddingMode::LONGEST:
+                return {std::numeric_limits<int32_t>::max(), 0};
+            case PaddingMode::MAX_LENGTH:
+                return {std::numeric_limits<int32_t>::max(), max_length};
+            case PaddingMode::DO_NOT_PAD:
+                // behaves exactly as longest
+                // TODO: need to find a way to disable padding automatically so that it will match to HF.
+                return {std::numeric_limits<int32_t>::max(), 0};
+            default:
+                OPENVINO_THROW("Unknown padding mode");
+        }
+    }
+
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
         bool add_special_tokens_flag = m_add_special_tokens;
         bool skip_special_tokens_flag = m_skip_special_tokens;
-
+        size_t max_length_val;
+        PaddingMode padding_mode_val = PaddingMode::NONE;
+        
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
+        ov::genai::utils::read_anymap_param(params, padding_mode.name(), padding_mode_val);
+        ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
+        
+        int max_trunc_length_val = m_max_trunc_length;
+        int max_pad_length_val = m_max_pad_length;
+
+        std::tie(max_trunc_length_val, max_pad_length_val) = get_padding_values(padding_mode_val, max_length_val);
 
         // If user requested add_special_tokens mode different from the current one,
         // need to set state variable.
         // If requested mode matches the stored state set, then don't touch states.
-        if (add_special_tokens_flag == m_add_special_tokens && skip_special_tokens_flag == m_skip_special_tokens) {
+        if (add_special_tokens_flag == m_add_special_tokens 
+            && skip_special_tokens_flag == m_skip_special_tokens
+            && max_trunc_length_val == m_max_trunc_length
+            && max_pad_length_val == m_max_pad_length) {
             return;
         }
         if (m_older_than_24_5) {
@@ -137,15 +169,26 @@ public:
         ov::Tensor skip_special_tensor = ov::Tensor(ov::element::i32, {1});
         *skip_special_tensor.data<int>() = skip_special_tokens_flag;
 
+        ov::Tensor max_trunc_length_tensor = ov::Tensor(ov::element::i32, {});
+        *max_trunc_length_tensor.data<int>() = max_trunc_length_val;
+        ov::Tensor max_pad_length_tensor = ov::Tensor(ov::element::i32, {1});
+        *max_pad_length_tensor.data<int>() = max_pad_length_val;
+
         for (auto& state: infer_request_guard.get().query_state()) {
-            if (state.get_name().find(ov::genai::ADD_SPECIAL_TOKENS_VAR_ID) != std::string::npos) {
+            if (state.get_name().find(add_special_tokens.name()) != std::string::npos) {
                 state.set_state(add_special_tensor);
-            } else if (state.get_name().find(ov::genai::SKIP_SPECIAL_TOKENS_VAR_ID) != std::string::npos) {
+            } else if (state.get_name().find(skip_special_tokens.name()) != std::string::npos) {
                 state.set_state(skip_special_tensor);
+            } else if (state.get_name().find(MAX_TRUNCATION_LENGTH_VAR_ID) != std::string::npos && padding_mode_val != PaddingMode::NONE) {
+                state.set_state(max_trunc_length_tensor);
+            } else if (state.get_name().find(MAX_PAD_LENGTH_VAR_ID) != std::string::npos) {
+                state.set_state(max_pad_length_tensor);
             }
         }
         m_add_special_tokens = add_special_tokens_flag;
         m_skip_special_tokens = skip_special_tokens_flag;
+        m_max_trunc_length = max_trunc_length_val;
+        m_max_pad_length = max_pad_length_val;
     }
 
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
@@ -206,6 +249,9 @@ public:
         if (ov_tokenizer) {
             ov::pass::Manager manager;
             manager.register_pass<MakeCombineSegmentsSatateful>();
+            manager.register_pass<MakePaddingSatateful>();
+            manager.register_pass<MakeTruncationSatateful>();
+            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
             m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(m_tokenizer, "OV Tokenizer");
@@ -630,22 +676,22 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
     return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 

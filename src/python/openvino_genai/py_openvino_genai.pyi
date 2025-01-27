@@ -1666,12 +1666,12 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: list[str], add_special_tokens: bool = True) -> TokenizedInputs:
+    def encode(self, prompts: list[str], add_special_tokens: bool = True, max_length: int = 2147483647, padding_mode: str = 'truncate') -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, max_length: int = 2147483647, padding_mode: str = 'truncate') -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         """

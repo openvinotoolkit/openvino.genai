@@ -125,7 +125,9 @@ public:
     /**
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
-    * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
+    * @param add_special_tokens whether to add special tokens
+    * @param max_length maximum length to which output will be padded or truncated
+    * @param padding_mode whether to pad result, allowed values are ["truncate", "longest", "max_length", "do_not_pad"]
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -136,7 +138,9 @@ public:
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
-    * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
+    * @param add_special_tokens whether to add special tokens
+    * @param max_length maximum length to which output will be padded or truncated
+    * @param padding_mode whether to pad result, allowed values are ["truncate", "pad"]
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -238,8 +242,12 @@ private:
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
+enum class PaddingMode { TRUNCATE = 0, LONGEST = 1, MAX_LENGTH = 2, DO_NOT_PAD = 3, NONE = 4};
+
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
+static constexpr ov::Property<PaddingMode> padding_mode{"padding_mode"};
+
 
 }  // namespace genai
 }  // namespace ov

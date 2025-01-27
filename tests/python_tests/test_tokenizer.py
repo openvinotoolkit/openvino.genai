@@ -254,6 +254,26 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert decoded_genai_skip_spec != decoded_genai_no_skip
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
+prompts = [
+    ['1+1=', 'What is the previous answer?']
+]
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("add_special_tokens", [True, False])
+@pytest.mark.parametrize("max_length", [10, 16, 64, 512])
+@pytest.mark.parametrize("pad_mode", ["truncate", "longest", "max_length", "do_not_pad"])
+@pytest.mark.parametrize("prompt", prompts)
+def test_padding(add_special_tokens, max_length, pad_mode, prompt):
+    import numpy as np
+    model_descr = get_chat_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    genai_tokenzier = ov_pipe.get_tokenizer()
+    
+    # Calling encode with 'add_special_tokens' will set state flag.
+    ov_res = genai_tokenzier.encode(prompt, add_special_tokens=add_special_tokens, max_length=max_length, padding_mode=pad_mode).input_ids.data
+    hf_res = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens, max_length=max_length, padding=pad_mode)["input_ids"]
+    assert np.all(ov_res == hf_res)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly
