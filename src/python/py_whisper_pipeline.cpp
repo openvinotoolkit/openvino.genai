@@ -17,6 +17,7 @@ namespace py = pybind11;
 using ov::genai::ChunkStreamerBase;
 using ov::genai::ChunkStreamerVariant;
 using ov::genai::DecodedResults;
+using ov::genai::GenerationConfig;
 using ov::genai::OptionalWhisperGenerationConfig;
 using ov::genai::PerfMetrics;
 using ov::genai::RawSpeechInput;
@@ -76,18 +77,8 @@ auto whisper_decoded_result_chunk = R"(
 
 auto whisper_generation_config_docstring = R"(
     WhisperGenerationConfig
-    :param max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                       `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-    :type max_length: int
-
-    :param max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-    :type max_new_tokens: int
-
-    :param eos_token_id: End of stream token id.
-    :type eos_token_id: int
-
+    
     Whisper specific parameters:
-
     :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
     :type decoder_start_token_id: int
 
@@ -156,6 +147,46 @@ auto whisper_generation_config_docstring = R"(
       auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
       //  He has gone and gone for good answered Polychrome who...
     :type hotwords: Optional[str]
+
+    Generic parameters:
+    max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                   max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
+    max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+    min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+    ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
+    eos_token_id:  token_id of <eos> (end of sentence)
+    stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
+    include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+    stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
+    echo:           if set to true, the model will echo the prompt in the output.
+    logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                    Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+
+    repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+    presence_penalty: reduces absolute log prob if the token was generated at least once.
+    frequency_penalty: reduces absolute log prob as many times as the token was generated.
+
+    Beam search specific parameters:
+    num_beams:         number of beams for beam search. 1 disables beam search.
+    num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+    diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+    length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
+        likelihood of the sequence (i.e. negative), length_penalty > 0.0 promotes longer sequences, while
+        length_penalty < 0.0 encourages shorter sequences.
+    num_return_sequences: the number of sequences to return for grouped beam search decoding.
+    no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
+    stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+        "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
+        "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+        "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+
+    Random sampling parameters:
+    temperature:        the value used to modulate token probabilities for random sampling.
+    top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+    top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
+    do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+    num_return_sequences: the number of sequences to generate from a single prompt.
 )";
 
 auto streamer_base_docstring = R"(
@@ -264,27 +295,28 @@ void init_whisper_pipeline(py::module_& m) {
         .def("put",
              &ChunkStreamerBase::put,
              "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
-             "should be stopped, if return true generation stops")
+             "should be stopped, if return true generation stops",
+             py::arg("token"))
         .def("put_chunk",
              &ChunkStreamerBase::put_chunk,
              "Put is called every time new token chunk is generated. Returns a bool flag to indicate whether "
-             "generation should be stopped, if return true generation stops")
+             "generation should be stopped, if return true generation stops",
+             py::arg("tokens"))
         .def("end",
              &ChunkStreamerBase::end,
              "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     // Binding for WhisperGenerationConfig
-    py::class_<WhisperGenerationConfig>(m, "WhisperGenerationConfig", whisper_generation_config_docstring)
+    py::class_<WhisperGenerationConfig, GenerationConfig>(m,
+                                                          "WhisperGenerationConfig",
+                                                          whisper_generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](const py::kwargs& kwargs) {
             return *update_whisper_config_from_kwargs(WhisperGenerationConfig(), kwargs);
         }))
-        .def_readwrite("max_new_tokens", &WhisperGenerationConfig::max_new_tokens)
-        .def_readwrite("max_length", &WhisperGenerationConfig::max_length)
         .def_readwrite("begin_suppress_tokens", &WhisperGenerationConfig::begin_suppress_tokens)
         .def_readwrite("suppress_tokens", &WhisperGenerationConfig::suppress_tokens)
         .def_readwrite("decoder_start_token_id", &WhisperGenerationConfig::decoder_start_token_id)
-        .def_readwrite("eos_token_id", &WhisperGenerationConfig::eos_token_id)
         .def_readwrite("pad_token_id", &WhisperGenerationConfig::pad_token_id)
         .def_readwrite("translate_token_id", &WhisperGenerationConfig::translate_token_id)
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
@@ -298,12 +330,9 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
         .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
-        .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
-        .def("update_generation_config", [](
-            ov::genai::WhisperGenerationConfig& config,
-            const py::kwargs& kwargs) {
+        .def("update_generation_config", [](ov::genai::WhisperGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
-        });;
+        });
 
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
