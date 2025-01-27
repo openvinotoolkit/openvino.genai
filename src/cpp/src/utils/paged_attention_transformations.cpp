@@ -10,7 +10,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-
 size_t get_hidden_size(const std::shared_ptr<ov::Model> model) {
     const auto& parameters = model->get_parameters();
     // extract num_kv_heads and head_size
@@ -50,21 +49,30 @@ void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig&
     for (size_t idx = 0; idx < num_decoder_layers; idx++) {
         KVHeadConfig& config = kv_heads_config[idx];
 
-        auto key_shape = key_cache_params[std::string("key_cache.") + std::to_string(idx)]->get_partial_shape();
+        auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
+        auto key_shape = k->get_partial_shape();
         config.num_k_heads = key_shape[1].get_length();
         config.k_head_size = key_shape[2].get_length();
 
-        auto value_shape = value_cache_params[std::string("value_cache.") + std::to_string(idx)]->get_partial_shape();
+        auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
+        auto value_shape = v->get_partial_shape();
         config.num_v_heads = value_shape[1].get_length();
         config.v_head_size = value_shape[2].get_length();
     }
+
+    // save information about KV caches in device_config
+    // and create device dependent KV cache shapes
     device_config.set_kv_head_configs(kv_heads_config);
 
     for (size_t idx = 0; idx < num_decoder_layers; idx++) {
         auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
         auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
-        k->set_element_type(device_config.get_cache_precision());
-        v->set_element_type(device_config.get_cache_precision());
+
+        // allow a plugin to automatically set KV cache precisions
+        k->set_element_type(ov::element::undefined);
+        v->set_element_type(ov::element::undefined);
+
+        // set device specific KV cache shapes back to a PA model
         k->set_partial_shape(device_config.get_key_cache_shape(idx));
         v->set_partial_shape(device_config.get_value_cache_shape(idx));
     }

@@ -10,6 +10,85 @@
 #include "utils/paged_attention_transformations.hpp"
 #include "lora_helper.hpp"
 #include "cache_state_dumper.hpp"
+#include "utils.hpp"
+
+namespace {
+
+ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
+    const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
+    ov::element::Type ir_kv_cache_precision = ov::element::undefined;
+
+    if (model->has_rt_info(kv_cache_precision_path)) {
+        ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
+    }
+
+    return ir_kv_cache_precision;
+}
+
+void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& plugin_config) {
+    ov::element::Type m_kv_cache_type = ov::element::undefined, ir_kv_cache_precision = get_model_kv_cache_precision(model);
+    ov::Core core = ov::genai::utils::singleton_core();
+
+    auto inference_precision = core.get_property(device, ov::hint::inference_precision);
+    // if user sets properties affecting KV cache precision
+    const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
+    const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
+    const auto execution_mode_it = plugin_config.find(ov::hint::execution_mode.name());
+    const bool accuracy_mode = execution_mode_it != plugin_config.end() &&
+        execution_mode_it->second.as<ov::hint::ExecutionMode>() == ov::hint::ExecutionMode::ACCURACY;
+
+    if (device == "CPU") {
+        if (kv_cache_precision_it != plugin_config.end()) {
+            const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
+            m_kv_cache_type = kv_cache_precision;
+        } else if (accuracy_mode) {
+            // ACCURACY mode will use f32 KV cache type
+            m_kv_cache_type = ov::element::f32;
+        } else if (ir_kv_cache_precision != ov::element::undefined) {
+            // check that kv_cache_precision is set in runtime_info section of OpenVINO IR
+            // but in case it's set to FP16, we need to patch it to be BF16 for Xeon platforms
+            m_kv_cache_type = ir_kv_cache_precision == ov::element::f16 && inference_precision == ov::element::bf16 ?
+                inference_precision : ir_kv_cache_precision;
+        } else {
+            // x86 and ARM have different default kv cache type, take this information from the plugin
+            m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
+        }
+    } else if (device.find("GPU") != std::string::npos) {
+        if (accuracy_mode) {
+            inference_precision = ov::element::f32;
+        }
+        if (inference_precision_it != plugin_config.end()) {
+            inference_precision = inference_precision_it->second.as<ov::element::Type>();
+        }
+
+        m_kv_cache_type = inference_precision;
+    } else {
+        OPENVINO_THROW(device, " is not supported by OpenVINO Continuous Batching");
+    }
+
+    std::map<std::string, std::shared_ptr<ov::op::v0::Parameter>> key_cache_params, value_cache_params;
+    for (const auto& param_ptr : model->get_parameters()) {
+        const auto& name = param_ptr->get_friendly_name();
+        if (name.find("key_cache.") == 0) {
+            key_cache_params[name] = param_ptr;
+        } else if (name.find("value_cache.") == 0) {
+            value_cache_params[name] = param_ptr;
+        }
+    }
+
+    OPENVINO_ASSERT(key_cache_params.size() == value_cache_params.size() && key_cache_params.size() > 0);
+
+    size_t num_decoder_layers = key_cache_params.size();
+    for (size_t idx = 0; idx < num_decoder_layers; idx++) {
+        auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
+        auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
+
+        k->set_element_type(m_kv_cache_type);
+        v->set_element_type(m_kv_cache_type);
+    }
+}
+
+} // namespace
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -27,15 +106,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    ov::Core core = utils::singleton_core();
-    DeviceConfig device_config(core, scheduler_config, device, properties);
+    DeviceConfig device_config(scheduler_config, device, properties);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control, allow_cache_rotation);
     utils::apply_gather_before_matmul_transformation(model);
 
-    initialize_pipeline(model, scheduler_config, properties, device_config, core);
+    initialize_pipeline(model, scheduler_config, properties, device_config);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -55,9 +133,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
     const ov::AnyMap& properties,
-    const DeviceConfig& device_config,
-    ov::Core& core) {
+    const DeviceConfig& device_config) {
+    ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
+
+    // TODO: remove once plugin automatically set KV cache precisions
+    apply_kv_cache_precision(model, device_config.get_device(), properties);
 
     // apply LoRA
     if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
@@ -71,24 +152,27 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
-    m_num_decoder_layers = device_config.get_num_layers();
+    // Cache manager
+    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request);
+    m_num_decoder_layers = cache_manager->get_num_decoder_layers();
 
-    // setup KV caches
-    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(device_config, infer_request, core);
-
-    SchedulerConfig updated_config = scheduler_config;
-    // update KV blocks number in scheduler config
-    if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
-        updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
+    // Scheduler
+    SchedulerConfig normalized_config = scheduler_config;
+    if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
+        size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
+        normalized_config.num_kv_blocks = cache_manager->get_block_size_in_bytes();
     }
 
     bool can_use_partial_preemption = true;
-    if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
+    if (device_config.get_device().find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
         // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
     }
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), cache_manager, updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+
+    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
+
+    // Model Runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
     if (is_use_cache_eviction) {
         const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;

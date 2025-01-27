@@ -35,56 +35,11 @@ class DeviceConfig {
     }
 
 public:
-    DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
+    DeviceConfig(const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
         m_device = device;
 
         // keep information about blocsk
         m_block_size = get_block_size_by_device(device);
-
-        if (m_device == "CPU") {
-            auto inference_precision = core.get_property(device, ov::hint::inference_precision);
-            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-
-            // if user sets precision hint, kv cache type should be changed
-            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
-            if (inference_precision_it != plugin_config.end()) {
-                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
-                if (inference_precision == ov::element::f32) {
-                    m_kv_cache_type = ov::element::f32;
-                } else if (inference_precision == ov::element::f16) {
-                    m_kv_cache_type = ov::element::f16;
-                } else if (inference_precision == ov::element::bf16) {
-                    m_kv_cache_type = ov::element::bf16;
-                } else {
-                    // use default f32
-                    m_kv_cache_type = ov::element::f32;
-                }
-            }
-
-            // if user sets ov::kv_cache_precision hint
-            const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
-            if (kv_cache_precision_it != plugin_config.end()) {
-                const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
-                m_kv_cache_type = kv_cache_precision;
-            }
-        } else if (m_device.find("GPU") != std::string::npos) {
-            auto inference_precision = core.get_property(device, ov::hint::inference_precision);
-            m_kv_cache_type = inference_precision == ov::element::f16 ? ov::element::f16 : ov::element::f32;
-
-            // if user sets precision hint, kv cache type should be changed
-            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
-            if (inference_precision_it != plugin_config.end()) {
-                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
-                if (inference_precision == ov::element::f16) {
-                    m_kv_cache_type = ov::element::f16;
-                } else {
-                    // use default f32
-                    m_kv_cache_type = ov::element::f32;
-                }
-            }
-        } else {
-            OPENVINO_THROW(m_device, " is not supported by OpenVINO Continuous Batching");
-        }
 
         if (scheduling_config.num_kv_blocks > 0) {
             m_num_kv_blocks = scheduling_config.num_kv_blocks;
@@ -93,7 +48,7 @@ public:
         }
     }
 
-    void set_kv_head_configs(std::vector<KVHeadConfig> kv_heads_config) {
+    void set_kv_head_configs(const std::vector<KVHeadConfig>& kv_heads_config) {
         m_kv_heads_config = kv_heads_config;
         m_num_decoder_layers = m_kv_heads_config.size();
         m_key_cache_shape.reserve(m_num_decoder_layers);
@@ -111,11 +66,6 @@ public:
                     m_kv_heads_config[layer_id].v_head_size += 8;
                 }
             }
-        }
-
-        if (m_num_kv_blocks == 0 && m_cache_size > 0) {
-            size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
-            m_num_kv_blocks = size_in_bytes / get_block_size_in_bytes();
         }
 
         for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
@@ -145,21 +95,9 @@ public:
         return m_device;
     }
 
-    ov::element::Type get_cache_precision() const {
-        return m_kv_cache_type;
-    }
-
-    size_t get_num_layers() const {
-        return m_num_decoder_layers;
-    }
-
     ov::PartialShape get_key_cache_shape(size_t id) const {
         OPENVINO_ASSERT(m_key_cache_shape.size());
         return m_key_cache_shape[id];
-    }
-
-    size_t get_k_head_size(size_t layer_id) const {
-        return m_kv_heads_config[layer_id].k_head_size;
     }
 
     ov::PartialShape get_value_cache_shape(size_t id) const {
@@ -167,22 +105,13 @@ public:
         return m_value_cache_shape[id];
     }
 
-    size_t get_num_kv_blocks() const {
-        return m_num_kv_blocks;
+    size_t get_k_head_size(size_t layer_id) const {
+        return m_kv_heads_config[layer_id].k_head_size;
     }
 
     size_t get_block_size() const {
         return m_block_size;
     }
-
-    size_t get_block_size_in_bytes() const {
-        size_t block_size_in_bytes = 0;
-        for (size_t layer_id = 0; layer_id < m_num_decoder_layers; layer_id++) {
-            const KVHeadConfig& config = m_kv_heads_config[layer_id];
-            block_size_in_bytes += config.k_head_size * config.num_k_heads + config.v_head_size * config.num_v_heads;
-        }
-        block_size_in_bytes *= get_block_size() * get_cache_precision().size();
-        return block_size_in_bytes;
-    }
 };
+
 }
