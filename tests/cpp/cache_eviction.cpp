@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "cache_eviction.hpp"
-#include "gtest/gtest.h"
 
 #include <algorithm>
+#include <fstream>
+#include <filesystem>
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 
 const ov::genai::CacheEvictionConfig DEFAULT_CACHE_EVICTION_CONFIG = {32, 32, 192, ov::genai::AggregationMode::NORM_SUM};
 const ov::genai::CacheEvictionConfig SHORT_RECENT_EVICTION_CONFIG = {32, 32, 72, ov::genai::AggregationMode::NORM_SUM};
@@ -145,6 +149,8 @@ struct LowScoreBlocksTestStruct {
 };
 
 using CacheEvictionLowScoreBlocksParameterizedTest = ::testing::TestWithParam<LowScoreBlocksTestStruct>;
+
+// clang-format off
 const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES = {
         // low-scored blocks in evictable area
         {
@@ -197,6 +203,7 @@ const std::vector<LowScoreBlocksTestStruct> LOW_SCORE_BLOCK_EVICTION_TEST_CASES 
                 {{8, 9, 10, 11, 13}, {8, 9, 10, 11, 12}}
         },
 };
+// clang-format on
 
 TEST_P(CacheEvictionLowScoreBlocksParameterizedTest, EvictsLowestScoredBlocks) {
     auto test_struct = GetParam();
@@ -241,6 +248,8 @@ struct NormalizationSettingTestStruct {
 };
 
 using CacheEvictionNormalizationSettingTest = ::testing::TestWithParam<NormalizationSettingTestStruct>;
+
+// clang-format off
 const std::vector<NormalizationSettingTestStruct> NORMALIZATION_SETTING_TEST_CASES = {
     // power of 1.1 beats the 1 / N in the normalization, low-score blocks are in the end of the evictable area
     { ov::genai::AggregationMode::NORM_SUM, 1.1, false, { 40, 41, 42} },
@@ -260,6 +269,7 @@ const std::vector<NormalizationSettingTestStruct> NORMALIZATION_SETTING_TEST_CAS
     { ov::genai::AggregationMode::SUM, 1.1, false, { 40, 41, 42} },
     { ov::genai::AggregationMode::SUM, 1.1, true, { 8, 9, 10} },
 };
+// clang-format on
 
 TEST_P(CacheEvictionNormalizationSettingTest, TokenLifetimeNormalizationHasEffect) {
     const auto& test_struct = GetParam();
@@ -420,3 +430,354 @@ TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializationTest,
                          ::testing::ValuesIn(INVALID_ALGO_INIT_PARAMS_CASES));
+
+TEST(CacheRotationCalculatorTest, CanInitializeWithBasicParams) {
+    EXPECT_NO_THROW(ov::genai::CacheRotationCalculator(32, 128, 64));
+}
+
+TEST(CacheRotationCalculatorTest, ThrowsForNonPositiveTheta) {
+    EXPECT_THROW(ov::genai::CacheRotationCalculator(32, 128, 64, -1.0), ov::Exception);
+    EXPECT_THROW(ov::genai::CacheRotationCalculator(32, 128, 64, 0.0), ov::Exception);
+}
+
+struct CacheRotationCalculatorInitParams {
+    size_t block_size;
+    size_t max_context_length;
+    size_t kv_head_size;
+    double rope_theta;
+};
+
+struct CacheRotationCalculatorInputTestStruct {
+    CacheRotationCalculatorInitParams init_params;
+    std::set<size_t> evicted_block_logical_indices;
+    size_t num_logical_blocks_before_eviction;
+};
+
+using CacheRotationCalculatorInvalidInputParameterizedTest =
+    ::testing::TestWithParam<CacheRotationCalculatorInputTestStruct>;
+
+// clang-format off
+const std::vector<CacheRotationCalculatorInputTestStruct> CACHE_ROTATION_CALCULATOR_INVALID_INPUT_TEST_CASES = {
+        {   // more num_logical_blocks_before_eviction than possible by max_context_length
+            {8, 16, 4, 1337.0},
+            {1, 2, 6, 39},
+            32
+        },
+        {   // evicted block index out of bounds
+            {16, 256, 32, 665.0},
+            {8, 0, 5,50},
+            9
+        },
+        {   // more blocks attempted to evict than num_logical_blocks_before_eviction
+            {16, 256, 32, 665.0},
+            {0, 1, 2},
+            2
+        }
+};
+// clang-format on
+
+TEST_P(CacheRotationCalculatorInvalidInputParameterizedTest, ThrowsForInvalidEvictedBlocksInput) {
+    const auto& test_struct = GetParam();
+    const auto& init_params = test_struct.init_params;
+
+    auto calc = ov::genai::CacheRotationCalculator(init_params.block_size,
+                                                   init_params.max_context_length,
+                                                   init_params.kv_head_size,
+                                                   init_params.rope_theta);
+    EXPECT_THROW(calc.get_rotation_data(test_struct.evicted_block_logical_indices,
+                                                test_struct.num_logical_blocks_before_eviction),
+                 ov::Exception);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputsAndInitParams,
+                         CacheRotationCalculatorInvalidInputParameterizedTest,
+                         testing::ValuesIn(CACHE_ROTATION_CALCULATOR_INVALID_INPUT_TEST_CASES));
+
+struct CacheRotationCalculatorNumCoefficientsTestStruct {
+    CacheRotationCalculatorInitParams init_params;
+    std::set<size_t> evicted_block_logical_indices;
+    size_t num_logical_blocks_before_eviction;
+    size_t expected_num_rotated_blocks;
+};
+
+// clang-format off
+const std::vector<CacheRotationCalculatorNumCoefficientsTestStruct> CACHE_ROTATION_CALCULATOR_VALID_INPUT_TEST_CASES = {
+        {
+                {8, 512, 4, 1337.0},
+                {1, 2},
+                7,
+                4
+        },
+        {
+                {16, 256, 32, 665.0},
+                {8, 0, 5, 3},
+                9,
+                5
+        },
+        {   // more blocks attempted to evict than num_logical_blocks_before_eviction
+                {16, 1024, 32, 665.0},
+                {24, 25, 26, 27, 28},
+                30,
+                1
+        }
+};
+// clang-format on
+
+using CacheRotationCalculatorNumCoefficientsParameterizedTest =
+    ::testing::TestWithParam<CacheRotationCalculatorNumCoefficientsTestStruct>;
+
+TEST_P(CacheRotationCalculatorNumCoefficientsParameterizedTest, GivesCorrectNumberOfRotationMultipliers) {
+    const auto& test_struct = GetParam();
+    const auto& init_params = test_struct.init_params;
+
+    auto calc = ov::genai::CacheRotationCalculator(init_params.block_size,
+                                                   init_params.max_context_length,
+                                                   init_params.kv_head_size,
+                                                   init_params.rope_theta);
+
+    const auto rotation_multipliers = calc.get_rotation_data(test_struct.evicted_block_logical_indices,
+                                                             test_struct.num_logical_blocks_before_eviction,
+                                                             /* deltas_only = */ false);
+
+    ASSERT_EQ(rotation_multipliers.size(), test_struct.expected_num_rotated_blocks);
+    for (const auto& block_rotation_data : rotation_multipliers) {
+        EXPECT_EQ(block_rotation_data.cosines.size(), block_rotation_data.sines.size());
+        EXPECT_EQ(block_rotation_data.cosines.size(), init_params.block_size);
+        for (const auto& token_coefficients : block_rotation_data.cosines) {
+            EXPECT_EQ(token_coefficients.size(), init_params.kv_head_size / 2);
+        }
+        for (const auto& token_coefficients : block_rotation_data.sines) {
+            EXPECT_EQ(token_coefficients.size(), init_params.kv_head_size / 2);
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputsAndInitParams,
+                         CacheRotationCalculatorNumCoefficientsParameterizedTest,
+                         testing::ValuesIn(CACHE_ROTATION_CALCULATOR_VALID_INPUT_TEST_CASES));
+
+struct CacheRotationCalculatorRefCoefficientsTestStruct {
+    CacheRotationCalculatorInitParams init_params;
+    std::set<size_t> evicted_block_logical_indices;
+    size_t num_logical_blocks_before_eviction;
+    std::vector<ov::genai::CacheRotationCalculator::BlockRotationData> expected_rotation_data;
+};
+
+// clang-format off
+const std::vector<CacheRotationCalculatorRefCoefficientsTestStruct> CACHE_ROTATION_CALCULATOR_REF_COEFFICIENTS_TEST_CASES = {
+        // 0
+        {
+                {2, 512, 4, 1.0},
+                {1, 2},
+                4,
+                // pre-eviction block 3 rotated left by 2 blocks, coefficients are cos(4) and -sin(4) due to theta == 1.0
+                {
+                        {1, 4,
+                                {
+                                        {0.75680249, 0.75680249},  // block token 0
+                                        {0.75680249, 0.75680249}   // block token 1
+                                },
+                                {
+                                        {-0.65364362, -0.65364362},  // block token 0
+                                        {-0.65364362, -0.65364362}   // block token 1
+                                },
+                        }
+                }
+        },
+
+        // 1 - same as 0, but adjusted theta
+        {
+                {2, 512, 4, 2.0},
+                {1, 2},
+                4,
+                // coefficients are [cos(4 / 1),  -sin(4 / 1)], [cos(4 / sqrt(2)), -sin(4 / sqrt(2))] now
+                {
+                        {1, 4,
+                                {
+                                        {0.75680249, -0.30807174},  // block token 0
+                                        {0.75680249, -0.30807174}   // block token 1
+                                },
+                                {
+                                        {-0.65364362, -0.95136312},  // block token 0
+                                        {-0.65364362, -0.95136312}   // block token 1
+                                },
+                        }
+                }
+        },
+        // 2 - same as 0, but corner case blocks
+        {
+                {2, 512, 4, 2.0},
+                {0, 3},
+                4,
+                // delta of 2 tokens for both blocks
+                // coefficients are [cos(2 / 1),  -sin(2 / 1)], [cos(2 / sqrt(2)), -sin(2 / sqrt(2))]
+                {
+                        {0, 2,
+                                {
+                                        {-0.90929742, -0.98776594},  // block token 0
+                                        {-0.90929742, -0.98776594}   // block token 1
+                                },
+                                {
+                                        {-0.41614683, 0.15594369},  // block token 0
+                                        {-0.41614683, 0.15594369}   // block token 1
+                                },
+                        },
+                        {1, 2,
+                                {
+                                        {-0.90929742, -0.98776594},  // block token 0
+                                        {-0.90929742, -0.98776594}   // block token 1
+                                },
+                                {
+                                        {-0.41614683, 0.15594369},  // block token 0
+                                        {-0.41614683, 0.15594369}   // block token 1
+                                },
+                        }
+                }
+        },
+        // 3 - same as 0, but different deltas for each rotated block
+        {
+                {2, 512, 4, 2.0},
+                {0, 2},
+                4,
+                // delta of 2 tokens for first remaining block:
+                //  coefficients are [cos(2 / 1),  -sin(2 / 1)], [cos(2 / sqrt(2)), -sin(2 / sqrt(2))]
+                // and 4 tokens for second remaining block
+                // coefficients are [cos(4 / 1),  -sin(4 / 1)], [cos(4 / sqrt(2)), -sin(4 / sqrt(2))]
+                {
+                        {0, 2,
+                                {
+                                        {-0.90929742, -0.98776594},  // block token 0
+                                        {-0.90929742, -0.98776594}   // block token 1
+                                },
+                                {
+                                        {-0.41614683, 0.15594369},  // block token 0
+                                        {-0.41614683, 0.15594369}   // block token 1
+                                },
+                        },
+                        {1, 4,
+                                {
+                                        {0.75680249, -0.30807174},  // block token 0
+                                        {0.75680249, -0.30807174}   // block token 1
+                                },
+                                {
+                                        {-0.65364362, -0.95136312},  // block token 0
+                                        {-0.65364362, -0.95136312}   // block token 1
+                                },
+                        }
+                }
+        },
+};
+// clang-format on
+
+using CacheRotationCalculatorRefCoefficientsParameterizedTest =
+    ::testing::TestWithParam<CacheRotationCalculatorRefCoefficientsTestStruct>;
+
+void compare_rotation_data(const std::vector<ov::genai::CacheRotationCalculator::BlockRotationData>& test_data,
+                           const std::vector<ov::genai::CacheRotationCalculator::BlockRotationData>& ref_data,
+                           double abs_tol = 1e-8) {
+    ASSERT_EQ(test_data.size(), ref_data.size());
+
+    for (size_t i = 0; i < test_data.size(); i++) {
+        const auto& test_block_data = test_data[i];
+        const auto& ref_block_data = ref_data[i];
+        EXPECT_EQ(test_block_data.logical_block_idx, ref_block_data.logical_block_idx);
+
+        ASSERT_EQ(test_block_data.sines.size(), ref_block_data.sines.size());
+        for (size_t j = 0; j < test_block_data.sines.size(); j++) {
+            EXPECT_THAT(test_block_data.sines[j],
+                        ::testing::Pointwise(::testing::DoubleNear(abs_tol), ref_block_data.sines[j]));
+        }
+
+        ASSERT_EQ(test_block_data.cosines.size(), ref_block_data.cosines.size());
+        for (size_t j = 0; j < test_block_data.cosines.size(); j++) {
+            EXPECT_THAT(test_block_data.cosines[j],
+                        ::testing::Pointwise(::testing::DoubleNear(abs_tol), ref_block_data.cosines[j]));
+        }
+    }
+}
+
+TEST_P(CacheRotationCalculatorRefCoefficientsParameterizedTest, CalculatedCoefficientsMatchToReference) {
+    const auto& test_struct = GetParam();
+    const auto& init_params = test_struct.init_params;
+
+    auto calc = ov::genai::CacheRotationCalculator(init_params.block_size,
+                                                   init_params.max_context_length,
+                                                   init_params.kv_head_size,
+                                                   init_params.rope_theta);
+
+    const auto rotation_multipliers = calc.get_rotation_data(test_struct.evicted_block_logical_indices,
+                                                             test_struct.num_logical_blocks_before_eviction,
+                                                             /* deltas_only = */ false);
+
+    compare_rotation_data(rotation_multipliers, test_struct.expected_rotation_data);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputsAndInitParams,
+                         CacheRotationCalculatorRefCoefficientsParameterizedTest,
+                         testing::ValuesIn(CACHE_ROTATION_CALCULATOR_REF_COEFFICIENTS_TEST_CASES));
+
+using CacheRotationCalculatorPOCRefCoefficientsTest = ::testing::TestWithParam<std::string>;
+TEST_P(CacheRotationCalculatorPOCRefCoefficientsTest, CalculatedCoefficientsAreSimilarToPOCResults) {
+    std::filesystem::path base_dir("tests/cpp/data/");
+    std::ifstream input_file(base_dir / GetParam(), std::ios::in);
+
+    const size_t ref_max_context_length = 1024;
+    size_t ref_block_size = 0;
+    size_t ref_head_size = 0;
+
+    input_file >> ref_block_size;
+    input_file >> ref_head_size;
+
+    size_t num_blocks_before_eviction = 0;
+    size_t num_evicted_blocks = 0;
+    size_t num_rotated_blocks = 0;
+
+    std::set<size_t> ref_evicted_logical_block_indices;
+    std::vector<ov::genai::CacheRotationCalculator::BlockRotationData> ref_data;
+
+    input_file >> num_blocks_before_eviction;
+    input_file >> num_evicted_blocks;
+    for (size_t i = 0; i < num_evicted_blocks; i++) {
+        size_t evicted_block_idx = 0;
+        input_file >> evicted_block_idx;
+        ref_evicted_logical_block_indices.insert(evicted_block_idx);
+    }
+
+    input_file >> num_rotated_blocks;
+    ref_data.resize(num_rotated_blocks);
+
+    for (size_t i = 0; i < num_rotated_blocks; i++) {
+        size_t logical_block_idx_after_eviction = 0;
+        input_file >> logical_block_idx_after_eviction;
+        ref_data[i].logical_block_idx = logical_block_idx_after_eviction;
+        std::vector<float> coeffts(ref_head_size / 2);
+
+        for (size_t j = 0; j < ref_head_size / 2; j++) {
+            input_file >> coeffts[j];
+        }
+        ref_data[i].sines.resize(ref_block_size);
+        for (size_t k = 0; k < ref_block_size; k++) {
+            ref_data[i].sines[k] = coeffts;
+        }
+
+        for (size_t j = 0; j < ref_head_size / 2; j++) {
+            input_file >> coeffts[j];
+        }
+        ref_data[i].cosines.resize(ref_block_size);
+        for (size_t k = 0; k < ref_block_size; k++) {
+            ref_data[i].cosines[k] = coeffts;
+        }
+    }
+
+    auto calc = ov::genai::CacheRotationCalculator(ref_block_size, ref_max_context_length, ref_head_size);
+    auto test_data = calc.get_rotation_data(ref_evicted_logical_block_indices, num_blocks_before_eviction,
+                                            /* deltas_only = */ false);
+    compare_rotation_data(test_data, ref_data, 1e-2);  // the dump values were originally calculated in FP16 precision
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousPOCDumps,
+                         CacheRotationCalculatorPOCRefCoefficientsTest,
+                         testing::Values("cache_rotation_poc_ref_coefficients_per_block_0.txt",
+                                         "cache_rotation_poc_ref_coefficients_per_block_1.txt",
+                                         "cache_rotation_poc_ref_coefficients_per_block_2.txt",
+                                         "cache_rotation_poc_ref_coefficients_per_block_3.txt"));

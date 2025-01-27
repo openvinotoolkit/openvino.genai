@@ -173,22 +173,12 @@ public:
             ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, properties);
         }
 
+        read_config(models_path);
+        read_special_tokens_map(models_path);
+        // Try to read tokenizer_config if some token ids or token str are not defined.
+        read_tokenizer_config_if_necessary(models_path);
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
-
-        // If special tokens were not found from IR, try to read them from config.
-        // This will be triggered only for IRs older than 2024.3.
-        if (m_pad_token_id == -1 || m_bos_token_id == -1 || m_eos_token_id == -1 ||
-            m_pad_token.empty() || m_bos_token.empty() || m_eos_token.empty()) {
-            read_config(models_path);
-            read_special_tokens_map(models_path);
-            // Try to read tokenizer_config if some token ids or token str are not defined.
-            read_tokenizer_config_if_necessary(models_path);
-        }
-
-        // If chat_template was not found in IR, try to read them from config.
-        if (m_chat_template.empty()) {
-            m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
-        }
+        m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
     }
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
@@ -250,12 +240,12 @@ public:
         m_chat_template = patch_chat_template(m_chat_template);
         if (m_detokenizer) {
             // Unset/-1 token causes exception in SentencePiece detokenization.
-            if (m_pad_token_id != -1)
-                m_pad_token = decode(std::vector{m_pad_token_id});
-            if (m_bos_token_id != -1)
-                m_bos_token = decode(std::vector{m_bos_token_id});
-            if (m_eos_token_id != -1)
-                m_eos_token = decode(std::vector{m_eos_token_id});
+            if (m_pad_token_id != -1 && m_pad_token.empty())
+                m_pad_token = decode(std::vector{m_pad_token_id}, {ov::genai::add_special_tokens(true)});
+            if (m_bos_token_id != -1 && m_bos_token.empty())
+                m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::add_special_tokens(true)});
+            if (m_eos_token_id != -1 && m_eos_token.empty())
+                m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::add_special_tokens(true)});
         }
     }
 
@@ -265,8 +255,6 @@ public:
         if (!std::filesystem::exists(config_file_path))
             return ;
         std::ifstream file(config_file_path);
-        if (!file.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(file);
         using ov::genai::utils::read_json_param;
@@ -282,8 +270,6 @@ public:
         if (!std::filesystem::exists(special_tokens_file_path))
             return ;
         std::ifstream f(special_tokens_file_path);
-        if (!f.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -311,8 +297,6 @@ public:
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return ;
         std::ifstream f(tokenizer_config_file_path);
-        if (!f.is_open())
-            return ;
 
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -518,10 +502,7 @@ public:
         auto tokenizer_config_file_path = path / "tokenizer_config.json";
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return "";
-
         std::ifstream file(tokenizer_config_file_path);
-        if (!file.is_open())
-            return "";
 
         std::string res;
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);

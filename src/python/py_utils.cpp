@@ -320,6 +320,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
         auto callback_wrapped = [py_callback](std::string subword) -> bool {
+            py::gil_scoped_acquire acquire;
             auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
             return py_callback(py::reinterpret_borrow<py::str>(py_str));
         };

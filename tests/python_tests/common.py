@@ -4,6 +4,7 @@
 import os
 import shutil
 import pytest
+import openvino
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
@@ -324,6 +325,17 @@ def get_default_properties():
         hints.kv_cache_precision : ov.Type.f16,
     }
 
+def get_models_list_from_path(file_name: str):
+    models = []
+    with open(file_name) as f:
+        for model_name in f:
+            model_name = model_name.strip()
+            # skip comment in model scope file
+            if model_name.startswith('#'):
+                continue
+            models.append(model_name)
+    return models
+
 
 class StreamerWithResults:
     # Return a streamer which accumulates results in order to compare with results returned from generate.
@@ -513,3 +525,19 @@ def get_image_by_link(link):
         image = image.convert('RGB')
     image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, 3, image.size[1], image.size[0])
     return Tensor(image_data)
+
+
+"""rt_info has the highest priority. Delete it to respect configs."""
+def delete_rt_info(configs: List[Tuple], temp_path):
+    core = openvino.Core()
+    core.set_property({'ENABLE_MMAP': False})
+    for model_path in temp_path / "openvino_tokenizer.xml", temp_path / "openvino_detokenizer.xml":
+        tokenizer = core.read_model(model_path)
+        rt_info = tokenizer.get_rt_info()
+        for config, _ in configs:
+            for key in config.keys():
+                try:
+                    del rt_info[key]
+                except KeyError:
+                    pass
+        openvino.save_model(tokenizer, model_path)
