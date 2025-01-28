@@ -64,7 +64,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 encoded_inputs = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
-                encoded_inputs = m_tokenizer.encode(input_str).input_ids;
+                std::string input_str(prompt);
+                encoded_inputs = m_tokenizer.encode(input_str, ov::genai::add_special_tokens(true)).input_ids;
             }
             input_ids.push_back(encoded_inputs);
             tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));

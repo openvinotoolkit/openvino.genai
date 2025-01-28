@@ -26,7 +26,7 @@ from ov_genai_test_utils import (
 
 test_cases = [
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),
-    (dict(max_new_tokens=30, num_beams=15, num_beam_groups=3, num_return_sequences=15, diversity_penalty=1.0), 'Alan Turing was a'),
+    (dict(max_new_tokens=30, num_beams=15, num_beam_groups=3, num_return_sequences=15, diversity_penalty=1.0), 'Why is the Sun yellow?'),
 ]
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", get_models_list())
@@ -339,7 +339,7 @@ def test_unicode_pybind_decoding_one_string():
     # Test that pybind will not fail.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
-    res_str = ov_pipe.generate(',', max_new_tokens=4)
+    res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str[-1]
 
 
@@ -350,7 +350,7 @@ def test_unicode_pybind_decoding_batched():
     # Test that pybind will not fail.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
-    res_str = ov_pipe.generate([","], max_new_tokens=4)
+    res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
 
@@ -362,7 +362,7 @@ def test_unicode_pybind_decoding_one_string_streamer():
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     ov_pipe = read_model((model_id, path))[4]
     res_str = []
-    ov_pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
+    ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
 
 #

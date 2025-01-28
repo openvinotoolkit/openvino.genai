@@ -18,7 +18,7 @@ namespace genai {
  */
 class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig : public GenerationConfig {
 public:
-    WhisperGenerationConfig() = default;
+    WhisperGenerationConfig();
     explicit WhisperGenerationConfig(const std::filesystem::path& json_path);
 
     // Corresponds to the ”<|startoftranscript|>” token.
@@ -96,8 +96,6 @@ public:
 
     // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
-
-    bool apply_chat_template = false;
 
     void update_generation_config(const ov::AnyMap& config_map = {});
 
