@@ -61,8 +61,8 @@ LLMs](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide/genai-gui
 
 - Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
   For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
-- Only greedy search is supported (`do_sample` must be set to False)
-- Use OpenVINO 2024.6 or later, and the latest NPU driver.
+- Beam search and parallel sampling are not supported.
+- Use OpenVINO 2025.0 or later (installed by deployment-requirements.txt, see "Common information" section), and the latest NPU driver.
 
 
 ### 2. Greedy Causal LM (`greedy_causal_lm`)
