@@ -53,6 +53,11 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
             // x86 and ARM have different default kv cache type, take this information from the plugin
             m_kv_cache_type = core.get_property(device, ov::hint::kv_cache_precision);
         }
+
+        // TEMP WA: currently FP16 / BF16 KV cache is faster than U8 for PagedAttention
+        if (m_kv_cache_type == ov::element::u8) {
+            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
+        }
     } else if (device.find("GPU") != std::string::npos) {
         if (accuracy_mode) {
             inference_precision = ov::element::f32;
@@ -162,7 +167,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     SchedulerConfig normalized_config = scheduler_config;
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
-        normalized_config.num_kv_blocks = cache_manager->get_block_size_in_bytes();
+        normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
     }
 
     bool can_use_partial_preemption = true;
@@ -187,14 +192,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* is_use_rotation_inputs = */ is_apply_rotation);
         if (eviction_config.apply_rotation) {
             m_rotation_deltas_stores.reserve(m_num_decoder_layers);
-            ov::Shape rotation_deltas_store_shape{scheduler_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
+            ov::Shape rotation_deltas_store_shape{normalized_config.num_kv_blocks, 1}; // last dim can be later changed to BLOCK_SIZE for per-token granularity
             for (size_t i = 0; i < m_num_decoder_layers; i++) {
                 ov::Tensor store(ov::element::i32, rotation_deltas_store_shape);
                 std::memset(store.data(), 0, store.get_byte_size());
                 m_rotation_deltas_stores.push_back(store);
             }
 
-            size_t max_sequence_cache_occupation_length_in_blocks = scheduler_config.max_num_batched_tokens / m_scheduler->get_block_size()  + 1;
+            size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_scheduler->get_block_size()  + 1;
             size_t embedding_size = device_config.get_k_head_size(0);
             m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
                 m_scheduler->get_block_size(),

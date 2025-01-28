@@ -81,7 +81,7 @@ class CacheManager {
     }
 
 public:
-    explicit CacheManager(ov::InferRequest request, const DeviceConfig& device_config) :
+    CacheManager(ov::InferRequest request, const DeviceConfig& device_config) :
         m_request(request) {
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
