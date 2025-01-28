@@ -120,6 +120,20 @@ def test_invalid_generation_configs_throws(generation_config_kwargs):
         config.validate()
 
 
+@pytest.mark.parametrize("fields", invalid_configs + [
+    dict(eos_token_id=1), # 'stop_token_ids' does not contain 'eos_token_id'
+    dict(eos_token_id=1, stop_token_ids={2}), # 'stop_token_ids' is not empty, but does not contain 'eos_token_id'
+])
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_invalid_fields_assinment_rises(fields):
+    config = GenerationConfig()
+    for key, val in fields.items():
+        setattr(config, key, val)
+    with pytest.raises(RuntimeError):
+        config.validate()
+
+
 def load_genai_generation_config_from_file(configs: List[Tuple], temp_path):
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
