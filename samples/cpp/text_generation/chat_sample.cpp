@@ -15,6 +15,11 @@ int main(int argc, char* argv[]) try {
     
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
+    // do_sample must be set to false for NPU because NPU only supports greedy search
+    if (device == "NPU") {
+        config.do_sample = false;
+    }
+
     std::function<bool(std::string)> streamer = [](std::string word) { 
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.

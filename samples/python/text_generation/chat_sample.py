@@ -23,6 +23,9 @@ def main():
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
+    # do_sample must be set to False for NPU because NPU only supports greedy search
+    if device == 'NPU':
+        config.do_sample = False
 
     pipe.start_chat()
     while True:

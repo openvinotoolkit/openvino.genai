@@ -19,7 +19,7 @@ optimim-cli export openvino --model <model> <output_folder>
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install huggingface-hub
 huggingface-cli download <model> --local-dir <output_folder>
 ```
 
@@ -53,6 +53,17 @@ The following template can be used as a default, but it may not work properly wi
 ```
 "chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
 ```
+
+#### NPU support
+
+NPU device is supported with some limitations. See [NPU inference of
+LLMs](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide/genai-guide-npu.html) documentation. In particular:
+
+- Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
+  For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
+- Only greedy search is supported (`do_sample` must be set to False)
+- Use OpenVINO 2024.6 or later, and the latest NPU driver.
+
 
 ### 2. Greedy Causal LM (`greedy_causal_lm`)
 - **Description:**
