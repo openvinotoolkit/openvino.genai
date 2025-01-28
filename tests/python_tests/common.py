@@ -302,11 +302,11 @@ def run_continuous_batching(
     models_path : Path,
     scheduler_config : SchedulerConfig,
     prompts: List[str],
-    generation_configs : List[GenerationConfig] | GenerationConfig 
+    generation_configs : List[GenerationConfig] | GenerationConfig
 ) -> List[GenerationResult]:
     if type(generation_configs) is not list:
         generation_configs = [generation_configs] * len(prompts)
- 
+
     cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_properties())
     output = cb_pipe.generate(prompts, generation_configs)
 
@@ -346,12 +346,12 @@ class StreamerWithResults:
     def accumulate(self, subword) -> bool:
         self.results.append(subword)
         return False
-    
+
     def get_results(self) -> List[GenerationResult]:
         streaming_result = GenerationResult()
         streaming_result.m_generation_ids = [''.join(self.results)]
         return [streaming_result]
-    
+
     def reset(self):
         self.results = []
 
@@ -368,7 +368,7 @@ def run_llm_pipeline(
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
-    
+
     if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
         # We can use streamer only if we have a single prompt and not beam search.
         streamer = StreamerWithResults()
@@ -377,8 +377,8 @@ def run_llm_pipeline(
         streamer.reset()
 
     generate_outputs : DecodedResults = ov_pipe.generate(
-        inputs=prompts, 
-        generation_config=generation_config, 
+        inputs=prompts,
+        generation_config=generation_config,
         streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
     )
 
@@ -398,7 +398,7 @@ def run_llm_pipeline(
 
     del ov_pipe
     shutil.rmtree(models_path)
-    
+
     if isinstance(streamer, StreamerWithResults):
         compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
@@ -456,12 +456,12 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     serialize(tokenizer, models_path / "openvino_tokenizer.xml")
     serialize(detokenizer, models_path / "openvino_detokenizer.xml")
- 
 
-def run_llm_pipeline_with_ref(model_id: str, 
-                              prompts: List[str], 
-                              generation_config: GenerationConfig | dict, 
-                              tmp_path: Path, 
+
+def run_llm_pipeline_with_ref(model_id: str,
+                              prompts: List[str],
+                              generation_config: GenerationConfig | dict,
+                              tmp_path: Path,
                               use_cb : bool = False,
                               streamer: StreamerWithResults | Callable | StreamerBase = None):
     models_path : Path = tmp_path / model_id

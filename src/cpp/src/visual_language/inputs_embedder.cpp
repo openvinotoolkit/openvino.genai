@@ -40,7 +40,7 @@ protected:
     // Tail of previous output for LM in chat mode is missing in KV cache.
     std::optional<int64_t> m_last_disappeared_token = std::nullopt;
     // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
-    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
+    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
 
@@ -78,7 +78,7 @@ public:
         }
 
         m_last_disappeared_token = last_disappeared_token;
-  
+
         std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
     }
 
@@ -124,7 +124,7 @@ protected:
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
         m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
         m_tokenizer{model_dir, device_config} { }
-    
+
     IInputsEmbedder(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
@@ -630,7 +630,7 @@ public:
         std::string image_token = m_vlm_config.im_start;
         // Adapted from llava-1.5-7b-hf chat_template.json
         std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
-        
+
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
         std::string formatted_prompt;
@@ -750,7 +750,7 @@ public:
         std::string formatted_prompt;
         std::vector<ov::Tensor> image_embeds;
         image_embeds.reserve(single_images.size());
-        
+
         ov::Tensor image_newline;
 
         for (const auto& image : single_images) {
@@ -1071,20 +1071,20 @@ public:
         std::string image_start_token = m_vlm_config.image_start_token;
         std::string image_context_token = m_vlm_config.image_context_token;
         std::string image_end_token = m_vlm_config.image_end_token;
-        
+
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
         std::string formatted_prompt;
         std::vector<ov::Tensor> image_embeds;
         image_embeds.reserve(single_images.size());
-        
+
         for (const auto& image : single_images) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             ov::Tensor single_image_embeds = encoded_image.resized_source;
 
             const size_t num_patches = single_image_embeds.get_shape().at(0);
             const size_t num_image_tokens = single_image_embeds.get_shape().at(1);
-            
+
             formatted_prompt += image_start_token;
             for (int i = 0; i < num_patches * num_image_tokens; ++i) {
                 formatted_prompt += image_context_token;
@@ -1155,7 +1155,7 @@ protected:
                     std::copy_n(image_embeds_data + image_context_token_idx * embed_dim,
                                 embed_dim,
                                 merged_embeds_data + offset);
-                    
+
                     ++image_context_token_idx;
 
                     if (image_context_token_idx == num_all_image_tokens) {
@@ -1593,7 +1593,7 @@ public:
     InputsEmbedderQwen2VL(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
-        const Tokenizer& tokenizer, 
+        const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap device_config) :
@@ -1605,7 +1605,7 @@ public:
                 device_config
             ).create_infer_request();
         }
-    
+
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string formatted_prompt;
 
@@ -1614,7 +1614,7 @@ public:
         std::vector<std::array<size_t, 3>> images_grid_thw;
         image_embeds.reserve(single_images.size());
         images_grid_thw.reserve(single_images.size());
-        
+
         for (const auto& image : single_images) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             ov::Tensor single_image_embeds = encoded_image.resized_source;
@@ -1644,7 +1644,7 @@ public:
         if (images.empty()) {
             return text_embeds;
         }
-        
+
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
         ov::Tensor encoded_image_pad_token = m_tokenizer.encode(m_vlm_config.image_pad_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -1722,7 +1722,7 @@ protected:
             }
         }
 
-        // Concatenate image embeddings 
+        // Concatenate image embeddings
         ov::Tensor concatenated_images;
         if (image_embeds.size() == 1) {
             concatenated_images = image_embeds.at(0);
@@ -1732,10 +1732,10 @@ protected:
                 total_length += embed.get_shape().at(0);
             }
             size_t hidden_dim = image_embeds.at(0).get_shape().at(1);
-            
+
             concatenated_images = ov::Tensor(image_embeds.at(0).get_element_type(), {total_length, hidden_dim});
             float* concat_data = concatenated_images.data<float>();
-            
+
             size_t offset = 0;
             for (const auto& embed : image_embeds) {
                 size_t embed_size = embed.get_shape().at(0) * embed.get_shape().at(1);
@@ -1763,7 +1763,7 @@ protected:
         const int64_t* input_ids_data = input_ids.data<const int64_t>();
         float* merged_embeds_data = merged_embeds.data<float>();
         const float* vision_embeds_data = processed_vision_embeds.data<const float>();
-        
+
         size_t vision_embed_idx = 0;
         for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
             for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
@@ -1781,7 +1781,7 @@ protected:
         return merged_embeds;
     }
 
-    ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
+    ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {
         const size_t spatial_merge_size = m_vision_encoder.m_processor_config.merge_size;
 
         std::vector<std::vector<size_t>> all_pos_ids;
@@ -1795,7 +1795,7 @@ protected:
 
             total_positions += t * h * w;
             max_grid_size = std::max({max_grid_size, h, w});
-            
+
             // Create height position IDs
             std::vector<size_t> hpos_ids(h * w);
             for (size_t hi = 0; hi < h; ++hi) {
@@ -1855,7 +1855,7 @@ protected:
         // Calculate rotary embeddings for max_grid_size
         const size_t dim = 1280 / 16 / 2; // config.vision_config.embed_dim / self.config.vision_config.num_heads / 2
         const float theta = 10000.0f;
-        
+
         std::vector<float> inv_freq(dim / 2);
         for (size_t i = 0; i < dim / 2; ++i) {
             inv_freq[i] = 1.0f / std::pow(theta, static_cast<float>(i) / static_cast<float>(dim / 2));
@@ -1889,7 +1889,7 @@ protected:
         const int64_t vision_start_token_id
     ) {
         const size_t spatial_merge_size = m_vision_encoder.m_processor_config.merge_size;
-        
+
         const int64_t* input_ids = input_ids_tensor.data<int64_t>();
         size_t batch_size = input_ids_tensor.get_shape().at(0);
         size_t seq_len = input_ids_tensor.get_shape().at(1);
@@ -1903,7 +1903,7 @@ protected:
 
         ov::Tensor position_ids{ov::element::i64, {3, batch_size, seq_len}};
         int64_t* pos_data = position_ids.data<int64_t>();
-        
+
         size_t st = 0;
         int64_t next_pos = 0;
         size_t grid_idx = 0;

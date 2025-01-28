@@ -29,7 +29,7 @@ struct Logits {
         OPENVINO_ASSERT(m_vector.size() == 0, "Logits vector already initialized");
         m_vector.reserve(m_size);
         for (size_t i = 0; i < m_size; i++)
-            m_vector.emplace_back(m_data[i], i);   
+            m_vector.emplace_back(m_data[i], i);
     }
 
     bool is_vector_initialized() const {
@@ -59,8 +59,8 @@ public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
     bool partial_sort_and_resize(Logits& logits) {
-        // Since most of the time huge part of logits vector contains minimal values 
-        // expensive sorting of entire vector might be unnecessary, especially for low values of top_p. 
+        // Since most of the time huge part of logits vector contains minimal values
+        // expensive sorting of entire vector might be unnecessary, especially for low values of top_p.
         // This method partially sorts vector finding M top elements and stops when top_p condition is met.
         // It iterates a few times starting with M = 16 and multiplying it by 2 each iteration until M = 1024.
         // If top_p is found in considered scope it resizes logits vector and returns true. Otherwise it returns false.
@@ -111,9 +111,9 @@ public:
     // If this transform is used along with top_p, it should be applied after it since top_p sorts entire vector and top_k does it only partially
     void apply(Logits& logits) override {
 
-        if (m_top_k >= logits.m_size) 
+        if (m_top_k >= logits.m_size)
             return;
-        
+
         // If top_p is also used vector is already initialized and sorted
         if (!logits.is_vector_initialized()) {
             // Initialize and partially sort vector
@@ -234,7 +234,7 @@ protected:
 
 class EOSPenaltyTransform : public ILogitTransformer {
 public:
-    EOSPenaltyTransform(const std::set<int64_t>& stop_token_ids, size_t min_generated_tokens) : 
+    EOSPenaltyTransform(const std::set<int64_t>& stop_token_ids, size_t min_generated_tokens) :
         m_stop_token_ids(stop_token_ids), m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(Logits& logits) override {
@@ -243,7 +243,7 @@ public:
         for (auto stop_token_id: m_stop_token_ids)
             logits.m_data[stop_token_id] = 0.f;
     }
-    
+
 
     bool is_applicable(size_t generated_tokens_cnt = 0) override {
         return generated_tokens_cnt < m_applicable_tensor_len;
@@ -310,7 +310,7 @@ public:
 class LogitProcessor {
 protected:
     std::vector<std::shared_ptr<LogitTransformers::ILogitTransformer>> m_logit_transformers;
-    
+
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
@@ -334,21 +334,21 @@ public:
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
             if (sampling_params.repetition_penalty != 1.0f) {
-                std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer = 
+                std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer =
                     std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
                 transformer->set_unique_prompt_token_ids(m_unique_prompt_token_ids);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
             if (sampling_params.presence_penalty != 0.0f) {
-                std::shared_ptr<LogitTransformers::PresencePenaltyTransform> transformer = 
-                    std::shared_ptr<LogitTransformers::PresencePenaltyTransform>(new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty)); 
+                std::shared_ptr<LogitTransformers::PresencePenaltyTransform> transformer =
+                    std::shared_ptr<LogitTransformers::PresencePenaltyTransform>(new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty));
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
-                
+
             }
             if (sampling_params.frequency_penalty != 0.0f) {
-                std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform> transformer = 
+                std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform> transformer =
                     std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform>(new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequency_penalty));
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);

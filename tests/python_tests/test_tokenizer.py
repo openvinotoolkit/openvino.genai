@@ -37,14 +37,14 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
 
 
 def get_chat_templates():
-    # Returns chat templates saved in tokenizer_configs.py, 
+    # Returns chat templates saved in tokenizer_configs.py,
     # but skips some models that currently are not processed correctly.
 
     skipped_models = {
         # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
         # Need to enable and unskip, since it's preset in continuous batching and has >100 000 downloads.
         "openchat/openchat-3.5-0106",
-        
+
         # These models fail even on HF so no need to check if applying chat matches.
         "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
         "codellama/CodeLlama-34b-Instruct-hf",
@@ -83,7 +83,7 @@ def get_chat_templates():
         "shenzhi-wang/Llama3-8B-Chinese-Chat", # AssertionError
         "nlpai-lab/KULLM3",
         "HuggingFaceH4/zephyr-7b-gemma-sft-v0.1",
-        "MediaTek-Research/Breeze-7B-Instruct-v0_1", 
+        "MediaTek-Research/Breeze-7B-Instruct-v0_1",
         "shanchen/llama3-8B-slerp-biomed-chat-chinese", # AssertionError
         "MLP-KTLim/llama-3-Korean-Bllossom-8B",
         "aloobun/CosmicBun-8B", # Chat template is not supported by Jinja2Cpp
@@ -240,7 +240,7 @@ def test_encode_decode_with_special_tokens_option(prompt):
     hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
     assert np.all(ov_res_no_spec == hf_res_no_spec)
-    
+
     # Check that add_special_tokens flag indeed made any difference
     assert ov_res_add_spec.size != ov_res_no_spec.size
     assert hf_res_add_spec.size != hf_res_no_spec.size
@@ -383,4 +383,3 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(model
         assert tok.get_bos_token_id() == token_str_int_map['bos_token']
     if 'eos_token' in token_str_int_map:
         assert tok.get_eos_token_id() == token_str_int_map['eos_token']
-

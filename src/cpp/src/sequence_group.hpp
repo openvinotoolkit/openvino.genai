@@ -210,7 +210,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     bool m_has_echoed = false;
 
     uint64_t m_next_sequence_id = 0;
- 
+
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
@@ -485,7 +485,7 @@ public:
     size_t get_num_tokens_to_validate() {
         return m_num_validation_tokens;
     }
-    
+
     void set_stream_window_size(size_t k) {
         m_stream_window_size = k;
     }
@@ -666,7 +666,7 @@ public:
         }
     }
 
-    
+
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
         // This method is called after scheduling and before sampling,

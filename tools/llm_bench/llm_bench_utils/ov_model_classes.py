@@ -78,7 +78,7 @@ class OVMPTModel(OVModelForCausalLM):
                     past_key_values = tuple(
                         past_key_value for pkv_per_layer in past_key_values for past_key_value in pkv_per_layer
                     )
-                
+
 
                 # Add the past_key_values to the decoder inputs
                 inputs = dict(zip(self.key_value_input_names, past_key_values))
@@ -440,7 +440,7 @@ class OVChatGLMModel(OVModelForCausalLM):
         past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
-        
+
         if not self.is_v1:
             return super().forward(input_ids=input_ids, attention_mask=attention_mask, past_key_values=past_key_values, **kwargs)
         self.compile()

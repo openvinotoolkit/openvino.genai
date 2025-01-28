@@ -36,7 +36,7 @@ DDIMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path
     read_json_param(data, "rescale_betas_zero_snr", rescale_betas_zero_snr);
 }
 
-DDIMScheduler::DDIMScheduler(const std::filesystem::path& scheduler_config_path) 
+DDIMScheduler::DDIMScheduler(const std::filesystem::path& scheduler_config_path)
     : DDIMScheduler(Config(scheduler_config_path)) {
 }
 

@@ -11,18 +11,18 @@ import threading
 class IterableStreamer(openvino_genai.StreamerBase):
     """
     A custom streamer class for handling token streaming and detokenization with buffering.
-    
+
     Attributes:
         tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
         tokens_cache (list): A buffer to accumulate tokens for detokenization.
         text_queue (Queue): A synchronized queue for storing decoded text chunks.
         print_len (int): The length of the printed text to manage incremental decoding.
     """
-    
+
     def __init__(self, tokenizer):
         """
         Initializes the IterableStreamer with the given tokenizer.
-        
+
         Args:
             tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
         """
@@ -38,14 +38,14 @@ class IterableStreamer(openvino_genai.StreamerBase):
         Returns the iterator object itself.
         """
         return self
-    
+
     def __next__(self):
         """
         Returns the next value from the text queue.
-        
+
         Returns:
             str: The next decoded text chunk.
-        
+
         Raises:
             StopIteration: If there are no more elements in the queue.
         """
@@ -53,20 +53,20 @@ class IterableStreamer(openvino_genai.StreamerBase):
         if value is None:
             raise StopIteration
         return value
-    
+
     def get_stop_flag(self):
         """
         Checks whether the generation process should be stopped.
-        
+
         Returns:
             bool: Always returns False in this implementation.
         """
         return False
-    
+
     def put_word(self, word: str):
         """
         Puts a word into the text queue.
-        
+
         Args:
             word (str): The word to put into the queue.
         """
@@ -75,10 +75,10 @@ class IterableStreamer(openvino_genai.StreamerBase):
     def put(self, token_id: int) -> bool:
         """
         Processes a token and manages the decoding buffer. Adds decoded text to the queue.
-        
+
         Args:
             token_id (int): The token_id to process.
-        
+
         Returns:
             bool: True if generation should be stopped, False otherwise.
         """
@@ -168,7 +168,7 @@ def main():
     config.top_p = 0.9
     config.top_k = 30
 
-    # Since the streamer is set, the results will be printed 
+    # Since the streamer is set, the results will be printed
     # every time a new token is generated and put into the streamer queue.
     pipe.generate(args.prompt, config, text_print_streamer)
     printer_thread.join()

@@ -21,7 +21,7 @@
 using namespace ov::genai;
 
 namespace {
-   
+
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
@@ -127,7 +127,7 @@ public:
         },
         m_generation_config{generation_config},
         m_is_chat_conversation{false} {
-        
+
         m_inputs_embedder = std::make_shared<InputsEmbedder>(
             m_vlm_config, models_map, tokenizer, config_dir_path, device, properties);
 
@@ -250,7 +250,7 @@ public:
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
-        
+
         // VLM specific perf metrics
         decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 

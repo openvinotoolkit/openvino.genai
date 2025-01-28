@@ -385,8 +385,8 @@ class GreedySearchHook:
         if trans_version >= version.parse('4.45.0'):
             model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.43.0'):
-            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)  
-       
+            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)
+
     def new_get_multimodal_embeddings(self, model):
         model._orig_get_multimodal_embeddings = model.get_multimodal_embeddings
         model.get_multimodal_embeddings = types.MethodType(new_get_multimodal_embeddings, model)

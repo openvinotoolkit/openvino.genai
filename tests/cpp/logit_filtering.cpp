@@ -342,4 +342,3 @@ const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASE
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          EOSPenaltyTransformTest,
                          testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));
-

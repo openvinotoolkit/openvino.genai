@@ -146,7 +146,7 @@ class GenerationInfo {
         std::chrono::milliseconds cumulated_tpot;
         std::chrono::milliseconds mean_tpot;
         size_t num_output_tokens;
-    
+
         std::chrono::steady_clock::time_point start_time;
         std::chrono::steady_clock::time_point last_read_time;
 
@@ -269,7 +269,7 @@ public:
         for (GenerationInfo& generation_info : generations_info) {
             if (!generation_info.is_active())
                 continue;
-            
+
             if (generation_info.is_finished()) {
                 num_finished++;
                 generation_info.set_inactive();
@@ -287,8 +287,8 @@ public:
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t total_input_len = 0;
         size_t total_output_len = 0;
-        
-    
+
+
         for (GenerationInfo& generation_info : generations_info){
             auto generation_metrics = generation_info.get_metrics();
             mean_ttft += generation_metrics.mean_ttft;
@@ -304,7 +304,7 @@ public:
         std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
         std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;
         std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;
-        std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl; 
+        std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl;
     }
 };
 
@@ -512,7 +512,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
         return EXIT_FAILURE;
     }
-    
+
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
@@ -526,7 +526,7 @@ int main(int argc, char* argv[]) try {
         std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
         trafficSimulatorThread.join();
     }
-    
+
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
     if (request_rate != "inf") {

@@ -162,7 +162,7 @@ size_t FlowMatchEulerDiscreteScheduler::_index_for_timestep(float timestep) {
 
 void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) {
     OPENVINO_ASSERT(timestep == -1, "Timestep is not computed yet");
-    
+
     size_t index_for_timestep;
     if (m_begin_index == -1) {
         index_for_timestep = _index_for_timestep(timestep);

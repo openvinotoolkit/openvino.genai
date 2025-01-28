@@ -24,12 +24,12 @@ bool ov::genai::MakeCombineSegmentsSatateful::run_on_model(const std::shared_ptr
     if (!combine_seg_node || combine_seg_node->input_value(1).get_element_type() != ov::element::i32) {
         return false;
     }
-    
+
     std::shared_ptr<v0::Constant> input_1_const = std::dynamic_pointer_cast<v0::Constant>(combine_seg_node->get_input_node_shared_ptr(1));
     if (!input_1_const) {
         return false;
     }
-    
+
     op::util::VariableInfo var_info{ov::Shape{}, ov::element::boolean, ADD_SPECIAL_TOKENS_VAR_ID};
     auto variable = std::make_shared<op::util::Variable>(var_info);
 
@@ -41,7 +41,7 @@ bool ov::genai::MakeCombineSegmentsSatateful::run_on_model(const std::shared_ptr
     combine_seg_node->input(1).replace_source_output(select_node->output(0));
 
     auto assign = std::make_shared<v6::Assign>(read_value, variable);
-    
+
     model->add_sinks({assign});
     model->add_variables({variable});
     return true;
@@ -58,7 +58,7 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
         return false;
     if (!vocab_decoder_node->input_value(4).get_element_type().is_integral_number())
         return false;
-    
+
     std::shared_ptr<v0::Constant> skip_tokens_const = std::dynamic_pointer_cast<v0::Constant>(vocab_decoder_node->get_input_node_shared_ptr(4));
     std::shared_ptr<v8::Slice> skip_tokens_slice = std::dynamic_pointer_cast<v8::Slice>(vocab_decoder_node->get_input_node_shared_ptr(4));
     if (!skip_tokens_const && !skip_tokens_slice)
@@ -67,7 +67,7 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
     auto start_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{0});
     auto int_max_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{std::numeric_limits<int>::max()});
     auto one_const = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-    
+
     // By default, INT_MAX will multiply with 1 and all skip_tokens will be selected.
     op::util::VariableInfo var_info{ov::Shape{1}, ov::element::i32, SKIP_SPECIAL_TOKENS_VAR_ID};
     auto variable = std::make_shared<op::util::Variable>(var_info);
@@ -82,7 +82,7 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
         std::shared_ptr<v8::Slice> slice_node = std::make_shared<v8::Slice>(skip_tokens_const, start_const, stop, one_const);
         vocab_decoder_node->input(4).replace_source_output(slice_node->output(0));
     }
-    
+
     auto assign = std::make_shared<v6::Assign>(read_value, variable);
     model->add_sinks({assign});
     model->add_variables({variable});

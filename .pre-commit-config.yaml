@@ -1,0 +1,20 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
+    hooks:
+      - id: trailing-whitespace # checks for files with trailing whitespaces, excluding .md and Git-related hidden files
+        exclude: '\.md$|.*\.git.*'
+      - id: check-merge-conflict # checks for files that contain merge conflict strings (such as <<<<<<<, =======, and >>>>>>>)
+      - id: check-json # Ensures that JSON files are syntactically correct
+      - id: end-of-file-fixer # ensures that each file ends with one blank line, excluding Git-related hidden files
+        exclude: '.*\.git.*'
+  - repo: local
+    hooks:
+      - id: forbid-non-ascii-filenames # runs the script that prohibits non-ASCII characters in file names
+        name: Prohibit non-ASCII characters in file names
+        entry: ./pre_commit_scripts/check_non_ascii_filenames.sh
+        language: script
+      - id: forbid-non-ascii-in-files # checks for non-ASCII characters in files (excluding Markdown and hidden files), with characters ± and ? allowed
+        name: Check for non-ASCII characters in files (excluding Markdown and hidden files), with characters ± and ? allowed
+        entry: ./pre_commit_scripts/check_non_ascii_in_files.sh
+        language: script

@@ -95,7 +95,7 @@ public:
 
     /**
      * @brief Constructs a ContinuousBatchingPipeline from already existing model and tokenizer.
-     * 
+     *
      * This constructor allows for the creation of a ContinuousBatchingPipeline using an existing model
      * represented as a string and a weights tensor, along with a manually initialized tokenizer.
      * This is useful when the model and tokenizer are already loaded or created in memory and do not
