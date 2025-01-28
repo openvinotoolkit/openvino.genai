@@ -30,7 +30,7 @@ struct ModelDesc {
         properties(properties),
         scheduler_config(scheduler_config),
         generation_config(generation_config) {}
-    
+
     ModelDesc() = default;
 };
 
@@ -48,7 +48,7 @@ protected:
     void drop_requests();
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
-    
+
 public:
     SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
 

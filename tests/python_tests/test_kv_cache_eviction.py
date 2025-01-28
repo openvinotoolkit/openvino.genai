@@ -189,4 +189,3 @@ scheduler_params_list = [
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
     run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
-

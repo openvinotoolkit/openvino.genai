@@ -7,10 +7,10 @@
 namespace ov {
 namespace genai {
 
-/** 
+/**
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or disabled depending on stateful value.
- * 
+ *
  *  +--------------+
  *  |  DefaultMode |
  *  +--------------+
@@ -38,10 +38,10 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
-/** 
+/**
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or disabled depending on stateful value.
- *                                          
+ *
  *                                  +--------------+
  *                                  |  DefaultMode |
  *                                  +--------------+

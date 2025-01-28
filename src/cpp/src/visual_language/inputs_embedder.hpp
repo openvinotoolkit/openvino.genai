@@ -58,7 +58,7 @@ public:
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results);
 
-    // finishes chat and clears a chat history 
+    // finishes chat and clears a chat history
     void finish_chat();
 private:
     class IInputsEmbedder;

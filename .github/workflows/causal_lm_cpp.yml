@@ -22,6 +22,18 @@ env:
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/w_openvino_toolkit_windows_2025.1.0.dev20250116_x86_64.zip
 
 jobs:
+  code-quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Run pre-commit (checks for trailing whitespaces, and non-ASCII symbols in filenames and file content)
+        run: pre-commit run --all-files --show-diff-on-failure
+
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:

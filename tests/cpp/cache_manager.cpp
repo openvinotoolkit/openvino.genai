@@ -64,7 +64,7 @@ TEST(TestCacheManager, test_cache_size_param) {
     auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config, request, core);
     auto block_manager = BlockManager(device_config.get_num_kv_blocks(), false, device_config.get_block_size(), device_config.get_num_layers());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
-    
+
     ASSERT_EQ(get_total_allocated_bytes(cache_manager, num_decoder_layers), 2146959360);
 }
 

@@ -18,7 +18,7 @@ EulerAncestralDiscreteScheduler::Config::Config(const std::filesystem::path& sch
 
     nlohmann::json data = nlohmann::json::parse(file);
     using utils::read_json_param;
-    
+
     read_json_param(data, "num_train_timesteps", num_train_timesteps);
     read_json_param(data, "beta_start", beta_start);
     read_json_param(data, "beta_end", beta_end);
@@ -30,7 +30,7 @@ EulerAncestralDiscreteScheduler::Config::Config(const std::filesystem::path& sch
     read_json_param(data, "rescale_betas_zero_snr", rescale_betas_zero_snr);
 }
 
-EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const std::filesystem::path& scheduler_config_path) 
+EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
     : EulerAncestralDiscreteScheduler(Config(scheduler_config_path)) {
 }
 

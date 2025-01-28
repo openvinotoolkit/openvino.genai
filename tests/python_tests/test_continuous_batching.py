@@ -342,7 +342,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
 
 def get_data_by_pipeline_type(model_path: Path, pipeline_type: str):
     device = "CPU"
-    prompt = "Prompt example is"  
+    prompt = "Prompt example is"
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 10
     generation_config.do_sample = True

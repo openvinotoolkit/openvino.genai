@@ -136,7 +136,7 @@ public:
         int64_t
             * input_ids_data = input_ids.data<int64_t>(),
             * position_ids_data = position_ids.data<int64_t>();
-        int32_t 
+        int32_t
             * past_lens_data = past_lens.data<int32_t>(),
             * subsequence_begins_data = subsequence_begins.data<int32_t>(),
             * block_indices_begins_data = block_indices_begins.data<int32_t>();

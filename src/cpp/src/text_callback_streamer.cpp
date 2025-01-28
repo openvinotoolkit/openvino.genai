@@ -16,7 +16,7 @@ bool TextCallbackStreamer::put(int64_t token) {
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);
     m_decoded_lengths.push_back(text.length());
-    
+
     if (!text.empty() && '\n' == text.back() && text.size() > m_printed_len) {
         // Flush the cache after the new line symbol
         res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len};
@@ -27,7 +27,7 @@ bool TextCallbackStreamer::put(int64_t token) {
     }
 
     constexpr size_t delay_n_tokens = 3;
-    // In some cases adding the next token can shorten the text, 
+    // In some cases adding the next token can shorten the text,
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
     if (m_decoded_lengths.size() < delay_n_tokens) {

@@ -13,34 +13,34 @@
 #include "openvino/core/shape.hpp"
 
 
-class TensorMmapAllocator { 
+class TensorMmapAllocator {
     size_t m_total_size;
     void* m_data;
- 
-public: 
-    TensorMmapAllocator(size_t total_size) : 
-        m_total_size(total_size) { } 
-  
-    void* allocate(size_t bytes, size_t) { 
-        if (m_total_size == bytes) { 
+
+public:
+    TensorMmapAllocator(size_t total_size) :
+        m_total_size(total_size) { }
+
+    void* allocate(size_t bytes, size_t) {
+        if (m_total_size == bytes) {
             m_data = mmap(NULL,  bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             OPENVINO_ASSERT(m_data != MAP_FAILED);
-            return m_data; 
-        } 
-        throw std::runtime_error{"Unexpected number of bytes was requested to allocate."}; 
-    } 
-  
-    void deallocate(void*, size_t bytes, size_t) { 
-        if (m_total_size != bytes) { 
-            throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."}; 
+            return m_data;
+        }
+        throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
+    }
+
+    void deallocate(void*, size_t bytes, size_t) {
+        if (m_total_size != bytes) {
+            throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
         }
         munmap(m_data, bytes);
-    } 
-  
-    bool is_equal(const TensorMmapAllocator& other) const noexcept { 
-        return this == &other; 
-    } 
-}; 
+    }
+
+    bool is_equal(const TensorMmapAllocator& other) const noexcept {
+        return this == &other;
+    }
+};
 
 #endif
 
@@ -115,7 +115,7 @@ public:
                     value_roi_size_byte = m_value_cache[decoder_layer_id].get_byte_size();
                     key_cache_roi_end = static_cast<unsigned char*>(key_cache.data()) + key_roi_size_byte;
                     value_cache_roi_end = static_cast<unsigned char*>(value_cache.data()) + value_roi_size_byte;
-                    
+
                     // copy current cache data
                     ov::Tensor dst_key_roi(key_cache, start_key, end_key);
                     ov::Tensor dst_value_roi(value_cache, start_value, end_value);
@@ -126,8 +126,8 @@ public:
                 }
 
 #ifdef _WIN32
-                // Some optimizations like AVX2, AVX512, AMX require a minimal shape and 
-                // perform multiplying by zero on the excess data. Uninitialized tensor data contain NAN's, 
+                // Some optimizations like AVX2, AVX512, AMX require a minimal shape and
+                // perform multiplying by zero on the excess data. Uninitialized tensor data contain NAN's,
                 // so NAN * 0 returns non-zero invalid data.
                 // So we need to set zeros to all newly allocated tensors data.
                 std::memset(key_cache_roi_end, 0, key_cache.get_byte_size() - key_roi_size_byte);
@@ -154,7 +154,7 @@ public:
                                                                     key_cache_shape);
                 ov::Tensor value_cache = remote_context.create_tensor(m_device_config.get_cache_precision(),
                                                                       value_cache_shape);
-                
+
                 if (m_key_cache.size() > decoder_layer_id) {
                     ov::Coordinate end_key = m_key_cache[decoder_layer_id].get_shape();
                     ov::Coordinate end_value = m_value_cache[decoder_layer_id].get_shape();
@@ -199,7 +199,7 @@ public:
                     ov::Coordinate key_src_end_roi = key_shape;
                     ov::Coordinate key_dst_start_roi(key_shape.size(), 0);
                     ov::Coordinate key_dst_end_roi = key_shape;
-            
+
                     ov::Coordinate value_src_start_roi(value_shape.size(), 0);
                     ov::Coordinate value_src_end_roi = value_shape;
                     ov::Coordinate value_dst_start_roi(value_shape.size(), 0);

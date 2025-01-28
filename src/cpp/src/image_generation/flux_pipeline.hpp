@@ -406,7 +406,7 @@ public:
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
-    
+
         return m_vae->decode(latents);
     }
 

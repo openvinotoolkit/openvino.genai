@@ -31,7 +31,7 @@ struct EncodedGenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
-    
+
     // PerfMetrics but with empty tokenization/detokenization durations.
     PerfMetrics perf_metrics;
 };
@@ -73,7 +73,7 @@ class GenerationStream;
 class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params;
- 
+
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
     m_generation_stream(std::move(generation_stream)),

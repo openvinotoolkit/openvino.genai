@@ -25,7 +25,7 @@ class DeviceConfig {
     std::vector<KVHeadConfig> m_kv_heads_config;
     size_t m_num_decoder_layers = 0;
     size_t m_num_kv_blocks = 0, m_cache_size = 0; // KV cache sizes in either blocks or GBs
-    size_t m_block_size = 0; // block size is per inference device 
+    size_t m_block_size = 0; // block size is per inference device
     std::string m_device;
 
     size_t get_block_size_by_device(const std::string& device) const {

@@ -22,7 +22,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // Tail of previous output in chat mode is missing in KV cache, let's keep it
     std::optional<int64_t> m_last_disappeared_token = std::nullopt;
     // If sequence contains some symbols, which could be ambiguously encoded by tokenizer, we need to trim kv cache
-    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
+    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
     size_t m_kv_cache_seq_length_axis = 2;

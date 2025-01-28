@@ -483,5 +483,5 @@ def test_left_pad():
     }
 
     models[2].pad_token = models[2].eos_token
-    
+
     run_llm_pipeline_with_ref(model_id=models[0], prompts=prompts, generation_config=generation_config_dict, tmp_path=models[1])

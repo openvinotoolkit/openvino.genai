@@ -4,7 +4,7 @@
 #include "sampler.hpp"
 
 namespace ov::genai {
-// Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
+// Modified Knuth-Morris-Pratt algorithm which returns tokens following after every needle occurrence in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
         return {haystack.begin(), haystack.end()};
@@ -159,7 +159,7 @@ int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens,
         std::vector<int64_t> last_generated_tokens(generated_tokens.end()-num_tokens, generated_tokens.end());
         if (stop_tokens == last_generated_tokens)
             return num_tokens;
-        
+
         // Continue checking chunks of 4 tokens
         num_tokens += 4;
         while (num_tokens <= generated_tokens.size()) {
@@ -188,7 +188,7 @@ void Sampler::GroupBeamSearcher::finalize(SamplerOutput& sampler_output) {
 
                 // mark current sequence as finished
                 beam.m_sequence->set_status(SequenceStatus::FINISHED);
-                // Setting length since this function is used when sequence generated tokens number reaches max_new_tokens 
+                // Setting length since this function is used when sequence generated tokens number reaches max_new_tokens
                 beam.m_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
                 // we also need to drop add ongoing / forked sequences from scheduler
                 sampler_output.m_dropped_sequences.push_back(sequence_id);
@@ -549,7 +549,7 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     std::vector<int64_t> dropped_seq_ids;
     for (auto& running_sequence : sequence_group->get_running_sequences()) {
         const auto generated_len = running_sequence->get_generated_len();
-        if (sequence_group->get_max_new_tokens() <= generated_len || 
+        if (sequence_group->get_max_new_tokens() <= generated_len ||
             is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // stop sequence by max_new_tokens or stop token (eos included)
             running_sequence->set_status(SequenceStatus::FINISHED);
@@ -680,7 +680,7 @@ bool Sampler::validate_candidate(
         float p_i = std::exp(*it_log_prob),
                 q_i = std::exp(sampled_token.m_log_prob),
                 probability_ratio = p_i / q_i;
-        
+
         auto dist = std::uniform_int_distribution<>(0, 100); // equivalent to multinomial with number of trials == 1
         float r_i = dist(rng_engine);
         r_i /= 100;
@@ -723,7 +723,7 @@ float get_p_prime(Sequence::Ptr& running_sequence,
     if (cumulative_prob == 0.f) {
         return 1.f;
     }
-    
+
     float p_n = std::exp(sampled_token.m_log_prob),
           q_n = std::exp(*it_log_prob),
           p_prime = std::max(0.f, (p_n - q_n)) / std::log(cumulative_prob);
@@ -806,7 +806,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                             stop_sample_tokens(running_sequence, token_offset, max_num_sampled_token, max_removed_tokens_per_request);
                             break;
                         }
-                        
+
                         // do sampling only for token validation/generation.
                         // continue in case of extending draft model sequences by main model generated tokens which
                         // should be taken to KV cache without validation
@@ -892,7 +892,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
             }
-            // Notify handle after sampling is done. 
+            // Notify handle after sampling is done.
             // For non-streaming this is effective only when the generation is finished.
             OPENVINO_ASSERT(num_tokens_to_process >= max_removed_tokens_per_request);
             sequence_group->notify_handle();
@@ -931,7 +931,7 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
     m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt)});
 }
 
-void Sampler::clear_request_info(uint64_t request_id) { 
+void Sampler::clear_request_info(uint64_t request_id) {
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
     m_stop_strings.erase(request_id);

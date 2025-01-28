@@ -65,7 +65,7 @@ public:
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
                                          GenerationConfig sampling_params) = 0;
-    
+
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
@@ -94,7 +94,7 @@ public:
 
     /**
      * Starts chat with a given system prompt
-     * 
+     *
      * In chat scenario prompts passed to `generate` method are accumulated inside the pipeline until `finish_chat` is called
      */
     void start_chat(const std::string& system_message);
