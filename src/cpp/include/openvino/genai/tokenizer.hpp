@@ -221,6 +221,9 @@ public:
     /// @param chat_template The new template to override with.
     void set_chat_template(const std::string& chat_template);
 
+    // get information about a chat template to check its status, for example whether it is empty
+    std::string get_chat_template() const;
+
     // information about <bos>, <eos> tokens should be public,
     // they are used at least in StreamerBase descendants
     int64_t get_bos_token_id() const;

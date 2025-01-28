@@ -177,6 +177,8 @@ public:
     * @param generation_config optional GenerationConfig
     * @param streamer optional streamer
     * @return DecodedResults decoded resulting text
+    * chat_template will be applied to the prompt, run pipe.get_tokenizer().set_chat_template(custom_chat_template) to update it.
+    * To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     */
     DecodedResults generate(
         StringInputs inputs,
@@ -191,6 +193,8 @@ public:
     * @param inputs input prompt or a vector of prompts
     * @param properties properties
     * @return DecodedResults decoded resulting text
+    * chat_template will be applied to the prompt, run pipe.get_tokenizer().set_chat_template(custom_chat_template) to update it.
+    * To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     */
     template <typename... Properties>
     util::EnableIfAllStringAny<DecodedResults, Properties...> generate(

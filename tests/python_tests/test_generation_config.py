@@ -58,6 +58,8 @@ configs = [
     dict(max_new_tokens=1, assistant_confidence_threshold=0.5),
     dict(max_new_tokens=1, num_assistant_tokens=2),
     dict(max_new_tokens=1, num_assistant_tokens=2, max_ngram_size=2), # prompt lookup
+    dict(max_new_tokens=1, apply_chat_template=True),
+    dict(max_new_tokens=1, apply_chat_template=False),
 ]
 @pytest.mark.parametrize("generation_config_kwargs", configs)
 @pytest.mark.precommit

@@ -578,6 +578,7 @@ class GenerationConfig:
         num_return_sequences: the number of sequences to generate from a single prompt.
     """
     adapters: AdapterConfig | None
+    apply_chat_template: bool
     assistant_confidence_threshold: float
     diversity_penalty: float
     do_sample: bool
@@ -1653,6 +1654,7 @@ class Tokenizer:
     openvino_genai.Tokenizer object is used to initialize Tokenizer
                if it's located in a different path than the main model.
     """
+    chat_template: str
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:

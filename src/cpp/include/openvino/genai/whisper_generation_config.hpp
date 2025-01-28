@@ -97,6 +97,8 @@ public:
     // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
 
+    bool apply_chat_template = false;
+
     void update_generation_config(const ov::AnyMap& config_map = {});
 
     template <typename... Properties>

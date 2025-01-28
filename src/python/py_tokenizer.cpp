@@ -109,6 +109,12 @@ void init_tokenizer(py::module_& m) {
             "Override a chat_template read from tokenizer_config.json."
         )
 
+        .def_property(
+            "chat_template",
+            &Tokenizer::get_chat_template,
+            &Tokenizer::set_chat_template
+        )
+
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
         .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
         .def("get_eos_token_id", &Tokenizer::get_eos_token_id)
