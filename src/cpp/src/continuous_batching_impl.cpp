@@ -98,6 +98,9 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
                                                                ov::genai::GenerationConfig sampling_params) {
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (sampling_params.stop_token_ids.empty())
+        sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params.eos_token_id == -1)
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
