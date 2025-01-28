@@ -46,7 +46,6 @@ bool TextCallbackStreamer::put(int64_t token) {
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
         m_printed_len = print_until;
     }
-
     return on_finalized_subword_callback(res.str());
 }
 
