@@ -18,7 +18,7 @@ namespace genai {
  */
 class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig : public GenerationConfig {
 public:
-    WhisperGenerationConfig() = default;
+    WhisperGenerationConfig();
     explicit WhisperGenerationConfig(const std::filesystem::path& json_path);
 
     // Corresponds to the ”<|startoftranscript|>” token.

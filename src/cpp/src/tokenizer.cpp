@@ -573,6 +573,10 @@ public:
     void set_chat_template(const std::string& chat_template) {
         m_chat_template = patch_chat_template(chat_template);
     }
+
+    std::string get_chat_template() {
+        return m_chat_template;
+    }
 };
 
 Tokenizer::Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties) {
@@ -674,6 +678,10 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
+}
+
+std::string Tokenizer::get_chat_template() const {
+    return m_pimpl->get_chat_template();
 }
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {

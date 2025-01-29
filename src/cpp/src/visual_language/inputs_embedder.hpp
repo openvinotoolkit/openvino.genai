@@ -58,6 +58,9 @@ public:
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results);
 
+    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
+    void set_apply_chat_template_status(bool apply_chat_template);
+
     // finishes chat and clears a chat history 
     void finish_chat();
 private:
