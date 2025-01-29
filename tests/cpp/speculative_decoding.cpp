@@ -13,8 +13,7 @@ protected:
             m_sampler = std::make_shared<ov::genai::Sampler>();
         };
 
-        ov::genai::GenerationHandle
-        add_request(uint64_t request_id, const ov::Tensor& input_ids) {
+        ov::genai::GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids) {
             auto sampling_params = ov::genai::greedy();
             sampling_params.num_assistant_tokens = 1;
 
