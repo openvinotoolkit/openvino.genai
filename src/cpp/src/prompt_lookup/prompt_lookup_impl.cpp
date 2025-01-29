@@ -152,6 +152,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
                 if (generation->can_read()) {
                     std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
+                    if (token.empty()) {
+                        continue;
+                    }
                     for (const auto& gen_token : token.begin()->second.generated_ids) {
                         if (streamer_ptr->put(gen_token)) {
                             generation->drop();

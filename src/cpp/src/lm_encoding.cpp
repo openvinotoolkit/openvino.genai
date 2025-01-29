@@ -95,6 +95,9 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         GenerationHandle& handle = generations.at(0);
         if (streamer_ptr && handle->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = handle->back();
+            if (token.empty()) {
+                return;
+            }
             for (const auto& gen_token : token.begin()->second.generated_ids) {
                 if (streamer_ptr->put(gen_token)) {
                     handle->drop();
