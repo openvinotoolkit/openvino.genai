@@ -4,7 +4,7 @@ import numpy as np
 import logging
 import os
 
-from transformers import AutoTokenizer, AutoProcessor
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
 
 import pandas as pd
@@ -220,17 +220,16 @@ def load_tokenizer(args):
 
 
 def load_processor(args):
-    processor = None
-    if args.base_model is not None:
-        processor = AutoProcessor.from_pretrained(
-            args.base_model, trust_remote_code=True
-        )
-    elif args.target_model is not None:
-        processor = AutoProcessor.from_pretrained(
-            args.target_model, trust_remote_code=True
-        )
+    model_id = args.base_model if args.base_model is not None else args.target_model
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    if "llava-qwen" in config.model_type:
+        preprocessor_id = config.mm_vision_tower
+    else:
+        preprocessor_id = model_id
 
-    return processor
+    return AutoProcessor.from_pretrained(
+        preprocessor_id, trust_remote_code=True
+    )
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
