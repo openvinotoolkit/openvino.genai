@@ -466,9 +466,13 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
+          echo Running speculative_decoding_lm C++ sample...
           ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
+          echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          echo Running speculative_decoding_lm Python sample...
           python ./samples/python/text_generation/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
+          echo All samples executed, checking result correctness...
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -476,6 +480,8 @@ jobs:
               predicted_speculative = f.readline()
           with open('predictions_py.txt', 'r') as f:
               predicted_py = f.readline()
+          print(f'Predicted greedy: {predicted_greedy}')
+          print(f'Predicted speculative: {predicted_speculative}')
           assert predicted_greedy == predicted_speculative
           assert predicted_greedy == predicted_py
           assert predicted_speculative == predicted_py
@@ -523,10 +529,13 @@ jobs:
           ```
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
-
+          echo Running prompt_lookup_decoding_lm C++ sample...
           ./build/samples/cpp/text_generation/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          echo Running prompt_lookup_decoding_lm Python sample...
           python ./samples/python/text_generation/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
+          echo All samples executed, checking result correctness...
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -534,6 +543,9 @@ jobs:
               predicted_prompt_lookup = f.readline()
           with open('predictions_py.txt', 'r') as f:
               predicted_prompt_lookup_py = f.readline()
+
+          print(f'Predicted greedy: {predicted_greedy}')
+          print(f'Predicted prompt lookup: {predicted_prompt_lookup}')
           assert predicted_greedy == predicted_prompt_lookup
           assert predicted_greedy == predicted_prompt_lookup_py
           assert predicted_prompt_lookup == predicted_prompt_lookup_py

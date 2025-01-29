@@ -282,8 +282,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     _pull_awaiting_requests();
 
-
     Scheduler::Output scheduler_output;
+
     {
         static ManualTimer scheduling_timer("scheduling");
         scheduling_timer.start();
@@ -318,6 +318,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         return;
     }
     ov::Tensor logits;
+
     {
         static ManualTimer timer("forward");
         timer.start();
