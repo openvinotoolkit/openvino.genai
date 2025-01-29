@@ -339,7 +339,7 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     model.set_generation_config(config)
 
     model.start_chat()
-    out = model.generate(prompt, images=[image_data])
+    out = model.generate(prompt, image=image_data)
     model.finish_chat()
     return out.texts[0]
 
