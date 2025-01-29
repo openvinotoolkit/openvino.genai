@@ -80,7 +80,6 @@ public:
             m_worker_thread->join();
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
         m_streamer_ptr->end();
     }
 
