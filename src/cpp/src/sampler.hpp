@@ -91,8 +91,8 @@ class Sampler {
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
-    Sampler() = default;
-    explicit Sampler(const Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
+    Sampler(size_t num_threads = 1): m_thread_pool(num_threads) {};
+    explicit Sampler(const Tokenizer & tokenizer, size_t num_threads = 1) : m_tokenizer(tokenizer), m_thread_pool(num_threads) {};
 
     SamplerOutput sample(const std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t new_seed) {
