@@ -124,7 +124,7 @@ class VisualTextEvaluator(TextEvaluator):
                 do_sample=False,
                 max_new_tokens=max_new_tokens,
                 tokenizer=tokenizer,
-            )   
+            )
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 
