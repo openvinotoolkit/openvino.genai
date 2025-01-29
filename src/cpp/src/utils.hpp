@@ -7,6 +7,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
+#include "openvino/genai/generation_handle.hpp"
 #include "visual_language/processor_config.hpp"
 
 namespace ov {
@@ -34,13 +35,20 @@ struct HistoryRemoveManager
     size_t trusted_history_length = 0;
 
     bool does_kv_cache_need_to_update() {
-        return (trusted_history_length > 0 || num_tokens_to_remove_from_kv_cache > 0);
+        return (trusted_history_length > 0 && num_tokens_to_remove_from_kv_cache > 0);
     }
 
     void reset() {
         num_tokens_to_remove_from_kv_cache = 0;
         trusted_history_length = 0;
     }
+};
+
+struct GenerationFinishInfo
+{
+    EncodedResults results;
+    std::optional<int64_t> probably_disappeared_token = std::nullopt;
+    ov::genai::GenerationStatus streaming_finish_status;
 };
 
 Tensor init_attention_mask(const Tensor& position_ids);

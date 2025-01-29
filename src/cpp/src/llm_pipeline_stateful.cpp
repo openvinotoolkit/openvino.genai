@@ -120,51 +120,16 @@ DecodedResults StatefulLLMPipeline::generate(
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
             auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
 
-            // some symbols combinations can be encoded by the tokenizer in different ways
-            // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
-            // so let's check it out, find the trusted part and use it in on the next step
-            size_t trusted_history_length = 0;
-            if (!m_tokenized_chat_history.empty()) {
-                std::set<int64_t> stop_tokens = config.stop_token_ids;
-                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
-                m_trust_encoded_history = trusted_history_length == SIZE_MAX;
-            }
+            ov::genai::update_kv_history_manager(m_kv_history_manager, prev_chat_tokens.input_ids, m_tokenized_chat_history, {m_tokenizer.get_eos_token_id()}, m_chat_generation_finish_status);
 
-            if (m_tokenized_chat_history.empty()) {
-                encoded_input = new_chat_tokens;
-            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_kv_cache_need_to_update()) {
-                // does_kv_cache_need_to_update will be true here if beam search is activated
-                // in beam search mode we want to remove all history about last model answer from kv cache and add the best answer directly
-                // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_kv_history_manager
-                if (m_kv_history_manager.does_kv_cache_need_to_update()) {
-                    trusted_history_length = m_kv_history_manager.trusted_history_length;
-                } else {
-                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_tokenized_chat_history.size() - trusted_history_length;
-                    // if prev generation was finished because of max len was reached, kv cache is missed one last token, let's keep it
-                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache -= m_last_disappeared_token.has_value() ? 1 : 0;
-                }
+            encoded_input = ov::genai::get_chat_encoded_input(new_chat_tokens.input_ids, prev_chat_tokens.input_ids, m_tokenized_chat_history, m_kv_history_manager);
 
-                ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.input_ids.get_element_type(),
-                                                    {1, new_chat_tokens.input_ids.get_shape().at(1) - trusted_history_length},
-                                                    new_chat_tokens.input_ids.data<int64_t>() + trusted_history_length);
-
-                ov::Tensor new_attention_mask(ov::element::i64, new_tensor.get_shape());
-                std::fill_n(new_attention_mask.data<int64_t>(), new_tensor.get_shape()[1], 1);
-
-                encoded_input.input_ids = ov::Tensor(new_chat_tokens.input_ids.get_element_type(),
-                                                    {1, new_chat_tokens.input_ids.get_shape().at(1) - trusted_history_length});
-                new_tensor.copy_to(encoded_input.input_ids);
-                encoded_input.attention_mask = new_attention_mask;
+            // if the kv cache is updated, some part of last answer will be overwritten, including the last token, so there is no need to add it separately
+            if (m_kv_history_manager.does_kv_cache_need_to_update())
                 m_last_disappeared_token = std::nullopt;
-            } else {
-                encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
-            }
-            m_templated_chat_history = new_templated_chat_history;
 
-            m_tokenized_chat_history.clear();
-            m_tokenized_chat_history.reserve(new_chat_tokens.input_ids.get_size());
-            std::copy_n(new_chat_tokens.input_ids.data<int64_t>(), new_chat_tokens.input_ids.get_size(),
-                        std::back_inserter(m_tokenized_chat_history));
+            m_templated_chat_history = new_templated_chat_history;
+            ov::genai::update_tokenized_history(m_tokenized_chat_history, new_chat_tokens.input_ids);
 
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
         } else {
@@ -312,10 +277,7 @@ EncodedResults StatefulLLMPipeline::generate(
         m_adapter_controller->apply(m_model_runner, config.adapters);
     }
 
-    if (is_chat_conversation && !m_trust_encoded_history) {
-        m_trust_encoded_history = true;
-        m_kv_history_manager.reset();
-    }
+    m_kv_history_manager.reset();
 
     std::vector<SequenceGroup::Ptr> requests;
     size_t block_size = 1;
@@ -341,9 +303,11 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
-    ov::genai::EncodedResults result;
-    std::tie(result, m_last_disappeared_token) = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
+    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
                                                                         streamer_ptr, m_sampler, requests, position_ids, std::nullopt);
+    ov::genai::EncodedResults result = finish_info.results;
+    m_last_disappeared_token = finish_info.probably_disappeared_token;
+    m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
     if (is_chat_conversation) {
         // force remove from kv_cache last answer

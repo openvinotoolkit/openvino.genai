@@ -26,6 +26,8 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
     size_t m_kv_cache_seq_length_axis = 2;
+    // Finish reason of last generation for chat scenario
+    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
 
     void reset_kv_state();
 public:

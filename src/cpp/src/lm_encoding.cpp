@@ -73,7 +73,7 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 namespace ov {
 namespace genai {
 
-std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
+ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
     const ov::Tensor& attention_mask,
@@ -116,9 +116,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     const size_t batch_size = prompts_shape[0];
 
     // Initialize results and performance metrics.
-
-    EncodedResults results;
-    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    ov::genai::utils::GenerationFinishInfo finish_info;
+    auto& raw_perf_counters = finish_info.results.perf_metrics.raw_metrics;
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
@@ -259,20 +258,85 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
             const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
 
-            results.tokens.push_back(sequence->get_generated_ids());
-            results.scores.push_back(score);
+            finish_info.results.tokens.push_back(sequence->get_generated_ids());
+            finish_info.results.scores.push_back(score);
         }
     }
+
+    finish_info.streaming_finish_status = sequence_groups[0]->get_generation_stream()->get_status();
 
     for (SequenceGroup::Ptr sequence_group : sequence_groups)
         sampler.clear_request_info(sequence_group->get_request_id());
 
     // it is not saved in KV cache, we need to add it for some cases
-    std::optional<int64_t> last_token_of_best_sequence = std::nullopt;
-    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || sequence_groups[0]->handle_dropped())
-        last_token_of_best_sequence = results.tokens[0].back();
+    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH)
+        finish_info.probably_disappeared_token = finish_info.results.tokens[0].back();
 
-    return {results, last_token_of_best_sequence};
+    return finish_info;
+}
+
+
+TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, const ov::Tensor& prev_chat_tokens, const std::vector<int64_t> tokenized_history, ov::genai::utils::HistoryRemoveManager kv_history_manager) {
+    TokenizedInputs encoded_input;
+    if (tokenized_history.empty()) {
+        encoded_input.input_ids = new_chat_tokens;
+        ov::Tensor new_attention_mask(ov::element::i64, new_chat_tokens.get_shape());
+        std::fill_n(new_attention_mask.data<int64_t>(), new_chat_tokens.get_shape()[1], 1);
+        encoded_input.attention_mask = new_attention_mask;
+    } else if (kv_history_manager.does_kv_cache_need_to_update()) {
+        size_t trusted_history_length = kv_history_manager.trusted_history_length;
+        ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
+                                            {1, new_chat_tokens.get_shape().at(1) - trusted_history_length},
+                                            new_chat_tokens.data<int64_t>() + trusted_history_length);
+
+        ov::Tensor new_attention_mask(ov::element::i64, new_tensor.get_shape());
+        std::fill_n(new_attention_mask.data<int64_t>(), new_tensor.get_shape()[1], 1);
+
+        encoded_input.input_ids = ov::Tensor(new_chat_tokens.get_element_type(),
+                                             {1, new_chat_tokens.get_shape().at(1) - trusted_history_length});
+        new_tensor.copy_to(encoded_input.input_ids);
+        encoded_input.attention_mask = new_attention_mask;
+    } else {
+        encoded_input = utils::subtract_chat_tokenized_inputs({new_chat_tokens}, {prev_chat_tokens});
+    }
+
+    return encoded_input;
+}
+
+
+void update_kv_history_manager(
+    ov::genai::utils::HistoryRemoveManager& kv_history_manager,
+    const ov::Tensor& prev_chat_tokens,
+    const std::vector<int64_t> tokenized_history,
+    const std::set<int64_t> stop_tokens,
+    const ov::genai::GenerationStatus finish_status) {
+    // some symbols combinations can be encoded by the tokenizer in different ways
+    // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
+    // so let's check it out, find the trusted part and use it in on the next step
+
+    if (tokenized_history.empty()) {
+        return;
+    }
+
+    size_t trusted_history_length = 0;
+    trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, tokenized_history, stop_tokens);
+
+    // does_kv_cache_need_to_update will be true here if beam search is activated
+    // in beam search mode we want to remove all history about last model answer from kv cache and add the best answer directly
+    // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_kv_history_manager
+    if (trusted_history_length != SIZE_MAX && !kv_history_manager.does_kv_cache_need_to_update()) {
+        kv_history_manager.trusted_history_length = trusted_history_length;
+        kv_history_manager.num_tokens_to_remove_from_kv_cache = tokenized_history.size() - trusted_history_length;
+        // if prev generation was finished because of max len or stop tokem, kv cache is missed one last token, let's keep it
+        // but if prev generation was finished because of streamer sent STOP command, last token didn't added to kv kache
+        kv_history_manager.num_tokens_to_remove_from_kv_cache -= finish_status == GenerationStatus::DROPPED_BY_HANDLE ? 0 : 1;
+    }
+}
+
+void update_tokenized_history(std::vector<int64_t>& tokenized_history, const ov::Tensor& new_chat_tokens) {
+    tokenized_history.clear();
+    tokenized_history.reserve(new_chat_tokens.get_size());
+    std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(tokenized_history));
 }
 
 }  // namespace genai
