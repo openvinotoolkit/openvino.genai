@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
 #include "scheduler.hpp"
-#include "device_config.hpp"
 #include "cache_manager.hpp"
 #include "helper.hpp"
 
@@ -35,17 +34,15 @@ TEST(TestCacheManager, test_cache_size_param) {
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
-    DeviceConfig device_config("CPU");
     const size_t num_decoder_layers = 12;
-    const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
-    device_config.set_kv_head_configs(kv_heads_config);
+    const std::vector<KVHeadConfig> kv_cache_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<CacheManager>(request, device_config);
+    auto cache_manager = std::make_shared<CacheManager>(request, kv_cache_config);
     ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, cache_manager->get_block_size_in_bytes());
 
-    auto block_manager = BlockManager(num_kv_blocks, false, device_config.get_block_size(), cache_manager->get_num_decoder_layers());
+    auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_decoder_layers());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
 
     const size_t kv_cache_total_size = scheduler_config.cache_size * 1024 * 1024 * 1024;
@@ -63,13 +60,10 @@ TEST(TestCacheManager, test_kv_blocks_param) {
     scheduler_config.cache_size = 0;
     scheduler_config.max_num_seqs = 2;
 
-    const std::string device = "CPU";
-    DeviceConfig device_config("CPU");
+    const size_t cpu_block_size = 32;
     const size_t num_decoder_layers = 12;
-    const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
-    device_config.set_kv_head_configs(kv_heads_config);
 
-    auto block_manager = BlockManager(scheduler_config.num_kv_blocks, false, device_config.get_block_size(), num_decoder_layers);
+    auto block_manager = BlockManager(scheduler_config.num_kv_blocks, false, cpu_block_size, num_decoder_layers);
     ASSERT_EQ(block_manager.get_total_number_of_kv_blocks(), scheduler_config.num_kv_blocks);
 }
 
@@ -83,17 +77,15 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
-    DeviceConfig device_config("CPU");
     const size_t num_decoder_layers = 12;
-    const std::vector<KVHeadConfig> kv_heads_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
-    device_config.set_kv_head_configs(kv_heads_config);
+    const std::vector<KVHeadConfig> kv_cache_config(num_decoder_layers, KVHeadConfig { 12, 12, 64, 64 });
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<CacheManager>(request, device_config);
+    auto cache_manager = std::make_shared<CacheManager>(request, kv_cache_config);
     size_t block_size_in_bytes = cache_manager->get_block_size_in_bytes();
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, block_size_in_bytes);
 
-    auto block_manager = BlockManager(num_kv_blocks, false, device_config.get_block_size(), cache_manager->get_num_decoder_layers());
+    auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_decoder_layers());
     ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
 
     // check initial cache allocation

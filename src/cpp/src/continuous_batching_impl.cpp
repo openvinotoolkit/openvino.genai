@@ -113,14 +113,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    DeviceConfig device_config(device);
-
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
-    utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control, allow_cache_rotation);
+    auto kv_cache_config = utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
     utils::apply_gather_before_matmul_transformation(model);
 
-    initialize_pipeline(model, scheduler_config, properties, device_config);
+    initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -139,29 +137,31 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     std::shared_ptr<ov::Model> model,
     const SchedulerConfig& scheduler_config,
+    const std::string& device,
     const ov::AnyMap& properties,
-    const DeviceConfig& device_config) {
+    const std::vector<KVHeadConfig>& kv_cache_config) {
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
 
     // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device_config.get_device(), properties);
+    apply_kv_cache_precision(model, device, properties);
 
     // apply LoRA
     if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
-        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device_config.get_device());   // TODO: Make the prefix name configurable
-        compiled_model = core.compile_model(model, device_config.get_device(), *filtered_properties);
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+        compiled_model = core.compile_model(model, device, *filtered_properties);
     } else {
-        compiled_model = core.compile_model(model, device_config.get_device(), properties);
+        compiled_model = core.compile_model(model, device, properties);
     }
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Cache manager
-    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request, device_config);
+    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request, kv_cache_config);
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
+    m_block_size = cache_manager->get_block_size();
 
     // Scheduler
     SchedulerConfig normalized_config = scheduler_config;
@@ -171,13 +171,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     bool can_use_partial_preemption = true;
-    if (device_config.get_device().find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
+    if (device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
         // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
         // as it may lead to performance slowdown
         can_use_partial_preemption = false;
     }
 
-    m_scheduler = std::make_shared<Scheduler>(device_config.get_block_size(), cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
+    m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
 
     // Model Runner
     bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
@@ -185,7 +185,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
         bool is_apply_rotation = eviction_config.apply_rotation;
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
-                                                       m_scheduler->get_block_size(),
+                                                       m_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        /* is_use_per_layer_cache_control = */ true,
@@ -199,10 +199,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                 m_rotation_deltas_stores.push_back(store);
             }
 
-            size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_scheduler->get_block_size()  + 1;
-            size_t embedding_size = device_config.get_k_head_size(0);
+            size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_block_size  + 1;
+            size_t embedding_size = cache_manager->get_v_head_size(0);
             m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
-                m_scheduler->get_block_size(),
+                m_block_size,
                 max_sequence_cache_occupation_length_in_blocks,
                 embedding_size);
             auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
@@ -224,7 +224,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         }
     } else {
         m_model_runner =
-            std::make_shared<ModelRunner>(infer_request, m_scheduler->get_block_size(), m_num_decoder_layers);
+            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
@@ -245,9 +245,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params.validate();
 
-    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
-                                                                        sampling_params,
-                                                                        m_scheduler->get_block_size());
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -662,8 +660,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
                 size_t block_offset = num_blocks_to_rotate_for_each_layer[layer_idx];
                 auto rotation_deltas_tensor_data =
                     m_rotation_deltas_stores[layer_idx].data<int32_t>() + block_offset;
-                for (size_t tok_idx = 0; tok_idx < m_scheduler->get_block_size(); tok_idx++) {
-                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta / m_scheduler->get_block_size();
+                for (size_t tok_idx = 0; tok_idx < m_block_size; tok_idx++) {
+                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta / m_block_size;
                 }
                 num_blocks_to_rotate_for_each_layer[layer_idx] += 1;
             }
@@ -693,7 +691,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         auto seq_id = seq_id_and_attention_scores.first;
         const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
         if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
-            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_scheduler->get_block_size(), num_decoder_layers);
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
@@ -728,7 +726,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         // Assuming that the evicted blocks are always full (since they by design are only selected from intermediate-age blocks)
         auto seq_group_ptr = seq_group_ptr_and_num_blocks_evicted.first;
         auto num_blocks_evicted = seq_group_ptr_and_num_blocks_evicted.second;
-        seq_group_ptr->register_token_eviction(num_blocks_evicted * m_scheduler->get_block_size());
+        seq_group_ptr->register_token_eviction(num_blocks_evicted * m_block_size);
     }
 }
 
