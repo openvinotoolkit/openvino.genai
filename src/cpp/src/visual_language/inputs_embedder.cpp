@@ -1853,7 +1853,7 @@ protected:
         }
 
         // Calculate rotary embeddings for max_grid_size
-        const size_t dim = 1280 / 16 / 2; // config.vision_config.embed_dim / self.config.vision_config.num_heads / 2
+        const size_t dim = m_vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
         const float theta = 10000.0f;
         
         std::vector<float> inv_freq(dim / 2);
