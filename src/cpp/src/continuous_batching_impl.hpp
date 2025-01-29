@@ -59,9 +59,7 @@ protected:
     void initialize_pipeline(std::shared_ptr<ov::Model> model,
                              const SchedulerConfig& scheduler_config,
                              const ov::AnyMap& plugin_config,
-                             const DeviceConfig& device_config,
-                             ov::Core& core);
-
+                             const DeviceConfig& device_config);
 
     /**
      * Pulls requests from awaiting queue to running queue

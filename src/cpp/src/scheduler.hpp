@@ -14,6 +14,7 @@
 #include "sequence_group.hpp"
 #include "cache_manager.hpp"
 #include "timer.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -462,12 +463,12 @@ private:
     }
 
     size_t _get_available_gpu_memory() {
-        auto device_config = m_cache_manager->get_device_config();
-        auto core = m_cache_manager->get_core();
-        auto device = device_config->get_device();
+        auto device = m_cache_manager->get_device();
         OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-        auto memory_statistics = core->get_property(device, ov::intel_gpu::memory_statistics);
-        auto device_type = core->get_property(device, ov::device::type);
+
+        ov::Core core = utils::singleton_core();
+        auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+        auto device_type = core.get_property(device, ov::device::type);
 
         // sum up all used device memory
         std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
@@ -487,7 +488,7 @@ private:
         used_device_mem *= used_memory_threshold;
 
         // total device memory in bytes
-        auto total_device_memory = core->get_property(device, ov::intel_gpu::device_total_mem_size);
+        auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
 
         return total_device_memory - used_device_mem;
     }
@@ -514,32 +515,29 @@ private:
         if (!m_dynamic_memory_allocation) {
             return false;
         }
-        auto device_config = m_cache_manager->get_device_config();
-        auto device = device_config->get_device();
+        auto device = m_cache_manager->get_device();
         size_t current_num_of_kv_blocks = m_block_manager->get_total_number_of_kv_blocks();
         size_t new_blocks_num = current_num_of_kv_blocks * m_cache_growth_factor;
 
         if (device.find("GPU") == std::string::npos) {
             m_block_manager->increase_kv_blocks_number(new_blocks_num);
-        }
-        else {
-            size_t available_gpu_memory = _get_available_gpu_memory();
-            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * device_config->get_block_size_in_bytes();
+        } else {
+            const size_t available_gpu_memory = _get_available_gpu_memory();
+            const size_t block_size_in_bytes = m_cache_manager->get_block_size_in_bytes();
+            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
                 m_block_manager->increase_kv_blocks_number(new_blocks_num);
             } else {
-                size_t possible_blocks_to_add = available_gpu_memory / device_config->get_block_size_in_bytes();
+                size_t possible_blocks_to_add = available_gpu_memory / block_size_in_bytes;
                 if (possible_blocks_to_add > 0) {
                     m_block_manager->increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
-                }
-                else {
+                } else {
                     return false;
                 }
             }
         }
         return true;
     }
-
 };
 
 }
