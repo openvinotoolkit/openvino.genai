@@ -935,7 +935,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         if (sg_sampling_future_map.find(request_id) != sg_sampling_future_map.end()) {
             // If there is a future assigned to a sequence group we read it's result (blocking if results not available yet)
             sg_sampling_info = sg_sampling_future_map[request_id].get();
-            sampler_output.m_num_generated_tokens += sg_sampling_info.sampler_output.num_generated_tokens;
+            sampler_output.num_generated_tokens += sg_sampling_info.sampler_output.num_generated_tokens;
 
             // Merge sampler output from sequence group to the main one
             sampler_output.m_dropped_sequences.insert(
