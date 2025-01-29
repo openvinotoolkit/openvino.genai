@@ -1641,10 +1641,6 @@ public:
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
-        if (images.empty()) {
-            return text_embeds;
-        }
-        
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
         ov::Tensor encoded_image_pad_token = m_tokenizer.encode(m_vlm_config.image_pad_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -1658,6 +1654,10 @@ public:
 
         int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
         m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+
+        if (images.empty()) {
+            return text_embeds;
+        }
 
         return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, image_embeds, images_grid_thw, image_pad_token_id);
     }
