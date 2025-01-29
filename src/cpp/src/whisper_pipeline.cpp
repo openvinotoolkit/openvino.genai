@@ -81,14 +81,7 @@ public:
             config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
-        std::shared_ptr<ChunkStreamerBase> streamer_ptr;
-        if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-            streamer_ptr = nullptr;
-        } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
-            streamer_ptr = *streamer_obj;
-        } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
-        }
+        const std::shared_ptr<WhisperStreamer> streamer_ptr = std::make_shared<WhisperStreamer>(streamer, m_tokenizer);
 
         auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 
@@ -101,6 +94,7 @@ public:
                                                            m_feature_extractor,
                                                            streamer_ptr,
                                                            m_sampler);
+
         auto decode_start_time = std::chrono::steady_clock::now();
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
