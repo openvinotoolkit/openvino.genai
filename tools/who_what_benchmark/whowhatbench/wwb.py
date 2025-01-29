@@ -337,11 +337,9 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     config.max_new_tokens = max_new_tokens
     config.do_sample = False
     model.set_generation_config(config)
-    if tokenizer.chat_template is not None:
-        model.start_chat(tokenizer.chat_template)
-    else:
-        model.start_chat()
-    out = model.generate(prompt, images=[image_data])
+
+    model.start_chat()
+    out = model.generate(prompt, image=image_data)
     model.finish_chat()
     return out.texts[0]
 
