@@ -125,7 +125,7 @@ class LLMPipeline {
   }
 }
 
-class Pipeline {
+class PipelineFactory {
   static async LLMPipeline(modelPath, device = 'CPU') {
     const pipeline = new LLMPipeline(modelPath, device);
     await pipeline.init();
@@ -135,7 +135,5 @@ class Pipeline {
 }
 
 
-export {
-  addon,
-  Pipeline,
-};
+export { addon };
+export const LLMPipeline = PipelineFactory.LLMPipeline;

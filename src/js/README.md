@@ -13,9 +13,9 @@ npm install genai-node
 
 Use the **genai-node** package:
 ```js
-import { Pipeline } from 'genai-node';
+import { LLMPipeline } from 'genai-node';
 
-const pipe = await Pipeline.LLMPipeline(MODEL_PATH, device);
+const pipe = await LLMPipeline(MODEL_PATH, device);
 
 const input = 'What is the meaning of life?';
 const config = { 'max_new_tokens': 100 };
