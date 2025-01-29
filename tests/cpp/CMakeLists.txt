@@ -20,15 +20,15 @@ file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sampler.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/*.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/prompt_lookup/*.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils/*.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/paged_attention_transformations.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching*.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/icontinuous_batching.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/lora_helper.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_callback_streamer.cpp")
 
-add_executable(${TEST_TARGET_NAME} ${tests_src}
-        block_allocator.cpp)
+add_executable(${TEST_TARGET_NAME} ${tests_src})
+
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::genai gtest_main gmock_main)
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src")
 target_sources(${TEST_TARGET_NAME} PRIVATE ${src_files})
