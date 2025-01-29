@@ -9,6 +9,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
+#include "helper.hpp"
 
 using namespace ov::genai;
 
@@ -18,39 +19,16 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     });
     requests.erase(new_end, requests.end());
 }
-std::shared_ptr<ov::Model> get_model(ov::Core core, size_t num_layers) {
-    ov::NodeVector keys;
-    ov::NodeVector values;
-    ov::ParameterVector params;
-    ov::element::Type inference_precision = core.get_property("CPU", ov::hint::inference_precision);
-    ov::element::Type kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-
-    auto shape = ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()});
-    for (size_t i = 0; i < num_layers; i++) {
-        auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
-        auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
-        key->get_output_tensor(0).set_names({"key_cache." + std::to_string(i)});
-        value->get_output_tensor(0).set_names({"value_cache." + std::to_string(i)});
-        keys.push_back(key);
-        values.push_back(value);
-        params.push_back(key);
-        params.push_back(value);
-    }
-    const auto& concat1 = std::make_shared<ov::op::v0::Concat>(keys, 1);
-    const auto& concat2 = std::make_shared<ov::op::v0::Concat>(values, 1);
-    auto model = std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-    return std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-}
 
 std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_config) {
     ov::Core core = ov::Core();
     size_t num_decoder_layers = 12;
-    ov::InferRequest request = core.compile_model(get_model(core, num_decoder_layers)).create_infer_request();
-    size_t head_size = 64, head_size_u8 = head_size + 8;
-    std::vector<KVHeadConfig> kv_head_configs(num_decoder_layers, KVHeadConfig { 12, 12, head_size_u8, head_size_u8 });
-    ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
+    const size_t head_size = 64;
+    std::vector<KVHeadConfig> kv_head_configs(num_decoder_layers, KVHeadConfig { 12, 12, head_size, head_size });
+    ov::genai::DeviceConfig device_config("CPU");
     device_config.set_kv_head_configs(kv_head_configs);
-    return std::make_shared<CacheManager>(device_config, request, core);
+    return std::make_shared<CacheManager>(request, device_config);
 }
 
 TEST(TestScheduler, general_test) {
