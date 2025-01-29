@@ -24,8 +24,10 @@ using CallbackTypeVariant = std::variant<bool, StreamerRunningStatus, std::monos
  * @param m_tokenizer tokenizer
  */
 class OPENVINO_GENAI_EXPORTS StreamerBase {
-public:
+protected:
     StreamerRunningStatus m_streaming_finish_status = StreamerRunningStatus::RUNNING;
+
+public:
     /// @brief put is called every time new token is decoded,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
     virtual bool put(int64_t token) = 0;
@@ -33,7 +35,9 @@ public:
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
     virtual void end() = 0;
 
-    StreamerRunningStatus get_streaming_status() {
+    /// @brief get_streaming_status() is called by the pipline to take more detailed about streaming status. m_streaming_finish_status, which contains streaming status info, could be set in put().
+    /// @return ov::genai::StreamerRunningStatus to determine the streaming status of generation, whether generation is running, stopped or cancelled
+    virtual StreamerRunningStatus get_streaming_status() {
         return m_streaming_finish_status;
     }
 

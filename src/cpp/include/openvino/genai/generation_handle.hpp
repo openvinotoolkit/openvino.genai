@@ -93,6 +93,7 @@ public:
 
     bool is_canceled();
 
+    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`.")
     void drop();
 
     void stop();

@@ -59,9 +59,9 @@ class IterableStreamer(openvino_genai.StreamerBase):
         Checks whether the generation process should be stopped.
         
         Returns:
-            bool: Always returns False in this implementation.
+            openvino_genai.StreamerRunningStatus: Always returns RUNNING in this implementation.
         """
-        return False
+        return openvino_genai.StreamerRunningStatus.RUNNING
     
     def put_word(self, word: str):
         """

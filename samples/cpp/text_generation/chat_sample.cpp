@@ -19,7 +19,6 @@ int main(int argc, char* argv[]) try {
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
-        // false means continue generation.
         return ov::genai::StreamerRunningStatus::RUNNING;
     };
 
