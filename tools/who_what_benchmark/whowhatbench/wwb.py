@@ -221,6 +221,9 @@ def load_tokenizer(args):
 
 def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
+    if model_id is None:
+        return None
+
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     if "llava-qwen" in config.model_type:
         preprocessor_id = config.mm_vision_tower
