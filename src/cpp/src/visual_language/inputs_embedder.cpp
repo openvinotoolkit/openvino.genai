@@ -1407,15 +1407,15 @@ std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Token
     return tokenized;
 }
 
-ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, size_t tokens_per_image) {
+ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, const std::vector<size_t>& tokens_per_images) {
     size_t merged_length = 0;
     for (const ov::Tensor& chunk : chunks) {
         merged_length += chunk.get_shape().at(1);
     }
-    merged_length += chunks.empty() ? 0 : (chunks.size() - 1) * tokens_per_image;
+    merged_length += std::accumulate(tokens_per_images.begin(), tokens_per_images.end(), 0);
     ov::Tensor merged{ov::element::i64, {1, merged_length}};
     size_t offset = 0;
-    int64_t image_id = -1;
+    int64_t image_id = 0;
     for (const ov::Tensor& chunk : chunks) {
         size_t length = chunk.get_shape().at(1);
         std::copy_n(
@@ -1427,11 +1427,11 @@ ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, size
         if (offset < merged_length) {
             std::fill_n(
                 merged.data<int64_t>() + offset,
-                tokens_per_image,
-                image_id
+                tokens_per_images.at(image_id),
+                -image_id - 1  // It could be just -image_id. -1 is for consistency with the original implementation.
             );
-            offset += tokens_per_image;
-            --image_id;
+            offset += tokens_per_images.at(image_id);
+            ++image_id;
         }
     }
     return merged;
@@ -1460,9 +1460,7 @@ class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
 public:
     ov::InferRequest m_hd_feature_transformer;
     ov::InferRequest m_vision_projection;
-    // Used to insert <|image_i|>\n per image (not a slice).
-    size_t m_image_id = 1;
-    size_t m_tokens_per_image = 0;
+    std::vector<size_t> m_tokens_per_images;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1470,7 +1468,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config
     ):
-        IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
+        IInputsEmbedder(vlm_config, model_dir, device, device_config),
         m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()},
         m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
 
@@ -1481,8 +1479,8 @@ public:
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             images_features_proj.push_back(phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
-            images_prompt << "<|image_" << m_image_id << "|>\n";
-            ++m_image_id;
+            m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
+            images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";
         }
         images_prompt << prompt;
         std::vector<ov::Tensor> new_chat_tokens;
@@ -1490,8 +1488,7 @@ public:
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", images_prompt.str()}});
             constexpr bool add_generation_prompt = true;
-            std::string new_templated_chat_history;
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             new_chat_tokens = phi3_v::split_tokenize(new_templated_chat_history, m_tokenizer);
             prev_chat_tokens = phi3_v::split_tokenize(m_templated_chat_history, m_tokenizer);
@@ -1504,11 +1501,8 @@ public:
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
-        if (0 == m_tokens_per_image && !images_features_proj.empty()) {
-            m_tokens_per_image = images_features_proj.at(0).get_shape().at(1);
-        }
-        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_image);
-        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_image);
+        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
+        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_images);
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
         OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1);
@@ -1516,7 +1510,6 @@ public:
         for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
             size_t text_length = tokens.at(im_id).get_shape().at(1);
             size_t im_length = images_features_proj.at(im_id).get_shape().at(1);
-            OPENVINO_ASSERT(im_length == m_tokens_per_image);
             features_length += text_length + im_length;
         }
         features_length += tokens.back().get_shape().at(1);
@@ -1549,7 +1542,7 @@ public:
         );
 
         if (!m_is_chat_conversation) {
-            m_image_id = 0;
+            m_tokens_per_images.clear();
         }
 
         return inputs_embeds;
@@ -1557,12 +1550,12 @@ public:
 
     virtual void start_chat(const std::string& system_message) override {
         IInputsEmbedder::start_chat(system_message);
-        m_image_id = 0;
+        m_tokens_per_images.clear();
     }
 
     virtual void finish_chat() override {
         IInputsEmbedder::finish_chat();
-        m_image_id = 0;
+        m_tokens_per_images.clear();
     }
 };
 
