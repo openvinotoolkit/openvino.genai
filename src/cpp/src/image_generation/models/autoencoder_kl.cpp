@@ -68,8 +68,6 @@ private:
 
 // for BW compatibility with 2024.6.0
 ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::string& device, ov::AnyMap properties) {
-    std::cout << ov::Any(properties).as<std::string>() << std::endl;
-
     auto it = properties.find("WA_INFERENCE_PRECISION_HINT");
     ov::element::Type wa_inference_precision = it != properties.end() ? it->second.as<ov::element::Type>() : ov::element::undefined;
     if (it != properties.end()) {
