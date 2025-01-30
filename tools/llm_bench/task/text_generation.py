@@ -234,6 +234,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get('num_assistant_tokens', None):
@@ -381,6 +383,8 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
         log.warning(
