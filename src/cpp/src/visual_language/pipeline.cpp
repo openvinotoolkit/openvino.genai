@@ -108,7 +108,7 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
 
-        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
@@ -146,7 +146,7 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
 
-        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
