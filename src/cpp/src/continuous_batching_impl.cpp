@@ -227,7 +227,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
 
-    m_sampler = std::make_shared<Sampler>(m_tokenizer, std::thread::hardware_concurrency());
+    size_t sampler_num_threads = std::thread::hardware_concurrency(); // default value for CB
+    // Extract sampler_num_threads value from properties map
+    auto sampler_num_threads_it = properties.find("sampler_num_threads");
+    if (sampler_num_threads_it != properties.end()) {
+        // Override default value if sampler_num_threads property is provided
+        sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
+    }
+
+    m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
     // If eos_token_id was not provided, take value
