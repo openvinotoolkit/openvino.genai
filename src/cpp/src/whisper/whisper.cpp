@@ -50,7 +50,7 @@ void process_whisper_logits(ov::Tensor logits,
 std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                                   const std::vector<int64_t>& input_ids,
                                                   const ov::Tensor& encoder_hidden_state,
-                                                  const std::shared_ptr<ov::genai::WhisperStreamer> streamer,
+                                                  const std::shared_ptr<ov::genai::ChunkStreamerBase> streamer,
                                                   ov::genai::Sampler& sampler,
                                                   ov::genai::SequenceGroup::Ptr sequence_group,
                                                   const bool return_timestamps,
@@ -58,25 +58,18 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
                                                   ov::genai::RawPerfMetrics& raw_metrics) {
     const auto handle = std::make_shared<ov::genai::GenerationHandleImpl>(sequence_group->get_generation_stream(),
                                                                           sequence_group->get_sampling_parameters());
-    auto on_generated_tokens = [&streamer, &handle, &return_timestamps]() {
-        // handle return_timestamps case, where streamer->put_chunk called once per chunk
-        if (streamer->is_dropped()) {
-            handle->drop();
-            return;
-        }
 
-        if (return_timestamps || !handle->can_read()) {
+    auto on_generated_tokens = [&streamer, &handle, &return_timestamps]() {
+        if (!streamer || return_timestamps || !handle->can_read()) {
             return;
         }
 
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->back();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
-            if (streamer->is_dropped()) {
+            if (streamer->put(gen_token)) {
                 handle->drop();
                 break;
             }
-
-            streamer->put(gen_token);
         }
     };
 
@@ -145,11 +138,19 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             batch_to_generated_ids[next_beams.size() - 1] = sequence->get_generated_ids();
         }
 
-        auto [logits, infer_ms] = decoder->decode(encoder_hidden_state,
-                                                  new_input_ids,
-                                                  ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+        const auto infer_start = std::chrono::steady_clock::now();
+
+        decoder->start_async(encoder_hidden_state,
+                             new_input_ids,
+                             ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+
+        // infer stats can be affected by heavy streamer callback
+        on_generated_tokens();
+
+        auto logits = decoder->wait();
 
         const auto infer_end = std::chrono::steady_clock::now();
+        const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
         raw_metrics.m_new_token_times.emplace_back(infer_end);
@@ -158,8 +159,9 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
 
         sampler.sample({sequence_group}, logits);
-        on_generated_tokens();
     }
+
+    on_generated_tokens();
 
     ov::genai::EncodedResults results;
 
@@ -262,7 +264,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        ov::InferRequest& encoder,
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<WhisperStreamer> streamer,
+                                       const std::shared_ptr<ChunkStreamerBase> streamer,
                                        Sampler& sampler) {
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -282,8 +284,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
-
-    streamer->start();
 
     std::vector<int64_t> init_tokens;
     std::vector<int64_t>& output_tokens = result.output_tokens;
@@ -338,7 +338,10 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            streamer->put_chunk(extracted_segments.non_timestamp_tokens);
+            if (streamer && streamer->put_chunk(extracted_segments.non_timestamp_tokens)) {
+                cancelled = true;
+                break;
+            }
 
             segment_offset = extracted_segments.last_offset;
         } else {
@@ -354,7 +357,9 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         }
     }
 
-    streamer->end();
+    if (streamer) {
+        streamer->end();
+    }
 
     // if return_timestamps wasn't enabled by user
     if (!config.return_timestamps) {

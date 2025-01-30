@@ -37,7 +37,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        ov::InferRequest& encoder,
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<WhisperStreamer> streamer,
+                                       const std::shared_ptr<ChunkStreamerBase> streamer,
                                        Sampler& sampler);
 
 }  // namespace genai

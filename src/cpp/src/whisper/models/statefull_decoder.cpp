@@ -43,6 +43,26 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
     return {output_tensor, infer_ms};
 };
 
+void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
+                                          const Tensor& input_ids,
+                                          const Tensor& beam_idx) {
+    const size_t batch_size = input_ids.get_shape().at(0);
+    const size_t seq_len = input_ids.get_shape().at(1);
+
+    _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, m_request);
+
+    _set_cache_position_tensor(seq_len);
+    m_request.set_tensor("input_ids", input_ids);
+    m_request.set_tensor("beam_idx", beam_idx);
+
+    m_request.start_async();
+};
+
+Tensor WhisperStatefullDecoder::wait() {
+    m_request.wait();
+    return m_request.get_tensor("logits");
+}
+
 void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
     ov::Tensor cache_position_tensor = m_request.get_tensor("cache_position");
 

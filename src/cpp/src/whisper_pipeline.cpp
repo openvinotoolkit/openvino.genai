@@ -81,7 +81,15 @@ public:
             config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
-        const std::shared_ptr<WhisperStreamer> streamer_ptr = std::make_shared<WhisperStreamer>(streamer, m_tokenizer);
+        std::shared_ptr<ChunkStreamerBase> streamer_ptr = nullptr;
+
+        if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
+            streamer_ptr = nullptr;
+        } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
+            streamer_ptr = *streamer_obj;
+        } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
+        }
 
         auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 

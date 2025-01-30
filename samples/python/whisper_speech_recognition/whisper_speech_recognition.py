@@ -41,3 +41,5 @@ def main():
 
 if "__main__" == __name__:
     main()
+
+# todo: check base streamer inheritance (gil lock)
