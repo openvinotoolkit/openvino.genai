@@ -140,20 +140,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
 
     // TODO: remove once plugin automatically set KV cache precisions
     apply_kv_cache_precision(model, device, properties);
 
     // apply LoRA
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-        compiled_model = core.compile_model(model, device, *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(model, device, properties);
     }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
@@ -407,7 +404,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-    
+
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
