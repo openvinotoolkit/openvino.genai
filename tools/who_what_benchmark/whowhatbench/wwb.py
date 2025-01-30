@@ -263,13 +263,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 
 def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
-    if use_chat_template:
-        model.start_chat()
-        result = model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
-        model.finish_chat()
-        return result
-    else:
-        return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=False)
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template)
 
 
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
@@ -335,15 +329,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
     image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    config = model.get_generation_config()
-    config.max_new_tokens = max_new_tokens
-    config.do_sample = False
-    config.apply_chat_template = False
-    model.set_generation_config(config)
-
-    model.start_chat()
-    out = model.generate(prompt, image=image_data)
-    model.finish_chat()
+    out = model.generate(prompt, image=image_data, do_sample=False, max_new_tokens=max_new_tokens)
     return out.texts[0]
 
 
