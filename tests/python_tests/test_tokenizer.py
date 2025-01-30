@@ -6,6 +6,7 @@ import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
+from pathlib import Path
 import openvino_genai
 import json
 
@@ -16,6 +17,21 @@ from ov_genai_test_utils import (
     read_model,
     model_tmp_path
 )
+
+
+def load_hf_tokenizer(model_id: str, hf_load_params: dict = None):
+    hf_load_params = hf_load_params or {}
+    return AutoTokenizer.from_pretrained(model_id, **hf_load_params)
+
+
+def convert_and_load_genai_tokenizer(hf_tokenizer : AutoTokenizer, models_path: Path):
+    from openvino_tokenizers import convert_tokenizer
+    from openvino import save_model
+
+    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
+    save_model(tokenizer, models_path / "openvino_tokenizer.xml")
+    save_model(detokenizer, models_path / "openvino_detokenizer.xml")
+    return openvino_genai.Tokenizer(models_path)
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
@@ -220,22 +236,27 @@ prompts = [
     'Why is the Sun yellow?',
     'What was my first question?',
     ['Why is the Sun yellow?'],
-    "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+    "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
     "Multiline\nstring!\nWow!",
 ]
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-phi3",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+])
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("prompt", prompts)
-def test_encode_decode_with_special_tokens_option(prompt):
-    import numpy as np
-    model_descr = get_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
-    ov_tokenzier = ov_pipe.get_tokenizer()
+def test_special_tokens(tmp_path, prompt, model_id):
+    model_id, hf_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+    # breakpoint()
+    hf_tokenizer = load_hf_tokenizer(model_id, hf_load_params)
+    ov_tokenizer = convert_and_load_genai_tokenizer(hf_tokenizer, tmp_path)
 
     # Calling encode with 'add_special_tokens' will set state flag.
-    ov_res_add_spec = ov_tokenzier.encode(prompt, add_special_tokens=True).input_ids.data
-    ov_res_no_spec = ov_tokenzier.encode(prompt, add_special_tokens=False).input_ids.data
+    ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
+    ov_res_no_spec = ov_tokenizer.encode(prompt, add_special_tokens=False).input_ids.data
     hf_res_add_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=True)["input_ids"]
     hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
@@ -246,8 +267,8 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert hf_res_add_spec.size != hf_res_no_spec.size
 
     # Decode with 'skip_special_tokens'
-    decoded_genai_skip_spec = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=True)[0]
-    decoded_genai_no_skip = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=False)[0]
+    decoded_genai_skip_spec = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=True)[0]
+    decoded_genai_no_skip = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=False)[0]
     decoded_hf_skip_spec = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=True)
     decoded_hf_no_skip = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=False)
     assert decoded_genai_skip_spec == decoded_hf_skip_spec
