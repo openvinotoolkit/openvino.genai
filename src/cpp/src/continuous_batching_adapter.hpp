@@ -39,7 +39,7 @@ public:
         m_generation_config = m_impl->get_config();
         }
 
-        ContinuousBatchingAdapter(
+    ContinuousBatchingAdapter(
         const std::string& model_str,
         const ov::Tensor& weights_tensor,
         const Tokenizer& tokenizer,
@@ -47,23 +47,23 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config,
         const ov::genai::GenerationConfig& generation_config
-        ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+    ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(model_str, weights_tensor, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config);
-        }
+    }
 
-        ContinuousBatchingAdapter(
+    ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-        ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()} {
+    ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()} {
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
         m_generation_config = m_impl->get_config();
-        }
+    }
 
     DecodedResults generate(
         StringInputs inputs,
