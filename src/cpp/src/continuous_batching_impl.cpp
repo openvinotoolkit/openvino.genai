@@ -465,15 +465,16 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 });
 
                 if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    if (token.empty()) {
-                        continue;
-                    }
-                    for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        if (streamer_ptr->put(gen_token)) {
-                            generation->drop();
-                            break;
+                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+                    for (const auto& generation_output : generation_outputs) {
+                        for (const auto& generated_token_id : generation_output.second.generated_ids) {
+                            if (streamer_ptr->put(generated_token_id)) {
+                                generation->drop();
+                                break;
+                            }
                         }
+                        break;
                     }
                 }
             };

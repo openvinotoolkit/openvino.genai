@@ -373,7 +373,8 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
     models_path : Path = tmp_path / "t_streaming" / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type)
+    generation_config = GenerationConfig()
+    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
     py_streamer = lambda x: False
     _ = pipe.generate(input, generation_config=gen_config, streamer=py_streamer)
 

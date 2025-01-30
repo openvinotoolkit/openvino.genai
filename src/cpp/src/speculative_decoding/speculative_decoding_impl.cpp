@@ -258,12 +258,14 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     auto all_requests = get_awaiting_requests();
 
     std::atomic<bool> has_active_requests = has_non_finished_requests();
-    auto& generation = main_generations.at(0);
+    GenerationHandle& generation = main_generations.at(0);
 
     // create variables to make optimal thread-safe streaming
     std::mutex mutex;
-    std::unique_lock lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     std::condition_variable cv;
+
+    // auto t_stream_ptr = create_streaming_thread(streamer_ptr, lock, cv, main_generations.at(0), has_active_requests);
 
     std::shared_ptr<std::thread> t_stream_ptr = nullptr;
     if (streamer_ptr) {
@@ -276,15 +278,16 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                 });
 
                 if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    if (token.empty()) {
-                        continue;
-                    }
-                    for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        if (streamer_ptr->put(gen_token)) {
-                            generation->drop();
-                            break;
+                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+                    for (const auto& generation_output : generation_outputs) {
+                        for (const auto& generated_token_id : generation_output.second.generated_ids) {
+                            if (streamer_ptr->put(generated_token_id)) {
+                                generation->drop();
+                                break;
+                            }
                         }
+                        break;
                     }
                 }
             };
