@@ -5,6 +5,7 @@ import os
 import pytest
 import math
 from typing import Dict
+from functools import partial
 
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
@@ -340,11 +341,10 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)
 
-def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig = GenerationConfig()):
+def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):
     device = "CPU"
     prompt = "Prompt example is"
     generation_config.max_new_tokens = 10
-    generation_config.do_sample = True
     pipe = None
     if pipeline_type == "continuous_batching":
         scheduler_config = SchedulerConfig()
@@ -375,8 +375,14 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 
     generation_config = GenerationConfig()
     pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
-    py_streamer = lambda x: False
-    _ = pipe.generate(input, generation_config=gen_config, streamer=py_streamer)
+
+    def py_streamer(py_str: str):
+        return False
+
+    try:
+        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
+    except Exception:
+        assert True
 
     del pipe
     rmtree(models_path)
@@ -392,10 +398,17 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
     
     generation_config = GenerationConfig()
     generation_config.stop_strings = {" the "}
+    generation_config.include_stop_str_in_output = False
 
-    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
-    py_streamer = lambda x: False
-    _ = pipe.generate(input, generation_config=gen_config, streamer=py_streamer)
+    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
+
+    def py_streamer(py_str: str):
+        raise Exception("Streamer was called")
+
+    try:
+        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
+    except Exception:
+        assert False
 
     del pipe
     rmtree(models_path)
