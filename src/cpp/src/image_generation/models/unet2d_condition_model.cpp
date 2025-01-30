@@ -86,13 +86,12 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
     }
 
     std::optional<AdapterConfig> adapters;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
         adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_unet"));
         m_adapter_controller = AdapterController(m_model, *adapters, device);
-        m_impl->compile(m_model, device, *filtered_properties);
-    } else {
-        m_impl->compile(m_model, device, properties);
     }
+    m_impl->compile(m_model, device, *filtered_properties);
 
     // release the original model
     m_model.reset();

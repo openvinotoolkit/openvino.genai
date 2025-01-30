@@ -129,11 +129,7 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
                              const std::string& device,
                              const ov::AnyMap& properties)
     : AutoencoderKL(vae_decoder_path) {
-    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, *extract_adapters_from_properties(properties));
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
@@ -141,11 +137,7 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
                              const std::string& device,
                              const ov::AnyMap& properties)
     : AutoencoderKL(vae_encoder_path, vae_decoder_path) {
-    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, *extract_adapters_from_properties(properties));
 }
 
 AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
@@ -172,11 +164,7 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
                              const std::string& device,
                              const ov::AnyMap& properties)
     : AutoencoderKL(vae_decoder_model, vae_decoder_weights, vae_decoder_config) {
-    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, *extract_adapters_from_properties(properties));
 }
 
 AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
@@ -191,11 +179,7 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
                     vae_decoder_model,
                     vae_decoder_weights,
                     vae_decoder_config) {
-    if (auto filtered_properties = extract_adapters_from_properties(properties)) {
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    compile(device, *extract_adapters_from_properties(properties));
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;

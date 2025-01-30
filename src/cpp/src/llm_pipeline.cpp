@@ -18,7 +18,7 @@ namespace genai {
 
 namespace {
 
-/* 
+/*
 * NPU reads some properties from the config file, but when LLMPipeline is initialized
 * from the model_str and weights_tensor, there are no files.
 * In the later case ModelDesc is stored in properties.
@@ -37,7 +37,7 @@ std::pair<ov::AnyMap, ov::genai::static_llm::ModelConfigDesc> split_model_descr(
     pop_property(main_properties, "name_or_path", model_descr.name_or_path);
     pop_property(main_properties, "type", model_descr.type);
     pop_property(main_properties, "num_key_value_heads", model_descr.num_key_value_heads);
-    
+
     return {main_properties, model_descr};
 }
 
@@ -62,7 +62,7 @@ std::pair<std::string, Any> draft_model(
     const std::string& device,
     const ov::AnyMap& properties) {
     auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
-    
+
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -99,8 +99,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
         auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, plugin_config);
@@ -118,8 +118,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
 
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
         auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
@@ -141,8 +141,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::GenerationConfig& generation_config) {
     auto start_time = std::chrono::steady_clock::now();
 
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(ov::genai::prompt_lookup.name()) != properties.end()){
 
         auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
@@ -150,20 +150,20 @@ ov::genai::LLMPipeline::LLMPipeline(
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (device == "NPU") {
         // TODO: CVS-158771 Currently, it's a workaround. Probably there is a better solution.
-        // NPU reads some properties from the config file, but when LLMPipeline is initialized 
-        // from the model_str and weights_tensor, there is no files. 
+        // NPU reads some properties from the config file, but when LLMPipeline is initialized
+        // from the model_str and weights_tensor, there is no files.
         // Therefore, we need to pass these properties manually.
         // This is necessary only for NPU, for other plugins can be ommited.
         // Example of usage:
-        // ov::AnyMap model_descr_properties = {{"name_or_path", "meta-llama/Llama-2-7b-chat-hf"}, 
-        //                                      {"type", "llama"}, 
+        // ov::AnyMap model_descr_properties = {{"name_or_path", "meta-llama/Llama-2-7b-chat-hf"},
+        //                                      {"type", "llama"},
         //                                      {"num_key_value_heads", 32}};
         // ov::genai::LLMPipeline pipe(model_str,..., model_descr_properties);
         // This will convert from AnyMap to ModelDesc.
         auto [filtered_properties, model_descr] = split_model_descr(properties);
 
         m_pimpl = static_llm::LLMPipelineFactory::create(
-            utils::singleton_core().read_model(model_str, weights_tensor), 
+            utils::singleton_core().read_model(model_str, weights_tensor),
             model_descr,
             tokenizer,
             device,

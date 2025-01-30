@@ -99,16 +99,18 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, properties);
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
@@ -116,9 +118,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
@@ -170,10 +172,11 @@ public:
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
 
-        m_clip_text_encoder->compile(device, properties);
-        m_unet->compile(device, properties);
-        m_vae->compile(device, properties);
+        m_clip_text_encoder->compile(device, *updated_properties);
+        m_unet->compile(device, *updated_properties);
+        m_vae->compile(device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -299,8 +302,13 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        m_clip_text_encoder->set_adapters(adapters);
-        m_unet->set_adapters(adapters);
+        if(adapters) {
+            if(auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            m_clip_text_encoder->set_adapters(adapters);
+            m_unet->set_adapters(adapters);
+        }
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -371,7 +379,7 @@ public:
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
- 
+
             if (batch_size_multiplier > 1) {
                 noisy_residual_tensor.set_shape(noise_pred_shape);
 
