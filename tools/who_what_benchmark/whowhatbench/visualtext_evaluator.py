@@ -118,7 +118,7 @@ class VisualTextEvaluator(TextEvaluator):
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
                 model.config.model_type
             ].preprocess_inputs
-            inputs = preprocess_inputs(prompt, image, processor, tokenizer)
+            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config)
             tokens = model.generate(
                 **inputs,
                 do_sample=False,
