@@ -13,16 +13,13 @@ protected:
             m_sampler = std::make_shared<ov::genai::Sampler>();
         };
 
-        ov::genai::GenerationHandle
-        add_request(uint64_t request_id, const ov::Tensor& input_ids) {
+        ov::genai::GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids) {
             auto sampling_params = ov::genai::greedy();
             sampling_params.num_assistant_tokens = 1;
 
             ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(request_id, input_ids,
                                                                                 sampling_params, 
-                                                                                32,
-                                                                                true);
-            sequence_group->set_sequence_group_ptr(sequence_group);
+                                                                                32);
 
             {
                 std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};

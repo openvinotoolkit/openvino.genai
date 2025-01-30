@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cassert>
@@ -83,6 +83,7 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
 }
 
 void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
+    m_timesteps.clear();
     m_num_inference_steps = num_inference_steps;
 
     // LCM Timesteps Setting
@@ -243,19 +244,15 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     return thresholded_sample;
 }
 
-void LCMScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
-    int64_t latent_timestep = m_timesteps.front();
-
+void LCMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
-    ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
-
     float * init_latent_data = init_latent.data<float>();
-    const float * rand_tensor_data = rand_tensor.data<float>();
+    const float * noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * rand_tensor_data[i];
+        init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
     }
 }
 

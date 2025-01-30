@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -45,7 +45,7 @@ public:
 
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
 
-    void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const override;
+    virtual void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t timestep) const override;
 
 private:
     Config m_config;

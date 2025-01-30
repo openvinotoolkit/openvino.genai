@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -54,19 +54,32 @@ FetchContent_MakeAvailable(safetensors.h)
 
 ov_genai_build_jinja2cpp()
 
+# generate version files
+
+configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.hpp.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp" @ONLY)
+
+configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/version.cpp" @ONLY)
+
 # Library
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 set(TARGET_NAME openvino_genai)
+
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
+add_library(openvino::genai ALIAS ${TARGET_NAME})
+
 if(TARGET openvino_tokenizers)
     add_dependencies(${TARGET_NAME} openvino_tokenizers)
 endif()
-add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+           "$<INSTALL_INTERFACE:runtime/include>"
+           "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
@@ -81,6 +94,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
+
 # Extract two last digits from OpenVINOGenAI_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
 string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${OpenVINOGenAI_VERSION_MAJOR})
 if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
@@ -98,7 +112,7 @@ endif()
 
 if(OpenVINODeveloperPackage_FOUND)
     # must be called after all target_link_libraries
-    # ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
+    ov_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
 
     ov_ncc_naming_style(FOR_TARGET ${TARGET_NAME}
                         SOURCE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -133,15 +147,47 @@ if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
 
+# Put binaries at the top level for NPM package
+if(CPACK_GENERATOR STREQUAL "NPM")
+    set(LIBRARY_DESTINATION .)
+    set(ARCHIVE_DESTINATION .)
+    set(RUNTIME_DESTINATION .)
+
+    # setting RPATH / LC_RPATH depending on platform
+    if(LINUX)
+        # to find libopenvino.so in the same folder
+        set(rpaths "$ORIGIN")
+    elseif(APPLE)
+        # to find libopenvino.dylib in the same folder
+        set(rpaths "@loader_path")
+    endif()
+
+    if(rpaths)
+        set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
+    endif()
+else()
+    set(LIBRARY_DESTINATION runtime/lib/${ARCH_DIR})
+    set(ARCHIVE_DESTINATION runtime/lib/${ARCH_DIR})
+    set(RUNTIME_DESTINATION runtime/bin/${ARCH_DIR})
+endif()
+
 install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
-        LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
+        LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
             NAMELINK_COMPONENT core_genai_dev
-        ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
-        RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
+        ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
+        RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
         INCLUDES DESTINATION runtime/include)
+
+# development files do not need to be built for NPM package
+if(CPACK_GENERATOR STREQUAL "NPM")
+    return()
+endif()
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
         DESTINATION runtime/include COMPONENT core_genai_dev)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp
+        DESTINATION runtime/include/openvino/genai COMPONENT core_genai_dev)
+
 install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake
         NAMESPACE openvino:: DESTINATION runtime/cmake
         COMPONENT core_genai_dev)

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
@@ -473,7 +473,7 @@ struct LoRAWeightStateGetter {
 class LoRATransformBase : public ov::pass::MatcherPass {
 public:
 
-    OPENVINO_RTTI("LoRATransformBase");
+    OPENVINO_MATCHER_PASS_RTTI("LoRATransformBase");
 
     LoRATransformBase(const LoRAWeightByNodeGetter& lora_weight_getter) {
         register_matcher(
@@ -637,7 +637,9 @@ public:
 
         ov::Core core = ov::genai::utils::singleton_core();
         auto model = std::make_shared<ov::Model>(request_results, request_parameters);
-        rwb.request = core.compile_model(model, device).create_infer_request();
+        auto compiled_model = core.compile_model(model, device);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "Infer Request Signature Cache");
+        rwb.request = compiled_model.create_infer_request();
         requests.emplace(signature, rwb);
     }
 
@@ -691,7 +693,7 @@ class LoRAFuseTransform : public LoRATransformBase {
 
 public:
 
-    OPENVINO_RTTI("LoRAFuseTransform");
+    OPENVINO_RTTI("LoRAFuseTransform", "genai", LoRATransformBase);
 
     LoRAFuseTransform(const LoRAWeightByNodeGetter& lora_weight_getter, const std::string& device_for_fusion = "CPU") :
         LoRATransformBase(lora_weight_getter),
@@ -761,7 +763,7 @@ public:
 class LoRASeparateTransform : public LoRATransformBase {
 public:
 
-    OPENVINO_RTTI("LoRASeparateTransform");
+    OPENVINO_RTTI("LoRASeparateTransform", "genai", LoRATransformBase);
 
     LoRASeparateTransform(const LoRAWeightByNodeGetter& lora_getter) : LoRATransformBase(lora_getter) {}
 
@@ -1303,7 +1305,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
 
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
-void AdapterController::apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config) {
+void AdapterController::apply(ov::InferRequest request, const std::optional<AdapterConfig>& config) {
     OPENVINO_ASSERT(m_pimpl || !config || !*config,
         "Adapters are passed to AdapterController but it was not configured to use adapters. "
         "Enable using adapters by pass them in the constructor first.");

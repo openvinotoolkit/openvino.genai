@@ -4,8 +4,6 @@ import os
 import datasets
 import pandas as pd
 from diffusers.utils.loading_utils import load_image
-from optimum.intel.openvino.modeling_visual_language import \
-    MODEL_TYPE_TO_CLS_MAPPING
 from tqdm import tqdm
 from transformers import set_seed
 
@@ -114,10 +112,13 @@ class VisualTextEvaluator(TextEvaluator):
         def default_gen_answer(
             model, prompt, image, processor, tokenizer, max_new_tokens, crop_question
         ):
+
+            from optimum.intel.openvino.modeling_visual_language import \
+                MODEL_TYPE_TO_CLS_MAPPING
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
                 model.config.model_type
             ].preprocess_inputs
-            inputs = preprocess_inputs(prompt, image, processor, tokenizer)
+            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config)
             tokens = model.generate(
                 **inputs,
                 do_sample=False,

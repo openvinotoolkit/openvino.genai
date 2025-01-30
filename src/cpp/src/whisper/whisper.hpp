@@ -1,12 +1,15 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include <openvino/openvino.hpp>
 
+#include "context_tokens.hpp"
+#include "models/decoder.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "sampler.hpp"
 #include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
@@ -28,10 +31,13 @@ struct WhisperGenerateResult {
 
 WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                        const ov::genai::WhisperConfig& model_config,
-                                       const ov::genai::RawSpeechInput& raw_speech,
-                                       ov::genai::WhisperInitializedModels& models,
-                                       ov::genai::WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<ChunkStreamerBase> streamer);
+                                       const WhisperContextTokens& context_tokens,
+                                       const RawSpeechInput& raw_speech,
+                                       ov::InferRequest& encoder,
+                                       std::shared_ptr<WhisperDecoder> decoder,
+                                       WhisperFeatureExtractor& feature_extractor,
+                                       const std::shared_ptr<ChunkStreamerBase> streamer,
+                                       Sampler& sampler);
 
 }  // namespace genai
 }  // namespace ov

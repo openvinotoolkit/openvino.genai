@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'ImageGenerationConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -222,7 +222,7 @@ class CLIPTextModel:
         """
         max_position_embeddings: int
         num_hidden_layers: int
-        def __init__(self, config_path: str) -> None:
+        def __init__(self, config_path: os.PathLike) -> None:
             ...
     @typing.overload
     def __init__(self, root_dir: os.PathLike) -> None:
@@ -325,9 +325,15 @@ class CacheEvictionConfig:
     
         :param aggregation_mode: The mode used to compute the importance of tokens for eviction
         :type aggregation_mode: openvino_genai.AggregationMode
+    
+        :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction.
+          Set this to false if your model has different RoPE scheme from the one used in the
+          original llama model and you experience accuracy issues with cache eviction enabled.
+        :type apply_rotation: bool
     """
     aggregation_mode: AggregationMode
-    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode) -> None:
+    apply_rotation: bool
+    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -348,11 +354,11 @@ class ChunkStreamerBase:
         """
         End is called at the end of generation. It can be used to flush cache if your own streamer has one
         """
-    def put(self, arg0: int) -> bool:
+    def put(self, token: int) -> bool:
         """
         Put is called every time new token is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def put_chunk(self, arg0: list[int]) -> bool:
+    def put_chunk(self, tokens: list[int]) -> bool:
         """
         Put is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
@@ -361,22 +367,22 @@ class ContinuousBatchingPipeline:
     This class is used for generation with LLMs with continuous batchig
     """
     @typing.overload
-    def __init__(self, models_path: str, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}, tokenizer_properties: dict[str, typing.Any] = {}) -> None:
         ...
     @typing.overload
-    def __init__(self, models_path: str, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, properties: dict[str, typing.Any] = {}) -> None:
+    def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, scheduler_config: SchedulerConfig, device: str, **kwargs) -> None:
         ...
     @typing.overload
-    def add_request(self, request_id: int, input_ids: openvino._pyopenvino.Tensor, sampling_params: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: int, input_ids: openvino._pyopenvino.Tensor, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: int, prompt: str, sampling_params: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], sampling_params: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
+    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: list[str], sampling_params: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -397,6 +403,8 @@ class CppStdGenerator(Generator):
     def next(self) -> float:
         ...
     def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
+        ...
+    def seed(self, new_seed: int) -> None:
         ...
 class DecodedResults:
     """
@@ -438,6 +446,8 @@ class EncodedGenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[list[int]]
@@ -446,6 +456,9 @@ class EncodedGenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class EncodedResults:
     """
@@ -470,26 +483,78 @@ class EncodedResults:
     @property
     def tokens(self) -> list[list[int]]:
         ...
+class FluxTransformer2DModel:
+    """
+    FluxTransformer2DModel class.
+    """
+    class Config:
+        """
+        This class is used for storing FluxTransformer2DModel config.
+        """
+        default_sample_size: int
+        in_channels: int
+        def __init__(self, config_path: os.PathLike) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    FluxTransformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    UNet2DConditionModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: FluxTransformer2DModel) -> None:
+        """
+        FluxTransformer2DModel model
+                    FluxTransformer2DModel class
+                    model (FluxTransformer2DModel): FluxTransformer2DModel model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_config(self) -> FluxTransformer2DModel.Config:
+        ...
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> FluxTransformer2DModel:
+        ...
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+        ...
 class GenerationConfig:
     """
     
-        Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-        and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+        Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+        and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
         be used while greedy and beam search parameters will not affect decoding at all.
     
-        Parameters: 
+        Parameters:
         max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                        max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
         max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
         ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
         eos_token_id:  token_id of <eos> (end of sentence)
-        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-        stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+        stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
         include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-        stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+        stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        apply_chat_template: whether to apply chat_template for non-chat scenarios
+    
+        repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+        presence_penalty: reduces absolute log prob if the token was generated at least once.
+        frequency_penalty: reduces absolute log prob as many times as the token was generated.
     
         Beam search specific parameters:
         num_beams:         number of beams for beam search. 1 disables beam search.
@@ -501,8 +566,8 @@ class GenerationConfig:
             length_penalty < 0.0 encourages shorter sequences.
         num_return_sequences: the number of sequences to return for grouped beam search decoding.
         no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-        stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-            "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+        stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+            "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
             "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
             "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
     
@@ -511,9 +576,10 @@ class GenerationConfig:
         top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-        repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+        num_return_sequences: the number of sequences to generate from a single prompt.
     """
     adapters: AdapterConfig | None
+    apply_chat_template: bool
     assistant_confidence_threshold: float
     diversity_penalty: float
     do_sample: bool
@@ -526,6 +592,7 @@ class GenerationConfig:
     logprobs: int
     max_length: int
     max_new_tokens: int
+    max_ngram_size: int
     min_new_tokens: int
     no_repeat_ngram_size: int
     num_assistant_tokens: int
@@ -549,15 +616,21 @@ class GenerationConfig:
     @typing.overload
     def __init__(self, **kwargs) -> None:
         ...
+    def is_assisting_generation(self) -> bool:
+        ...
     def is_beam_search(self) -> bool:
         ...
     def is_greedy_decoding(self) -> bool:
         ...
-    def is_speculative_decoding(self) -> bool:
+    def is_multinomial(self) -> bool:
+        ...
+    def is_prompt_lookup(self) -> bool:
         ...
     def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
-    def update_generation_config(self, config_map: dict[str, openvino._pyopenvino.OVAny]) -> None:
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+    def validate(self) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -633,10 +706,13 @@ class GenerationResult:
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
             DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
             DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        perf_metrics:
+                            Performance metrics for each generation result.
     
     """
     m_generation_ids: list[str]
     m_scores: list[float]
+    m_status: GenerationStatus
     def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
@@ -645,6 +721,9 @@ class GenerationResult:
         ...
     @property
     def m_request_id(self) -> int:
+        ...
+    @property
+    def perf_metrics(self) -> PerfMetrics:
         ...
 class GenerationStatus:
     """
@@ -698,6 +777,85 @@ class Generator:
     """
     def __init__(self) -> None:
         ...
+class Image2ImagePipeline:
+    """
+    This class is used for generation with image-to-image models.
+    """
+    @staticmethod
+    def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
+    def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
+    def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
+    def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike) -> None:
+        """
+                    Image2ImagePipeline class constructor.
+                    models_path (os.PathLike): Path to the folder with exported model files.
+        """
+    @typing.overload
+    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    Image2ImagePipeline class constructor.
+                    models_path (os.PathLike): Path with exported model files.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+                    kwargs: Image2ImagePipeline properties
+        """
+    @typing.overload
+    def __init__(self, pipe: InpaintingPipeline) -> None:
+        ...
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
+        """
+            Generates images for text-to-image models.
+        
+            :param prompt: input prompt
+            :type prompt: str
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+        
+            Expected parameters list:
+            prompt_2: str - second prompt,
+            prompt_3: str - third prompt,
+            negative_prompt: str - negative prompt,
+            negative_prompt_2: str - second negative prompt,
+            negative_prompt_3: str - third negative prompt,
+            num_images_per_prompt: int - number of images, that should be generated per prompt,
+            guidance_scale: float - guidance scale,
+            generation_config: GenerationConfig,
+            height: int - height of resulting images,
+            width: int - width of resulting images,
+            num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            adapters: LoRA adapters,
+            strength: strength for image to image generation. 1.0f means initial image is fully noised,
+            max_sequence_length: int - length of t5_encoder_model input
+        
+            :return: ov.Tensor with resulting images
+            :rtype: ov.Tensor
+        """
+    def get_generation_config(self) -> ImageGenerationConfig:
+        ...
+    def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
+        ...
+    def set_generation_config(self, config: ImageGenerationConfig) -> None:
+        ...
+    def set_scheduler(self, scheduler: Scheduler) -> None:
+        ...
 class ImageGenerationConfig:
     """
     This class is used for storing generation config for image generation pipeline.
@@ -714,6 +872,7 @@ class ImageGenerationConfig:
     num_inference_steps: int
     prompt_2: str | None
     prompt_3: str | None
+    rng_seed: int
     strength: float
     width: int
     def __init__(self) -> None:
@@ -721,6 +880,82 @@ class ImageGenerationConfig:
     def update_generation_config(self, **kwargs) -> None:
         ...
     def validate(self) -> None:
+        ...
+class InpaintingPipeline:
+    """
+    This class is used for generation with inpainting models.
+    """
+    @staticmethod
+    def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
+    def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
+    def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike) -> None:
+        """
+                    InpaintingPipeline class constructor.
+                    models_path (os.PathLike): Path to the folder with exported model files.
+        """
+    @typing.overload
+    def __init__(self, models_path: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    InpaintingPipeline class constructor.
+                    models_path (os.PathLike): Path with exported model files.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+                    kwargs: InpaintingPipeline properties
+        """
+    @typing.overload
+    def __init__(self, pipe: Image2ImagePipeline) -> None:
+        ...
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, mask_image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
+        """
+            Generates images for text-to-image models.
+        
+            :param prompt: input prompt
+            :type prompt: str
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+        
+            Expected parameters list:
+            prompt_2: str - second prompt,
+            prompt_3: str - third prompt,
+            negative_prompt: str - negative prompt,
+            negative_prompt_2: str - second negative prompt,
+            negative_prompt_3: str - third negative prompt,
+            num_images_per_prompt: int - number of images, that should be generated per prompt,
+            guidance_scale: float - guidance scale,
+            generation_config: GenerationConfig,
+            height: int - height of resulting images,
+            width: int - width of resulting images,
+            num_inference_steps: int - number of inference steps,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            adapters: LoRA adapters,
+            strength: strength for image to image generation. 1.0f means initial image is fully noised,
+            max_sequence_length: int - length of t5_encoder_model input
+        
+            :return: ov.Tensor with resulting images
+            :rtype: ov.Tensor
+        """
+    def get_generation_config(self) -> ImageGenerationConfig:
+        ...
+    def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
+        ...
+    def set_generation_config(self, config: ImageGenerationConfig) -> None:
+        ...
+    def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
 class LLMPipeline:
     """
@@ -746,23 +981,28 @@ class LLMPipeline:
             :rtype: DecodedResults, EncodedResults, str
          
          
-            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
             be used while greedy and beam search parameters will not affect decoding at all.
         
-            Parameters: 
+            Parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
-            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-            stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-            stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            apply_chat_template: whether to apply chat_template for non-chat scenarios
+        
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+            presence_penalty: reduces absolute log prob if the token was generated at least once.
+            frequency_penalty: reduces absolute log prob as many times as the token was generated.
         
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -774,8 +1014,8 @@ class LLMPipeline:
                 length_penalty < 0.0 encourages shorter sequences.
             num_return_sequences: the number of sequences to return for grouped beam search decoding.
             no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
         
@@ -784,7 +1024,7 @@ class LLMPipeline:
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+            num_return_sequences: the number of sequences to generate from a single prompt.
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike, tokenizer: Tokenizer, device: str, config: dict[str, typing.Any] = {}, **kwargs) -> None:
@@ -827,23 +1067,28 @@ class LLMPipeline:
             :rtype: DecodedResults, EncodedResults, str
          
          
-            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
-            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+            Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
+            and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
             be used while greedy and beam search parameters will not affect decoding at all.
         
-            Parameters: 
+            Parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
             eos_token_id:  token_id of <eos> (end of sentence)
-            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
-            stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
             include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-            stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            apply_chat_template: whether to apply chat_template for non-chat scenarios
+        
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+            presence_penalty: reduces absolute log prob if the token was generated at least once.
+            frequency_penalty: reduces absolute log prob as many times as the token was generated.
         
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -855,8 +1100,8 @@ class LLMPipeline:
                 length_penalty < 0.0 encourages shorter sequences.
             num_return_sequences: the number of sequences to return for grouped beam search decoding.
             no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
         
@@ -865,7 +1110,7 @@ class LLMPipeline:
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+            num_return_sequences: the number of sequences to generate from a single prompt.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -1012,32 +1257,32 @@ class RawPerfMetrics:
     
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
-        :param generate_durations: Durations for each generate call in microseconds.
-        :type generate_durations: List[MicroSeconds]
+        :param generate_durations: Durations for each generate call in milliseconds.
+        :type generate_durations: List[float]
     
-        :param tokenization_durations: Durations for the tokenization process in microseconds.
-        :type tokenization_durations: List[MicroSeconds]
+        :param tokenization_durations: Durations for the tokenization process in milliseconds.
+        :type tokenization_durations: List[float]
     
-        :param detokenization_durations: Durations for the detokenization process in microseconds.
-        :type detokenization_durations: List[MicroSeconds]
+        :param detokenization_durations: Durations for the detokenization process in milliseconds.
+        :type detokenization_durations: List[float]
     
-        :param m_times_to_first_token: Times to the first token for each call in microseconds.
-        :type m_times_to_first_token: List[MicroSeconds]
+        :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+        :type m_times_to_first_token: List[float]
     
         :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
-        :type m_new_token_times: List[MilliSeconds]
+        :type m_new_token_times: List[double]
+    
+        :param token_infer_durations : Inference time for each token in milliseconds.
+        :type batch_sizes: List[float]
     
         :param m_batch_sizes: Batch sizes for each generate call.
         :type m_batch_sizes: List[int]
     
-        :param m_durations: Total durations for each generate call in microseconds.
-        :type m_durations: List[MicroSeconds]
+        :param m_durations: Total durations for each generate call in milliseconds.
+        :type m_durations: List[float]
     
-        :param num_generated_tokens: Total number of tokens generated.
-        :type num_generated_tokens: int
-    
-        :param num_input_tokens: Total number of tokens in the input prompt.
-        :type num_input_tokens: int
+        :param inference_durations : Total inference duration for each generate call in milliseconds.
+        :type batch_sizes: List[float]
     """
     def __init__(self) -> None:
         ...
@@ -1046,6 +1291,9 @@ class RawPerfMetrics:
         ...
     @property
     def generate_durations(self) -> list[float]:
+        ...
+    @property
+    def inference_durations(self) -> list[float]:
         ...
     @property
     def m_batch_sizes(self) -> list[int]:
@@ -1060,7 +1308,59 @@ class RawPerfMetrics:
     def m_times_to_first_token(self) -> list[float]:
         ...
     @property
+    def token_infer_durations(self) -> list[float]:
+        ...
+    @property
     def tokenization_durations(self) -> list[float]:
+        ...
+class SD3Transformer2DModel:
+    """
+    SD3Transformer2DModel class.
+    """
+    class Config:
+        """
+        This class is used for storing SD3Transformer2DModel config.
+        """
+        in_channels: int
+        joint_attention_dim: int
+        patch_size: int
+        sample_size: int
+        def __init__(self, config_path: os.PathLike) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    SD3Transformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    SD3Transformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: SD3Transformer2DModel) -> None:
+        """
+        SD3Transformer2DModel model
+                    SD3Transformer2DModel class
+                    model (SD3Transformer2DModel): SD3Transformer2DModel model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_config(self) -> SD3Transformer2DModel.Config:
+        ...
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
+        ...
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class Scheduler:
     """
@@ -1081,14 +1381,20 @@ class Scheduler:
           EULER_DISCRETE
         
           FLOW_MATCH_EULER_DISCRETE
+        
+          PNDM
+        
+          EULER_ANCESTRAL_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
         DDIM: typing.ClassVar[Scheduler.Type]  # value = <Type.DDIM: 3>
+        EULER_ANCESTRAL_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_ANCESTRAL_DISCRETE: 7>
         EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.EULER_DISCRETE: 4>
         FLOW_MATCH_EULER_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.FLOW_MATCH_EULER_DISCRETE: 5>
         LCM: typing.ClassVar[Scheduler.Type]  # value = <Type.LCM: 1>
         LMS_DISCRETE: typing.ClassVar[Scheduler.Type]  # value = <Type.LMS_DISCRETE: 2>
-        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>}
+        PNDM: typing.ClassVar[Scheduler.Type]  # value = <Type.PNDM: 6>
+        __members__: typing.ClassVar[dict[str, Scheduler.Type]]  # value = {'AUTO': <Type.AUTO: 0>, 'LCM': <Type.LCM: 1>, 'LMS_DISCRETE': <Type.LMS_DISCRETE: 2>, 'DDIM': <Type.DDIM: 3>, 'EULER_DISCRETE': <Type.EULER_DISCRETE: 4>, 'FLOW_MATCH_EULER_DISCRETE': <Type.FLOW_MATCH_EULER_DISCRETE: 5>, 'PNDM': <Type.PNDM: 6>, 'EULER_ANCESTRAL_DISCRETE': <Type.EULER_ANCESTRAL_DISCRETE: 7>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -1154,7 +1460,7 @@ class StopCriteria:
     """
     
         StopCriteria controls the stopping condition for grouped beam search.
-        
+    
         The following values are possible:
             "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
             "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
@@ -1214,15 +1520,63 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
+class T5EncoderModel:
+    """
+    T5EncoderModel class.
+    """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike) -> None:
+        """
+                    T5EncoderModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike, device: str, **kwargs) -> None:
+        """
+                    T5EncoderModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: T5EncoderModel) -> None:
+        """
+        T5EncoderModel model
+                    T5EncoderModel class
+                    model (T5EncoderModel): T5EncoderModel model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_output_tensor(self, idx: int) -> openvino._pyopenvino.Tensor:
+        ...
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: int) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: int, max_sequence_length: int) -> T5EncoderModel:
+        ...
 class Text2ImagePipeline:
     """
     This class is used for generation with text-to-image models.
     """
     @staticmethod
+    def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
         ...
     @staticmethod
     def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, t5_encoder_model: T5EncoderModel, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
         ...
     @staticmethod
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:
@@ -1241,6 +1595,12 @@ class Text2ImagePipeline:
                     device (str): Device to run the model on (e.g., CPU, GPU).
                     kwargs: Text2ImagePipeline properties
         """
+    @typing.overload
+    def __init__(self, pipe: Image2ImagePipeline) -> None:
+        ...
+    @typing.overload
+    def __init__(self, pipe: InpaintingPipeline) -> None:
+        ...
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -1270,7 +1630,8 @@ class Text2ImagePipeline:
             height: int - height of resulting images,
             width: int - width of resulting images,
             num_inference_steps: int - number of inference steps,
-            generator: openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
+            rng_seed: int - a seed for random numbers generator,
+            generator: openvino_genai.TorchGenerator, openvino_genai.CppStdGenerator or class inherited from openvino_genai.Generator - random generator,
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
@@ -1282,7 +1643,7 @@ class Text2ImagePipeline:
         ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
-    def set_generation_config(self, generation_config: ImageGenerationConfig) -> None:
+    def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
@@ -1296,6 +1657,7 @@ class Tokenizer:
     openvino_genai.Tokenizer object is used to initialize Tokenizer
                if it's located in a different path than the main model.
     """
+    chat_template: str
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
@@ -1343,6 +1705,18 @@ class Tokenizer:
         """
         Override a chat_template read from tokenizer_config.json.
         """
+class TorchGenerator(CppStdGenerator):
+    """
+    This class provides OpenVINO GenAI Generator wrapper for torch.Generator
+    """
+    def __init__(self, seed: int) -> None:
+        ...
+    def next(self) -> float:
+        ...
+    def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
+        ...
+    def seed(self, new_seed: int) -> None:
+        ...
 class UNet2DConditionModel:
     """
     UNet2DConditionModel class.
@@ -1395,7 +1769,7 @@ class UNet2DConditionModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
-class VLMDecodedResults:
+class VLMDecodedResults(DecodedResults):
     """
     
         Structure to store resulting batched text outputs and scores for each batch.
@@ -1520,9 +1894,9 @@ class VLMPipeline:
         ...
     def get_tokenizer(self) -> Tokenizer:
         ...
-    def set_chat_template(self, new_template: str) -> None:
+    def set_chat_template(self, chat_template: str) -> None:
         ...
-    def set_generation_config(self, new_config: GenerationConfig) -> None:
+    def set_generation_config(self, config: GenerationConfig) -> None:
         ...
     def start_chat(self, system_message: str = '') -> None:
         ...
@@ -1584,22 +1958,12 @@ class WhisperDecodedResults:
     @property
     def texts(self) -> list[str]:
         ...
-class WhisperGenerationConfig:
+class WhisperGenerationConfig(GenerationConfig):
     """
     
         WhisperGenerationConfig
-        :param max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                           `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-        :type max_length: int
-    
-        :param max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-        :type max_new_tokens: int
-    
-        :param eos_token_id: End of stream token id.
-        :type eos_token_id: int
-    
+        
         Whisper specific parameters:
-    
         :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
         :type decoder_start_token_id: int
     
@@ -1614,6 +1978,9 @@ class WhisperGenerationConfig:
     
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
+    
+        :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+        :type prev_sot_token_id: int
     
         :param is_multilingual:
         :type is_multilingual: bool
@@ -1643,18 +2010,80 @@ class WhisperGenerationConfig:
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
+    
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+        window. Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+        Can be used to steer the model to use particular spellings or styles.
+    
+        Example:
+          auto result = pipeline.generate(raw_speech);
+          //  He has gone and gone for good answered Paul Icrom who...
+    
+          auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+          //  He has gone and gone for good answered Polychrome who...
+        :type hotwords: Optional[str]
+    
+        Generic parameters:
+        max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                       max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
+        max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+        ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
+        eos_token_id:  token_id of <eos> (end of sentence)
+        stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
+        include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+        stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
+        echo:           if set to true, the model will echo the prompt in the output.
+        logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                        Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+    
+        repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+        presence_penalty: reduces absolute log prob if the token was generated at least once.
+        frequency_penalty: reduces absolute log prob as many times as the token was generated.
+    
+        Beam search specific parameters:
+        num_beams:         number of beams for beam search. 1 disables beam search.
+        num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+        diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+        length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+            the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
+            likelihood of the sequence (i.e. negative), length_penalty > 0.0 promotes longer sequences, while
+            length_penalty < 0.0 encourages shorter sequences.
+        num_return_sequences: the number of sequences to return for grouped beam search decoding.
+        no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
+        stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+            "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
+            "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+            "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+    
+        Random sampling parameters:
+        temperature:        the value used to modulate token probabilities for random sampling.
+        top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+        top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
+        do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+        num_return_sequences: the number of sequences to generate from a single prompt.
     """
     begin_suppress_tokens: list[int]
     decoder_start_token_id: int
-    eos_token_id: int
+    hotwords: str | None
+    initial_prompt: str | None
     is_multilingual: bool
     lang_to_id: dict[str, int]
     language: str | None
     max_initial_timestamp_index: int
-    max_length: int
-    max_new_tokens: int
     no_timestamps_token_id: int
     pad_token_id: int
+    prev_sot_token_id: int
     return_timestamps: bool
     suppress_tokens: list[int]
     task: str | None
@@ -1668,7 +2097,7 @@ class WhisperGenerationConfig:
     @typing.overload
     def __init__(self, **kwargs) -> None:
         ...
-    def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
+    def update_generation_config(self, **kwargs) -> None:
         ...
 class WhisperPerfMetrics(PerfMetrics):
     """
@@ -1720,18 +2149,8 @@ class WhisperPipeline:
          
          
             WhisperGenerationConfig
-            :param max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                               `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-            :type max_length: int
-        
-            :param max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-            :type max_new_tokens: int
-        
-            :param eos_token_id: End of stream token id.
-            :type eos_token_id: int
-        
+            
             Whisper specific parameters:
-        
             :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
             :type decoder_start_token_id: int
         
@@ -1746,6 +2165,9 @@ class WhisperPipeline:
         
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
+        
+            :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
+            :type prev_sot_token_id: int
         
             :param is_multilingual:
             :type is_multilingual: bool
@@ -1775,6 +2197,68 @@ class WhisperPipeline:
                                then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
+        
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+            window. Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
+            Can be used to steer the model to use particular spellings or styles.
+        
+            Example:
+              auto result = pipeline.generate(raw_speech);
+              //  He has gone and gone for good answered Paul Icrom who...
+        
+              auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
+              //  He has gone and gone for good answered Polychrome who...
+            :type hotwords: Optional[str]
+        
+            Generic parameters:
+            max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                           max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
+            max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+            ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
+            eos_token_id:  token_id of <eos> (end of sentence)
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
+            include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
+            echo:           if set to true, the model will echo the prompt in the output.
+            logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                            Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+            presence_penalty: reduces absolute log prob if the token was generated at least once.
+            frequency_penalty: reduces absolute log prob as many times as the token was generated.
+        
+            Beam search specific parameters:
+            num_beams:         number of beams for beam search. 1 disables beam search.
+            num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+            diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+            length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+                the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
+                likelihood of the sequence (i.e. negative), length_penalty > 0.0 promotes longer sequences, while
+                length_penalty < 0.0 encourages shorter sequences.
+            num_return_sequences: the number of sequences to return for grouped beam search decoding.
+            no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
+                "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+                "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+        
+            Random sampling parameters:
+            temperature:        the value used to modulate token probabilities for random sampling.
+            top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+            top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
+            do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+            num_return_sequences: the number of sequences to generate from a single prompt.
         """
     def get_generation_config(self) -> WhisperGenerationConfig:
         ...
@@ -1795,11 +2279,11 @@ class WhisperRawPerfMetrics:
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
-class draft_model:
+def draft_model(models_path: os.PathLike, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
-    This class is used to enable Speculative Decoding
+    device on which inference will be performed
     """
-    def __init__(self, models_path: os.PathLike, device: str = '', **kwargs) -> None:
-        """
-        device on which inference will be performed
-        """
+def get_version() -> str:
+    """
+    OpenVINO GenAI version
+    """

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -18,7 +18,9 @@ public:
         LMS_DISCRETE,
         DDIM,
         EULER_DISCRETE,
-        FLOW_MATCH_EULER_DISCRETE
+        FLOW_MATCH_EULER_DISCRETE,
+        PNDM,
+        EULER_ANCESTRAL_DISCRETE
     };
 
     static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,

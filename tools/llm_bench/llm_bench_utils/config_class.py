@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
@@ -8,7 +8,8 @@ from optimum.intel.openvino import (
     OVModelForCausalLM,
     OVModelForSeq2SeqLM,
     OVDiffusionPipeline,
-    OVModelForSpeechSeq2Seq
+    OVModelForSpeechSeq2Seq,
+    OVModelForVisualCausalLM
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
@@ -36,6 +37,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm3': OVModelForCausalLM,
     'chatglm': OVChatGLMModel,
     'whisper': OVModelForSpeechSeq2Seq,
+    "vlm": OVModelForVisualCausalLM,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -51,6 +53,7 @@ PT_MODEL_CLASSES_MAPPING = {
 
 USE_CASES = {
     'image_gen': ['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"],
+    "vlm": ["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v", "minicpm-v"],
     'speech2text': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
@@ -99,7 +102,9 @@ USE_CASES = {
         "olmo",
         "phi3",
         "starcoder",
-        "instruct-gpt"
+        "instruct-gpt",
+        "granite",
+        "granitemoe",
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
@@ -111,4 +116,5 @@ DEFAULT_MODEL_CLASSES = {
     'speech2text': 'whisper',
     'code_gen': 'decoder',
     'ldm_super_resolution': 'ldm_super_resolution',
+    "vlm": "vlm"
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -28,11 +28,71 @@ struct TokenizedInputs {
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
     /**
-    * @brief ov::genai::Tokenizer constructor.
-    * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
-    * @param properties Properties passed to ov::Core::compile_model
-    */
-    Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
+     * @brief ov::genai::Tokenizer constructor.
+     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
+     * @param properties Properties passed to ov::Core::compile_model
+     */
+    explicit Tokenizer(const std::filesystem::path& tokenizer_path, const ov::AnyMap& properties = {});
+
+    /**
+     * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights
+     *
+     * This constructor is used when tokenizer and detokenizer are separate models already loaded into memory.
+     * When this constructor is used bos, eos, pad token ids are expected to be in IR.
+     * If an IR is older (< 2024.3) then this tokens are default initialized to be ignored.
+     * @param tokenizer_model_str tokenizer model string
+     * @param tokenizer_weights_tensor ov::Tensor with tokenizer weights
+     * @param detokenizer_model_str detokenizer model string
+     * @param detokenizer_weights_tensor ov::Tensor with detokenizer weights
+     * @param properties Properties passed to ov::Core::compile_model
+     */
+    Tokenizer(
+        const std::string& tokenizer_model_str,
+        ov::Tensor& tokenizer_weights_tensor,
+        std::string& detokenizer_model_str,
+        ov::Tensor& detokenizer_weights_tensor,
+        const ov::AnyMap& properties = {}
+    );
+
+    /**
+     * @brief ov::genai::Tokenizer constructor to initialize directly from model and weights.
+     *
+     * This constructor is used when tokenizer (or detokenizer) already loaded into memory. Whether it's
+     * tokenizer or detokenizer is defined from model input signature. When this constructor is used bos, eos, pad token ids
+     * are expected to be in IR. If an IR is older (< 2024.3) then this tokens are default initialized to be ignored.
+     * @param model_str model string
+     * @param weights_tensor ov::Tensor with model weights
+     * @param properties Properties passed to ov::Core::compile_model
+     */
+    Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, const ov::AnyMap& properties = {});
+
+    /**
+     * @brief ov::genai::Tokenizer constructor with variable number of properties
+     * @param tokenizer_model_str tokenizer model string
+     * @param tokenizer_weights_tensor ov::Tensor with tokenizer weights
+     * @param detokenizer_model_str detokenizer model string
+     * @param detokenizer_weights_tensor ov::Tensor with detokenizer weights
+     * @param properties optional properties
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Tokenizer(
+        const std::string& tokenizer_model_str,
+        ov::Tensor& tokenizer_weights_tensor,
+        std::string& detokenizer_model_str,
+        ov::Tensor& detokenizer_weights_tensor,
+        Properties&&... properties
+        ) : Tokenizer(tokenizer_model_str, tokenizer_weights_tensor, detokenizer_model_str, detokenizer_weights_tensor, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    /**
+     * @brief ov::genai::Tokenizer constructor with variable number of properties
+     * @param model_str model string
+     * @param weights_tensor ov::Tensor with model weights
+     * @param properties optional properties
+     */
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor,
+              Properties&&... properties)
+        : Tokenizer(model_str, weights_tensor, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /**
      * @brief ov::genai::Tokenizer constructor with variable number of properties
@@ -51,7 +111,7 @@ public:
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
-    
+
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
@@ -67,7 +127,7 @@ public:
     * @param prompt std::string with input prompt
     * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
     * @return pair of [input_ids, attention_mask]
-    */    
+    */
     template <typename... Properties>
     util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(std::string& prompt, Properties&&... properties) {
         return encode(prompt, AnyMap{std::forward<Properties>(properties)...});
@@ -104,7 +164,7 @@ public:
     }
 
     /**
-    * @brief decode tokens. 
+    * @brief decode tokens.
     * @param tokens ov::Tensor with tokens with shape [batch_size, seq_len]
     * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return vector of std::string, with size = batch_size
@@ -123,7 +183,7 @@ public:
     }
 
     /**
-    * @brief batched decoding of tokens. 
+    * @brief batched decoding of tokens.
     * @param tokens vector of vectors with tokens, tokens.size() is equal to batch_size
     * @param detokenization_params AnyMap with detokenization parameters, e.g. {"skip_special_tokens", false}
     * @return vector of std::string, with size equal to batch_size
@@ -143,8 +203,8 @@ public:
 
     /**
      * @brief Embeds input prompts with special tags for a chat scenario.
-     * 
-     * For example, for Qwen family models, the prompt "1+1=" would be transformed into 
+     *
+     * For example, for Qwen family models, the prompt "1+1=" would be transformed into
      * <|im_start|>user\n1+1=<|im_end|>\n<|im_start|>assistant\n.
      *
      * @param history A vector of maps, with chat history, e.g. [{"role": "user", "content": "prompt"}, ...].
@@ -154,12 +214,15 @@ public:
      * @throws Exception if the chat template was unable to parse the input history.
      */
     std::string apply_chat_template(ChatHistory history,
-                                    bool add_generation_prompt, 
+                                    bool add_generation_prompt,
                                     const std::string& chat_template = {}) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.
     /// @param chat_template The new template to override with.
     void set_chat_template(const std::string& chat_template);
+
+    // get information about a chat template to check its status, for example whether it is empty
+    std::string get_chat_template() const;
 
     // information about <bos>, <eos> tokens should be public,
     // they are used at least in StreamerBase descendants

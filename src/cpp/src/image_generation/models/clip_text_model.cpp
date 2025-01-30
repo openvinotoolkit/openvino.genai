@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
@@ -37,8 +37,7 @@ CLIPTextModel::Config::Config(const std::filesystem::path& config_path) {
 CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir) :
     m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
     m_config(root_dir / "config.json") {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model((root_dir / "openvino_model.xml").string());
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
 
 CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir,
@@ -53,8 +52,7 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
                              const Config& config,
                              const Tokenizer& clip_tokenizer) :
     m_clip_tokenizer(clip_tokenizer), m_config(config) {
-    ov::Core core = utils::singleton_core();
-    m_model = core.read_model(model, weights);
+    m_model = utils::singleton_core().read_model(model, weights);
 }
 
 CLIPTextModel::CLIPTextModel(const std::string& model,
@@ -97,6 +95,7 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     } else {
         compiled_model = core.compile_model(m_model, device, properties);
     }
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
@@ -117,13 +116,20 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-
         ov::Tensor input_ids_token = m_clip_tokenizer.encode(prompt).input_ids;
-        std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
+
+        if (input_ids.get_element_type() == ov::element::i32) {
+            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
+        } else {
+            std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
+            std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int64_t>());
+        }
     };
 
-    ov::Tensor input_ids(ov::element::i32, {text_embedding_batch_size, m_config.max_position_embeddings});
+    ov::Tensor input_ids = m_request.get_input_tensor();
+    input_ids.set_shape({text_embedding_batch_size, m_config.max_position_embeddings});
+
     size_t current_batch_idx = 0;
 
     if (do_classifier_free_guidance) {
@@ -140,7 +146,6 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
                                                {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
-    m_request.set_tensor("input_ids", input_ids);
     m_request.infer();
 
     return m_request.get_output_tensor(0);

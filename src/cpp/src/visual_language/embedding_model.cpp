@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
@@ -21,7 +21,22 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    std::shared_ptr<ov::Model> m_model = core.read_model((model_dir / "openvino_text_embeddings_model.xml").string());
+    std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, properties);
+    // apply embedding postprocessing step by merging them into the model
+    merge_postprocess(m_model, scale_emb);
+
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
+    m_request = compiled_model.create_infer_request();
+}
+
+EmbeddingsModel::EmbeddingsModel(const std::string& model,
+                                 const ov::Tensor& weights,
+                                 const float scale_emb,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    ov::Core core = utils::singleton_core();
+    std::shared_ptr<ov::Model> m_model = core.read_model(model, weights);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 

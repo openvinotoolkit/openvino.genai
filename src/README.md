@@ -73,6 +73,8 @@ output:
 'it is made up of carbon atoms. The carbon atoms are arranged in a linear pattern, which gives the yellow color. The arrangement of carbon atoms in'
 ```
 
+>**Note**: The chat_template from tokenizer_config.json or from tokenizer/detokenizer model will be automatically applied to the prompt at the generation stage. If you want to disable it, you can do it by calling pipe.get_tokenizer().set_chat_template("").
+
 A simple chat in Python:
 ```python
 import openvino_genai as ov_genai
@@ -179,7 +181,7 @@ int main(int argc, char* argv[]) {
 
 Streaming with a custom class:
 
-C++ template for a stremer.
+C++ template for a streamer.
 ```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -231,7 +233,7 @@ custom_streamer = CustomStreamer()
 
 pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
 ```
-For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/multinomial_causal_lm/README.md) sample.
+For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/text_generation/README.md) sample.
 
 
 Continuous batching with LLMPipeline:
@@ -394,7 +396,7 @@ durations = np.array(raw_metrics.m_new_token_times[1:]) - np.array(raw_metrics.m
 print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
-For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/benchmark_genai/README.md) and C++ [benchmark_genai](../samples/cpp/benchmark_genai/README.md) samples.
+For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
 
 ## How It Works
 
@@ -403,3 +405,7 @@ For information on how OpenVINO™ GenAI works, refer to the [How It Works Secti
 ## Supported Models
 
 For a list of supported models, refer to the [Supported Models Section](./docs/SUPPORTED_MODELS.md).
+
+## Debug Log
+
+For using debug log, refer to [DEBUG Log](./doc/DEBUG_LOG.md).

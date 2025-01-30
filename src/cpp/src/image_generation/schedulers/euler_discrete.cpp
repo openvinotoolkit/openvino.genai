@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "image_generation/schedulers/euler_discrete.hpp"
@@ -301,17 +301,14 @@ size_t EulerDiscreteScheduler::_index_for_timestep(int64_t timestep) const {
     OPENVINO_THROW("Failed to find index for timestep ", timestep);
 }
 
-void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
-    const int64_t latent_timestep = m_timesteps.front();
+void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     const float sigma = m_sigmas[_index_for_timestep(latent_timestep)];
 
-    ov::Tensor rand_tensor = generator->randn_tensor(init_latent.get_shape());
-
     float * init_latent_data = init_latent.data<float>();
-    const float * rand_tensor_data = rand_tensor.data<float>();
+    const float * noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
-        init_latent_data[i] = init_latent_data[i] + sigma * rand_tensor_data[i];
+        init_latent_data[i] = init_latent_data[i] + sigma * noise_data[i];
     }
 }
 

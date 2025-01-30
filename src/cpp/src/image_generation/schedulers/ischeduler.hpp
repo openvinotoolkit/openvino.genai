@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -26,7 +26,7 @@ public:
     virtual std::map<std::string, ov::Tensor> step(
         ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) = 0;
 
-    virtual void add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const = 0;
+    virtual void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const = 0;
 
     virtual float calculate_shift(size_t image_seq_len) {
         OPENVINO_THROW("Scheduler doesn't support `calculate_shift` method");
@@ -42,6 +42,16 @@ public:
 
     virtual std::vector<float> get_float_timesteps() const {
         OPENVINO_THROW("Scheduler doesn't support float timesteps");
+    }
+
+    virtual void scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) {
+        OPENVINO_THROW("Scheduler doesn't support `scale_noise` method");
+    }
+
+    virtual void set_begin_index(size_t begin_index) {};
+
+    virtual size_t get_begin_index() {
+        OPENVINO_THROW("Scheduler doesn't support `get_begin_index` method");
     }
 };
 

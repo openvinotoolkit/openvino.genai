@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "image_generation/schedulers/lms_discrete.hpp"
@@ -254,7 +254,7 @@ std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pr
     return result;
 }
 
-void LMSDiscreteScheduler::add_noise(ov::Tensor init_latent, std::shared_ptr<Generator> generator) const {
+void LMSDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     // use https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_ddim.py#L474
     OPENVINO_THROW("Not implemented");
 }

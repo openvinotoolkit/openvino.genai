@@ -1,8 +1,11 @@
 
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
+#include <vector>
+#include <set>
 
 #include <nlohmann/json.hpp>
 
@@ -36,6 +39,15 @@ void read_json_param(const nlohmann::json& data, const std::string& name, std::v
         param.resize(0);
         for (const auto elem : data[name]) {
             param.push_back(elem.get<V>());
+        }
+    }
+}
+
+template <typename V>
+void read_json_param(const nlohmann::json& data, const std::string& name, std::set<V>& param) {
+    if (data.contains(name) && data[name].is_array()) {
+        for (const auto elem : data[name]) {
+            param.insert(elem.get<V>());
         }
     }
 }

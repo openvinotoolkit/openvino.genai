@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
 import argparse
 import logging as log
 import llm_bench_utils.model_utils
-from openvino.runtime import get_version
+from openvino import get_version
 import torch
 import traceback
 from llm_bench_utils.memory_profile import MemConsumption
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
+import task.visual_language_generation as bench_vlm
 import task.text_generation as bench_text
 import task.image_generation as bench_image
 import task.super_resolution_generation as bench_ldm_sr
@@ -139,6 +140,7 @@ def get_argprser():
         default=None,
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
+    parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
     parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument("--draft_model", required=False, default=None,
@@ -146,16 +148,21 @@ def get_argprser():
     parser.add_argument("--draft_device", required=False, default=None, help="Inference device for Speculative decoding of draft model")
     parser.add_argument("--draft_cb_config", required=False, default=None,
                         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
-    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding")
+    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding", type=int)
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Speculative decoding")
+                        help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
         help='Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
     )
     parser.add_argument('--set_torch_thread', default=0, type=num_infer_count_type, help='Set the number of Torch thread. ')
-
+    parser.add_argument('-tl', '--tokens_len', type=int, required=False, help='The length of tokens print each time in streaming mode, chunk streaming.')
+    parser.add_argument('--streaming', action='store_true', help='Set whether to use streaming mode, only applicable to LLM.')
+    parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
+    parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
+    parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
     return parser.parse_args()
 
 
@@ -165,15 +172,29 @@ CASE_TO_BENCH = {
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
     'speech2text': bench_speech.run_speech_2_txt_benchmark,
+    "vlm": bench_vlm.run_visual_language_generation_benchmark
 }
 
 
 def main():
     logging_kwargs = {"encoding": "utf-8"} if sys.version_info[1] > 8 else {}
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, **logging_kwargs)
+    log.basicConfig(
+        format='[ %(levelname)s ] %(message)s',
+        level=os.environ.get("LOGLEVEL", log.INFO),
+        stream=sys.stdout,
+        **logging_kwargs
+    )
     args = get_argprser()
-    model_path, framework, model_args, model_name = llm_bench_utils.model_utils.analyze_args(args)
 
+    if args.tokens_len is not None and not args.streaming:
+        log.error("--tokens_len requires --streaming to be set.")
+        exit(1)
+    if args.streaming and args.tokens_len is None:
+        log.error("--streaming requires --tokens_len to be set.")
+        exit(1)
+    model_path, framework, model_args, model_name_or_id = (
+        llm_bench_utils.model_utils.analyze_args(args)
+    )
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args['torch_compile_backend']:
         ov_torch_backend_device = str(args.device)
@@ -208,15 +229,22 @@ def main():
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
     try:
-        iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
-            model_path, framework, args.device, model_args, args.num_iters, mem_consumption)
+        if model_args['use_case'] in ['text_gen', 'code_gen']:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
+                model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
+                args.num_iters, mem_consumption)
+        else:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
+                model_path, framework, args.device, model_args, args.num_iters,
+                mem_consumption)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parts)
+                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name_or_id, model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
                 model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
+            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,

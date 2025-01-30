@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "sampler.hpp"
@@ -85,75 +85,63 @@ std::string clean_wrapped_text(const std::string& wrapped_text, const std::strin
     return clean_text;
 }
 
+std::vector<int64_t> encode_and_process_string(const std::string& stop_string, ov::genai::Tokenizer& tokenizer) {
+    // encode stop_string
+    std::string stop_string_copy = stop_string;
+    ov::Tensor ov_encoded_stop_string = tokenizer.encode(stop_string_copy, ov::genai::add_special_tokens(false)).input_ids;
+    size_t tensor_size = ov_encoded_stop_string.get_size();
+    std::vector<int64_t> encoded_stop_string(tensor_size);
+    std::copy_n(ov_encoded_stop_string.data<int64_t>(), tensor_size, encoded_stop_string.begin());
+    return encoded_stop_string;
+}
+
+struct MatchStopStringResult {
+    size_t to_remove = 0;
+    // int64_t last_token_id = 0;
+    // bool is_to_update_last_token = false;
+    bool is_matched = false;
+};
+
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
-    /*
-    For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
-    overlaps with part of another token on both sides or is just a part of a single token. 
-    For every stop_string we iterate over generated tokens starting from the last one and going backwards. 
-    Every token is wrapped with prefix tokens to ensure tokenizer doesn't remove prefix whitespace of the actual token.
-    After that all tokens are decoded and prefix is removed from the decoded text, so we end up with decoded token.
-    Its characters are compared to the stop_string character at a current_position 
-    (position of a character in the stop_string counting from the last one) - at the beginning position is 0.
-    When characters match we increase current_position and check if we have a full match already, if not we continue.
-    If we have already matched some characters (current_position > 0) and next character is not matching 
-    before we reach the full match, then we reset current_position to 0. 
-    */ 
-    std::string prefix = "a";
-    auto prefix_ov = tokenizer.encode(prefix).input_ids;
-    std::vector<int64_t> prefix_tokens(prefix_ov.data<int64_t>(), prefix_ov.data<int64_t>() + prefix_ov.get_size());
-    std::string suffix = "b";
-    auto suffix_ov = tokenizer.encode(suffix).input_ids;
-    std::vector<int64_t> suffix_tokens(suffix_ov.data<int64_t>(), suffix_ov.data<int64_t>() + suffix_ov.get_size());
+MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
+                      const TokenIds& generated_tokens,
+                      const std::pair<size_t, std::set<std::string>>& stop_strings,
+                      bool is_include_to_output) {
+    MatchStopStringResult result;
+    if (generated_tokens.size() >= stop_strings.first) {
+        size_t offset = generated_tokens.size() - stop_strings.first;
+        TokenIds buffer(generated_tokens.begin() + offset, generated_tokens.end());
+        std::string decoded_buffer = tokenizer.decode(buffer);
+        for (const auto& stop_string : stop_strings.second) {
+            auto pos = decoded_buffer.find(stop_string);
+            if (pos != std::string::npos) {
+                result.is_matched = true;
 
-    // Since whitespace can be added at the beginning of the suffix we also try to capture that behavior here
-    // and get suffix string that will actually be part of the decoded string so we can remove it correctly
-    auto wrapped_suffix_tokens = suffix_tokens;
-    wrapped_suffix_tokens.insert(wrapped_suffix_tokens.begin(), prefix_tokens.begin(), prefix_tokens.end());
-    std::string wrapped_suffix = tokenizer.decode(wrapped_suffix_tokens);
-    auto wrapper_pos = wrapped_suffix.find(prefix);
-    suffix = wrapped_suffix.substr(wrapper_pos + prefix.size());
-    
-    for (auto stop_string: stop_strings) {
-        int current_position = 0;
-        int num_matched_tokens = 0; 
-        // Getting reverse iterator to check tokens starting from the last one generated and going backwards
-        auto generated_tokens_rit = generated_tokens.rbegin();
-        std::vector<int64_t> tokens_buffer;
-        while (generated_tokens_rit != generated_tokens.rend()) {
-            num_matched_tokens++;
-            tokens_buffer.insert(tokens_buffer.begin(), *generated_tokens_rit);
-
-            std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens, suffix_tokens);
-            std::string wrapped_text = tokenizer.decode(wrapped_tokens);
-            std::string clean_text = clean_wrapped_text(wrapped_text, prefix, suffix);
-
-            if (clean_text == "" || (clean_text.size() >= 3 && (clean_text.compare(clean_text.size() - 3, 3, "�") == 0))) { 
-                generated_tokens_rit++;
-                continue;
-            } else {
-                tokens_buffer.clear();
-            }
-            // Checking clean_text characters starting from the last one
-            for (auto clean_text_rit = clean_text.rbegin(); clean_text_rit != clean_text.rend(); clean_text_rit++) {
-                // On character match increment current_position for the next comparisons
-                if (*clean_text_rit == *(stop_string.rbegin() + current_position)) {
-                    current_position++;
-                    // If this is the last character from the stop_string we have a match
-                    if ((stop_string.rbegin() + current_position) == stop_string.rend()) {
-                        return num_matched_tokens;
-                    } 
-                } else if (current_position) {
-                    // Already found matching characters, but the last one didn't match, so we reset current_position
-                    current_position = 0;
-                    // Looking for the match will start over from this character so we decrement iterator
-                    clean_text_rit--;
+                auto stop_string_len = is_include_to_output ? stop_string.length() : 0;
+                decoded_buffer = decoded_buffer.substr(0, pos + stop_string_len);
+                // to remove word splitting symbols from tail
+                while (decoded_buffer.back() == ' ' || decoded_buffer.back() == '\n') {
+                    decoded_buffer.pop_back();
                 }
+                if (decoded_buffer.empty()) {
+                    result.to_remove = buffer.size();
+                    return result;
+                }
+
+                // find token cnt to be removed from sequence by decoding token by token
+                std::string decoded_partially_string;
+                for (size_t i = 0; i < buffer.size(); ++i) {
+                    decoded_partially_string += tokenizer.decode(TokenIds{buffer[i]});
+                    if (decoded_partially_string.find(decoded_buffer) != std::string::npos) {
+                        result.to_remove = buffer.size() - i - 1;
+                        break;
+                    }
+                }
+                return result;
             }
-            generated_tokens_rit++;
         }
     }
-    return 0;
+    return result;
 }
 
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
@@ -245,7 +233,9 @@ std::map<size_t, int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
     return next_beams;
 }
 
-void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
+void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
+    SamplerOutput& sampler_output,
+    const std::pair<size_t, std::set<std::string>>& stop_strings) {
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
@@ -260,6 +250,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, Sa
     for (Group& group : m_groups) {
         if (!group.done) {
             for (Beam& beam : group.ongoing) {
+                sampler_output.num_generated_tokens++;
                 uint64_t parent_seq_id = beam.m_sequence->get_id();
 
                 // here we need to map index of sequence in beam search group(s) and sequence group
@@ -392,19 +383,17 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, Sa
                 // There's probably a better way to do that, than copying whole vector...
                 std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
                 token_ids.push_back(candidate.m_token_id);
-                int num_last_matched_tokens = match_stop_string(m_tokenizer, token_ids, m_sequence_group->get_sampling_parameters().stop_strings);
-                if (num_last_matched_tokens) {
+                auto match_result = match_stop_string(m_tokenizer, token_ids, stop_strings, m_parameters.include_stop_str_in_output);
+                if (match_result.is_matched) {
                     // If beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= group_size)
                         continue;
 
-                    if(!m_parameters.include_stop_str_in_output) {
-                        // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
-                        candidate.m_sequence->remove_last_tokens(num_last_matched_tokens - 1);
-                    }
+                    // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
+                    candidate.m_sequence->remove_last_tokens(match_result.to_remove);
 
                     // try to finish candidate
-                    try_to_finish_candidate(group, candidate, m_parameters.include_stop_str_in_output);
+                    try_to_finish_candidate(group, candidate);
                     continue;
                 }
             }
@@ -419,7 +408,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, Sa
         }
 
         // check whether group has finished
-        group.is_done(m_parameters);
+        group.is_done();
 
         // group cannot continue if there are no valid child beams
         if (child_beams_per_group[group_id].size() == 0) {
@@ -560,14 +549,14 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     std::vector<int64_t> dropped_seq_ids;
     for (auto& running_sequence : sequence_group->get_running_sequences()) {
         const auto generated_len = running_sequence->get_generated_len();
-        if (sampling_params.max_new_tokens <= generated_len || 
+        if (sequence_group->get_max_new_tokens() <= generated_len || 
             is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // stop sequence by max_new_tokens or stop token (eos included)
             running_sequence->set_status(SequenceStatus::FINISHED);
 
             if (is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-            } else if (sampling_params.max_new_tokens == generated_len) {
+            } else if (sequence_group->get_max_new_tokens() == generated_len) {
                 running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
             }
 
@@ -576,10 +565,11 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
         }
 
         if (!sampling_params.stop_strings.empty()) {
-            int num_matched_last_tokens = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), sampling_params.stop_strings);
-            if (num_matched_last_tokens) {
-                if (!sampling_params.include_stop_str_in_output)
-                    running_sequence->remove_last_tokens(num_matched_last_tokens);
+            auto& stop_strings = m_stop_strings.at(sequence_group->get_request_id());
+            auto match_result = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), stop_strings, sampling_params.include_stop_str_in_output);
+            if (match_result.is_matched) {
+                running_sequence->remove_last_tokens(match_result.to_remove);
+
                 running_sequence->set_status(SequenceStatus::FINISHED);
                 running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                 dropped_seq_ids.push_back(running_sequence->get_id());
@@ -599,7 +589,8 @@ void register_new_token(const Token& sampled_token,
         running_sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
     }
     if (!is_validation_mode_enabled &&
-        std::fabs(std::exp(sampled_token.m_log_prob)) < logit_processor.get_assistant_confidence_threshold()) {
+        logit_processor.get_assistant_confidence_threshold() > 0 &&
+        (std::fabs(std::exp(sampled_token.m_log_prob)) < logit_processor.get_assistant_confidence_threshold() || sampled_token.m_log_prob == 0)) {
         auto sequence_group = running_sequence->get_sequence_group_ptr();
         sequence_group->pause_generation(true);
     }
@@ -740,13 +731,26 @@ float get_p_prime(Sequence::Ptr& running_sequence,
     return p_prime;
 }
 
-SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
+std::pair<size_t, std::set<std::string>>
+process_stop_strings(const std::set<std::string>& stop_strings, Tokenizer& tokenizer) {
+    std::pair<size_t, std::set<std::string>> result;
+    for (const auto& stop_string : stop_strings) {
+        auto encoded_stop_string = encode_and_process_string(stop_string, tokenizer);
+        if (result.first < encoded_stop_string.size()) {
+            result.first = encoded_stop_string.size();
+        }
+        result.second.insert(stop_string);
+    }
+    return result;
+}
+
+SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_groups,
                               ov::Tensor logits,
                               bool is_validation_mode_enabled) {
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
-    size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
+    size_t vocab_size = logits_shape[2];
 
     SamplerOutput sampler_output;
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
@@ -755,22 +759,31 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             continue;
 
         size_t num_running_sequences = sequence_group->num_running_seqs();
-        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
-        size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+        size_t output_seq_len = sequence_group->get_output_seq_len();
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
         }
+        if (!m_stop_strings.count(request_id)) {
+            auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
+            m_stop_strings.insert({request_id, processed_stop_string});
+            sequence_group->set_stream_window_size(processed_stop_string.first);
+        }
+        auto& stop_strings = m_stop_strings.at(request_id);
         auto& logit_processor = m_logit_processors.at(request_id);
-
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
-        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
-        size_t max_removed_tokens_per_request = 0, min_generated_len = std::numeric_limits<size_t>::max();
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
+        size_t max_removed_tokens_per_request = 0, min_generated_len = std::numeric_limits<size_t>::max(), updated_validation_len = 0;
         if (sequence_group->requires_sampling()) {
             // get number of token to be validated
             auto num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
+            if (num_tokens_to_process > output_seq_len - 1) {
+                auto delta = num_tokens_to_process - (output_seq_len - 1);
+                updated_validation_len = std::max(updated_validation_len, delta);
+                num_tokens_to_process -= delta;
+            }
             if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (sampling_params.is_greedy_decoding()) {
@@ -781,13 +794,14 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     bool is_validation_passed = true;
                     // make `num_tokens_to_process` iteration to validate a candidate generated by `draft_model` + 1 iteration to generate one more token by `main_model`
                     for (size_t i = 0; i <= num_tokens_to_process; ++i) {
+                        sampler_output.num_generated_tokens++;
                         // calculate token offset from the end of logit
                         size_t token_offset = num_tokens_to_process - i;
                         // max counter of needed to be sampled tokens
                         OPENVINO_ASSERT(running_sequence->get_generated_len() >= token_offset);
                         size_t generated_and_verified_len = running_sequence->get_generated_len() - token_offset;
-                        OPENVINO_ASSERT(sampling_params.max_new_tokens >= generated_and_verified_len);
-                        size_t max_num_sampled_token = sampling_params.max_new_tokens - generated_and_verified_len;
+                        OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
+                        size_t max_num_sampled_token = sequence_group->get_max_new_tokens() - generated_and_verified_len;
                         if (max_num_sampled_token == 0) {
                             stop_sample_tokens(running_sequence, token_offset, max_num_sampled_token, max_removed_tokens_per_request);
                             break;
@@ -868,12 +882,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 }
 
                 // current algorithm already adds new tokens to running sequences and
-                m_beam_search_info.at(request_id).select_next_tokens(sequence_group_logits, sampler_output);
+                m_beam_search_info.at(request_id).select_next_tokens(sequence_group_logits, sampler_output, stop_strings);
 
                 // check max length stop criteria
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (!sequence_group->has_finished() &&
-                    running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
+                    running_sequences[0]->get_generated_len() == sequence_group->get_max_new_tokens()) {
                     // stop sequence by max_new_tokens
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
@@ -881,8 +895,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             // Notify handle after sampling is done. 
             // For non-streaming this is effective only when the generation is finished.
             OPENVINO_ASSERT(num_tokens_to_process >= max_removed_tokens_per_request);
-            size_t num_output_token_to_push = num_tokens_to_process - max_removed_tokens_per_request + 1;
-            sequence_group->notify_handle(num_output_token_to_push);
+            sequence_group->notify_handle();
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
@@ -897,9 +910,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             sequence_group->update_processed_tokens_num(min_processed_tokens);
             logit_processor.update_generated_len(min_processed_tokens);
         }
+        if (updated_validation_len) {
+            sequence_group->set_num_validated_tokens(updated_validation_len);
+        }
 
         // accumulate a number of processed tokens
-        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+        currently_processed_tokens += output_seq_len * num_running_sequences;
     }
 
     return sampler_output;
@@ -918,6 +934,7 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
 void Sampler::clear_request_info(uint64_t request_id) { 
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
+    m_stop_strings.erase(request_id);
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
@@ -939,7 +956,10 @@ int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::Ge
     return preeempted_sequence_id;
 }
 
-void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfig& sampling_params) {
+void Sampler::GroupBeamSearcher::Group::is_done() {
+    const auto sequence_group = ongoing.front().m_sequence->get_sequence_group_ptr();
+    const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+
     assert(sampling_params.num_beams % sampling_params.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
@@ -960,7 +980,7 @@ void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfi
         return;
     }
     case ov::genai::StopCriteria::NEVER: {
-        size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : cur_len;
+        size_t length = sampling_params.length_penalty > 0.0 ? sequence_group->get_max_new_tokens() : cur_len;
         float highest_attainable_score = best_sum_logprobs / std::pow(float(length), sampling_params.length_penalty);
         done = worst_score >= highest_attainable_score;
         return;

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -27,8 +27,6 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_batch_sizes Batch sizes for each generate call.
  * @param m_durations Total durations for each generate call in microseconds.
  * @param m_inference_durations Total inference duration for each generate call in microseconds.
- * @param num_generated_tokens Total number of tokens generated.
- * @param num_input_tokens Total number of tokens in the input prompt.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;

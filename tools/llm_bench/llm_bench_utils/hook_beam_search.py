@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
 import time
 import torch
 import warnings
+import types
 import logging as log
 from torch import nn
 from typing import Optional, Tuple, Union, List
@@ -54,6 +55,7 @@ GenerateBeamOutput = Union[GenerateBeamDecoderOnlyOutput, GenerateBeamEncoderDec
 
 tm_list = []
 tm_infer_list = []
+tm_mm_embeddings = []
 
 
 # Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
@@ -455,6 +457,15 @@ def new_beam_search(
         else:
             return sequence_outputs["sequences"]
 
+def new_get_multimodal_embeddings(
+        self, input_ids, pixel_values=None, attention_mask=None, position_ids=None, **kwargs
+    ):
+
+    start = time.perf_counter()
+    result = self._orig_get_multimodal_embeddings(input_ids, pixel_values=pixel_values, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
+    end = time.perf_counter()
+    tm_mm_embeddings.append(end - start)
+    return result
 
 class BeamSearchHook:
     def __init__(self):
@@ -483,6 +494,19 @@ class BeamSearchHook:
         global tm_infer_list
         return tm_infer_list
 
+    def get_mm_embeddings_time_list(self):
+        global tm_mm_embeddings
+        return tm_mm_embeddings
+
+    def clear_mm_embeddins_time_list(self):
+        """Clear the infer time list."""
+        global tm_mm_embeddings
+        tm_mm_embeddings.clear()
+
     def new_forward(self, model):
         """Define a new beam search function."""
         model._beam_search = new_beam_search.__get__(model, model.__class__)
+
+    def new_get_multimodal_embeddings(self, model):
+        model._orig_get_multimodal_embeddings = model.get_multimodal_embeddings
+        model.get_multimodal_embeddings = types.MethodType(new_get_multimodal_embeddings, model)

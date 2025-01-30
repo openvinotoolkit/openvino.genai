@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -8,6 +8,7 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov::genai {
 enum class GenerationStatus {
@@ -30,6 +31,9 @@ struct EncodedGenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
+    
+    // PerfMetrics but with empty tokenization/detokenization durations.
+    PerfMetrics perf_metrics;
 };
 
 enum class GenerationFinishReason {
@@ -50,6 +54,9 @@ struct GenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
+
+    // PerfMetrics
+    PerfMetrics perf_metrics;
 };
 
 struct GenerationOutput {
@@ -66,8 +73,6 @@ class GenerationStream;
 class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params;
-
-    bool is_dropped();
  
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
@@ -83,6 +88,7 @@ public:
     GenerationStatus get_status();
 
     bool can_read();
+    bool is_dropped();
 
     void drop();
 

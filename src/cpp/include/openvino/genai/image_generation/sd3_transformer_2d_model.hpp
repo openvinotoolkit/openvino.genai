@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -19,7 +19,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS SD3Transformer2DModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t sample_size = 128;
         size_t patch_size = 2;
         size_t in_channels = 16;

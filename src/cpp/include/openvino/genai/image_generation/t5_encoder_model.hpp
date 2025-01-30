@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -65,7 +65,10 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor infer(const std::string& pos_prompt, int max_sequence_length);
+    ov::Tensor infer(const std::string& pos_prompt,
+                     const std::string& neg_prompt,
+                     bool do_classifier_free_guidance,
+                     int max_sequence_length);
 
     ov::Tensor get_output_tensor(const size_t idx);
 

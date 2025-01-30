@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
@@ -8,7 +8,7 @@
 
 ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '" + json_path.string() + "' with processor config");
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
@@ -19,4 +19,13 @@ ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
+    // phi3_v
+    if (parsed.contains("sub_GN")) {
+        sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
+    }
+    OPENVINO_ASSERT(sub_GN.size() == 4096);
+    if (parsed.contains("glb_GN")) {
+        glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
+    }
+    OPENVINO_ASSERT(glb_GN.size() == 4096);
 }
