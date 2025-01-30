@@ -142,17 +142,25 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::vector<KVHeadConfig>& kv_cache_config) {
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
+    ov::AnyMap mutable_properties = properties;
+    // Extract sampler_num_threads property if exists and remove it from properties
+    size_t sampler_num_threads = std::thread::hardware_concurrency();
+    auto sampler_num_threads_it = mutable_properties.find("sampler_num_threads");
+    if (sampler_num_threads_it != mutable_properties.end()) {
+        sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
+        mutable_properties.erase(sampler_num_threads_it);
+    }
 
     // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, properties);
+    apply_kv_cache_precision(model, device, mutable_properties);
 
     // apply LoRA
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
+    if (auto filtered_properties = extract_adapters_from_properties(mutable_properties, &m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
         compiled_model = core.compile_model(model, device, *filtered_properties);
     } else {
-        compiled_model = core.compile_model(model, device, properties);
+        compiled_model = core.compile_model(model, device, mutable_properties);
     }
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
@@ -225,14 +233,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     } else {
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
-    }
-
-    size_t sampler_num_threads = std::thread::hardware_concurrency(); // default value for CB
-    // Extract sampler_num_threads value from properties map
-    auto sampler_num_threads_it = properties.find("sampler_num_threads");
-    if (sampler_num_threads_it != properties.end()) {
-        // Override default value if sampler_num_threads property is provided
-        sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
