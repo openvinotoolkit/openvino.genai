@@ -55,16 +55,16 @@ def test_vlm_pipeline(model_id, cache):
         return False
 
     models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
     for links in image_links_for_testing:
         images = []
         for link in links:
             images.append(get_image_by_link(link))
 
-        ov_pipe = VLMPipeline(models_path, "CPU")
-        generation_config = ov_pipe.get_generation_config()
-        generation_config.max_new_tokens = 30
-        generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
         ov_pipe.start_chat()
 
         result_from_streamer = []
