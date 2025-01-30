@@ -2,7 +2,7 @@ import util from 'node:util';
 
 import addon from './bindings.cjs';
 
-class LLMPipeline {
+class LLMPipelineEntity {
   modelPath = null;
   device = null;
   pipeline = null;
@@ -73,7 +73,7 @@ class LLMPipeline {
     if (typeof generationOptions !== 'object')
       throw new Error('Options must be an object');
 
-    const castedOptions = LLMPipeline.castOptionsToString(generationOptions);
+    const castedOptions = LLMPipelineEntity.castOptionsToString(generationOptions);
 
     const queue = [];
     let resolvePromise;
@@ -127,7 +127,7 @@ class LLMPipeline {
 
 class PipelineFactory {
   static async LLMPipeline(modelPath, device = 'CPU') {
-    const pipeline = new LLMPipeline(modelPath, device);
+    const pipeline = new LLMPipelineEntity(modelPath, device);
     await pipeline.init();
 
     return pipeline;
