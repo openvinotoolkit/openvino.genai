@@ -99,7 +99,6 @@
 - 'src/cpp/src/continuous_batching_impl.cpp'
 - 'src/cpp/src/continuous_batching_pipeline.cpp'
 - 'src/cpp/src/debug_utils.hpp'
-- 'src/cpp/src/device_config.hpp'
 - 'src/cpp/src/generation_handle.cpp'
 - 'src/cpp/src/generation_stream.hpp'
 - 'src/cpp/src/model_runner.hpp'

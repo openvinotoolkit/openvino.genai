@@ -9,7 +9,6 @@
 
 #include "openvino/runtime/intel_gpu/properties.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "device_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
 #include "cache_manager.hpp"
@@ -45,10 +44,10 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    explicit Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
-            m_cache_manager(cache_manager),
-            m_can_use_partial_preemption(can_use_partial_preemption),
-            m_config(config) {
+    Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
+        m_cache_manager(cache_manager),
+        m_can_use_partial_preemption(can_use_partial_preemption),
+        m_config(config) {
         m_block_manager = std::make_shared<BlockManager>(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers);
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
@@ -499,13 +498,13 @@ private:
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             auto gen_config = sequence_groups[idx]->get_sampling_parameters();
             seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
-            size_t blocks_num = std::ceil((float)seq_length / m_block_manager->get_block_size());
+            size_t blocks_num = std::ceil(static_cast<float>(seq_length) / m_block_manager->get_block_size());
             if (gen_config.is_beam_search()) {
                 blocks_num *= gen_config.num_beams;
             } else if (gen_config.is_multinomial()) {
                 blocks_num *= gen_config.num_return_sequences;
             }
-            blocks_sum  += blocks_num;
+            blocks_sum += blocks_num;
         }
         m_block_manager->increase_kv_blocks_number(blocks_sum);
         m_dynamic_memory_allocation = true;
