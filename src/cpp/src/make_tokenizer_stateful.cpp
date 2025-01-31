@@ -96,7 +96,6 @@ bool ov::genai::MakeVocabDecoderSatateful::run_on_model(const std::shared_ptr<ov
 
 
 bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Model>& model) {
-
     std::shared_ptr<ov::Node> ragged_to_dense_node;
     for (auto node: model->get_ordered_ops()) {
         if (strcmp(node->get_type_info().name, "RaggedToDense") == 0) {
@@ -126,50 +125,64 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
 
 
 bool ov::genai::MakeTruncationSatateful::run_on_model(const std::shared_ptr<ov::Model>& model) {
-
-    std::shared_ptr<ov::Node> combine_segments_node;
+    std::shared_ptr<ov::Node> combine_seg_node;
     for (auto node: model->get_ordered_ops()) {
         if (strcmp(node->get_type_info().name, "CombineSegments") == 0) {
-            combine_segments_node = node;
+            combine_seg_node = node;
+        }
+    }
+    if (!combine_seg_node) { return false; }
+    auto num_comb = combine_seg_node->get_input_size();
+    
+    size_t num_segments = (combine_seg_node->get_input_size() - 1) / 3;
+    size_t number_of_main_tokens_inputs = 0;
+    std::shared_ptr<Node> add_or_sub_node;
+    for (size_t i = 0; i < num_segments; i++) {
+        // Check all ends inputs of CombineSegments node.
+        // For special tokens they are Constant/Select, 
+        // for the ends input with main tokens sequence it's Add/Subtract.
+        // If  Add then it's a right truncation, if Subtract then it's a left truncation.
+        add_or_sub_node = combine_seg_node->input_value(3*i + 1).get_node_shared_ptr();
+        if (ov::as_type_ptr<v1::Add>(add_or_sub_node) || ov::as_type_ptr<v1::Subtract>(add_or_sub_node)) {
+            number_of_main_tokens_inputs += 1;
         }
     }
     
-    if (!combine_segments_node || combine_segments_node->input_value(4).get_element_type() != ov::element::i32) {
-        return false;
-    }
-    
-    std::shared_ptr<Node> add_or_sub_node = combine_segments_node->input_value(4).get_node_shared_ptr();
-    // If Add then it's a right truncation, if Subtract then it's a left truncation.
-    if (!ov::as_type_ptr<v1::Add>(add_or_sub_node) && !ov::as_type_ptr<v1::Subtract>(add_or_sub_node)) {
-        // Exit if it's neither, because in that case it's not a truncation.
-        return false;
-    }
-
-    // auto pattern_2 = ov::pass::pattern::wrap_type<ov::op::v0::Constant>(ov::pass::pattern::rank_equals(1));
-    // auto unsqueeze = ov::pass::pattern::wrap_type<ov::op::v1::Reshape, ov::op::v0::Unsqueeze>({cell, pattern_2});
-    // ov::pass::pattern::Matcher matcher(unsqueeze);
+    // Exit if couldn't find main input or there are several.
+    if (number_of_main_tokens_inputs != 1) { return false; }
 
     // Minimum between max_length and length of token sequence.
     auto min_node = ov::as_type_ptr<v1::Minimum>(add_or_sub_node->get_input_node_shared_ptr(1));
     if (!min_node) { return false; }
     
-    // Node which subtracts from max_truncation_length number of added_tokens.
-    auto sub_node = ov::as_type_ptr<v1::Subtract>(min_node->get_input_node_shared_ptr(1));
-    if (!sub_node) { return false; }
-
-    // max_truncation_length constant containing final length at the end of pipeline.
-    auto const_node = ov::as_type_ptr<v0::Constant>(sub_node->get_input_node_shared_ptr(0));
+    // constant containing final max_length - num_added tokens at the end of pipeline.
+    auto const_node = ov::as_type_ptr<v0::Constant>(min_node->get_input_node_shared_ptr(1));
     if (!const_node) { return false; }
 
     op::util::VariableInfo var_info{const_node->get_output_shape(0), const_node->get_output_element_type(0), MAX_TRUNCATION_LENGTH_VAR_ID};
     auto variable = std::make_shared<op::util::Variable>(var_info);
+
+    size_t num_added_tokens = num_segments - number_of_main_tokens_inputs;
+    // Constant which stores number of added_tokens.
+    auto num_added_tokens_const = std::make_shared<v0::Constant>(
+        const_node->get_output_element_type(0), const_node->get_output_shape(0), std::vector{num_added_tokens});
     
+    OPENVINO_ASSERT(const_node->get_element_type() == element::i32);
+    auto values = const_node->get_vector<int32_t>();
+    OPENVINO_ASSERT(values.size() == 1);
+    // Since const_node contain value = max_length - num_added tokens, 
+    size_t default_max_length = values[0] + num_added_tokens;
+
+    auto default_max_length_const = std::make_shared<v0::Constant>(
+        const_node->get_output_element_type(0), const_node->get_output_shape(0), std::vector{default_max_length});
+
     // Save targets before adding new target with ReadValue to avoid recursion.
     auto target_inputs = const_node->output(0).get_target_inputs();
-    auto read_trunc_value = std::make_shared<v6::ReadValue>(const_node, variable);
+    auto read_trunc_value = std::make_shared<v6::ReadValue>(default_max_length_const, variable);
+    auto subtract_node = std::make_shared<v1::Subtract>(read_trunc_value, num_added_tokens_const);
     
     for (auto target_input : target_inputs) {
-        target_input.replace_source_output(read_trunc_value->output(0));
+        target_input.replace_source_output(subtract_node->output(0));
     }
 
     // We need to check if user requested to not add special tokens.
@@ -183,15 +196,13 @@ bool ov::genai::MakeTruncationSatateful::run_on_model(const std::shared_ptr<ov::
             }
         }
     }
-    
-    // Constant which stores number of added_tokens.
-    auto num_added_tokens_const = ov::as_type_ptr<v0::Constant>(sub_node->get_input_node_shared_ptr(1));
+
     // If user requested to not add special tokens in order to correctly calculate 
     // truncation we need to enforce num_added_tokens to 0 regardless the hardcoded value of Constant.
     if (read_value_spec_tokens && num_added_tokens_const) {
         auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
         auto select_node = std::make_shared<v1::Select>(read_value_spec_tokens, num_added_tokens_const, zero_constant);
-        sub_node->input(1).replace_source_output(select_node->output(0));
+        subtract_node->input(1).replace_source_output(select_node->output(0));
     }
 
     auto assign = std::make_shared<v6::Assign>(read_trunc_value, variable);

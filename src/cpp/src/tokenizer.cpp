@@ -11,7 +11,6 @@
 #include <jinja2cpp/generic_list_iterator.h>
 
 #include "openvino/pass/manager.hpp"
-#include "openvino/pass/visualize_tree.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
