@@ -6,32 +6,15 @@ import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
-from pathlib import Path
 import openvino_genai
 import json
-
-from common import delete_rt_info
+from common import delete_rt_info, load_hf_tokenizer, convert_and_load_genai_tokenizer
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
     read_model,
-    model_tmp_path
+    model_tmp_path,
 )
-
-
-def load_hf_tokenizer(model_id: str, hf_load_params: dict = None):
-    hf_load_params = hf_load_params or {}
-    return AutoTokenizer.from_pretrained(model_id, **hf_load_params)
-
-
-def convert_and_load_genai_tokenizer(hf_tokenizer : AutoTokenizer, models_path: Path):
-    from openvino_tokenizers import convert_tokenizer
-    from openvino import save_model
-
-    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
-    save_model(tokenizer, models_path / "openvino_tokenizer.xml")
-    save_model(detokenizer, models_path / "openvino_detokenizer.xml")
-    return openvino_genai.Tokenizer(models_path)
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
