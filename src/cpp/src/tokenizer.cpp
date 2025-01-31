@@ -23,39 +23,6 @@
 
 namespace {
 
-// todo: remove when openvino-tokenizers will support left padding
-ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention_mask) {
-    const size_t batch_size = input_ids.get_shape()[0];
-    const size_t sequence_length = input_ids.get_shape()[1];
-    int64_t* inputs_data = input_ids.data<int64_t>();
-    int64_t* attention_mask_data = attention_mask.data<int64_t>();
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        const size_t batch_offset = batch * sequence_length;
-
-        // last token in the sequence is not a PAD_TOKEN, skipping
-        if (attention_mask_data[batch_offset + sequence_length - 1] == 1)
-            continue;
-
-        size_t pad_tokens_number = 0;
-        for (int i = sequence_length - 1; i >= 0; i--) {
-            const size_t token_offset = batch_offset + i;
-
-            // count pad tokens
-            if (attention_mask_data[token_offset] == 0)
-                continue;
-
-            if (pad_tokens_number == 0)
-                pad_tokens_number = sequence_length - i - 1;
-
-            std::swap(inputs_data[token_offset], inputs_data[token_offset + pad_tokens_number]);
-            std::swap(attention_mask_data[token_offset], attention_mask_data[token_offset + pad_tokens_number]);
-        }
-    }
-
-    return {input_ids, attention_mask};
-}
-
 void check_arguments(const ov::AnyMap& parameters, std::set<std::string> allowed_argnames) {
     for (const auto& [key, value] : parameters) {
         if (allowed_argnames.find(key) == allowed_argnames.end()) {
@@ -119,11 +86,7 @@ public:
             case PaddingMode::LONGEST:
                 return {std::numeric_limits<int32_t>::max(), 0};
             case PaddingMode::MAX_LENGTH:
-                return {std::numeric_limits<int32_t>::max(), max_length};
-            case PaddingMode::DO_NOT_PAD:
-                // behaves exactly as longest
-                // TODO: need to find a way to disable padding automatically so that it will match to HF.
-                return {std::numeric_limits<int32_t>::max(), 0};
+                return {max_length, max_length};
             default:
                 OPENVINO_THROW("Unknown padding mode");
         }
@@ -132,8 +95,8 @@ public:
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
         bool add_special_tokens_flag = m_add_special_tokens;
         bool skip_special_tokens_flag = m_skip_special_tokens;
-        size_t max_length_val;
-        PaddingMode padding_mode_val = PaddingMode::NONE;
+        std::optional<size_t> max_length_val;
+        PaddingMode padding_mode_val = PaddingMode::TRUNCATE;
         
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
@@ -143,23 +106,22 @@ public:
         int max_trunc_length_val = m_max_trunc_length;
         int max_pad_length_val = m_max_pad_length;
 
-        std::tie(max_trunc_length_val, max_pad_length_val) = get_padding_values(padding_mode_val, max_length_val);
+        std::tie(max_trunc_length_val, max_pad_length_val) = get_padding_values(padding_mode_val, *max_length_val);
 
-        // If user requested add_special_tokens mode different from the current one,
-        // need to set state variable.
-        // If requested mode matches the stored state set, then don't touch states.
+        // If requested add[skip]_special_tokens, max_length or pading mode 
+        // is different from the stored state, need to set state variable.
         if (add_special_tokens_flag == m_add_special_tokens 
             && skip_special_tokens_flag == m_skip_special_tokens
             && max_trunc_length_val == m_max_trunc_length
             && max_pad_length_val == m_max_pad_length) {
             return;
         }
-        if (m_older_than_24_5) {
-            // Changing add_special_tokens at runtime was introduced in
-            // 24.5. Older tokenizers still allow manipulating their
-            // state but the effect is incorrect.
-            return;
-        }
+        // if (m_older_than_24_5) {
+        //     // Changing add_special_tokens at runtime was introduced in
+        //     // 24.5. Older tokenizers still allow manipulating their
+        //     // state but the effect is incorrect.
+        //     return;
+        // }
 
         // add_special_tokens is managed by Select op with a bool input.
         ov::Tensor add_special_tensor = ov::Tensor(ov::element::boolean, {});
@@ -173,15 +135,20 @@ public:
         *max_trunc_length_tensor.data<int>() = max_trunc_length_val;
         ov::Tensor max_pad_length_tensor = ov::Tensor(ov::element::i32, {1});
         *max_pad_length_tensor.data<int>() = max_pad_length_val;
+        
+        bool set_padding = max_length_val.has_value();
+        // Even if max_length is not set in order to disable truncation
+        // MAX_TRUNCATION_LENGTH_VAR_ID should be updated to max numeric limit.
+        bool set_truncation = padding_mode_val != PaddingMode::TRUNCATE || max_length_val.has_value();
 
         for (auto& state: infer_request_guard.get().query_state()) {
             if (state.get_name().find(add_special_tokens.name()) != std::string::npos) {
                 state.set_state(add_special_tensor);
             } else if (state.get_name().find(skip_special_tokens.name()) != std::string::npos) {
                 state.set_state(skip_special_tensor);
-            } else if (state.get_name().find(MAX_TRUNCATION_LENGTH_VAR_ID) != std::string::npos && padding_mode_val != PaddingMode::NONE) {
+            } else if (state.get_name().find(MAX_TRUNCATION_LENGTH_VAR_ID) != std::string::npos && set_truncation) {
                 state.set_state(max_trunc_length_tensor);
-            } else if (state.get_name().find(MAX_PAD_LENGTH_VAR_ID) != std::string::npos) {
+            } else if (state.get_name().find(MAX_PAD_LENGTH_VAR_ID) != std::string::npos && set_padding) {
                 state.set_state(max_pad_length_tensor);
             }
         }
@@ -238,7 +205,8 @@ public:
 
         if (ov_tokenizer) {
             ov::pass::Manager manager;
-            manager.register_pass<MakeCombineSegmentsSatateful>();
+            manager.register_pass<ov::pass::VisualizeTree>("before.svg");
+            manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.register_pass<MakeTruncationSatateful>();
             manager.register_pass<ov::pass::VisualizeTree>("after.svg");
@@ -451,7 +419,7 @@ public:
             );
         }
 
-        return pad_left(unpadded.input_ids, unpadded.attention_mask);
+        return {unpadded.input_ids, unpadded.attention_mask};
     }
 
     TokenizedInputs get_copied_results(ov::Tensor input_ids, ov::Tensor attention_mask) {

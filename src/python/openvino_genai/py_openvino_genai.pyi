@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PaddingMode', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1131,6 +1131,48 @@ class MeanStdPair:
     @property
     def std(self) -> float:
         ...
+class PaddingMode:
+    """
+    
+    
+    Members:
+    
+      TRUNCATE
+    
+      LONGEST
+    
+      MAX_LENGTH
+    """
+    LONGEST: typing.ClassVar[PaddingMode]  # value = <PaddingMode.LONGEST: 1>
+    MAX_LENGTH: typing.ClassVar[PaddingMode]  # value = <PaddingMode.MAX_LENGTH: 2>
+    TRUNCATE: typing.ClassVar[PaddingMode]  # value = <PaddingMode.TRUNCATE: 0>
+    __members__: typing.ClassVar[dict[str, PaddingMode]]  # value = {'TRUNCATE': <PaddingMode.TRUNCATE: 0>, 'LONGEST': <PaddingMode.LONGEST: 1>, 'MAX_LENGTH': <PaddingMode.MAX_LENGTH: 2>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: int) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: int) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
 class PerfMetrics:
     """
     
@@ -1680,12 +1722,12 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: list[str], add_special_tokens: bool = True, max_length: int = 2147483647, padding_mode: str = 'truncate') -> TokenizedInputs:
+    def encode(self, prompts: list[str], add_special_tokens: bool = True, padding_mode: PaddingMode = ..., max_length: int | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, max_length: int = 2147483647, padding_mode: str = 'truncate') -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, padding_mode: PaddingMode = ..., max_length: int | None = None) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         """

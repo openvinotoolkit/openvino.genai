@@ -245,7 +245,24 @@ private:
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
-enum class PaddingMode { TRUNCATE = 0, LONGEST = 1, MAX_LENGTH = 2, DO_NOT_PAD = 3, NONE = 4};
+/**
+ * @enum PaddingMode
+ * @brief Enum class representing different padding modes for tokenization.
+ *
+ * This enum class defines modes that can be used to pad tokenized sequences. 
+ * IMPORTANT NOTICE, even in truncation mode the padding is applied to the longest sequence in the batch
+ * since resulting tokenization is stored as a signe ov::Tensor which cannot store irregular/ragged array.
+ *
+ * @var PaddingMode::TRUNCATE
+ * Truncate the sequence to the maximum length specified. (But also LONGEST mode is implicitly applied.)
+ *
+ * @var PaddingMode::LONGEST
+ * Pad the sequence to the length of the longest sequence in the batch. In this mode truncation is switched off.
+ *
+ * @var PaddingMode::MAX_LENGTH
+ * Pad the sequence to a specified maximum length. In this mode truncation is switched off.
+ */
+enum class PaddingMode { TRUNCATE, LONGEST, MAX_LENGTH };
 
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};

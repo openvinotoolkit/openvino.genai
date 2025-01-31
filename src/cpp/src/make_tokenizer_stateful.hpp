@@ -3,6 +3,7 @@
 
 #include "openvino/op/constant.hpp"
 #include "openvino/pass/pass.hpp"
+#include "openvino/pass/matcher_pass.hpp"
 
 namespace ov {
 namespace genai {
@@ -32,9 +33,9 @@ namespace genai {
  *          |     CombineSegments     |
  *          +-------------------------+
 **/
-class MakeCombineSegmentsSatateful : public ov::pass::ModelPass {
+class MakeAddSpecialTokensSatateful : public ov::pass::ModelPass {
 public:
-    OPENVINO_MODEL_PASS_RTTI("MakeCombineSegmentsSatateful");
+    OPENVINO_MODEL_PASS_RTTI("MakeAddSpecialTokensSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
@@ -97,7 +98,7 @@ public:
 const std::string ADD_SPECIAL_TOKENS_VAR_ID = "add_special_tokens";
 const std::string SKIP_SPECIAL_TOKENS_VAR_ID = "skip_special_tokens";
 const std::string MAX_PAD_LENGTH_VAR_ID = "max_pad_length";
-const std::string MAX_TRUNCATION_LENGTH_VAR_ID = "max_pad_length";
+const std::string MAX_TRUNCATION_LENGTH_VAR_ID = "max_truncation_length";
 
 } // namespace genai
 } // namespace ov

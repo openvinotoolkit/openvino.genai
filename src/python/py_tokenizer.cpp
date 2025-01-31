@@ -20,39 +20,12 @@ using ov::genai::ChatHistory;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 using ov::genai::PaddingMode;
-using PadModesVariant = std::variant<std::string, PaddingMode>;
 
-namespace {
-
-PaddingMode get_pad_mode(const PadModesVariant& pad_mode) {
-    PaddingMode result;
-    std::visit(pyutils::overloaded {
-    [&](PaddingMode padding_mode) {
-        result = padding_mode;
-    },
-    [&](std::basic_string<char> pad_mode_str) {
-        if (pad_mode_str == "truncate") {
-            result = PaddingMode::TRUNCATE;
-        } else if (pad_mode_str == "longest") {
-            result = PaddingMode::LONGEST;
-        } else if (pad_mode_str == "max_length") {
-            result = PaddingMode::MAX_LENGTH;
-        } else if (pad_mode_str == "do_not_pad") {
-            result = PaddingMode::DO_NOT_PAD;
-        } else {
-            OPENVINO_THROW("Unknown padding mode: " + pad_mode_str + ".\nAllowed values are \"longest\", \"max_length\", \"do_not_pad\", \"truncate\"");
-        }
-    }}, pad_mode);
-    return result;
-}
-
-}
 void init_tokenizer(py::module_& m) {
-    py::enum_<PaddingMode>(m, "PaddingMode", "") // TODO: write docsting
+    py::enum_<PaddingMode>(m, "PaddingMode")
         .value("TRUNCATE", PaddingMode::TRUNCATE)
         .value("LONGEST", PaddingMode::LONGEST)
-        .value("MAX_LENGTH", PaddingMode::MAX_LENGTH)
-        .value("DO_NOT_PAD", PaddingMode::DO_NOT_PAD);
+        .value("MAX_LENGTH", PaddingMode::MAX_LENGTH);
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
         .def(py::init<ov::Tensor, ov::Tensor>(), py::arg("input_ids"), py::arg("attention_mask"))
@@ -79,34 +52,38 @@ void init_tokenizer(py::module_& m) {
 
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, 
                           bool add_special_tokens, 
-                          size_t max_length,
-                          PadModesVariant padding_mode) {
+                          PaddingMode padding_mode,
+                          std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
-                tokenization_params[ov::genai::max_length.name()] = max_length;
-                tokenization_params[ov::genai::padding_mode.name()] = get_pad_mode(padding_mode);
+                tokenization_params[ov::genai::padding_mode.name()] = padding_mode;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
                 return tok.encode(prompts, tokenization_params);
             },
             py::arg("prompts"),
             py::arg("add_special_tokens") = true,
-            py::arg("max_length") = std::numeric_limits<int>::max(),
-            py::arg("padding_mode") = "truncate",
+            py::arg("padding_mode") = PaddingMode::TRUNCATE,
+            py::arg("max_length") = std::nullopt,
             R"(Encodes a list of prompts into tokenized inputs.)")
 
         .def("encode", [](Tokenizer& tok, const std::string prompt, 
                           bool add_special_tokens, 
-                          size_t max_length,
-                          PadModesVariant padding_mode) {
+                          PaddingMode padding_mode,
+                          std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
-                tokenization_params[ov::genai::max_length.name()] = max_length;
-                auto res = get_pad_mode(padding_mode);
-                tokenization_params[ov::genai::padding_mode.name()] = res;
+                tokenization_params[ov::genai::padding_mode.name()] = padding_mode;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
                 return tok.encode(prompt, tokenization_params);
             },
-            py::arg("prompt"), py::arg("add_special_tokens") = true, 
-            py::arg("max_length") = std::numeric_limits<int>::max(),
-            py::arg("padding_mode") = "truncate",
+            py::arg("prompt"), 
+            py::arg("add_special_tokens") = true, 
+            py::arg("padding_mode") = PaddingMode::TRUNCATE,
+            py::arg("max_length") = std::nullopt,
             R"(Encodes a single prompt into tokenized input.)")
 
         .def(
