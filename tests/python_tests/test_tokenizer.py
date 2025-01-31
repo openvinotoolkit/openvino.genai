@@ -258,10 +258,11 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
 prompts = [
-    # ['1+1=', 'What is the previous answer?'],
-    # 'What is the previous answers? ' * 1000,  # long sentence exceeding max_length
-    # 'what',  # test that short sentence is padded to long
-    [   # chech that large bathc with multilangual data is correctly padded
+    ['1+1=', 'What is the previous answer?'],
+    'What is the previous answers? ' * 1000,  # long sentence exceeding max_length, check that is truncated
+    'what',                                   # check that short sentence is padded to long
+    # check that large batch with multilangual data is correctly padded
+    [   
         '1+1=',
         'What is the previous answer?',
         'Why is the Sun yellow?',
@@ -286,10 +287,11 @@ def test_padding(add_special_tokens, max_length, pad_mode, prompt):
     # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
     # which cannot store irregular/ragged array.
     # Therefore, for the truncation mode need to sete padding to 'longest' and truncation=True.
+    # ALso MAX_LENGTH mode truncation also applied so that we have the same lengths for each sequence in the batch.
     pad_modes_map = {
         PaddingMode.TRUNCATE: dict(padding="longest", truncation=True),
         PaddingMode.LONGEST: dict(padding="longest"),
-        PaddingMode.MAX_LENGTH: dict(padding="max_length"),
+        PaddingMode.MAX_LENGTH: dict(padding="max_length", truncation=True),
     }
     hf_pad_truncation_modes = pad_modes_map[pad_mode]
 
@@ -299,19 +301,8 @@ def test_padding(add_special_tokens, max_length, pad_mode, prompt):
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
 
-    # HF instead of a single blob of data gives a list of numpy with different sizes
-    # Some are padded to max_len some exceed.
-    # Since openvino_tokenizers cannot store ragged arrays, we compare
-    # them individually.
-    if max_length < 64 and isinstance(prompt, list) and len(prompt) > 2 and pad_mode == PaddingMode.MAX_LENGTH:
-        for field_name in "input_ids", "attention_mask":
-            for i in range(len(hf_res[field_name])):
-                ov_data = getattr(ov_res, field_name).data[i]
-                assert np.all(ov_data == hf_res[field_name][i][:len(ov_data)])
-    else:
-        # regular comparision
-        assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
-        assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
+    assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
+    assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
 
 @pytest.mark.precommit

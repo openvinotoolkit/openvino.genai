@@ -205,11 +205,9 @@ public:
 
         if (ov_tokenizer) {
             ov::pass::Manager manager;
-            manager.register_pass<ov::pass::VisualizeTree>("before.svg");
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.register_pass<MakeTruncationSatateful>();
-            manager.register_pass<ov::pass::VisualizeTree>("after.svg");
             manager.run_passes(ov_tokenizer);
             m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(m_tokenizer, "OV Tokenizer");

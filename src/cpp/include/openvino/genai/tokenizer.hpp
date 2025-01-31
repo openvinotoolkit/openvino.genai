@@ -271,6 +271,5 @@ static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<PaddingMode> padding_mode{"padding_mode"};
 
-
 }  // namespace genai
 }  // namespace ov
