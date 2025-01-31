@@ -659,7 +659,8 @@ public:
         image_embeds.reserve(single_images.size());
 
         for (const auto& image : single_images) {
-            EncodedImage encoded_image = m_vision_encoder.encode(image);
+            ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
+            EncodedImage encoded_image = m_vision_encoder.encode(image, vision_config);
             image_embeds.push_back(std::move(encoded_image.resized_source));
             formatted_prompt += image_token + "\n";
         }
