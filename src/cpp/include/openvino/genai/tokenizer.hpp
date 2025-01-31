@@ -127,7 +127,7 @@ public:
     * @param prompt std::string with input prompt
     * @param add_special_tokens whether to add special tokens
     * @param max_length maximum length to which output will be padded or truncated
-    * @param padding_mode whether to pad result, allowed values are ["truncate", "longest", "max_length", "do_not_pad"]
+    * @param padding_mode either PaddingMode::TRUNCATE, PaddingMode::LONGEST, or PaddingMode::MAX_LENGTH.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -140,7 +140,7 @@ public:
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
     * @param max_length maximum length to which output will be padded or truncated
-    * @param padding_mode whether to pad result, allowed values are ["truncate", "pad"]
+    * @param padding_mode either PaddingMode::TRUNCATE, PaddingMode::LONGEST, or PaddingMode::MAX_LENGTH.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -178,7 +178,7 @@ public:
     /**
     * @brief decode sequence of tokens
     * @param tokens ov::Tensor with tokens with shape [batch_size, seq_len]
-    * @param detokenization_params detokenization parameters,  e.g. ov::genai::skip_special_tokens(true)
+    * @param detokenization_params detokenization parameters,  e.g. ov::genai::skip_special_tokens(true)s
     * @return vector of std::string, with size = batch_size
     */
     template <typename... Properties>
@@ -250,8 +250,10 @@ private:
  * @brief Enum class representing different padding modes for tokenization.
  *
  * This enum class defines modes that can be used to pad tokenized sequences. 
- * IMPORTANT NOTICE, even in truncation mode the padding is applied to the longest sequence in the batch
+ * IMPORTANT NOTICE: even in TRUNCATE mode the padding is applied to the longest sequence in the batch
  * since resulting tokenization is stored as a signe ov::Tensor which cannot store irregular/ragged array.
+ * For the same reason also in MAX_LENGTH mode truncation is also applied so that we have the same lengths
+ * for each sequence in the batch.
  *
  * @var PaddingMode::TRUNCATE
  * Truncate the sequence to the maximum length specified. (But also LONGEST mode is implicitly applied.)
@@ -260,7 +262,8 @@ private:
  * Pad the sequence to the length of the longest sequence in the batch. In this mode truncation is switched off.
  *
  * @var PaddingMode::MAX_LENGTH
- * Pad the sequence to a specified maximum length. In this mode truncation is switched off.
+ * Pad the sequence to a specified maximum length. In this mode truncation is switched on as well 
+ * so that the resulting sequences are of the same length.
  */
 enum class PaddingMode { TRUNCATE, LONGEST, MAX_LENGTH };
 

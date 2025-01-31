@@ -116,12 +116,12 @@ public:
             && max_pad_length_val == m_max_pad_length) {
             return;
         }
-        // if (m_older_than_24_5) {
-        //     // Changing add_special_tokens at runtime was introduced in
-        //     // 24.5. Older tokenizers still allow manipulating their
-        //     // state but the effect is incorrect.
-        //     return;
-        // }
+        if (m_older_than_24_5) {
+            // Changing add_special_tokens at runtime was introduced in
+            // 24.5. Older tokenizers still allow manipulating their
+            // state but the effect is incorrect.
+            return;
+        }
 
         // add_special_tokens is managed by Select op with a bool input.
         ov::Tensor add_special_tensor = ov::Tensor(ov::element::boolean, {});
@@ -137,9 +137,9 @@ public:
         *max_pad_length_tensor.data<int>() = max_pad_length_val;
         
         bool set_padding = max_length_val.has_value();
-        // Even if max_length is not set in order to disable truncation
+        // Even if max_length is not set, in order to disable truncation in LONGEST mode
         // MAX_TRUNCATION_LENGTH_VAR_ID should be updated to max numeric limit.
-        bool set_truncation = padding_mode_val != PaddingMode::TRUNCATE || max_length_val.has_value();
+        bool set_truncation = padding_mode_val == PaddingMode::LONGEST || max_length_val.has_value();
 
         for (auto& state: infer_request_guard.get().query_state()) {
             if (state.get_name().find(add_special_tokens.name()) != std::string::npos) {
