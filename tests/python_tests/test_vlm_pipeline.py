@@ -68,18 +68,20 @@ def test_vlm_pipeline(model_id, cache):
         for link in links:
             images.append(get_image_by_link(link))
 
-        ov_pipe.start_chat()
 
-        result_from_streamer = []
-        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
-        assert res.texts[0] == ''.join(result_from_streamer)
+        for system_message in ["", "You are a helpful assistant."]:
+            ov_pipe.start_chat(system_message)
 
-        for prompt in prompts[1:]:
             result_from_streamer = []
-            res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+            res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
             assert res.texts[0] == ''.join(result_from_streamer)
 
-        ov_pipe.finish_chat()
+            for prompt in prompts[1:]:
+                result_from_streamer = []
+                res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+                assert res.texts[0] == ''.join(result_from_streamer)
+
+            ov_pipe.finish_chat()
 
 
 @pytest.mark.precommit
