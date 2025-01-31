@@ -252,8 +252,8 @@ private:
  * This enum class defines modes that can be used to pad tokenized sequences. 
  * IMPORTANT NOTICE: even in TRUNCATE mode the padding is applied to the longest sequence in the batch
  * since resulting tokenization is stored as a signe ov::Tensor which cannot store irregular/ragged array.
- * For the same reason also in MAX_LENGTH mode truncation is also applied so that we have the same lengths
- * for each sequence in the batch.
+ * For the same reason also in MAX_LENGTH mode truncation is also applied for sequences longer that max_length,
+ * so that we have the same lengths for each sequence in the batch.
  *
  * @var PaddingMode::TRUNCATE
  * Truncate the sequence to the maximum length specified. (But also LONGEST mode is implicitly applied.)
