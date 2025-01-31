@@ -240,6 +240,6 @@ def post_process_pred(pred, subset, model_name):
         pred = pred[:pred.find("\nDialogue")]
     elif "Phi-3" in model_name and subset == "hotpotqa":
         pred = pred.lstrip('\n').split('\n')[0]
-    elif "Qwen" in model_name and subset == "qasper":
-        pred = pred.lstrip('\n').split('\n')[0]
+    elif subset in ["trec", "hotpotqa", "qasper"] and "Qwen" in model_name:
+        pred = pred[:pred.find("\nQuestion")]
     return pred

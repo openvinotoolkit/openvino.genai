@@ -214,22 +214,31 @@ def qwen2_converted_model(tmp_path_factory):
 @dataclass
 class LongBenchTestData:
     subset: str
-    ref_score: float
-    max_cache_usage: float
-    avg_cache_usage: float
+    threshold: float
+    max_cache_usage_optimization_ratio: float
+    avg_cache_usage_optimization_ratio: float
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 37.84, 11.8, 7.68),
-    LongBenchTestData("trec", 28.12, 11.8, 7.721),
-    LongBenchTestData("qasper", 15.88, 11.8, 6.483),
+    LongBenchTestData("samsum", 4, 1.6, 3.3),
+    LongBenchTestData("trec", 3.2, 2.0, 3.3),
+    LongBenchTestData("qasper", 5.8, 1.7, 3.6),
 ])
 def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
     seqs_per_request = 32
     num_kv_blocks = 1000
-    scheduler_config = get_scheduler_config(num_kv_blocks)
     models_path = qwen2_converted_model.models_path
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+
+    scheduler_config_opt = get_scheduler_config(num_kv_blocks)
+    scheduler_config_opt.use_cache_eviction = True
+    if scheduler_config_opt.use_cache_eviction:
+        scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_properties())
+
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset
     max_new_tokens = dataset2maxlen[subset]
@@ -238,38 +247,49 @@ def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    scheduler_config.use_cache_eviction = True
-    if scheduler_config.use_cache_eviction:
-        scheduler_config.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
-
-    model_cb_opt = ContinuousBatchingPipeline(models_path.absolute().as_posix(), scheduler_config, "CPU", {})
-    data = datasets.load_dataset('THUDM/LongBench', subset, split=f'test[:{seqs_per_request}]')
-
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []
+        ref_answers = []
         for p_idx, data_sample in enumerate(data):
             prompt = preprocess_prompt(data_sample, subset, model_name)
             progress_bar.update(1)
             batch.append(prompt)
             answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+            ref_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
 
             if len(batch) == seqs_per_request or p_idx == len(data) - 1:
                 ans_batch = model_cb_opt.generate(
                     batch, [generation_config] * len(batch)
                 )
-                for i, output in enumerate(ans_batch, start=p_idx-len(batch)+1):
-                    pred = post_process_pred(output.m_generation_ids[0], subset, model_name)
-                    answers[i]["pred"] = pred
+                ref_ans_batch = model_cb_noopt.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(batch)+1):
+                    answers[i]["pred"] = post_process_pred(opt_output.m_generation_ids[0], subset, model_name)
+                    ref_answers[i]["pred"] = post_process_pred(ref_output.m_generation_ids[0], subset, model_name)
                 batch.clear()
 
     score = evaluate(answers, subset)
     print(f"Score: {score}")
 
-    pipeline_noopt_metrics = model_cb_opt.get_metrics()
-    print(f"Opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    ref_score = evaluate(ref_answers, subset)
+    print(f"Reference score: {ref_score}")
+    pipeline_opt_metrics = model_cb_opt.get_metrics()
+    pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
-    assert abs(test_struct.ref_score - score) < 1
-    assert abs(test_struct.max_cache_usage - pipeline_noopt_metrics.max_cache_usage) < 1
-    assert abs(test_struct.avg_cache_usage - pipeline_noopt_metrics.avg_cache_usage) < 1
+    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
+    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+
     del model_cb_opt
+    del model_cb_noopt
+    import gc
+    gc.collect()
+
+    assert ref_score - score <= test_struct.threshold
+    assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
+    assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
