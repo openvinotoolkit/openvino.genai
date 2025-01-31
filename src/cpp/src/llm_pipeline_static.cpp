@@ -722,8 +722,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         ov::AnyMap properties = config;
         std::shared_ptr<ov::CompiledModel> compiled;
         // CACHE_DIR + weightless flow support
-        auto cache_mode = get_option<std::string>(config, "CACHE_MODE");
-        if (cache_mode.has_value() && *cache_mode == "OPTIMIZE_SIZE") {
+        auto cache_mode = get_option<CacheMode>(config, "CACHE_MODE");
+        if (cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SIZE) {
             compiled = setupAndCompileModel(models_path / "openvino_model.xml", model_desc, properties);
         } else {
             auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
