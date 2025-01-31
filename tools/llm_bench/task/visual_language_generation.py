@@ -211,6 +211,8 @@ def run_visual_language_generation_genai(
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
     kwargs = {}
     if len(images) >= 1:
         kwargs["images"] = images[0]

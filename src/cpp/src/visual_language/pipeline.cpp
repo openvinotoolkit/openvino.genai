@@ -108,7 +108,7 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
 
-        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
@@ -146,7 +146,7 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
 
-        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
@@ -164,6 +164,8 @@ public:
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+
+        m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);

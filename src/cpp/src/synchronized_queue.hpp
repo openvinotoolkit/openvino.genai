@@ -22,7 +22,7 @@ public:
 
     T back() {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this]{return !m_queue.empty();});
+        m_cv.wait(lock, [this]{return !m_queue.empty(); });
         return m_queue.back();
     }
 

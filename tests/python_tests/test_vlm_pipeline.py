@@ -47,6 +47,8 @@ image_links_for_testing = [
 @pytest.mark.parametrize("model_id", [
     "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
+    "katuni4ka/tiny-random-llava",
+    "katuni4ka/tiny-random-qwen2vl",
 ])
 def test_vlm_pipeline(model_id, cache):
     def streamer(word: str) -> bool:

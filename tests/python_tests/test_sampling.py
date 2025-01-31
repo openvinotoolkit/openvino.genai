@@ -18,7 +18,7 @@ from common import get_hugging_face_models, convert_models, run_llm_pipeline_wit
                           (dict(max_new_tokens=30, min_new_tokens=30), '你好！ 你好嗎？'),
                           (dict(max_new_tokens=30, ignore_eos=True), 'Alan Turing was a'),
                         #   (dict(max_length=40), 'table is made of'),
-                          (dict(stop_token_ids={28998}), 'The Sun is yellow because'), # since a test does not hang, it means stop token is met
+                          (dict(stop_token_ids={28998}, apply_chat_template=False), 'The Sun is yellow because'), # since a test does not hang, it means stop token is met, skip chat template to generate long answer
                         #   (dict(max_new_tokens=1, min_new_tokens=0, echo=True), 'What is OpenVINO?')
                           ],
                          ids=["max_new_tokens",
@@ -59,7 +59,7 @@ def test_stop_strings(tmp_path, generation_config):
 @pytest.mark.parametrize("generation_config",
                          [dict(max_new_tokens=30),
                           dict(max_new_tokens=30, repetition_penalty=2.0),
-                          dict(max_new_tokens=300)],
+                          dict(max_new_tokens=300, apply_chat_template=False)],
                          ids=["basic", "repetition_penalty", "long_max_new_tokens"])
 @pytest.mark.parametrize("prompt", [
     'What is OpenVINO?',
