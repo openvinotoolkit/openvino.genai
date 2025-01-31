@@ -46,6 +46,11 @@ protected:
     // True if chat template should be applied for non-chat scenario
     bool m_apply_chat_template = true;
 
+    // Chat template to use when model's default chat template is not supported
+    virtual std::string get_chat_template_fallback() const {
+        return "";
+    }
+
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
@@ -101,7 +106,11 @@ public:
         }
         m_history = {{{"role", "system"}, {"content", system_message}}};
         constexpr bool add_generation_prompt = false;
-        m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        try {
+            m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        } catch (const std::exception& error) {
+            m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, get_chat_template_fallback());
+        }
     }
 
     void update_chat_history(const std::string& decoded_results) {
@@ -649,8 +658,6 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
-        // Adapted from llava-1.5-7b-hf chat_template.json
-        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
         
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
@@ -666,7 +673,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, get_chat_template_fallback());
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -682,6 +689,11 @@ public:
     }
 
 protected:
+    std::string get_chat_template_fallback() const override {
+        // Adapted from llava-1.5-7b-hf chat_template.json 
+        return "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
+    }
+
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
         const ov::Tensor& text_embeds,
@@ -764,8 +776,6 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
-        // Adapted from llava-1.5-7b-hf chat_template.json
-        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
 
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
@@ -795,7 +805,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, get_chat_template_fallback());
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -1652,9 +1662,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        // Adapted from Qwen/Qwen2-7B-Instruct
-        std::string chat_template_fallback = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, get_chat_template_fallback());
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         auto start_tokenizer_time = std::chrono::steady_clock::now();
@@ -1703,6 +1711,11 @@ public:
         m_rope_delta = 0;
     }
 protected:
+    std::string get_chat_template_fallback() const override {
+        // Adapted from Qwen/Qwen2-7B-Instruct
+        return "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
+    }
+
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
         const ov::Tensor& input_ids,
         const ov::Tensor& text_embeds,
