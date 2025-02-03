@@ -77,7 +77,7 @@ def load_text_model(
             model = OVModelForCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
-        except ValueError:
+        except Exception:
             try:
                 config = AutoConfig.from_pretrained(
                     model_id, trust_remote_code=True)
