@@ -19,10 +19,11 @@ class DecoderCache {
 public:
     DecoderCache() = default;
     DecoderCache(std::shared_ptr<ov::Model> model, ov::AnyMap properties)
-     : m_decoder_model(model)
-     , m_properties(properties) {}
+        : m_decoder_model(model),
+          m_properties(properties) {}
 
     ov::InferRequest get_model(uint8_t input_ids_size);
+
 private:
     std::unordered_map<uint8_t, ov::InferRequest> m_cache;
     std::shared_ptr<ov::Model> m_decoder_model;
@@ -35,7 +36,7 @@ public:
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
-                                   ChunkStreamerVariant streamer) override;
+                                   StreamerVariant streamer) override;
 
 private:
     WhisperInitializedModels m_models;

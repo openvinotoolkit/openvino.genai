@@ -73,6 +73,14 @@ class ConstructableStreamer: public StreamerBase {
             token  // Argument(s)
         );
     }
+    bool put(const std::vector<int64_t>& tokens) override {
+        PYBIND11_OVERRIDE_PURE(
+            bool,  // Return type
+            StreamerBase,  // Parent class
+            put,  // Name of function in C++ (must match Python name)
+            tokens  // Argument(s)
+        );
+    }
     void end() override {
         PYBIND11_OVERRIDE_PURE(void, StreamerBase, end);
     }
@@ -115,7 +123,18 @@ PYBIND11_MODULE(py_openvino_genai, m) {
 
     py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
-        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"))
+        .def("put",
+             [](StreamerBase& self, std::variant<int64_t, std::vector<int64_t>> token) {
+                if (auto _token = std::get_if<int64_t>(&token)) {
+                    return self.put(*_token);
+                } else {
+                    auto tokens = std::get_if<std::vector<int64_t>>(&token);
+                    return self.put(*tokens);
+                }
+             },
+             "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops",
+             py::arg("token")
+        )
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
     init_tokenizer(m);

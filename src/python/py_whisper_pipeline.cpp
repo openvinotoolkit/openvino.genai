@@ -12,10 +12,10 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizers_path.hpp"
+#include "whisper/streamer.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChunkStreamerBase;
-using ov::genai::ChunkStreamerVariant;
 using ov::genai::DecodedResults;
 using ov::genai::GenerationConfig;
 using ov::genai::OptionalWhisperGenerationConfig;
@@ -30,8 +30,6 @@ using ov::genai::WhisperGenerationConfig;
 using ov::genai::WhisperPerfMetrics;
 using ov::genai::WhisperPipeline;
 using ov::genai::WhisperRawPerfMetrics;
-using PyBindChunkStreamerVariant =
-    std::variant<std::function<bool(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -227,6 +225,7 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
 class ConstructableChunkStreamer : public ChunkStreamerBase {
     bool put(int64_t token) override {
+        // todo: check/add gil_acquire
         PYBIND11_OVERRIDE_PURE(bool,               // Return type
                                ChunkStreamerBase,  // Parent class
                                put,                // Name of function in C++ (must match Python name)
@@ -245,31 +244,10 @@ class ConstructableChunkStreamer : public ChunkStreamerBase {
     }
 };
 
-ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
-    return std::visit(
-        pyutils::overloaded{[](const std::function<bool(py::str)>& py_callback) {
-                                // Wrap python streamer with manual utf-8 decoding. Do not rely
-                                // on pybind automatic decoding since it raises exceptions on incomplete
-                                // strings.
-                                return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> bool {
-                                    py::gil_scoped_acquire acquire;
-                                    auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                                    return py_callback(py::reinterpret_borrow<py::str>(py_str));
-                                });
-                            },
-                            [](std::shared_ptr<ChunkStreamerBase> streamer_cls) {
-                                return static_cast<ChunkStreamerVariant>(streamer_cls);
-                            },
-                            [](std::monostate none) {
-                                return static_cast<ChunkStreamerVariant>(none);
-                            }},
-        py_streamer);
-}
-
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
                                         const OptionalWhisperGenerationConfig& config,
-                                        const PyBindChunkStreamerVariant& py_streamer,
+                                        const StreamerVariant& streamer,
                                         const py::kwargs& kwargs) {
     // whisper config should initialized from generation_config.json in case of only kwargs provided
     // otherwise it would be initialized with default values which is unexpected for kwargs use case
@@ -277,8 +255,6 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
     OptionalWhisperGenerationConfig base_config = config.has_value() ? config : pipe.get_generation_config();
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
-
-    ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
 
     ov::genai::WhisperDecodedResults results;
     {
@@ -404,9 +380,29 @@ void init_whisper_pipeline(py::module_& m) {
             [](WhisperPipeline& pipe,
                const RawSpeechInput& raw_speech_input,
                const OptionalWhisperGenerationConfig& generation_config,
-               const PyBindChunkStreamerVariant& streamer,
+               const pyutils::PyBindStreamerVariant& streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::WhisperDecodedResults> {
-                return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
+                StreamerVariant _streamer = pyutils::pystreamer_to_streamer(streamer);
+                return call_whisper_common_generate(pipe, raw_speech_input, generation_config, _streamer, kwargs);
+            },
+            py::arg("raw_speech_input"),
+            "List of floats representing raw speech audio. "
+            "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config",
+            py::arg("streamer") = std::monostate(),
+            "streamer",
+            (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
+
+        .def(
+            "generate",
+            [](WhisperPipeline& pipe,
+               const RawSpeechInput& raw_speech_input,
+               const OptionalWhisperGenerationConfig& generation_config,
+               const std::shared_ptr<ChunkStreamerBase>& streamer,
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::WhisperDecodedResults> {
+                StreamerVariant _streamer = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(streamer);
+                return call_whisper_common_generate(pipe, raw_speech_input, generation_config, _streamer, kwargs);
             },
             py::arg("raw_speech_input"),
             "List of floats representing raw speech audio. "

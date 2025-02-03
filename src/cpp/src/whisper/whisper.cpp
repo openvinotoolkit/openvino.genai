@@ -50,7 +50,7 @@ void process_whisper_logits(ov::Tensor logits,
 std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                                   const std::vector<int64_t>& input_ids,
                                                   const ov::Tensor& encoder_hidden_state,
-                                                  const std::shared_ptr<ov::genai::ChunkStreamerBase> streamer,
+                                                  const std::shared_ptr<ov::genai::StreamerBase> streamer,
                                                   ov::genai::Sampler& sampler,
                                                   ov::genai::SequenceGroup::Ptr sequence_group,
                                                   const bool return_timestamps,
@@ -264,7 +264,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        ov::InferRequest& encoder,
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<ChunkStreamerBase> streamer,
+                                       const std::shared_ptr<StreamerBase> streamer,
                                        Sampler& sampler) {
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -338,7 +338,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer && streamer->put_chunk(extracted_segments.non_timestamp_tokens)) {
+            if (streamer && streamer->put(extracted_segments.non_timestamp_tokens)) {
                 cancelled = true;
                 break;
             }
