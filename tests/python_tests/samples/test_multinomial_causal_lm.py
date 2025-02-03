@@ -38,7 +38,7 @@ def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_ar
 ], indirect=["convert_model"])
 @pytest.mark.parametrize("sample_args", ["return 0"])
 def test_cpp_sample_multinomial_causal_lm_open_llama(convert_model, sample_args,  shared_data):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
+    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text_generation/multinomial_causal_lm.py')
     result = subprocess.run([cpp_sample, convert_model, sample_args], capture_output=True, text=True, check=True)
     assert result.returncode == 0, "C++ sample execution failed"
     shared_data.setdefault("multinomial_causal_lm", {}).setdefault("cpp", {}).setdefault("open_llama_3b_v2", {})[sample_args] = result.stdout
