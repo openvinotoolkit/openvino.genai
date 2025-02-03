@@ -69,9 +69,12 @@ def convert_model(request):
         assert result.returncode == 0, f"Model {model_name} conversion failed"
     yield model_path
     # Cleanup the model after tests
-    if os.path.exists(model_path):
-        logger.info(f"Removing converted model: {model_path}")
-        shutil.rmtree(model_path)
+    if not os.environ.get("TEMP_DIR"):
+        if os.path.exists(model_path):
+            logger.info(f"Removing converted model: {model_path}")
+            shutil.rmtree(model_path)
+    else:
+        logger.info(f"The model {model_path} will be removed when all the tests are finished")
 
 @pytest.fixture(scope="session")
 def download_test_content(request):
