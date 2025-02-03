@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
@@ -15,7 +15,6 @@
 #include "timer.hpp"
 #include "utils.hpp"
 #include "debug_utils.hpp"
-#include "cache_state_dumper.hpp"
 
 using namespace ov::genai;
 

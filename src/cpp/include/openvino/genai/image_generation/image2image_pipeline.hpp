@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -47,6 +47,14 @@ public:
         const CLIPTextModel& clip_text_model,
         const CLIPTextModelWithProjection& clip_text_model_with_projection,
         const UNet2DConditionModel& unet,
+        const AutoencoderKL& vae);
+
+    // creates Flux pipeline from building blocks
+    static Image2ImagePipeline flux(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModel& clip_text_model,
+        const T5EncoderModel t5_encoder_model,
+        const FluxTransformer2DModel& transformer,
         const AutoencoderKL& vae);
 
     ImageGenerationConfig get_generation_config() const;

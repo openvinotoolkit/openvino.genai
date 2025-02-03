@@ -16,10 +16,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17800-91ae987c516/l_openvino_toolkit_ubuntu20_2025.0.0.dev20250109_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17800-91ae987c516/l_openvino_toolkit_ubuntu22_2025.0.0.dev20250109_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17800-91ae987c516/m_openvino_toolkit_macos_12_6_2025.0.0.dev20250109_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17800-91ae987c516/w_openvino_toolkit_windows_2025.0.0.dev20250109_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/l_openvino_toolkit_ubuntu20_2025.1.0.dev20250116_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/l_openvino_toolkit_ubuntu22_2025.1.0.dev20250116_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/m_openvino_toolkit_macos_12_6_2025.1.0.dev20250116_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-17911-83c047443de/w_openvino_toolkit_windows_2025.1.0.dev20250116_x86_64.zip
+
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -119,7 +120,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('Why is the Sun yellow?', return_tensors='pt')
+          prompt = 'Why is the Sun yellow?'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -135,7 +139,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('69', return_tensors='pt')
+          prompt = '69'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -151,7 +158,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('Hi', return_tensors='pt')
+          prompt = 'Hi'
+          if tokenizer.chat_template:
+            prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -167,7 +177,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('return 0', return_tensors='pt')
+          prompt = 'return 0'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -183,7 +196,10 @@ jobs:
           with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
+          prompt = '你好！ 你好嗎？'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref.replace('�', ''))
@@ -193,19 +209,21 @@ jobs:
           "
           echo "你好！ 你好嗎？" passed
 
-          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           prompts = [
-            'Alan Turing was a',
+            'Why is the Sun yellow?',
             'return 0',
             '你好！ 你好嗎？'
           ]
           for prompt in prompts:
-            tokenized = tokenizer(prompt, return_tensors='pt')
+            if tokenizer.chat_template:
+                prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+            tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
             for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 idx = predictions.find(ref.replace('�', ''))
@@ -254,7 +272,10 @@ jobs:
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True) >> ref.py
-          echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
+          echo prompt = '69' >> ref.py
+          echo if tokenizer.chat_template: >> ref.py
+          echo     prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True) >> ref.py
+          echo tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False) >> ref.py
           echo for beam in transformers.AutoModelForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True).generate(**tokenized, max_new_tokens=100, do_sample=False): >> ref.py
           echo     ref = tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
@@ -445,9 +466,13 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
+          echo Running speculative_decoding_lm C++ sample...
           ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
+          echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
+          echo Running speculative_decoding_lm Python sample...
           python ./samples/python/text_generation/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
+          echo All samples executed, checking result correctness...
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -455,6 +480,8 @@ jobs:
               predicted_speculative = f.readline()
           with open('predictions_py.txt', 'r') as f:
               predicted_py = f.readline()
+          print(f'Predicted greedy: {predicted_greedy}')
+          print(f'Predicted speculative: {predicted_speculative}')
           assert predicted_greedy == predicted_speculative
           assert predicted_greedy == predicted_py
           assert predicted_speculative == predicted_py
@@ -463,6 +490,7 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -501,10 +529,13 @@ jobs:
           ```
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
-
+          echo Running prompt_lookup_decoding_lm C++ sample...
           ./build/samples/cpp/text_generation/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          echo Running prompt_lookup_decoding_lm Python sample...
           python ./samples/python/text_generation/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
+          echo All samples executed, checking result correctness...
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -512,6 +543,9 @@ jobs:
               predicted_prompt_lookup = f.readline()
           with open('predictions_py.txt', 'r') as f:
               predicted_prompt_lookup_py = f.readline()
+
+          print(f'Predicted greedy: {predicted_greedy}')
+          print(f'Predicted prompt lookup: {predicted_prompt_lookup}')
           assert predicted_greedy == predicted_prompt_lookup
           assert predicted_greedy == predicted_prompt_lookup_py
           assert predicted_prompt_lookup == predicted_prompt_lookup_py
@@ -520,6 +554,7 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
     defaults:
@@ -559,7 +594,10 @@ jobs:
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          prompt = 'Alan Turing was a'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -614,7 +652,10 @@ jobs:
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          prompt = 'Alan Turing was a'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -696,7 +737,6 @@ jobs:
           timeout 30s ./samples/python/text_generation/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
-
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
@@ -833,6 +873,36 @@ jobs:
         run: >
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./internvl2_4b_ov/ monalisa.jpg
+          <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
+
+  visual_language_chat_sample-ubuntu-qwen2vl:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
+      - name: Download and convert Qwen2VL model
+        run: |
+          source ./ov/setupvars.sh
+          optimum-cli export openvino --model Qwen/Qwen2-VL-2B-Instruct ./qwen2_vl_2b_ov/ --trust-remote-code
+      - name: Download images
+        run: |
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
+      - name: Run visual_language_chat C++ sample - Qwen2VL
+        run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./qwen2_vl_2b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <optional>
@@ -108,7 +108,7 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
 
-        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
@@ -146,7 +146,7 @@ public:
             m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
         }
 
-        m_sampler = Sampler(m_tokenizer);
+        m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
@@ -164,6 +164,8 @@ public:
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+
+        m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
@@ -208,8 +210,9 @@ public:
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
-        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
+        ov::Tensor position_ids;
+        std::optional<int64_t> rope_delta;
+        std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -218,7 +221,7 @@ public:
         ov::genai::EncodedResults encoded_result;
         std::optional<int64_t> last_disappeared_token;
         std::tie(encoded_result, last_disappeared_token) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                             position_ids, m_embedding);
+                                                                                             position_ids, m_embedding, rope_delta);
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;

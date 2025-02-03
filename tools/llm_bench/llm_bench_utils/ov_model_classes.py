@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
 import time
@@ -16,7 +16,7 @@ from diffusers.utils import PIL_INTERPOLATION
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, ImagePipelineOutput
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.intel.openvino.utils import ONNX_WEIGHTS_NAME, OV_XML_FILE_NAME
-from openvino.runtime import Model, Core, Tensor, Type
+from openvino import Model, Core, Tensor, Type
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
 from transformers import GenerationConfig, StoppingCriteriaList

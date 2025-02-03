@@ -1,16 +1,17 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
 import shutil
 import pytest
+import openvino
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -251,7 +252,12 @@ def run_hugging_face(
         # process prompt by promp as we have multiple generation configs
         for prompt, generation_config in zip(prompts, generation_configs):
             hf_generation_config = convert_to_hf(opt_model.generation_config, generation_config)
-            inputs = hf_tokenizer(prompt, return_tensors="pt")
+            inputs = {}
+            if hf_tokenizer.chat_template and generation_config.apply_chat_template:
+                prompt = hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+                inputs = hf_tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+            else:
+                inputs = hf_tokenizer(prompt, return_tensors="pt")
             input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
@@ -265,8 +271,15 @@ def run_hugging_face(
                 generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
             generation_results.append(generation_result)
     else:
-        # process all prompts as a single batch as we have a single generation config for all prompts
-        inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=True, padding_side='left')
+        inputs = {}
+        if hf_tokenizer.chat_template and generation_configs.apply_chat_template:
+            processed_prompts = []
+            for prompt in prompts:
+                processed_prompts.append(hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True))
+            # process all prompts as a single batch as we have a single generation config for all prompts
+            inputs = hf_tokenizer(processed_prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=False, padding_side='left')
+        else:
+            inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
         input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
         hf_generation_config = convert_to_hf(opt_model.generation_config, generation_configs)
         hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer)
@@ -324,20 +337,62 @@ def get_default_properties():
         hints.kv_cache_precision : ov.Type.f16,
     }
 
+def get_models_list_from_path(file_name: str):
+    models = []
+    with open(file_name) as f:
+        for model_name in f:
+            model_name = model_name.strip()
+            # skip comment in model scope file
+            if model_name.startswith('#'):
+                continue
+            models.append(model_name)
+    return models
+
+
+class StreamerWithResults:
+    # Return a streamer which accumulates results in order to compare with results returned from generate.
+    results: List[str] = []
+    def __init__(self):
+        self.results = []
+
+    def accumulate(self, subword) -> bool:
+        self.results.append(subword)
+        return False
+    
+    def get_results(self) -> List[GenerationResult]:
+        streaming_result = GenerationResult()
+        streaming_result.m_generation_ids = [''.join(self.results)]
+        return [streaming_result]
+    
+    def reset(self):
+        self.results = []
+
+
 
 def run_llm_pipeline(
     models_path : Path,
     prompts: List[str],
     generation_config : GenerationConfig,
-    use_cb : bool = False
+    use_cb : bool = False,
+    streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
-
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
+    
+    if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
+        # We can use streamer only if we have a single prompt and not beam search.
+        streamer = StreamerWithResults()
+    if isinstance(streamer, StreamerWithResults):
+        # Clear the accumulated strings to avoid side effects
+        streamer.reset()
 
-    generate_outputs : DecodedResults = ov_pipe.generate(inputs=prompts, generation_config=generation_config)
+    generate_outputs : DecodedResults = ov_pipe.generate(
+        inputs=prompts, 
+        generation_config=generation_config, 
+        streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
+    )
 
     index = 0
     generation_results = []
@@ -355,6 +410,9 @@ def run_llm_pipeline(
 
     del ov_pipe
     shutil.rmtree(models_path)
+    
+    if isinstance(streamer, StreamerWithResults):
+        compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
     return generation_results
 
@@ -410,9 +468,14 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     serialize(tokenizer, models_path / "openvino_tokenizer.xml")
     serialize(detokenizer, models_path / "openvino_detokenizer.xml")
+ 
 
-
-def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_config: GenerationConfig | dict, tmp_path: Path, use_cb : bool = False):
+def run_llm_pipeline_with_ref(model_id: str, 
+                              prompts: List[str], 
+                              generation_config: GenerationConfig | dict, 
+                              tmp_path: Path, 
+                              use_cb : bool = False,
+                              streamer: StreamerWithResults | Callable | StreamerBase = None):
     models_path : Path = tmp_path / model_id
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
@@ -421,7 +484,7 @@ def run_llm_pipeline_with_ref(model_id: str, prompts: List[str], generation_conf
 
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb)
+    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
 
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
@@ -472,5 +535,21 @@ def get_image_by_link(link):
     image = Image.open(requests.get(link, stream=True).raw)
     if image.mode != 'RGB':
         image = image.convert('RGB')
-    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, 3, image.size[1], image.size[0])
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
     return Tensor(image_data)
+
+
+"""rt_info has the highest priority. Delete it to respect configs."""
+def delete_rt_info(configs: List[Tuple], temp_path):
+    core = openvino.Core()
+    core.set_property({'ENABLE_MMAP': False})
+    for model_path in temp_path / "openvino_tokenizer.xml", temp_path / "openvino_detokenizer.xml":
+        tokenizer = core.read_model(model_path)
+        rt_info = tokenizer.get_rt_info()
+        for config, _ in configs:
+            for key in config.keys():
+                try:
+                    del rt_info[key]
+                except KeyError:
+                    pass
+        openvino.save_model(tokenizer, model_path)

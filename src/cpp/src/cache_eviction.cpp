@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "cache_eviction.hpp"
@@ -266,5 +266,100 @@ namespace ov::genai {
 
         m_scores[decoder_layer_idx] = new_scores;
         m_cache_counter[decoder_layer_idx] = new_counter;
+    }
+
+    CacheRotationCalculator::CacheRotationCalculator(size_t block_size,
+                                                     size_t max_context_length_in_blocks,
+                                                     size_t kv_head_size,
+                                                     double rope_theta)
+        : m_block_size(block_size),
+          m_head_size(kv_head_size) {
+        // Frequencies follow the original recipe from RoFormer:
+        // https://arxiv.org/pdf/2104.09864v5
+        //
+        // However, the way the rotation coefficients are ultimately applied in Llama and related models from
+        // huggingface is very different from the RoFormer - the embedding-dimension coefficients are not treated as
+        // consecutive x-y coordinate pairs, but are rather divided into contiguous x-like and y-like halves - see
+        // `rotate_half` function in HF transformers. It can be shown that this form still preserves the relative
+        // positioning property from the RoFormer article.
+        OPENVINO_ASSERT(rope_theta > 0, "rope_theta must be positive");
+        size_t num_freqs = kv_head_size / 2;
+        m_rope_sin_lut.resize(max_context_length_in_blocks);
+        m_rope_cos_lut.resize(max_context_length_in_blocks);
+
+        for (size_t i = 0; i < max_context_length_in_blocks; i++) {
+            m_rope_sin_lut[i].reserve(num_freqs);
+            m_rope_cos_lut[i].reserve(num_freqs);
+            for (size_t j = 0; j < num_freqs; j++) {
+                double exponent = -static_cast<double>(2 * j) / kv_head_size;
+                double base_angle = std::pow(rope_theta, exponent);
+                m_rope_sin_lut[i].push_back(
+                    -std::sin(i * block_size * base_angle));  // minus since we will be rotating by an inverse angle
+                m_rope_cos_lut[i].push_back(std::cos(i * block_size * base_angle));
+            }
+        }
+    }
+
+    const std::vector<std::vector<float>>& CacheRotationCalculator::get_sin_lut() const {
+        return m_rope_sin_lut;
+    }
+
+    const std::vector<std::vector<float>>& CacheRotationCalculator::get_cos_lut() const {
+        return m_rope_cos_lut;
+    }
+
+    std::vector<CacheRotationCalculator::BlockRotationData> CacheRotationCalculator::get_rotation_data(
+        const std::set<size_t>& evicted_block_logical_indices,
+        size_t num_logical_blocks_before_eviction,
+        bool deltas_only) {
+
+
+        std::vector<BlockRotationData> retval;
+        if (evicted_block_logical_indices.empty()) {
+            return retval;
+        }
+
+        for (auto idx : evicted_block_logical_indices) {
+            OPENVINO_ASSERT(idx < num_logical_blocks_before_eviction);
+        }
+
+        // num_logical_blocks_before_eviction > evicted_block_logical_indices.size() is automatically guaranteed by the
+        // set property and the previous assertion
+        retval.reserve(num_logical_blocks_before_eviction - evicted_block_logical_indices.size());
+
+        ptrdiff_t current_rotation_delta_in_blocks = 0;
+        std::vector<size_t> logical_block_space(num_logical_blocks_before_eviction);
+        std::iota(logical_block_space.begin(), logical_block_space.end(), 0);
+
+        for (size_t logical_block_idx : logical_block_space) {
+            if (evicted_block_logical_indices.find(logical_block_idx) != evicted_block_logical_indices.end()) {
+                current_rotation_delta_in_blocks += 1;
+            } else {
+                if (current_rotation_delta_in_blocks != 0) {
+                    BlockRotationData block_rotation_data;
+                    block_rotation_data.logical_block_idx = logical_block_idx - current_rotation_delta_in_blocks;
+
+                    // rotation delta is in tokens, but LUT is in blocks right now since we evict per-block
+                    // delta recomputation to a valid LUT index is done at a later stage
+                    block_rotation_data.rotation_delta = current_rotation_delta_in_blocks * m_block_size;
+                    OPENVINO_ASSERT(block_rotation_data.rotation_delta / m_block_size <= m_rope_cos_lut.size(), "rotation delta larger than LUT size");
+
+                    if (!deltas_only) {
+                        block_rotation_data.cosines.reserve(m_block_size);
+                        block_rotation_data.sines.reserve(m_block_size);
+                        for (size_t i = 0; i < m_block_size; i++) {
+                            block_rotation_data.cosines.push_back(
+                                m_rope_cos_lut[current_rotation_delta_in_blocks]);
+                            block_rotation_data.sines.push_back(
+                                m_rope_sin_lut[current_rotation_delta_in_blocks]);
+                        }
+                    }
+
+                    retval.push_back(block_rotation_data);
+                }
+            }
+        }
+
+        return retval;
     }
 }

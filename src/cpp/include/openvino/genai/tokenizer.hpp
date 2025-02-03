@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -220,6 +220,9 @@ public:
     /// @brief Override a chat_template read from tokenizer_config.json.
     /// @param chat_template The new template to override with.
     void set_chat_template(const std::string& chat_template);
+
+    // get information about a chat template to check its status, for example whether it is empty
+    std::string get_chat_template() const;
 
     // information about <bos>, <eos> tokens should be public,
     // they are used at least in StreamerBase descendants

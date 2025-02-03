@@ -1,13 +1,14 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
 import pytest
 import math
 from typing import Dict
+from functools import partial
 
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
 
 from common import get_default_properties, get_hugging_face_models, convert_models, generate_and_compare_with_reference_text, \
     get_scheduler_config, get_greedy, run_cb_pipeline_with_ref, get_beam_search, get_greedy, \
@@ -18,7 +19,7 @@ from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_tex
 from ov_genai_test_utils import (
     get_chat_models_list,
     read_model,
-    get_continuous_batching,
+    get_continuous_batching
 )
 
 def read_models_list(file_name: str):
@@ -31,6 +32,8 @@ def read_models_list(file_name: str):
                 continue
             models.append(model_name)
     return models
+
+from shutil import rmtree
 
 #
 # e2e tests on random and real models
@@ -117,7 +120,7 @@ questions = [
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
     cb_pipe = get_continuous_batching(models_path)
 
     ov_pipe.start_chat()
@@ -337,3 +340,75 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)
+
+def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):
+    device = "CPU"
+    prompt = "Prompt example is"
+    generation_config.max_new_tokens = 10
+    pipe = None
+    if pipeline_type == "continuous_batching":
+        scheduler_config = SchedulerConfig()
+        pipe = ContinuousBatchingPipeline(model_path, scheduler_config, device)
+        prompt = [prompt]
+        generation_config = [generation_config]
+    elif pipeline_type == "speculative_decoding":
+        generation_config.assistant_confidence_threshold = 0.4
+        pipe = LLMPipeline(model_path, device, draft_model=draft_model(model_path))
+    elif pipeline_type == "prompt_lookup_decoding":
+        generation_config.num_assistant_tokens = 5
+        generation_config.max_ngram_size = 3
+        pipe = LLMPipeline(model_path, device, prompt_lookup=True)
+    elif "llm_pipeline":
+        pipe = LLMPipeline(model_path, device)
+    else:
+        raise RuntimeError(f"{pipeline_type} is unknown pipeline type!")
+    return pipe, prompt, generation_config
+
+@pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
+@pytest.mark.precommit
+def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
+    model_id : str = "facebook/opt-125m"
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+
+    models_path : Path = tmp_path / "t_streaming" / model_id
+    convert_models(opt_model, hf_tokenizer, models_path)
+
+    generation_config = GenerationConfig()
+    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
+
+    def py_streamer(py_str: str):
+        return False
+
+    try:
+        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
+    except Exception:
+        assert True
+
+    del pipe
+    rmtree(models_path)
+
+@pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
+@pytest.mark.precommit
+def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type):
+    model_id : str = "facebook/opt-125m"
+    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+
+    models_path : Path = tmp_path / "t_streaming" / model_id
+    convert_models(opt_model, hf_tokenizer, models_path)
+    
+    generation_config = GenerationConfig()
+    generation_config.stop_strings = {" the "}
+    generation_config.include_stop_str_in_output = False
+
+    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
+
+    def py_streamer(py_str: str):
+        raise Exception("Streamer was called")
+
+    try:
+        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
+    except Exception:
+        assert False
+
+    del pipe
+    rmtree(models_path)

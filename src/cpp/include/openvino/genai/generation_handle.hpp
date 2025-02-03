@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -73,8 +73,6 @@ class GenerationStream;
 class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params;
-
-    bool is_dropped();
  
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
@@ -90,6 +88,7 @@ public:
     GenerationStatus get_status();
 
     bool can_read();
+    bool is_dropped();
 
     void drop();
 

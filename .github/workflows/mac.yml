@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.10'
-  OV_BRANCH: 'master'
+  OV_BRANCH: master
   OV_TARBALL: ''
 
 jobs:
@@ -235,7 +235,7 @@ jobs:
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
           python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)

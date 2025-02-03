@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "llm_pipeline_stateful.hpp"
@@ -88,7 +88,18 @@ DecodedResults StatefulLLMPipeline::generate(
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
-        encoded_input = m_tokenizer.encode(*input_vector);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            std::vector<std::string> templated_input_vector;
+            for (auto& input : *input_vector) {
+                ChatHistory history({{{"role", "user"}, {"content", input}}});
+                constexpr bool add_generation_prompt = true;
+                auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                templated_input_vector.push_back(templated_prompt);
+            }
+            encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
+        } else {
+            encoded_input = m_tokenizer.encode(*input_vector, ov::genai::add_special_tokens(true));
+        }
     } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
         std::string& prompt = *input_prompt;
 
@@ -104,7 +115,7 @@ DecodedResults StatefulLLMPipeline::generate(
 
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
-            auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             // Do not add special tokens in chat scenario to be aligned with HF.
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
             auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
@@ -157,7 +168,16 @@ DecodedResults StatefulLLMPipeline::generate(
 
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
         } else {
-            encoded_input = m_tokenizer.encode(prompt);
+            std::string& prompt = *input_prompt;
+            if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                constexpr bool add_generation_prompt = true;
+                auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                encoded_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+            } else {
+                // in case when chat_template was not found in tokenizer_config.json or set
+                encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+            }
         }
     }
 
