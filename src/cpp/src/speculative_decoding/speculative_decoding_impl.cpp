@@ -34,8 +34,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
 
-    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
+    auto main_kv_cache_config = utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
+    auto draft_kv_cache_config = utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
@@ -48,10 +48,18 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     if (is_draft_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
-        size_t main_model_hidden_size = utils::get_hidden_size(main_model),
-               draft_model_hidden_size = utils::get_hidden_size(draft_model);
-        auto k = static_cast<float>(draft_model_hidden_size) / (main_model_hidden_size + draft_model_hidden_size);
+        auto compute_total_hidden_size = [] (const std::vector<KVHeadConfig>& kv_cache_config) -> size_t {
+            size_t total_hidden_size = 0;
+            for (auto & config : kv_cache_config) {
+                total_hidden_size += config.k_head_size * config.num_k_heads + config.v_head_size * config.num_v_heads;
+            }
+            return total_hidden_size;
+        };
+        float main_model_hidden_size = compute_total_hidden_size(main_kv_cache_config),
+              draft_model_hidden_size = compute_total_hidden_size(draft_kv_cache_config);
+        auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
 
+        // TODO: work with KV blocks as it will be more precise instead of GBs
         size_t main_cache_size = std::ceil(main_scheduler_config.cache_size * (1.f - k)),
                draft_cache_size = main_scheduler_config.cache_size - main_cache_size;
         if (draft_cache_size == 0 && main_cache_size > 0) {
@@ -64,11 +72,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     }
 
     ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
-
-    DeviceConfig main_device_config(main_device), draft_device_config(draft_device);
-
-    utils::set_kv_cache_type_and_shape(main_model, main_device_config);
-    utils::set_kv_cache_type_and_shape(draft_model, draft_device_config);
 
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
@@ -83,10 +86,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_device_config, main_scheduler_config_updated, main_device, main_model_desc.properties, true);
+        main_kv_cache_config, main_scheduler_config_updated, main_device, main_model_desc.properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
-        draft_device_config, draft_scheduler_config, draft_device, draft_properties, false);
+        draft_kv_cache_config, draft_scheduler_config, draft_device, draft_properties, false);
 }
 
 GenerationHandle
@@ -260,8 +263,13 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
             return;
         }
 
-        std::unordered_map<uint64_t, GenerationOutput> token_map = generation->read();
-        const auto tokens = token_map.begin()->second.generated_ids;
+        std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+        OPENVINO_ASSERT(generation_outputs.size() <= 1);
+        if (generation_outputs.empty()) {
+            return;
+        }
+
+        const auto tokens = generation_outputs.begin()->second.generated_ids;
         streamer_ptr->put(tokens);
     };
 

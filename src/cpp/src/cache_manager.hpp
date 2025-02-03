@@ -5,12 +5,12 @@
 
 #include <vector>
 #include <list>
+
 #include "openvino/runtime/tensor.hpp"
-#include "device_config.hpp"
+#include "paged_attention_transformations.hpp"
 
 #ifndef _WIN32
 #include <sys/mman.h>
-#include "openvino/core/shape.hpp"
 
 
 class TensorMmapAllocator { 
@@ -49,11 +49,13 @@ namespace ov::genai {
 class CacheManager {
     size_t m_num_decoder_layers = 0;
     std::string m_device;
+    size_t m_block_size = 0; // block size is per inference device 
     std::vector<ov::element::Type> m_key_precisions, m_value_precisions;
     std::vector<ov::PartialShape> m_key_shapes, m_value_shapes;
     std::vector<ov::Tensor> m_key_cache, m_value_cache;
     size_t m_num_allocated_kv_blocks = 0, m_block_size_in_bytes = 0;
     ov::InferRequest m_request;
+    size_t m_k_head_size = 0;
 
     static ov::Shape set_kv_blocks(ov::PartialShape pshape, size_t num_kv_blocks) {
         pshape[0] = num_kv_blocks;
@@ -65,47 +67,88 @@ class CacheManager {
         m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
     }
 
-    ov::PartialShape patch_shape(ov::PartialShape pshape, ov::element::Type cache_type) {
+    ov::PartialShape to_partial_shape(const KVHeadConfig& config, ov::element::Type cache_type, bool key_param) {
         OPENVINO_ASSERT(!m_device.empty(), "Internal error: device is not set");
+        OPENVINO_ASSERT(m_block_size > 0, "Internal error: block size is not set yet");
 
-        if (m_device.find("CPU") != std::string::npos && cache_type == ov::element::u8) {
-            // Scale, zero point and quantized data will be stored together.
-            // The layout for per token per head:
-            // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
-            // so, we have to extend head_size by 8, which is sizeof(float)
-            // for scale and sizeof(float) for zeropoint
-            pshape[3] += 2 * sizeof(float);
+        ov::PartialShape pshape;
+
+        if (m_device.find("CPU") != std::string::npos) {
+            if (key_param) {
+                pshape = ov::PartialShape{ov::Dimension::dynamic(),
+                                          ov::Dimension(config.num_k_heads),
+                                          ov::Dimension(m_block_size),
+                                          ov::Dimension(config.k_head_size)};
+
+                if (m_k_head_size == 0) {
+                    m_k_head_size = config.k_head_size;
+                }
+            } else {
+                pshape = ov::PartialShape{ov::Dimension::dynamic(),
+                                          ov::Dimension(config.num_v_heads),
+                                          ov::Dimension(m_block_size),
+                                          ov::Dimension(config.v_head_size)};
+            }
+
+            if (cache_type == ov::element::u8) {
+                // Scale, zero point and quantized data will be stored together.
+                // The layout for per token per head:
+                // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
+                // so, we have to extend head_size by 8, which is sizeof(float)
+                // for scale and sizeof(float) for zeropoint
+                pshape[3] += 2 * sizeof(float);
+            }
+        } else if (m_device.find("GPU") != std::string::npos) {
+            if (key_param) {
+                pshape = ov::PartialShape{ov::Dimension::dynamic(),
+                                          ov::Dimension(config.num_k_heads),
+                                          ov::Dimension(config.k_head_size),
+                                          ov::Dimension(m_block_size)};
+            } else {
+                pshape = ov::PartialShape{ov::Dimension::dynamic(),
+                                          ov::Dimension(config.num_v_heads),
+                                          ov::Dimension(m_block_size),
+                                          ov::Dimension(config.v_head_size)};
+            }
+        } else {
+            OPENVINO_THROW("Internal error: unsupported device ", m_device);
         }
 
         return pshape;
     }
 
 public:
-    CacheManager(ov::InferRequest request, const DeviceConfig& device_config) :
+    CacheManager(ov::InferRequest request, const std::vector<KVHeadConfig>& kv_cache_config) :
         m_request(request) {
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
         OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
         m_device = execution_devices[0];
+        
+        // set block_size depending on device
+        const size_t cpu_block_size = 32, gpu_block_size = 16;
+        const bool is_gpu = m_device.find("GPU") != std::string::npos;
+        m_block_size = is_gpu ? gpu_block_size : cpu_block_size;
 
         // extract information about KV cache precisions and shapes
         size_t kv_input_index = 0;
         for (const auto& input : compiled_model.inputs()) {
             for (auto & name : input.get_names()) {
                 auto cache_precision = input.get_element_type();
+                ov::PartialShape pshape;
 
                 if (name.find("key_cache.") == 0) {
-                    auto pshape = patch_shape(device_config.get_key_cache_shape(kv_input_index), cache_precision);
+                    pshape = to_partial_shape(kv_cache_config[kv_input_index], cache_precision, true);
+                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     m_key_shapes.push_back(pshape);
                     m_key_precisions.push_back(cache_precision);
-                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     break;
                 } else if (name.find("value_cache.") == 0) {
-                    auto pshape = patch_shape(device_config.get_value_cache_shape(kv_input_index), cache_precision);
+                    pshape = to_partial_shape(kv_cache_config[kv_input_index], cache_precision, false);
+                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     m_value_shapes.push_back(pshape);
                     m_value_precisions.push_back(cache_precision);
-                    m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     ++kv_input_index;
                     break;
                 }
@@ -122,6 +165,10 @@ public:
 
     std::string get_device() const {
         return m_device;
+    }
+
+    size_t get_block_size() const {
+        return m_block_size;
     }
 
     ov::element::Type get_key_cache_precision(size_t decoder_layer_id) const {
@@ -249,6 +296,10 @@ public:
     ov::Tensor get_value_cache(size_t decoder_layer_id) const {
         OPENVINO_ASSERT(decoder_layer_id < m_value_cache.size(), "decoder_layer_id = ", decoder_layer_id, ", num_layers = ", m_value_cache.size());
         return m_value_cache[decoder_layer_id];
+    }
+
+    size_t get_v_head_size(size_t layer_id) const {
+        return m_value_shapes[layer_id][3].get_length();
     }
 
     void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) {

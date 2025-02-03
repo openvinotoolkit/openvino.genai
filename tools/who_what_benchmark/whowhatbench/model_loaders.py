@@ -173,6 +173,10 @@ def load_visual_text_model(
                     model_id, trust_remote_code=True, device_map=device.lower(), _attn_implementation="eager", use_flash_attention_2=False
                 )
         model.eval()
+        try:
+            model.get_vision_tower().load_model()
+        except Exception:
+            pass
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)

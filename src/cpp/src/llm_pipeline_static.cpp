@@ -658,7 +658,7 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
                              ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
-        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->back();
+        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
             if (streamer_ptr->put(gen_token)) {
                 handle->drop();
@@ -827,7 +827,15 @@ DecodedResults StatefulLLMPipeline::generate(
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
-        tokenized_input = m_tokenizer.encode(prompt);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+        } else {
+            // in case when chat_template was not found in tokenizer_config.json or set
+            tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+        }
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
@@ -1294,7 +1302,15 @@ DecodedResults StatelessLLMPipeline::generate(
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
-        tokenized_input = m_tokenizer.encode(prompt);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+        } else {
+            // in case when chat_template was not found in tokenizer_config.json or set
+            tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+        }
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();

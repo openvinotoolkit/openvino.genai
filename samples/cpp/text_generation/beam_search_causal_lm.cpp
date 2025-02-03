@@ -19,9 +19,7 @@ int main(int argc, char* argv[]) try {
     config.num_beams = 15;
     config.diversity_penalty = 1.0f;
     config.num_return_sequences = config.num_beams;
-       
-    // Since the streamer is set, the results will
-    // be printed each time a new token is generated.
+
     auto beams = pipe.generate(prompts, config);
     std::cout << beams << '\n';
 } catch (const std::exception& error) {

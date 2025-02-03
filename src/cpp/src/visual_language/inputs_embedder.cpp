@@ -43,6 +43,8 @@ protected:
     // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
+    // True if chat template should be applied for non-chat scenario
+    bool m_apply_chat_template = true;
 
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
@@ -80,6 +82,10 @@ public:
         m_last_disappeared_token = last_disappeared_token;
   
         std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
+    }
+
+    void set_apply_chat_template_status(bool apply_chat_template) {
+        m_apply_chat_template = apply_chat_template;
     }
 
     virtual void start_chat(const std::string& system_message) {
@@ -155,7 +161,7 @@ protected:
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history;
-            try {
+           try {
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             } catch (const std::exception& error) {
                 // Use fallback chat template if it was not found in tokenizer_config.json
@@ -169,8 +175,23 @@ protected:
             m_templated_chat_history = std::move(new_templated_chat_history);
             return {new_chat_tokens, prev_chat_tokens};
         } else {
+            ov::Tensor encoded_input_ids;
             auto start_tokenizer_time = std::chrono::steady_clock::now();
-            ov::Tensor encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            if (m_apply_chat_template) {
+                std::string templated_prompt;
+                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                constexpr bool add_generation_prompt = true;
+
+                if (!m_tokenizer.get_chat_template().empty()) {
+                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                } else {
+                    // Use fallback chat template if it was not found in tokenizer_config.json
+                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template_fallback);
+                }
+                encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+            } else {
+                encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+            }
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             return {encoded_input_ids, ov::Tensor()};
@@ -1407,15 +1428,15 @@ std::vector<ov::Tensor> split_tokenize(const std::string& text, ov::genai::Token
     return tokenized;
 }
 
-ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, size_t tokens_per_image) {
+ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, const std::vector<size_t>& tokens_per_images) {
     size_t merged_length = 0;
     for (const ov::Tensor& chunk : chunks) {
         merged_length += chunk.get_shape().at(1);
     }
-    merged_length += chunks.empty() ? 0 : (chunks.size() - 1) * tokens_per_image;
+    merged_length += std::accumulate(tokens_per_images.begin(), tokens_per_images.end(), 0);
     ov::Tensor merged{ov::element::i64, {1, merged_length}};
     size_t offset = 0;
-    int64_t image_id = -1;
+    int64_t image_id = 0;
     for (const ov::Tensor& chunk : chunks) {
         size_t length = chunk.get_shape().at(1);
         std::copy_n(
@@ -1427,11 +1448,11 @@ ov::Tensor insert_image_placeholders(const std::vector<ov::Tensor>& chunks, size
         if (offset < merged_length) {
             std::fill_n(
                 merged.data<int64_t>() + offset,
-                tokens_per_image,
-                image_id
+                tokens_per_images.at(image_id),
+                -image_id - 1  // It could be just -image_id. -1 is for consistency with the original implementation.
             );
-            offset += tokens_per_image;
-            --image_id;
+            offset += tokens_per_images.at(image_id);
+            ++image_id;
         }
     }
     return merged;
@@ -1460,9 +1481,7 @@ class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
 public:
     ov::InferRequest m_hd_feature_transformer;
     ov::InferRequest m_vision_projection;
-    // Used to insert <|image_i|>\n per image (not a slice).
-    size_t m_image_id = 1;
-    size_t m_tokens_per_image = 0;
+    std::vector<size_t> m_tokens_per_images;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1470,7 +1489,7 @@ public:
         const std::string& device,
         const ov::AnyMap device_config
     ):
-        IInputsEmbedder(vlm_config, model_dir, device, device_config), m_image_id{0},
+        IInputsEmbedder(vlm_config, model_dir, device, device_config),
         m_hd_feature_transformer{phi3_v::create_hd_feature_transformer()},
         m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
 
@@ -1481,8 +1500,8 @@ public:
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             images_features_proj.push_back(phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
-            images_prompt << "<|image_" << m_image_id << "|>\n";
-            ++m_image_id;
+            m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
+            images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";
         }
         images_prompt << prompt;
         std::vector<ov::Tensor> new_chat_tokens;
@@ -1490,8 +1509,7 @@ public:
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", images_prompt.str()}});
             constexpr bool add_generation_prompt = true;
-            std::string new_templated_chat_history;
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             new_chat_tokens = phi3_v::split_tokenize(new_templated_chat_history, m_tokenizer);
             prev_chat_tokens = phi3_v::split_tokenize(m_templated_chat_history, m_tokenizer);
@@ -1504,11 +1522,8 @@ public:
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
-        if (0 == m_tokens_per_image && !images_features_proj.empty()) {
-            m_tokens_per_image = images_features_proj.at(0).get_shape().at(1);
-        }
-        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_image);
-        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_image);
+        ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
+        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_images);
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
         OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1);
@@ -1516,7 +1531,6 @@ public:
         for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
             size_t text_length = tokens.at(im_id).get_shape().at(1);
             size_t im_length = images_features_proj.at(im_id).get_shape().at(1);
-            OPENVINO_ASSERT(im_length == m_tokens_per_image);
             features_length += text_length + im_length;
         }
         features_length += tokens.back().get_shape().at(1);
@@ -1549,7 +1563,7 @@ public:
         );
 
         if (!m_is_chat_conversation) {
-            m_image_id = 0;
+            m_tokens_per_images.clear();
         }
 
         return inputs_embeds;
@@ -1557,12 +1571,12 @@ public:
 
     virtual void start_chat(const std::string& system_message) override {
         IInputsEmbedder::start_chat(system_message);
-        m_image_id = 0;
+        m_tokens_per_images.clear();
     }
 
     virtual void finish_chat() override {
         IInputsEmbedder::finish_chat();
-        m_image_id = 0;
+        m_tokens_per_images.clear();
     }
 };
 
@@ -1641,10 +1655,6 @@ public:
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
-        if (images.empty()) {
-            return text_embeds;
-        }
-        
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
         ov::Tensor encoded_image_pad_token = m_tokenizer.encode(m_vlm_config.image_pad_token, ov::genai::add_special_tokens(false)).input_ids;
@@ -1658,6 +1668,10 @@ public:
 
         int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
         m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+
+        if (images.empty()) {
+            return text_embeds;
+        }
 
         return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, image_embeds, images_grid_thw, image_pad_token_id);
     }
@@ -1853,7 +1867,7 @@ protected:
         }
 
         // Calculate rotary embeddings for max_grid_size
-        const size_t dim = 1280 / 16 / 2; // config.vision_config.embed_dim / self.config.vision_config.num_heads / 2
+        const size_t dim = m_vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
         const float theta = 10000.0f;
         
         std::vector<float> inv_freq(dim / 2);
@@ -2044,6 +2058,10 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
 
 void InputsEmbedder::update_chat_history(const std::string& decoded_results) {
     return m_impl->update_chat_history(decoded_results);
+}
+
+void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
+    return m_impl->set_apply_chat_template_status(apply_chat_template);
 }
 
 void InputsEmbedder::finish_chat() {

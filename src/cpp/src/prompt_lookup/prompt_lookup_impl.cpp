@@ -120,7 +120,6 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 
-    std::atomic<bool> has_active_requests = has_non_finished_requests();
     auto& generation = generations.at(0);
 
     const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
@@ -135,8 +134,13 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
             return;
         }
 
-        std::unordered_map<uint64_t, GenerationOutput> token_map = generation->read();
-        const auto tokens = token_map.begin()->second.generated_ids;
+        std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+        OPENVINO_ASSERT(generation_outputs.size() <= 1);
+        if (generation_outputs.empty()) {
+            return;
+        }
+
+        const auto tokens = generation_outputs.begin()->second.generated_ids;
         streamer_ptr->put(tokens);
     };
 

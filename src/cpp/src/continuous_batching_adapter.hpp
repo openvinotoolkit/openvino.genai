@@ -1,10 +1,10 @@
-
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "llm_pipeline_base.hpp"
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include <memory>
 
 namespace ov::genai {
 
@@ -17,29 +17,27 @@ template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 class ContinuousBatchingAdapter final : public LLMPipelineImplBase {
-    ContinuousBatchingPipeline m_impl;
+    std::unique_ptr<ContinuousBatchingPipeline> m_impl;
 public:
     ContinuousBatchingAdapter(
         const ov::InferRequest& request,
         const Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config
-    ): LLMPipelineImplBase{dont_construct(), GenerationConfig{}},
-        m_impl{std::filesystem::path{}, SchedulerConfig{}, std::string{}} { }
-
+        ): LLMPipelineImplBase{dont_construct(), GenerationConfig{}},
+        m_impl{std::make_unique<ContinuousBatchingPipeline>(std::filesystem::path{}, SchedulerConfig{}, std::string{})} { }
+        
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
         const Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{tokenizer, GenerationConfig()}, m_impl{
-        models_path,
-        tokenizer,
-        scheduler_config,
-        device,
-        plugin_config} {
-        m_generation_config = m_impl.get_config();
-    }
+        ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        auto mutable_plugin_config = plugin_config;
+        mutable_plugin_config["sampler_num_threads"] = 1;
+        m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, mutable_plugin_config);
+        m_generation_config = m_impl->get_config();
+        }
 
     ContinuousBatchingAdapter(
         const std::string& model_str,
@@ -49,27 +47,22 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config,
         const ov::genai::GenerationConfig& generation_config
-    ): LLMPipelineImplBase{tokenizer, GenerationConfig()}, m_impl{
-        model_str, 
-        weights_tensor,
-        tokenizer,
-        scheduler_config,
-        device,
-        plugin_config,
-        generation_config} {}
+    ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        auto mutable_plugin_config = plugin_config;
+        mutable_plugin_config["sampler_num_threads"] = 1;
+        m_impl = std::make_unique<ContinuousBatchingPipeline>(model_str, weights_tensor, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config);
+    }
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& models_path,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()}, m_impl{
-        models_path,
-        m_tokenizer,
-        scheduler_config,
-        device,
-        plugin_config} {
-        m_generation_config = m_impl.get_config();
+    ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()} {
+        auto mutable_plugin_config = plugin_config;
+        mutable_plugin_config["sampler_num_threads"] = 1;
+        m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
+        m_generation_config = m_impl->get_config();
     }
 
     DecodedResults generate(
@@ -90,7 +83,7 @@ public:
         }, inputs);
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<GenerationResult> generated = m_impl.generate(prompts,
+        std::vector<GenerationResult> generated = m_impl->generate(prompts,
             std::vector<GenerationConfig>{prompts.size(), config},
             streamer
         );
@@ -181,7 +174,7 @@ public:
 
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, 
+        std::vector<EncodedGenerationResult> generated = m_impl->generate(input_ids, 
             std::vector<GenerationConfig>{input_ids.size(), config}, 
             streamer
         );
@@ -210,11 +203,11 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        m_impl.start_chat();
+        m_impl->start_chat();
     };
 
     void finish_chat() override {
-        m_impl.finish_chat();
+        m_impl->finish_chat();
     };
 };
 
