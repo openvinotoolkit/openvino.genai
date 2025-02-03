@@ -430,7 +430,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
     set_adapters(sampling_params[0].adapters);
 
-    OPENVINO_ASSERT(std::holds_alternative<std::monostate>(streamer) || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
+    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
+
+    OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && sampling_params[0].num_return_sequences == 1 &&
         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
@@ -443,10 +445,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     GenerationHandle& generation = generations.at(0);
 
-    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
-
     auto stream_tokens = [&generation, &streamer_ptr]() {
-        if (!generation->can_read()) {
+        if (!generation->can_read() || !streamer_ptr->has_callback()) {
             return;
         }
 

@@ -78,6 +78,10 @@ public:
         return m_dropped;
     }
 
+    bool has_callback() {
+        return static_cast<bool>(m_streamer_ptr);
+    }
+
 private:
     std::shared_ptr<StreamerBase> m_streamer_ptr = nullptr;
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
