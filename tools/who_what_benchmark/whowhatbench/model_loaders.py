@@ -78,16 +78,26 @@ def load_text_model(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
         except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = OVModelForCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
+            try:
+                config = AutoConfig.from_pretrained(
+                    model_id, trust_remote_code=True)
+                model = OVModelForCausalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    trust_remote_code=True,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                )
+            except Exception:
+                config = AutoConfig.from_pretrained(model_id)
+                model = OVModelForCausalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                )
 
     return model
 
