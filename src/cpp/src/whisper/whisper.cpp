@@ -80,9 +80,12 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, (void*)input_ids.data()};
 
-    auto [logits, infer_ms] = decoder->decode(encoder_hidden_state, input_ids_tensor, beam_idx);
+    const auto infer_start = std::chrono::steady_clock::now();
+    decoder->start_async(encoder_hidden_state, input_ids_tensor, beam_idx);
 
+    auto logits = decoder->wait();
     const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
     raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
     raw_metrics.m_new_token_times.emplace_back(infer_end);
