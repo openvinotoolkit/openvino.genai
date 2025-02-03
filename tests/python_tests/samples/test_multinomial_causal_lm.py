@@ -50,6 +50,6 @@ def test_cpp_sample_multinomial_causal_lm_open_llama(convert_model, sample_args,
 def test_sample_multinomial_causal_lm_diff(shared_data):
     py_result = shared_data.get("multinomial_causal_lm", {}).get("py", {}).get("open_llama_3b_v2", {}).get("return 0")
     cpp_result = shared_data.get("multinomial_causal_lm", {}).get("cpp", {}).get("open_llama_3b_v2", {}).get("return 0")
-    if not py_result or not cpp_result:
-        pytest.skip("Skipping because one of the prior tests was skipped or failed.")
+    # if not py_result or not cpp_result:
+    #     pytest.skip("Skipping because one of the prior tests was skipped or failed.")
     assert py_result == cpp_result, "Results should match"
