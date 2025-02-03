@@ -19,7 +19,10 @@ class GenAIModelWrapper:
         self.model_type = model_type
 
         if model_type == "text" or model_type == "visual-text":
-            self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            try:
+                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            except Exception:
+                self.config = AutoConfig.from_pretrained(model_dir)
         elif model_type == "text-to-image":
             self.config = DiffusionPipeline.load_config(
                 model_dir, trust_remote_code=True)
