@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import subprocess
+import subprocess # nosec B404
 import pytest
 from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
  

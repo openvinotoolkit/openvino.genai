@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import subprocess
+import subprocess # nosec B404
 import pytest
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR
 
 # multinomial_causal_lm sample
 
