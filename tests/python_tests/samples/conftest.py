@@ -65,7 +65,7 @@ def convert_model(request):
         ]
         if extra_args:
             command.extend(extra_args)
-        result = subprocess.run(command, check=True) # nosec B404
+        result = subprocess.run(command, check=True)
         assert result.returncode == 0, f"Model {model_name} conversion failed"
     yield model_path
     # Cleanup the model after tests
@@ -84,7 +84,7 @@ def download_test_content(request):
         result = subprocess.run(
             ["wget", file_url, "-O", file_path],
             check=True
-        ) # nosec B404
+        )
         assert result.returncode == 0, "Failed to download test content"
         logger.info(f"Downloaded test content to {file_path}")
     else:
