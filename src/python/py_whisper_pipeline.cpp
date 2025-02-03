@@ -398,7 +398,7 @@ void init_whisper_pipeline(py::module_& m) {
             "generate",
             [](WhisperPipeline& pipe,
                const RawSpeechInput& raw_speech_input,
-               const OptionalWhisperGenerationConfig& generation_config,
+               const WhisperGenerationConfig& generation_config,
                const std::shared_ptr<ChunkStreamerBase>& streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::WhisperDecodedResults> {
                 StreamerVariant _streamer = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(streamer);
@@ -407,9 +407,9 @@ void init_whisper_pipeline(py::module_& m) {
             py::arg("raw_speech_input"),
             "List of floats representing raw speech audio. "
             "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
-            py::arg("generation_config") = std::nullopt,
+            py::arg("generation_config"),
             "generation_config",
-            py::arg("streamer") = std::monostate(),
+            py::arg("streamer"),
             "streamer",
             (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
 

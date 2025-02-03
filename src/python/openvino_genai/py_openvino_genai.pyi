@@ -2257,7 +2257,7 @@ class WhisperPipeline:
             num_return_sequences: the number of sequences to generate from a single prompt.
         """
     @typing.overload
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: ChunkStreamerBase = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig, streamer: ChunkStreamerBase, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         

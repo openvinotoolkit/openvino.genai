@@ -161,7 +161,7 @@ public:
     OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated. "
                         "Use StreamerBase instead. Support will be removed in 2026.1")
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
-                                   OptionalWhisperGenerationConfig generation_config,
+                                   WhisperGenerationConfig generation_config,
                                    std::shared_ptr<ChunkStreamerBase> streamer);
 
     /**

@@ -179,7 +179,7 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
 }
 
 ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
-                                                                      OptionalWhisperGenerationConfig generation_config,
+                                                                      WhisperGenerationConfig generation_config,
                                                                       std::shared_ptr<ChunkStreamerBase> streamer) {
     StreamerVariant _streamer = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(streamer);
     return m_impl->generate(raw_speech_input, generation_config, _streamer);
