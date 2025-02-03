@@ -22,7 +22,7 @@ def test_python_sample_multinomial_causal_lm_tiny_llama(convert_model, sample_ar
 @pytest.mark.llm
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model", [
-    {"model_id": "open_llama_3b_v2"},
+    {"model_id": "open_llama_3b_v2"}
 ], indirect=["convert_model"])
 @pytest.mark.parametrize("sample_args", ["a", "return 0"])
 def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_args, shared_data):
