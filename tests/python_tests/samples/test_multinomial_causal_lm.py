@@ -15,7 +15,7 @@ from conftest import SAMPLES_PY_DIR
 ], indirect=["convert_model"])
 @pytest.mark.parametrize("sample_args", ["0"])
 def test_python_sample_multinomial_causal_lm_tiny_llama(convert_model, sample_args):
-    script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
+    script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
     result = subprocess.run(["python", script, convert_model, sample_args], check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
     
@@ -26,7 +26,7 @@ def test_python_sample_multinomial_causal_lm_tiny_llama(convert_model, sample_ar
 ], indirect=["convert_model"])
 @pytest.mark.parametrize("sample_args", ["a", "return 0"])
 def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_args, shared_data):
-    script = os.path.join(SAMPLES_PY_DIR, "multinomial_causal_lm/multinomial_causal_lm.py")
+    script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
     result = subprocess.run(["python", script, convert_model, sample_args], check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
     shared_data.setdefault("multinomial_causal_lm", {}).setdefault("py", {}).setdefault("open_llama_3b_v2", {})[sample_args] = result.stdout
