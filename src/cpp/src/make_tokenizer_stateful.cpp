@@ -142,9 +142,10 @@ bool ov::genai::MakeTruncationSatateful::run_on_model(const std::shared_ptr<ov::
         // For special tokens they are Constant/Select, 
         // for the ends input with main tokens sequence it's Add/Subtract.
         // If  Add then it's a right truncation, if Subtract then it's a left truncation.
-        add_or_sub_node = combine_seg_node->input_value(3*i + 1).get_node_shared_ptr();
-        if (ov::as_type_ptr<v1::Add>(add_or_sub_node) || ov::as_type_ptr<v1::Subtract>(add_or_sub_node)) {
+        auto tmp_node = combine_seg_node->input_value(3*i + 1).get_node_shared_ptr();
+        if (ov::as_type_ptr<v1::Add>(tmp_node) || ov::as_type_ptr<v1::Subtract>(tmp_node)) {
             number_of_main_tokens_inputs += 1;
+            add_or_sub_node = tmp_node;
         }
     }
     
