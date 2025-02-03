@@ -96,14 +96,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
 }
 
 void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
-    if (eos_token_id < 0) {
-        eos_token_id = tokenizer_eos_token_id;
-    } else {
-        OPENVINO_ASSERT(eos_token_id == tokenizer_eos_token_id,
-            "EOS token ID is different in generation config (", eos_token_id, ") and tokenizer (",
-            tokenizer_eos_token_id, ")");
-    }
-    // Merge user defined stop tokens with model EOS token
+    eos_token_id = tokenizer_eos_token_id;
     stop_token_ids.insert(eos_token_id);
 }
 

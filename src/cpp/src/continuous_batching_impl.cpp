@@ -142,17 +142,25 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::vector<KVHeadConfig>& kv_cache_config) {
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model;
+    ov::AnyMap mutable_properties = properties;
+    // Extract sampler_num_threads property if exists and remove it from properties
+    size_t sampler_num_threads = std::thread::hardware_concurrency();
+    auto sampler_num_threads_it = mutable_properties.find("sampler_num_threads");
+    if (sampler_num_threads_it != mutable_properties.end()) {
+        sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
+        mutable_properties.erase(sampler_num_threads_it);
+    }
 
     // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, properties);
+    apply_kv_cache_precision(model, device, mutable_properties);
 
     // apply LoRA
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
+    if (auto filtered_properties = extract_adapters_from_properties(mutable_properties, &m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
         compiled_model = core.compile_model(model, device, *filtered_properties);
     } else {
-        compiled_model = core.compile_model(model, device, properties);
+        compiled_model = core.compile_model(model, device, mutable_properties);
     }
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
@@ -227,7 +235,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers);
     }
 
-    m_sampler = std::make_shared<Sampler>(m_tokenizer);
+    m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
     // If eos_token_id was not provided, take value
@@ -282,8 +290,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     _pull_awaiting_requests();
 
-
     Scheduler::Output scheduler_output;
+
     {
         static ManualTimer scheduling_timer("scheduling");
         scheduling_timer.start();
@@ -318,6 +326,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         return;
     }
     ov::Tensor logits;
+
     {
         static ManualTimer timer("forward");
         timer.start();
@@ -463,11 +472,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 });
 
                 if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        if (streamer_ptr->put(gen_token)) {
-                            generation->drop();
-                            break;
+                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+                    if (!generation_outputs.empty()) {
+                        for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
+                            if (streamer_ptr->put(generated_token_id)) {
+                                generation->drop();
+                                break;
+                            }
                         }
                     }
                 }
