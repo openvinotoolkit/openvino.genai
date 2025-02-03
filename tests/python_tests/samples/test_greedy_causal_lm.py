@@ -34,7 +34,7 @@ def test_cpp_sample_greedy_causal_lm_open_llama(convert_model, sample_args):
 @pytest.mark.llm
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model", [
-    {"model_id": "TinyLlama-1.1B-intermediate-step-1431k-3T"}
+    {"model_id": "TinyLlama-1.1B-intermediate-step-1431k-3T", "extra_args": ["--trust-remote-code"]}
 ], indirect=["convert_model"])
 @pytest.mark.parametrize("sample_args", ["How to create a table with two columns, one of them has type float, another one has type int?"])
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["adapter_model.safetensors"]], indirect=True)
