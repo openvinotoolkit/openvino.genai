@@ -173,6 +173,7 @@ if(CPACK_GENERATOR STREQUAL "NPM")
     if(LINUX)
         # to find libopenvino.so in the same folder
         set(rpaths "$ORIGIN")
+        list(APPEND rpaths "$ORIGIN/../../openvino-node/bin")
     elseif(APPLE)
         # to find libopenvino.dylib in the same folder
         set(rpaths "@loader_path")
