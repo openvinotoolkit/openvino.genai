@@ -5,6 +5,7 @@
 
 #include "prompt_lookup_impl.hpp"
 #include "text_callback_streamer.hpp"
+#include "threaded_streamer.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -108,19 +109,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     m_pipeline->set_adapters(sampling_params[0].adapters);
 
-    const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
-        [](std::monostate) -> std::shared_ptr<StreamerBase> {
-            return nullptr;
-        },
-        [](const std::shared_ptr<StreamerBase>& streamer) {
-            return streamer;
-        },
-        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
-        }
-    }, streamer);
-
-    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
+    OPENVINO_ASSERT(std::holds_alternative<std::monostate>(streamer) || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> generations;
@@ -134,60 +123,40 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     std::atomic<bool> has_active_requests = has_non_finished_requests();
     auto& generation = generations.at(0);
 
-    // create variables to make optimal thread-safe streaming
-    std::mutex mutex;
-    std::unique_lock lock(mutex);
-    std::condition_variable cv;
+    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
 
-    // to define streaming thread
-    std::shared_ptr<std::thread> t_stream_ptr = nullptr;
-    if (streamer_ptr) {
-        // define stream token lambda to use in `t_stream_ptr`
-        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-            while (has_active_requests || generation->can_read()) {
-                // waiting for any tokens or request finishing
-                cv.wait(lock, [&generation, &has_active_requests]{
-                    return generation->can_read() || !has_active_requests;
-                });
+    auto stream_tokens = [&generation, &streamer_ptr]() {
+        if (!generation->can_read()) {
+            return;
+        }
 
-                if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                    for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        if (streamer_ptr->put(gen_token)) {
-                            generation->drop();
-                            break;
-                        }
-                    }
-                }
-            };
-            streamer_ptr->end();
-        };
+        if (streamer_ptr->is_dropped()) {
+            generation->drop();
+            return;
+        }
 
-        // to define streaming thread
-        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
-            stream_tokens();
-        });
-    }
+        std::unordered_map<uint64_t, GenerationOutput> token_map = generation->read();
+        const auto tokens = token_map.begin()->second.generated_ids;
+        streamer_ptr->put(tokens);
+    };
+
+    streamer_ptr->start();
 
     std::exception_ptr thrown_exception = nullptr;
-    while (has_active_requests) {
+    while (has_non_finished_requests()) {
         try {
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
             thrown_exception = std::current_exception();
         }
-        has_active_requests = has_non_finished_requests();
-        cv.notify_one();
+        stream_tokens();
         if (thrown_exception) {
             throw thrown_exception;
         }
     }
 
-    // waiting for competion of streaming
-    if (t_stream_ptr && t_stream_ptr->joinable()) {
-        t_stream_ptr->join();
-    }
+    streamer_ptr->end();
 
     OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
