@@ -219,7 +219,6 @@ class LongBenchTestData:
     avg_cache_usage_optimization_ratio: float
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
     LongBenchTestData("samsum", 4, 1.6, 3.3),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
