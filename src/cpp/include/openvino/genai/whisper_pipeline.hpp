@@ -39,7 +39,7 @@ public:
     virtual ~ChunkStreamerBase() = 0;
 };
 
-struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
+struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
     std::vector<MicroSeconds> features_extraction_durations;
 };
@@ -157,9 +157,9 @@ public:
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config = std::nullopt,
                                    StreamerVariant streamer = std::monostate());
-    // todo: double check removal version
+
     OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated. "
-                        "Use StreamerBase instead. Support will be removed in 2026.1")
+                        "Use StreamerBase instead. Support will be removed in 2026.0")
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    WhisperGenerationConfig generation_config,
                                    std::shared_ptr<ChunkStreamerBase> streamer);
@@ -185,9 +185,8 @@ public:
     void set_generation_config(const WhisperGenerationConfig& config);
 };
 
-// todo: double check removal version
 OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated. "
-                    "Use StreamerBase instead. Support will be removed in 2026.1")
+                    "Use StreamerBase instead. Support will be removed in 2026.0")
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func);
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config);

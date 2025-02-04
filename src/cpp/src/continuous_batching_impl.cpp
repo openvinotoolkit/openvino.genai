@@ -445,8 +445,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     GenerationHandle& generation = generations.at(0);
 
-    auto stream_tokens = [&generation, &streamer_ptr]() {
-        if (!generation->can_read() || !streamer_ptr->has_callback()) {
+    auto stream_tokens = [&streamer_ptr, &generation]() {
+        if (!streamer_ptr->has_callback() || !generation->can_read()) {
             return;
         }
 
