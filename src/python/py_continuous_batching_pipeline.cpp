@@ -209,7 +209,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
         .def("drop", &GenerationHandleImpl::drop)
-        .def("back", &GenerationHandleImpl::back)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
 

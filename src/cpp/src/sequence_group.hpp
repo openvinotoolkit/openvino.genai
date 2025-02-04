@@ -649,7 +649,11 @@ public:
                 if (has_finished()) {
                     m_stream_window_size = 0;
                 }
+                // push empty output in case we won't stream generation res
                 if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    if (has_finished()) {
+                        push_empty_outputs();
+                    }
                     return;
                 }
                 // speculative decoding draft handling
