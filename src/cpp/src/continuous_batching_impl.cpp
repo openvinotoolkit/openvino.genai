@@ -113,8 +113,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
-    bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
+    bool is_need_per_layer_cache_control = true; // scheduler_config.use_cache_eviction;
+    bool allow_cache_rotation = false; // scheduler_config.cache_eviction_config.apply_rotation;
     auto kv_cache_config = utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
     utils::apply_gather_before_matmul_transformation(model);
 
@@ -184,7 +184,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
 
     // Model Runner
-    bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
+    bool is_use_cache_eviction = true; // m_scheduler->get_config().use_cache_eviction;
     if (is_use_cache_eviction) {
         const auto& eviction_config = m_scheduler->get_config().cache_eviction_config;
         bool is_apply_rotation = eviction_config.apply_rotation;
@@ -304,7 +304,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
 
         const auto& sched_config = m_scheduler->get_config();
-        if (sched_config.use_cache_eviction && sched_config.cache_eviction_config.apply_rotation) {
+        if (true && false) {
+            static bool printed_once = false;
+            if (!printed_once) {
+                std::cout << "VSHAMPOR: rotating cache" << std::endl;
+            }
             _compute_cache_rotation_data(m_requests, scheduler_output);
             m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
                                                     std::move(m_current_step_rotation_deltas));
@@ -340,7 +344,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
     // evict unimportant blocks from KV cache, if requested
     const auto& sched_config = m_scheduler->get_config();
-    if (sched_config.use_cache_eviction) {
+    if (true) {
+        static bool printed_once = false;
+        if (!printed_once) {
+            std::cout << "VSHAMPOR: evicting from cache" << std::endl;
+        }
         _maybe_evict_cache_blocks(sched_config);
     }
 
