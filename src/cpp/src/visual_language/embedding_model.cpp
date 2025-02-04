@@ -13,6 +13,23 @@
 
 #include "embedding_model.hpp"
 
+namespace {
+
+std::tuple<ov::InferRequest, ov::Tensor, ov::Tensor> init(ov::CompiledModel& compiled) {
+    ov::InferRequest request = compiled.create_infer_request();
+    ov::Tensor cpu_tensor = request.get_output_tensor();
+    ov::RemoteContext context;
+    try {
+        context = compiled.get_context();
+    } catch (const ov::Exception&) {
+        return {std::move(request), cpu_tensor, cpu_tensor};
+    }
+    ov::RemoteTensor remote = context.create_tensor(ov::element::f32, cpu_tensor.get_shape());
+    return {std::move(request), std::move(cpu_tensor), std::move(remote)};
+}
+
+}  // namespace
+
 namespace ov {
 namespace genai {
 
@@ -27,7 +44,7 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
-    m_request = compiled_model.create_infer_request();
+    std::tie(m_request, m_cpu_tensor, m_remote_tensor) = init(compiled_model);
 }
 
 EmbeddingsModel::EmbeddingsModel(const std::string& model,
@@ -41,7 +58,7 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
     merge_postprocess(m_model, scale_emb);
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
-    m_request = compiled_model.create_infer_request();
+    std::tie(m_request, m_cpu_tensor, m_remote_tensor) = init(compiled_model);
 }
 
 ov::Tensor EmbeddingsModel::infer(ov::Tensor input_idx) {
@@ -50,6 +67,14 @@ ov::Tensor EmbeddingsModel::infer(ov::Tensor input_idx) {
     m_request.set_input_tensor(input_idx);
     m_request.infer();
     return m_request.get_output_tensor();
+}
+
+void EmbeddingsModel::set_cpu_out_tensor() {
+    m_request.set_output_tensor(m_cpu_tensor);
+}
+
+void EmbeddingsModel::set_remote_out_tensor() {
+    m_request.set_output_tensor(m_remote_tensor);
 }
 
 void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const {

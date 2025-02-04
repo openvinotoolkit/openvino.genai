@@ -386,6 +386,7 @@ public:
 
         ov::Tensor encoded_input = get_encoded_input_ids(images_prompt, metrics);
 
+        m_embedding.set_cpu_out_tensor();
         ov::Tensor inputs_embeds = m_embedding.infer(encoded_input);
         OPENVINO_ASSERT(
             m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
@@ -667,6 +668,7 @@ public:
         formatted_prompt += prompt;
 
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        m_embedding.set_cpu_out_tensor();
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -796,6 +798,7 @@ public:
         formatted_prompt += prompt;
 
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        m_embedding.set_cpu_out_tensor();
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -1119,6 +1122,7 @@ public:
         formatted_prompt += prompt;
 
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
+        m_embedding.set_cpu_out_tensor();
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -1538,6 +1542,7 @@ public:
         features_length += tokens.back().get_shape().at(1);
         ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
         size_t offset = 0;
+        m_embedding.set_cpu_out_tensor();
         for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
             const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
             const ov::Tensor& image_embeds = images_features_proj.at(im_id);
@@ -1655,6 +1660,7 @@ public:
         // Adapted from Qwen/Qwen2-7B-Instruct
         std::string chat_template_fallback = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
         ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        m_embedding.set_cpu_out_tensor();
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         auto start_tokenizer_time = std::chrono::steady_clock::now();
