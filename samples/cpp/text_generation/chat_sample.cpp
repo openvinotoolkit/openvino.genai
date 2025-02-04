@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) try {
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
-        return ov::genai::StreamerRunningStatus::RUNNING;
+        return ov::genai::StreamingStatus::RUNNING;
     };
 
     pipe.start_chat();

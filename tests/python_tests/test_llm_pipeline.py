@@ -169,7 +169,7 @@ def user_defined_callback(subword):
 
 def user_defined_status_callback(subword):
     print(subword)
-    return ov_genai.StreamerRunningStatus.RUNNING
+    return ov_genai.StreamingStatus.RUNNING
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
@@ -224,7 +224,7 @@ def test_callback_kwargs_batch_throws(callback):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_callback_terminate_by_bool_sampler():
+def test_callback_terminate_by_bool():
     pipe = read_model(get_models_list()[0])[4]
 
     current_iter = 0
@@ -234,7 +234,7 @@ def test_callback_terminate_by_bool_sampler():
         current_iter += 1
         return current_iter == num_iters
 
-    ov_generation_config = GenerationConfig(max_new_tokens=100)
+    ov_generation_config = GenerationConfig(max_new_tokens=100, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
@@ -246,7 +246,7 @@ def test_callback_terminate_by_bool_sampler():
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_callback_terminate_by_status_sampler():
+def test_callback_terminate_by_status():
     pipe = read_model(get_models_list()[0])[4]
 
     current_iter = 0
@@ -254,9 +254,9 @@ def test_callback_terminate_by_status_sampler():
     def callback(subword):
         nonlocal current_iter
         current_iter += 1
-        return ov_genai.StreamerRunningStatus.STOP if current_iter == num_iters else ov_genai.StreamerRunningStatus.RUNNING
+        return ov_genai.StreamingStatus.STOP if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
-    ov_generation_config = GenerationConfig(max_new_tokens=100)
+    ov_generation_config = GenerationConfig(max_new_tokens=100, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
@@ -277,7 +277,7 @@ def test_chat_scenario_callback_cancel(model_descr):
         'What was my first question?'
     ]
 
-    generation_config_kwargs = dict(max_new_tokens=20)
+    generation_config_kwargs = dict(max_new_tokens=20, ignore_eos=True)
 
     chat_history_hf = []
     chat_history_ov = []
@@ -292,7 +292,7 @@ def test_chat_scenario_callback_cancel(model_descr):
     def callback(subword):
         nonlocal current_iter
         current_iter += 1
-        return ov_genai.StreamerRunningStatus.CANCEL if current_iter == num_iters else ov_genai.StreamerRunningStatus.RUNNING
+        return ov_genai.StreamingStatus.CANCEL if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
     ov_pipe.start_chat()
     for prompt in callback_questions:

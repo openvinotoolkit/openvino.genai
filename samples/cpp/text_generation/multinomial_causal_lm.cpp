@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) try {
     config.top_k = 30;
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
-        return ov::genai::StreamerRunningStatus::RUNNING;
+        return ov::genai::StreamingStatus::RUNNING;
     };
 
     // Since the streamer is set, the results will
