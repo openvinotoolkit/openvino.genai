@@ -307,6 +307,19 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
+      
+      - name: beam_search_causal_lm.cpp
+        run: >
+          . ./ov/setupvars.sh
+          && timeout 50s ./build/samples/cpp/text_generation/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
+          
+      - name: beam_search_causal_lm.py
+        run: >
+          . ./ov/setupvars.sh
+          && timeout 50s ./samples/python/text_generation/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！"
+        env:
+          PYTHONPATH: "./build"
+          
       - run: >
           . ./ov/setupvars.sh
           && timeout 50s ./build/samples/cpp/text_generation/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
@@ -341,7 +354,7 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2     
       - run: >
           . ./ov/setupvars.sh
           && timeout 50s ./build/samples/cpp/text_generation/beam_search_causal_lm ./phi-2/ 69
