@@ -6,8 +6,6 @@ import subprocess # nosec B404
 import pytest
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 
-# Greedy causal LM samples
-
 @pytest.mark.llm
 @pytest.mark.cpp
 @pytest.mark.parametrize(
