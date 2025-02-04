@@ -177,6 +177,15 @@ class OverwritableBlocksHashStore {
         }
         return retval;
     }
+
+    /**
+     * @brief Removes all blocks from the store
+     */
+    void clean_whole_storage() {
+        while (!m_blocks.empty()) {
+            m_blocks.erase(m_blocks.begin());
+        }
+    }
 };
 
 class CacheStateDumper;
@@ -195,6 +204,14 @@ class BlockAllocator {
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
+
+    void release_overwriteable_blocks() {
+        for (auto& free_block : m_free_blocks_num) {
+            free_block += num_overwriteable_blocks();
+        }
+        m_overwriteable_blocks.clean_whole_storage();
+    }
+
 public:
     /**
      * Constructs the BlockAllocator.
@@ -215,16 +232,17 @@ public:
                     per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
                 }
             }
-        }
-        else {
+        } else {
             m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
     ~BlockAllocator() {
+        // free all hashed blocks
+        release_overwriteable_blocks();
         // sanity check to validate that all blocks are freed
         for (auto& free_block : m_free_blocks_num) {
-            OPENVINO_ASSERT(m_total_num_blocks == free_block);
+            OPENVINO_ASSERT(m_total_num_blocks == free_block, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_block);
         }
     }
 
@@ -529,7 +547,7 @@ public:
 
     ~BlockManager() {
         // sanity check that all sequences are freed
-        // OPENVINO_ASSERT(m_block_table.empty());
+        OPENVINO_ASSERT(m_block_table.empty());
     }
 
     /**
