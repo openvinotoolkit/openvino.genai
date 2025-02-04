@@ -347,7 +347,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
-      TEMP_DIR: ${{ github.workspace }}/temp
+      # TEMP_DIR: ${{ github.workspace }}/temp
         
     steps:
       - name: Clone openvino.genai
