@@ -16,7 +16,7 @@ from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, logger
     ],
     indirect=["convert_model"],
 )
-def test_python_sample_beam_search_causal_lm_qwen_chat(convert_model, sample_args, shared_data, request):
+def test_python_sample_beam_search_causal_lm(convert_model, sample_args, shared_data, request):
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
     result = subprocess.run(["python", script, convert_model, sample_args], capture_output=True, text=True, check=True)
     assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
@@ -34,7 +34,7 @@ def test_python_sample_beam_search_causal_lm_qwen_chat(convert_model, sample_arg
     ],
     indirect=["convert_model"],
 )
-def test_cpp_sample_beam_search_causal_lm_qwen_chat(convert_model, sample_args, shared_data, request):
+def test_cpp_sample_beam_search_causal_lm(convert_model, sample_args, shared_data, request):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'beam_search_causal_lm')
     result = subprocess.run([cpp_sample, convert_model, sample_args], capture_output=True, text=True, check=True)
     assert result.returncode == 0, "C++ sample execution failed"
@@ -54,7 +54,7 @@ def test_cpp_sample_beam_search_causal_lm_qwen_chat(convert_model, sample_args, 
         pytest.param("phi-2", "69", id="phi-2_Numeric"),
     ]
 )
-def test_sample_beam_search_causal_lm_qwen_chat_diff(model, sample_args, shared_data):
+def test_sample_beam_search_causal_lm_diff(model, sample_args, shared_data):
     py_result = shared_data.get("beam_search_causal_lm", {}).get("py", {}).get(model, {}).get(sample_args)
     cpp_result = shared_data.get("beam_search_causal_lm", {}).get("cpp", {}).get(model, {}).get(sample_args)
     if not py_result or not cpp_result:
