@@ -1,8 +1,17 @@
+# Copyright (C) 2023-2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# This file includes utility functions copied from the LongBench repository:
+# https://github.com/THUDM/LongBench
+#
+# Copyright (c) 2023 THU-KEG & Zhipu AI
+# Licensed under the MIT License
 import re
 import string
 
 from collections import Counter
 from rouge import Rouge
+
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
