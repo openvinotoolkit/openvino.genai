@@ -377,7 +377,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
       - name: Test Samples (Python and C++)
-        run: python -m pytest -vv -s ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ env.TEST_MARKERS }}"
+        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ env.TEST_MARKERS }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
