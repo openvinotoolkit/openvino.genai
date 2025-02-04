@@ -10,9 +10,7 @@ from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 
 @pytest.mark.llm
 @pytest.mark.py
-@pytest.mark.parametrize("convert_model", [
-    {"model_id": "TinyLlama-1.1B-Chat-v1.0"}
-], indirect=["convert_model"])
+@pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
 @pytest.mark.parametrize("sample_args", ["0"])
 def test_python_sample_multinomial_causal_lm_tiny_llama(convert_model, sample_args):
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
@@ -21,9 +19,7 @@ def test_python_sample_multinomial_causal_lm_tiny_llama(convert_model, sample_ar
     
 @pytest.mark.llm
 @pytest.mark.py
-@pytest.mark.parametrize("convert_model", [
-    {"model_id": "open_llama_3b_v2"}
-], indirect=["convert_model"])
+@pytest.mark.parametrize("convert_model", ["open_llama_3b_v2"], indirect=True)
 @pytest.mark.parametrize("sample_args", ["a", "return 0"])
 def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_args, shared_data):
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
@@ -33,9 +29,7 @@ def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_ar
 
 @pytest.mark.llm
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [
-    {"model_id": "open_llama_3b_v2"}
-], indirect=["convert_model"])
+@pytest.mark.parametrize("convert_model", ["open_llama_3b_v2"], indirect=True)
 @pytest.mark.parametrize("sample_args", ["return 0"])
 def test_cpp_sample_multinomial_causal_lm_open_llama(convert_model, sample_args,  shared_data):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
