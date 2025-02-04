@@ -109,6 +109,7 @@ public:
         try {
             m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         } catch (const std::exception& error) {
+            // Use fallback chat template if it was not found in tokenizer_config.json or if it is not supported by Jinja2Cpp
             m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, get_chat_template_fallback());
         }
     }
@@ -173,7 +174,7 @@ protected:
            try {
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             } catch (const std::exception& error) {
-                // Use fallback chat template if it was not found in tokenizer_config.json
+                // Use fallback chat template if it was not found in tokenizer_config.json or if it is not supported by Jinja2Cpp
                 new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
             }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
@@ -191,10 +192,10 @@ protected:
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
 
-                if (!m_tokenizer.get_chat_template().empty()) {
+                try {
                     templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-                } else {
-                    // Use fallback chat template if it was not found in tokenizer_config.json
+                } catch (const std::exception& error) {
+                    // Use fallback chat template if it was not found in tokenizer_config.json or if it is not supported by Jinja2Cpp
                     templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template_fallback);
                 }
                 encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
