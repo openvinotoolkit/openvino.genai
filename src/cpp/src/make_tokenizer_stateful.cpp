@@ -24,24 +24,30 @@ bool ov::genai::MakeCombineSegmentsSatateful::run_on_model(const std::shared_ptr
         return false; 
     }
     
-    op::util::VariableInfo var_info{ov::Shape{}, ov::element::boolean, ADD_SPECIAL_TOKENS_VAR_ID};
-    auto variable = std::make_shared<op::util::Variable>(var_info);
-
-    // Default mode is add_special_tokens.
-    auto default_mode_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{}, std::vector{true});
-    auto read_value = std::make_shared<v6::ReadValue>(default_mode_const, variable);
-    auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
-    
     size_t num_segments = (combine_seg_node->get_input_size() - 1) / 3;
+    std::vector<Input<Node>> const_inputs;
+    const_inputs.reserve(num_segments);
+
     for (size_t i = 0; i < num_segments; i++) {
         // If input is constant then it's special tokens, otherwise it's tokens from input text.
         auto const_input = std::dynamic_pointer_cast<v0::Constant>(combine_seg_node->get_input_node_shared_ptr(3*i + 1));
-        if (!const_input) { 
-            continue; 
+        if (const_input) { 
+            const_inputs.emplace_back(combine_seg_node->input(3*i + 1));
         }
-        
-        auto select_node = std::make_shared<v1::Select>(read_value, const_input, zero_constant);
-        combine_seg_node->input(3*i + 1).replace_source_output(select_node);
+    }
+    if (const_inputs.empty()) { 
+        return false; 
+    }
+
+    // Default mode is add_special_tokens.
+    auto default_mode_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{}, std::vector{true});
+    auto variable = std::make_shared<op::util::Variable>(op::util::VariableInfo{Shape{}, element::boolean, ADD_SPECIAL_TOKENS_VAR_ID});
+    auto read_value = std::make_shared<v6::ReadValue>(default_mode_const, variable);
+    auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
+
+    for (size_t i = 0; i < const_inputs.size(); i++) {
+        auto select_node = std::make_shared<v1::Select>(read_value, const_inputs[i].get_source_output(), zero_constant);
+        const_inputs[i].replace_source_output(select_node);
     }
 
     auto assign = std::make_shared<v6::Assign>(read_value, variable);
