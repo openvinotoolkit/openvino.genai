@@ -60,11 +60,12 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        scheduler_config = None
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **ov_config)
 
-    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config), model_dir, "text")
+    return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
 def load_text_llamacpp_pipeline(model_dir):
