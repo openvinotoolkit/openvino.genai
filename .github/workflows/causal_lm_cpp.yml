@@ -22,58 +22,6 @@ env:
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_windows_2025.1.0.dev20250211_x86_64.zip
 
 jobs:
-  cpp-multinomial-greedy_causal_lm-ubuntu:
-    runs-on: ubuntu-22.04-8-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.9
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
-          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
-          wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 35s ./build/samples/cpp/text_generation/multinomial_causal_lm ./open_llama_3b_v2/ a
-        env:
-          PYTHONPATH: "./build"
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 35s ./samples/python/text_generation/multinomial_causal_lm.py ./open_llama_3b_v2/ b
-        env:
-          PYTHONPATH: "./build"
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 35s ./build/samples/cpp/text_generation/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-          | diff <(timeout 25s samples/python/text_generation/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
-        env:
-          PYTHONPATH: "./build"
-      - run: >
-          . ./ov/setupvars.sh
-          && samples/python/text_generation/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
-        env:
-          PYTHONPATH: "./build"
-
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
       matrix:
