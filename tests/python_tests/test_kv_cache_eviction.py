@@ -220,14 +220,15 @@ class LongBenchTestData:
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("device", ["CPU", "GPU"])
 @pytest.mark.parametrize("test_struct", [
     LongBenchTestData("samsum", 4, 1.6, 3.3),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
     LongBenchTestData("qasper", 5.8, 1.7, 3.6),
 ])
-def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
+def test_optimized_generation_longbench(qwen2_converted_model, device, test_struct):
     seqs_per_request = 32
-    num_kv_blocks = 1000
+    num_kv_blocks = 1000 if device == "CPU" else 500
     models_path = qwen2_converted_model.models_path
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
@@ -236,8 +237,8 @@ def test_optimized_generation_longbench(qwen2_converted_model, test_struct):
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
 
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_properties())
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_properties())
 
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset
