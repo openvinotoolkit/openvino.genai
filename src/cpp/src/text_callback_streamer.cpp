@@ -8,7 +8,7 @@ namespace genai {
 
 TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback) {
     m_tokenizer = tokenizer;
-    on_finalized_subword_callback = callback;
+    m_on_finalized_subword_callback = callback;
 }
 
 bool TextCallbackStreamer::put(int64_t token) {
@@ -23,7 +23,7 @@ bool TextCallbackStreamer::put(int64_t token) {
         m_tokens_cache.clear();
         m_decoded_lengths.clear();
         m_printed_len = 0;
-        return on_finalized_subword_callback(res.str());
+        return m_on_finalized_subword_callback(res.str());
     }
 
     constexpr size_t delay_n_tokens = 3;
@@ -31,7 +31,7 @@ bool TextCallbackStreamer::put(int64_t token) {
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
     if (m_decoded_lengths.size() < delay_n_tokens) {
-        return on_finalized_subword_callback(res.str());
+        return m_on_finalized_subword_callback(res.str());
     }
 
     // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
@@ -39,7 +39,7 @@ bool TextCallbackStreamer::put(int64_t token) {
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
         m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
         // Don't print incomplete text
-        return on_finalized_subword_callback(res.str());
+        return m_on_finalized_subword_callback(res.str());
     }
     auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];
     if (print_until != -1 && print_until > m_printed_len) {
@@ -48,7 +48,7 @@ bool TextCallbackStreamer::put(int64_t token) {
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
         m_printed_len = print_until;
     }
-    return on_finalized_subword_callback(res.str());
+    return m_on_finalized_subword_callback(res.str());
 }
 
 bool TextCallbackStreamer::put(const std::vector<int64_t>& tokens) {
@@ -72,7 +72,7 @@ void TextCallbackStreamer::end() {
     m_tokens_cache.clear();
     m_decoded_lengths.clear();
     m_printed_len = 0;
-    on_finalized_subword_callback(res.str());
+    m_on_finalized_subword_callback(res.str());
     return;
 }
 
