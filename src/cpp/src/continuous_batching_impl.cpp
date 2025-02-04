@@ -445,26 +445,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     GenerationHandle& generation = generations.at(0);
 
-    auto stream_tokens = [&streamer_ptr, &generation]() {
-        if (!streamer_ptr->has_callback() || !generation->can_read()) {
-            return;
-        }
-
-        if (streamer_ptr->is_dropped()) {
-            generation->drop();
-            return;
-        }
-
-        std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
-        OPENVINO_ASSERT(generation_outputs.size() <= 1);
-        if (generation_outputs.empty()) {
-            return;
-        }
-
-        const auto tokens = generation_outputs.begin()->second.generated_ids;
-        streamer_ptr->put(tokens);
-    };
-
     streamer_ptr->start();
 
     std::exception_ptr thrown_exception = nullptr;
@@ -484,7 +464,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             drop_requests(); // remove all requests from pipeline state in case of exception
             thrown_exception = std::current_exception();
         }
-        stream_tokens();
+        stream_tokens(streamer_ptr, generation);
         if (thrown_exception) {
             throw thrown_exception;
         }
