@@ -47,7 +47,7 @@ std::vector<KVHeadConfig> apply_paged_attention_transformations(std::shared_ptr<
         config.v_head_size = value_shape[2].get_length();
     }
 
-    // reset information in KV cache parameters
+    // reset information in KV cache parameters and set PagedAttention's rt_info
     for (size_t idx = 0; idx < num_decoder_layers; idx++) {
         auto k = key_cache_params[std::string("key_cache.") + std::to_string(idx)];
         auto v = value_cache_params[std::string("value_cache.") + std::to_string(idx)];
@@ -59,6 +59,16 @@ std::vector<KVHeadConfig> apply_paged_attention_transformations(std::shared_ptr<
         // order of dimensions within shapes are not required for plugin during compilation
         k->set_partial_shape(ov::PartialShape::dynamic(4));
         v->set_partial_shape(ov::PartialShape::dynamic(4));
+
+        // set KV cache parameters as rt_info for PagedAttention op, so plugins can apply
+        // model compile-time optimizations based on them
+        const KVHeadConfig& config = kv_cache_config[idx];
+
+        auto pa_op = k->get_output_target_inputs(0).begin()->get_node();
+        pa_op->get_rt_info()["num_k_heads"] = config.num_k_heads;
+        pa_op->get_rt_info()["k_head_size"] = config.k_head_size;
+        pa_op->get_rt_info()["num_v_heads"] = config.num_v_heads;
+        pa_op->get_rt_info()["v_head_size"] = config.v_head_size;
     }
 
     model->validate_nodes_and_infer_types();
