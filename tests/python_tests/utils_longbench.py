@@ -12,6 +12,7 @@ import string
 from collections import Counter
 from rouge import Rouge
 
+
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
 
