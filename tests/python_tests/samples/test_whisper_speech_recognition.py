@@ -9,8 +9,7 @@ from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 # whisper_speech_recognition sample
 @pytest.mark.whisper
 @pytest.mark.py
-@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny", "extra_args": ["--trust-remote-code"]}], 
-                         indirect=True, ids=lambda p: f"model={p['model_id']}")
+@pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
 def test_python_sample_whisper_speech_recognition(convert_model, download_test_content):
     script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
@@ -19,8 +18,7 @@ def test_python_sample_whisper_speech_recognition(convert_model, download_test_c
 
 @pytest.mark.whisper
 @pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", [{"model_id": "WhisperTiny"}], 
-                         indirect=True, ids=lambda p: f"model={p['model_id']}")
+@pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
 def test_cpp_sample_whisper_speech_recognition(convert_model, download_test_content):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')

@@ -11,10 +11,22 @@ logger = logging.getLogger(__name__)
 
 # Define model names and directories
 MODELS = {
-    "TinyLlama-1.1B-Chat-v1.0": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "TinyLlama-1.1B-intermediate-step-1431k-3T": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
-    "WhisperTiny": "openai/whisper-tiny",
-    "open_llama_3b_v2": "openlm-research/open_llama_3b_v2"
+    "TinyLlama-1.1B-Chat-v1.0": { 
+        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "convert_args": []
+    },
+    "TinyLlama-1.1B-intermediate-step-1431k-3T": {
+        "name": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+        "convert_args": ['--trust-remote-code']
+    },  
+    "WhisperTiny": {
+        "name": "openai/whisper-tiny",
+        "convert_args": ['--trust-remote-code']
+    },
+    "open_llama_3b_v2": {
+        "name": "openlm-research/open_llama_3b_v2",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    }
 }
 
 TEST_FILES = {
@@ -50,11 +62,10 @@ def setup_and_teardown(request):
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
-    params = request.param
-    model_id = params.get("model_id")
-    extra_args = params.get("extra_args", [])
-    model_name = MODELS[model_id]
+    model_id = request.param
+    model_name = MODELS[model_id].get("name")
     model_path = os.path.join(MODELS_DIR, model_name)
+    model_args = MODELS[model_id].get("convert_args", [])
     logger.info(f"Preparing model: {model_name}")
     # Convert the model if not already converted
     if not os.path.exists(model_path):
@@ -63,8 +74,8 @@ def convert_model(request):
             "optimum-cli", "export", "openvino",
             "--model", model_name, model_path
         ]
-        if extra_args:
-            command.extend(extra_args)
+        if model_args:
+            command.extend(model_args)
         result = subprocess.run(command, check=True)
         assert result.returncode == 0, f"Model {model_name} conversion failed"
     yield model_path
