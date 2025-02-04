@@ -74,11 +74,15 @@ public:
     }
 
     bool is_dropped() {
+        if (!m_streamer_ptr) {
+            return false;
+        }
+
         std::lock_guard<std::mutex> lock(m_mutex);
         return m_dropped;
     }
 
-    bool has_callback() {
+    bool has_callback() const {
         return static_cast<bool>(m_streamer_ptr);
     }
 
