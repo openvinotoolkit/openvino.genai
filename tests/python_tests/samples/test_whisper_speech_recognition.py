@@ -1,4 +1,4 @@
-# Copyright (C) 2024 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -6,7 +6,6 @@ import subprocess # nosec B404
 import pytest
 from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 
-# whisper_speech_recognition sample
 @pytest.mark.whisper
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)

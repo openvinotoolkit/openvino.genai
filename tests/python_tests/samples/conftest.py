@@ -26,6 +26,18 @@ MODELS = {
     "open_llama_3b_v2": {
         "name": "openlm-research/open_llama_3b_v2",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
+    "Qwen-7B-Chat": {
+        "name": "Qwen/Qwen-7B-Chat",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
+    "Qwen1.5-7B-Chat": {
+        "name": "Qwen/Qwen1.5-7B-Chat",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
+    "phi-2": {
+        "name": "microsoft/phi-2",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     }
 }
 
