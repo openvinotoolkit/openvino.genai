@@ -407,7 +407,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 20
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -419,7 +419,10 @@ jobs:
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
     env:
       CMAKE_GENERATOR: Unix Makefiles
+      OV_DIR: ${{ github.workspace }}/openvino
+      OV_JS_DIR: ${{ github.workspace }}/openvino/nodejs
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
       SRC_DIR: ${{ github.workspace }}/src
 
@@ -437,17 +440,28 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Build with ENABLE_JS=ON
+      - name: Clone OpenVINO package
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: 'openvinotoolkit/openvino'
+          path: ${{ env.OV_DIR }}
+          ref: ${{ env.OV_BRANCH }}
+          submodules: recursive
+
+      - name: Build GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_JS=ON -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
+            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
+            -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
-
+          
       - name: Pack Node.js bindings libs
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
         working-directory: ${{ env.INSTALL_DIR }}
-
+      
       - name: Upload Archive Package with Node.js bindings
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -455,17 +469,55 @@ jobs:
           name: genai_nodejs_bindings
           path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
+      
+      - name: Build OV Node.js bindings
+        working-directory: ${{ env.OV_DIR }}
+        run: |
+          cmake \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCPACK_GENERATOR=NPM \
+            -DENABLE_SYSTEM_TBB=OFF -UTBB* \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_SAMPLES=OFF \
+            -DENABLE_WHEEL=OFF \
+            -DENABLE_PYTHON=OFF \
+            -DENABLE_INTEL_GPU=OFF \
+            -S . -B build 
+          cmake --build ./build --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
+          cmake --install ./build --config ${{ matrix.build-type }} --prefix ${{ env.OV_JS_DIR }}
 
-      - name: Run npm package tests
+      - name: Patch GenAI Node.js bindings for test
+        working-directory: ${{ env.INSTALL_DIR }}
+        run: |
+          GENAI_VERSION=$(grep -oP '(?<=CMAKE_PROJECT_VERSION:STATIC=)[^"]*' ${{ env.BUILD_DIR }}/CMakeCache.txt)
+          patchelf --add-rpath '$ORIGIN/../node_modules/openvino-node/bin' \
+            genai_node_addon.node libopenvino_genai.so.$GENAI_VERSION libopenvino_tokenizers.so
+
+      - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           cp -R ${{ env.INSTALL_DIR }} bin
           npm install
+          rm -rf node_modules/openvino-node/bin
+          cp -R ${{ env.OV_JS_DIR }} node_modules/openvino-node/bin
+          ls bin/
+          ls node_modules/openvino-node/bin/
+          readelf -d bin/genai_node_addon.node
+          readelf -d bin/libopenvino_genai.so.2510
+          readelf -d bin/libopenvino_tokenizers.so
+          readelf -d node_modules/openvino-node/bin/libopenvino.so.2510
+
+      - name: Run npm package tests
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: |
           npm test
 
       - name: Install genai-node samples dependencies
-        run: npm install
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        run: |
+          npm install
+          rm -rf node_modules/openvino-node/bin
+          cp -R ${{ env.OV_JS_DIR }} node_modules/openvino-node/bin
 
       - name: Run samples tests
         run: npm test

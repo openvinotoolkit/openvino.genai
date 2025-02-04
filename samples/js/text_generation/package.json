@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
-    "openvino-node": "../../../../openvino/src/bindings/js/node/",
+    "openvino-node": "^2024.6.0",
     "genai-node": "../../../src/js/"
   },
   "engines": {
