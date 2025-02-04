@@ -6,8 +6,6 @@ import subprocess # nosec B404
 import pytest
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 
-# multinomial_causal_lm sample
-
 @pytest.mark.llm
 @pytest.mark.py
 @pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
