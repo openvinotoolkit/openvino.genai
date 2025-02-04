@@ -658,7 +658,7 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
                              ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
-        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->back();
+        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
             if (streamer_ptr->put(gen_token)) {
                 handle->drop();
