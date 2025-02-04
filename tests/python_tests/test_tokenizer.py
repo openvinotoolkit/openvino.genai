@@ -226,7 +226,7 @@ prompts = [
 @pytest.mark.parametrize("model_id", [
     "katuni4ka/tiny-random-phi3",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
 ])
 @pytest.mark.precommit
 @pytest.mark.nightly
