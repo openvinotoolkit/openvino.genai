@@ -64,7 +64,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             return;
         }
 
-        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->back();
+        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
             if (streamer_ptr->put(gen_token)) {
                 handle->drop();
