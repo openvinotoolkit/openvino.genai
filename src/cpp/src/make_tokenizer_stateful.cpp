@@ -32,8 +32,8 @@ bool ov::genai::MakeCombineSegmentsSatateful::run_on_model(const std::shared_ptr
     auto read_value = std::make_shared<v6::ReadValue>(default_mode_const, variable);
     auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
     
-    size_t num_special_tokens = (combine_seg_node->get_input_size() - 1) / 3;
-    for (size_t i = 0; i < num_special_tokens; i++) {
+    size_t num_segments = (combine_seg_node->get_input_size() - 1) / 3;
+    for (size_t i = 0; i < num_segments; i++) {
         // If input is constant then it's special tokens, otherwise it's tokens from input text.
         auto const_input = std::dynamic_pointer_cast<v0::Constant>(combine_seg_node->get_input_node_shared_ptr(3*i + 1));
         if (!const_input) { 

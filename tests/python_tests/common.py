@@ -462,27 +462,16 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     opt_model.generation_config.save_pretrained(models_path)
 
     # convert tokenizers as well
-    from openvino_tokenizers import convert_tokenizer
-    from openvino import serialize
-
-    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
-    serialize(tokenizer, models_path / "openvino_tokenizer.xml")
-    serialize(detokenizer, models_path / "openvino_detokenizer.xml")
+    convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def load_hf_tokenizer(model_id: str, hf_load_params: dict = None):
-    hf_load_params = hf_load_params or {}
-    return AutoTokenizer.from_pretrained(model_id, **hf_load_params)
-
-
-def convert_and_load_genai_tokenizer(hf_tokenizer : AutoTokenizer, models_path: Path):
+def convert_and_save_tokenizer(hf_tokenizer : AutoTokenizer, models_path: Path):
     from openvino_tokenizers import convert_tokenizer
     from openvino import save_model
 
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     save_model(tokenizer, models_path / "openvino_tokenizer.xml")
     save_model(detokenizer, models_path / "openvino_detokenizer.xml")
-    return Tokenizer(models_path)
 
 
 def run_llm_pipeline_with_ref(model_id: str, 

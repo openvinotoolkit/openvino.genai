@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
 import openvino_genai
 import json
-from common import delete_rt_info, load_hf_tokenizer, convert_and_load_genai_tokenizer
+from common import delete_rt_info, convert_and_save_tokenizer
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
@@ -232,10 +232,11 @@ prompts = [
 @pytest.mark.nightly
 @pytest.mark.parametrize("prompt", prompts)
 def test_special_tokens(tmp_path, prompt, model_id):
-    model_id, hf_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
-    # breakpoint()
-    hf_tokenizer = load_hf_tokenizer(model_id, hf_load_params)
-    ov_tokenizer = convert_and_load_genai_tokenizer(hf_tokenizer, tmp_path)
+    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
+    convert_and_save_tokenizer(hf_tokenizer, tmp_path)
+    ov_tokenizer = openvino_genai.Tokenizer(tmp_path)
 
     # Calling encode with 'add_special_tokens' will set state flag.
     ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
