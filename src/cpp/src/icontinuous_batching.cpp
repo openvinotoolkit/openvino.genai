@@ -110,8 +110,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         });
     }
 
-    // if streaming was canceled, prompt/answer of current step shouldn't be presented in history, so let's remove prompt from history
-    if (m_is_chat_conversation && !encoded.empty() && encoded[0].m_status == ov::genai::GenerationStatus::CANCEL)
+    // if streaming was cancelled, prompt/answer of current step shouldn't be presented in history, so let's remove prompt from history
+    if (m_is_chat_conversation && encoded[0].m_status == ov::genai::GenerationStatus::CANCEL)
         m_history.pop_back();
 
     return decoded;

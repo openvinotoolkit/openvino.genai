@@ -469,8 +469,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                     OPENVINO_ASSERT(generation_outputs.size() <= 1);
                     if (!generation_outputs.empty()) {
                         for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                            if (streamer_ptr->put(generated_token_id)) {
-                                streamer_ptr->get_streaming_status() == ov::genai::StreamerRunningStatus::CANCEL ? generation->cancel() : generation->stop();
+                            auto streaming_status = streamer_ptr->write(generated_token_id);
+                            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                                streaming_status == ov::genai::StreamingStatus::CANCEL ? generation->cancel() : generation->stop();
                                 break;
                             }
                         }
@@ -565,7 +566,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
-        if(request->has_finished() || request->handle_stopped() || request->handle_canceled()) {
+        if(request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
             for (const auto& sequence: request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());
@@ -583,7 +584,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_requests_droppe
     // Notify the last time by pushing empty output
     // This causes read() to unblock by adding anything to the queue
     for (SequenceGroup::Ptr& request : m_requests) {
-        if (request->handle_stopped() || request->handle_canceled())
+        if (request->handle_stopped() || request->handle_cancelled())
             request->push_empty_outputs();
     }
 }

@@ -99,8 +99,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
                 for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                    if (streamer_ptr->put(generated_token_id)) {
-                        streamer_ptr->get_streaming_status() == StreamerRunningStatus::CANCEL ? handle->cancel() : handle->stop();
+                    auto streaming_status = streamer_ptr->write(generated_token_id);
+                    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                         break;
                     }
                 }
@@ -111,7 +112,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
-                return sg->has_finished() || sg->handle_stopped() || sg->handle_canceled();
+                return sg->has_finished() || sg->handle_stopped() || sg->handle_cancelled();
             });
         active_sequence_groups.erase(removed_it, active_sequence_groups.end());
     };
@@ -273,7 +274,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         sampler.clear_request_info(sequence_group->get_request_id());
 
     // last generated token is not saved in KV cache, we need to add it for some cases
-    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || sequence_groups[0]->handle_stopped())
+    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH)
         finish_info.probably_disappeared_token = finish_info.results.tokens[0].back();
 
     return finish_info;

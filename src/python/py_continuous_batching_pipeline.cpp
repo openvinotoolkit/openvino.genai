@@ -83,8 +83,9 @@ auto generation_result_docstring = R"(
         RUNNING = 0 - Default status for ongoing generation.
         FINISHED = 1 - Status set when generation has been finished.
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-        CANCEL = 3 - Status set when generation handle is canceled.
+        CANCEL = 3 - Status set when generation handle is cancelled.
         STOP = 4 - Status set when generation handle is stopped.
+        DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
     perf_metrics:
                         Performance metrics for each generation result.
 

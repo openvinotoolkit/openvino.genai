@@ -661,7 +661,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer_ptr && streamer_ptr->put_chunk(extracted_segments.non_timestamp_tokens)) {
+            if (streamer_ptr && streamer_ptr->write_chunk(extracted_segments.non_timestamp_tokens) != StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

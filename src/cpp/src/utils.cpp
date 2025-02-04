@@ -144,8 +144,8 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
-        } else if (any_val.is<std::function<StreamerRunningStatus(std::string)>>()) {
-            streamer = any_val.as<std::function<StreamerRunningStatus(std::string)>>();
+        } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
         }
     }
     return streamer;
@@ -162,7 +162,7 @@ std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenize
         [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
             return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
         },
-        [&tokenizer = tokenizer](const std::function<ov::genai::StreamerRunningStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+        [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
             return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
         }
     }, streamer);

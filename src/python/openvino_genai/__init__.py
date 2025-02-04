@@ -16,7 +16,7 @@ from .py_openvino_genai import (
     PerfMetrics,
     StreamerBase,
     get_version,
-    StreamerRunningStatus
+    StreamingStatus
 )
 
 __version__ = get_version()

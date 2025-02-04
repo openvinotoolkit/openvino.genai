@@ -148,7 +148,7 @@ DecodedResults StatefulLLMPipeline::generate(
                     // last generated token is present in tokenized_history, but not included to attention mask, let's keep it in historyt
                     num_tokens_to_remove_from_kv_cache -= 1;
 
-                    // if streaming was used and canceled on prev step, num_tokens_to_remove_from_kv_cache could be already set and it will be bigger as include answer + prompt
+                    // if streaming was used and cancelled on prev step, num_tokens_to_remove_from_kv_cache could be already set and it will be bigger as include answer + prompt
                     m_kv_history_manager.num_tokens_to_remove_from_kv_cache = num_tokens_to_remove_from_kv_cache > m_kv_history_manager.num_tokens_to_remove_from_kv_cache ?
                                                                                 num_tokens_to_remove_from_kv_cache : m_kv_history_manager.num_tokens_to_remove_from_kv_cache;
                 }
@@ -200,7 +200,7 @@ DecodedResults StatefulLLMPipeline::generate(
 
     if (is_chat_conversation) {
         if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
-            // If chat generation process was canceled by user, let's rollback to previous state of history
+            // If chat generation process was cancelled by user, let's rollback to previous state of history
             m_history.pop_back();
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache += m_tokenized_chat_history.size() - prev_tokenized_chat_history.size();
             m_templated_chat_history = prev_templated_chat_history;

@@ -146,8 +146,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                     OPENVINO_ASSERT(generation_outputs.size() <= 1);
                     if (!generation_outputs.empty()) {
                         for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                            if (streamer_ptr->put(generated_token_id)) {
-                                streamer_ptr->get_streaming_status() == StreamerRunningStatus::CANCEL ? generation->cancel() : generation->stop();
+                            auto streaming_status = streamer_ptr->write(generated_token_id);
+                            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                                streaming_status == ov::genai::StreamingStatus::CANCEL ? generation->cancel() : generation->stop();
                                 break;
                             }
                         }

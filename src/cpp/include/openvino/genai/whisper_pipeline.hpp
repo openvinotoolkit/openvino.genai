@@ -25,9 +25,17 @@ using RawSpeechInput = std::vector<float>;
  */
 class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
 public:
-    /// @brief put is called every time new token chunk is generated,
+    /// @brief put_chunk is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
+    virtual bool put_chunk(std::vector<int64_t> tokens) {
+        return false;
+    }
+
+    /// @brief write_chunk is called every time new token chunk is generated
+    /// @return StreamingStatus flag to indicate whether generation should be stopped
+    virtual StreamingStatus write_chunk(std::vector<int64_t> tokens) {
+        return put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+    }
 };
 
 // Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.

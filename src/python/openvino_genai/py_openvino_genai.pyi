@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamerRunningStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -444,8 +444,9 @@ class EncodedGenerationResult:
             RUNNING = 0 - Default status for ongoing generation.
             FINISHED = 1 - Status set when generation has been finished.
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-            CANCEL = 3 - Status set when generation handle is canceled.
+            CANCEL = 3 - Status set when generation handle is cancelled.
             STOP = 4 - Status set when generation handle is stopped.
+            DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
         perf_metrics:
                             Performance metrics for each generation result.
     
@@ -706,8 +707,9 @@ class GenerationResult:
             RUNNING = 0 - Default status for ongoing generation.
             FINISHED = 1 - Status set when generation has been finished.
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-            CANCEL = 3 - Status set when generation handle is canceled.
+            CANCEL = 3 - Status set when generation handle is cancelled.
             STOP = 4 - Status set when generation handle is stopped.
+            DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
         perf_metrics:
                             Performance metrics for each generation result.
     
@@ -1525,7 +1527,11 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-class StreamerRunningStatus:
+    def write(self, token: int) -> ...:
+        """
+        Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
+        """
+class StreamingStatus:
     """
     Members:
     
@@ -1535,10 +1541,10 @@ class StreamerRunningStatus:
     
       STOP
     """
-    CANCEL: typing.ClassVar[StreamerRunningStatus]  # value = <StreamerRunningStatus.CANCEL: 2>
-    RUNNING: typing.ClassVar[StreamerRunningStatus]  # value = <StreamerRunningStatus.RUNNING: 0>
-    STOP: typing.ClassVar[StreamerRunningStatus]  # value = <StreamerRunningStatus.STOP: 1>
-    __members__: typing.ClassVar[dict[str, StreamerRunningStatus]]  # value = {'RUNNING': <StreamerRunningStatus.RUNNING: 0>, 'CANCEL': <StreamerRunningStatus.CANCEL: 2>, 'STOP': <StreamerRunningStatus.STOP: 1>}
+    CANCEL: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.CANCEL: 2>
+    RUNNING: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.RUNNING: 0>
+    STOP: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.STOP: 1>
+    __members__: typing.ClassVar[dict[str, StreamingStatus]]  # value = {'RUNNING': <StreamingStatus.RUNNING: 0>, 'CANCEL': <StreamingStatus.CANCEL: 2>, 'STOP': <StreamingStatus.STOP: 1>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:

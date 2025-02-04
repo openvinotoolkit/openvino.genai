@@ -4,19 +4,18 @@
 #pragma once
 
 #include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/generation_handle.hpp"
 #include <variant>
 
 namespace ov {
 namespace genai {
 
-enum class StreamerRunningStatus {
+enum class StreamingStatus {
     RUNNING = 0, // Continue to run of inference
     STOP = 1, // Stop generation, keep history as is, KV cache includes last request and generated tokens
     CANCEL = 2 // Stop generate, drop last prompt and all generated tokens from history, KV cache include history but last step
 };
 
-using CallbackTypeVariant = std::variant<bool, StreamerRunningStatus, std::monostate>;
+using CallbackTypeVariant = std::variant<bool, StreamingStatus, std::monostate>;
 
 /**
  * @brief base class for streamers. In order to use inherit from from this class and implement put, and methods
@@ -24,22 +23,22 @@ using CallbackTypeVariant = std::variant<bool, StreamerRunningStatus, std::monos
  * @param m_tokenizer tokenizer
  */
 class OPENVINO_GENAI_EXPORTS StreamerBase {
-protected:
-    StreamerRunningStatus m_streaming_finish_status = StreamerRunningStatus::RUNNING;
-
 public:
-    /// @brief put is called every time new token is decoded,
+    /// @brief put is called every time new token is decoded. Deprecated. Please, use write instead.
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    virtual bool put(int64_t token) = 0;
+    OPENVINO_DEPRECATED("Please, use `write()` instead of `put()`.")
+    virtual bool put(int64_t token) {
+        return false;
+    };
+
+    /// @brief write is called every time new token is decoded
+    /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
+    virtual StreamingStatus write(int64_t token) {
+        return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+    };
 
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
     virtual void end() = 0;
-
-    /// @brief get_streaming_status() is called by the pipline to take more detailed about streaming status. m_streaming_finish_status, which contains streaming status info, could be set in put().
-    /// @return ov::genai::StreamerRunningStatus to determine the streaming status of generation, whether generation is running, stopped or cancelled
-    virtual StreamerRunningStatus get_streaming_status() {
-        return m_streaming_finish_status;
-    }
 
     virtual ~StreamerBase();
 };

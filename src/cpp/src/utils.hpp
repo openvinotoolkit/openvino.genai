@@ -9,6 +9,7 @@
 
 #include "visual_language/processor_config.hpp"
 
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/streamer_base.hpp"
 
 namespace ov {

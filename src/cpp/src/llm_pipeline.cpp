@@ -98,8 +98,8 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
-    } else if (auto streamer_obj = std::get_if<std::function<StreamerRunningStatus(std::string)>>(&func)) {
-        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamerRunningStatus(std::string)>>(*streamer_obj)};
+    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
     } else {
         auto callback = std::get<std::function<bool(std::string)>>(func);
         return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};

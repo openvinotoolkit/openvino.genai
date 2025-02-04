@@ -11,7 +11,7 @@ TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::func
     on_finalized_subword_callback = callback;
 }
 
-bool TextCallbackStreamer::put(int64_t token) {
+StreamingStatus TextCallbackStreamer::write(int64_t token) {
     std::stringstream res;
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);
@@ -23,7 +23,7 @@ bool TextCallbackStreamer::put(int64_t token) {
         m_tokens_cache.clear();
         m_decoded_lengths.clear();
         m_printed_len = 0;
-        return is_generation_complete(on_finalized_subword_callback(res.str()));
+        return set_streaming_status(on_finalized_subword_callback(res.str()));
     }
 
     constexpr size_t delay_n_tokens = 3;
@@ -31,13 +31,13 @@ bool TextCallbackStreamer::put(int64_t token) {
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
     if (m_decoded_lengths.size() < delay_n_tokens) {
-        return is_generation_complete(on_finalized_subword_callback(res.str()));
+        return set_streaming_status(on_finalized_subword_callback(res.str()));
     }
     constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
         m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
         // Don't print incomplete text
-        return is_generation_complete(on_finalized_subword_callback(res.str()));
+        return set_streaming_status(on_finalized_subword_callback(res.str()));
     }
     auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];
     if (print_until != -1 && print_until > m_printed_len) {
@@ -47,22 +47,20 @@ bool TextCallbackStreamer::put(int64_t token) {
         m_printed_len = print_until;
     }
 
-    return is_generation_complete(on_finalized_subword_callback(res.str()));
+    return set_streaming_status(on_finalized_subword_callback(res.str()));
 }
 
-bool TextCallbackStreamer::is_generation_complete(CallbackTypeVariant callback_status) {
-    bool is_complete = false;
-    if (auto status = std::get_if<StreamerRunningStatus>(&callback_status)) {
-        m_streaming_finish_status = *status;
-        is_complete = (m_streaming_finish_status == StreamerRunningStatus::STOP || m_streaming_finish_status == StreamerRunningStatus::CANCEL);
-    } else if (auto status = std::get_if<bool>(&callback_status)) {
-        is_complete = *status;
-        m_streaming_finish_status = *status ? StreamerRunningStatus::STOP : StreamerRunningStatus::RUNNING;
-    } else if (auto status = std::get_if<std::monostate>(&callback_status)) {
-        m_streaming_finish_status = StreamerRunningStatus::RUNNING;
+StreamingStatus TextCallbackStreamer::set_streaming_status(CallbackTypeVariant callback_status) {
+    StreamingStatus status = StreamingStatus::RUNNING;
+    if (auto res = std::get_if<StreamingStatus>(&callback_status)) {
+        status = *res;
+    } else if (auto res = std::get_if<bool>(&callback_status)) {
+        status = *res ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+    } else if (auto res = std::get_if<std::monostate>(&callback_status)) {
+        status = StreamingStatus::RUNNING;
     }
 
-    return is_complete;
+    return status;
 }
 
 void TextCallbackStreamer::end() {

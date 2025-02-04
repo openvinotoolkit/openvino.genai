@@ -319,18 +319,18 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
         [&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback){
             // Wrap python streamer with manual utf-8 decoding. Do not rely
             // on pybind automatic decoding since it raises exceptions on incomplete strings.
-            auto callback_wrapped = [py_callback](std::string subword) -> ov::genai::StreamerRunningStatus {
+            auto callback_wrapped = [py_callback](std::string subword) -> ov::genai::StreamingStatus {
                 py::gil_scoped_acquire acquire;
                 auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                 std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
-                auto result = StreamerRunningStatus::RUNNING;
+                auto result = StreamingStatus::RUNNING;
                 if (callback_output.has_value()) {
-                    if (*callback_output == (uint16_t)StreamerRunningStatus::RUNNING) {
-                        result = StreamerRunningStatus::RUNNING;
-                    } else if (*callback_output == (uint16_t)StreamerRunningStatus::CANCEL) {
-                        result = StreamerRunningStatus::CANCEL;
+                    if (*callback_output == (uint16_t)StreamingStatus::RUNNING) {
+                        result = StreamingStatus::RUNNING;
+                    } else if (*callback_output == (uint16_t)StreamingStatus::CANCEL) {
+                        result = StreamingStatus::CANCEL;
                     } else {
-                        result = StreamerRunningStatus::STOP;
+                        result = StreamingStatus::STOP;
                     }
                 }
 
@@ -339,6 +339,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
             streamer = callback_wrapped;
         },
         [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
+            std::cout << "streamer_cls " << std::endl;
             streamer = streamer_cls;
         },
         [](std::monostate none){ /*streamer is already a monostate */ }

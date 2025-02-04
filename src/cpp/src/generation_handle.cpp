@@ -17,14 +17,14 @@ GenerationStatus GenerationHandleImpl::get_status() {
 }
 
 bool GenerationHandleImpl::can_read() {
-    return !is_canceled() && !is_stopped() && m_generation_stream->can_read();
+    return !is_cancelled() && !is_stopped() && m_generation_stream->can_read();
 }
 
 bool GenerationHandleImpl::is_stopped() {
     return get_status() == GenerationStatus::STOP;
 }
 
-bool GenerationHandleImpl::is_canceled() {
+bool GenerationHandleImpl::is_cancelled() {
     return get_status() == GenerationStatus::CANCEL;
 }
 
@@ -41,7 +41,7 @@ void GenerationHandleImpl::cancel() {
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::read() {
-    OPENVINO_ASSERT(!is_stopped(), "GenerationHandle cannot be used after it is stopped.");
+    OPENVINO_ASSERT(!is_stopped() && !is_cancelled(), "GenerationHandle cannot be used after it is stopped / cancelled.");
     return m_generation_stream->read();
 }
 
@@ -64,7 +64,7 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
 }
 
 std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
-    OPENVINO_ASSERT(!is_stopped(), "GenerationHandle cannot be used after it is stopped.");
+    OPENVINO_ASSERT(!is_stopped() && !is_cancelled(), "GenerationHandle cannot be used after it is stopped / cancelled.");
     std::vector<GenerationOutput> results;
     std::unordered_map<uint64_t, GenerationOutput> partial_results;
     // We iterate until generation is running or there are tokens we haven't read yet

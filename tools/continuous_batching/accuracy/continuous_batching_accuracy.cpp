@@ -114,6 +114,7 @@ int main(int argc, char* argv[]) try {
                 print_generation_result(generation_result);
             }
             break;
+        case ov::genai::GenerationStatus::STOP:
         case ov::genai::GenerationStatus::CANCEL:
             std::cout << "Request was aborted." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
