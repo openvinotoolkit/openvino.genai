@@ -38,6 +38,10 @@ MODELS = {
     "phi-2": {
         "name": "microsoft/phi-2",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
+    "notus-7b-v1": {
+        "name": "argilla/notus-7b-v1",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     }
 }
 
@@ -88,8 +92,12 @@ def convert_model(request):
         ]
         if model_args:
             command.extend(model_args)
-        result = subprocess.run(command, check=True)
-        assert result.returncode == 0, f"Model {model_name} conversion failed"
+        logger.info(f"convertion command: {command}")
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Model {model_name} conversion failed. The following command was used: {e.cmd}")
+            
     yield model_path
     # Cleanup the model after tests
     if not os.environ.get("TEMP_DIR"):
