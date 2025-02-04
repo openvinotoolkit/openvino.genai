@@ -13,6 +13,7 @@ from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, logger
     [
         pytest.param("Qwen1.5-7B-Chat", "你好！", id="Qwen1.5-7B-Chat_Chinese"),
         pytest.param("phi-2", "69", id="phi-2_Numeric"),
+        pytest.param("notus-7b-v1", "69"),
     ],
     indirect=["convert_model"],
 )
@@ -31,6 +32,7 @@ def test_python_sample_beam_search_causal_lm(convert_model, sample_args, shared_
     [
         pytest.param("Qwen1.5-7B-Chat", "你好！", id="Qwen1.5-7B-Chat_Chinese"),
         pytest.param("phi-2", "69", id="phi-2_Numeric"),
+        pytest.param("notus-7b-v1", "69"),
     ],
     indirect=["convert_model"],
 )
@@ -52,6 +54,7 @@ def test_cpp_sample_beam_search_causal_lm(convert_model, sample_args, shared_dat
     [
         pytest.param("Qwen1.5-7B-Chat", "你好！", id="Qwen1.5-7B-Chat_Chinese"),
         pytest.param("phi-2", "69", id="phi-2_Numeric"),
+        pytest.param("notus-7b-v1", "69"),
     ]
 )
 def test_sample_beam_search_causal_lm_diff(model, sample_args, shared_data):
