@@ -225,7 +225,6 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
 class ConstructableChunkStreamer : public ChunkStreamerBase {
     bool put(int64_t token) override {
-        // todo: check/add gil_acquire
         PYBIND11_OVERRIDE_PURE(bool,               // Return type
                                ChunkStreamerBase,  // Parent class
                                put,                // Name of function in C++ (must match Python name)
