@@ -37,10 +37,7 @@ public:
 
     EmbeddingsModel() = default;
 
-    ov::Tensor infer(ov::Tensor input_idx);
-
-    void set_cpu_out_tensor();
-    void set_remote_out_tensor();
+    ov::Tensor infer(const ov::Tensor& input_idx, bool return_remote_tensor=false);
 
 private:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;

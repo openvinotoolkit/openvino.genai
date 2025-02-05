@@ -125,12 +125,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
-    if (m_embedding.has_value()) {
-        (*m_embedding).set_remote_out_tensor();
-        m_llm.set_tensor("inputs_embeds", input_ids);
-    } else {
-        m_llm.set_tensor("input_ids", input_ids);
-    }
+    m_llm.set_tensor(m_embedding.has_value() ? "inputs_embeds" : "input_ids", input_ids);
     m_llm.set_tensor("attention_mask", attention_mask);
     if (position_ids.has_value())
         m_llm.set_tensor("position_ids", *position_ids);
@@ -216,7 +211,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         }
 
         if (m_embedding.has_value()) {
-            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids);
+            constexpr bool return_remote_tensor = true;
+            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
