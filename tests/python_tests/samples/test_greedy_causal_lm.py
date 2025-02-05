@@ -20,7 +20,6 @@ from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 def test_cpp_sample_greedy_causal_lm(convert_model, sample_args, shared_data, request):
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
     result = subprocess.run([cpp_sample, convert_model, sample_args], check=True)
-    assert result.returncode == 0, "C++ sample execution failed"
     model_id = request.node.callspec.params["convert_model"]
     shared_data.setdefault("greedy_causal_lm", {}).setdefault("cpp", {}).setdefault(model_id, {})[sample_args] = result.stdout
     
@@ -36,7 +35,6 @@ def test_cpp_sample_greedy_causal_lm(convert_model, sample_args, shared_data, re
 def test_python_sample_greedy_causal_lm(convert_model, sample_args, shared_data, request):
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
     result = subprocess.run(["python", script, convert_model, sample_args], capture_output=True, text=True, check=True)
-    assert result.returncode == 0, f"Script execution failed for model {convert_model} with argument {sample_args}"
     model_id = request.node.callspec.params["convert_model"]
     shared_data.setdefault("greedy_causal_lm", {}).setdefault("py", {}).setdefault(model_id, {})[sample_args] = result.stdout
 

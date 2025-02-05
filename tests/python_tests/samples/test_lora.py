@@ -13,5 +13,5 @@ from conftest import TEST_FILES, SAMPLES_PY_DIR
 @pytest.mark.parametrize("download_test_content", [TEST_FILES["adapter_model.safetensors"]], indirect=True)
 def test_python_sample_lora(convert_model, download_test_content, sample_args):
     script = os.path.join(SAMPLES_PY_DIR, "text_generation/lora.py")
-    result = subprocess.run(["python", script, convert_model, download_test_content, sample_args], check=True)
-    assert result.returncode == 0, f"Script execution failed for model {convert_model}"
+    subprocess.run(["python", script, convert_model, download_test_content, sample_args], check=True)
+    
