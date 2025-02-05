@@ -28,7 +28,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         tokenizer,
         device,
         properties,
-        utils::from_config_json_if_exists(models_path)
+        utils::from_config_json_if_exists(models_path),
+        models_path
     } {}
 
 StatefulLLMPipeline::StatefulLLMPipeline(
@@ -36,7 +37,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config)
+    const ov::genai::GenerationConfig& generation_config,
+    const std::filesystem::path& models_path)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
     utils::apply_slice_before_matmul_transformation(model);
     m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
@@ -48,7 +50,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
         m_model_runner = compiled_model.create_infer_request();
     } else {
-        compiled_model = utils::singleton_core().compile_model(model, device, properties);
+        compiled_model = device == "NPU"
+            ? utils::compile_decoder_for_npu(model, properties, models_path)
+            : utils::singleton_core().compile_model(model, device, properties);
         m_model_runner = compiled_model.create_infer_request();
     }
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");

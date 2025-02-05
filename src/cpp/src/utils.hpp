@@ -114,6 +114,8 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
+ov::CompiledModel compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model, const ov::AnyMap& config, const std::filesystem::path& models_path);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
