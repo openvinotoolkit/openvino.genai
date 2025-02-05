@@ -47,6 +47,7 @@ void init_tokenizer(py::module_& m) {
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                py::gil_scoped_release rel;
                 return tok.encode(prompts, tokenization_params);
             },
             py::arg("prompts"),
@@ -66,6 +67,7 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, std::vector<int64_t>& tokens, bool skip_special_tokens) -> py::str {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                py::gil_scoped_release rel;
                 return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
@@ -77,6 +79,7 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, ov::Tensor& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                py::gil_scoped_release rel;
                 return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
@@ -87,6 +90,7 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
+                py::gil_scoped_release rel;
                 return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
