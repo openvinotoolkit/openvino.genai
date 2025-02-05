@@ -41,7 +41,7 @@ public:
 
 /** 
  * @brief This pass modifies tokenizer ov::Model so that max_pad_length input to
- * RaggedToDense is made modifiable during runtime so that padding can be controlled.
+ * Makes ends input for CombineSegments stateful so that padding can be controlled at runtime.
  */
 class MakePaddingSatateful : public ov::pass::ModelPass {
 public:

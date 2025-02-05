@@ -64,8 +64,8 @@ public:
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;
     bool m_skip_special_tokens = true;
-    int m_max_pad_length = std::numeric_limits<int>::max();
-    int m_max_trunc_length = std::numeric_limits<int>::max();
+    int32_t m_max_pad_length = std::numeric_limits<int32_t>::max();
+    int32_t m_max_trunc_length = std::numeric_limits<int32_t>::max();
     bool m_older_than_24_5 = false;
 
     int64_t m_pad_token_id = -1;
@@ -78,7 +78,12 @@ public:
 
     std::string m_chat_template = {};
 
-    std::pair<int, int> get_padding_values(PaddingMode padding_mode, size_t max_length) {
+    std::pair<int32_t, int32_t> get_padding_values(PaddingMode padding_mode, std::optional<size_t> max_length_) {
+        auto max_length = std::numeric_limits<int32_t>::max();
+        if (max_length_.has_value()) {
+            max_length = *max_length_;
+        }
+        
         switch (padding_mode) {
             case PaddingMode::TRUNCATE:
                 return {max_length, 0};
@@ -102,10 +107,10 @@ public:
         ov::genai::utils::read_anymap_param(params, padding_mode.name(), padding_mode_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
         
-        int max_trunc_length_val = m_max_trunc_length;
-        int max_pad_length_val = m_max_pad_length;
+        int32_t max_trunc_length_val = m_max_trunc_length;
+        int32_t max_pad_length_val = m_max_pad_length;
 
-        std::tie(max_trunc_length_val, max_pad_length_val) = get_padding_values(padding_mode_val, *max_length_val);
+        std::tie(max_trunc_length_val, max_pad_length_val) = get_padding_values(padding_mode_val, max_length_val);
 
         // If requested add[skip]_special_tokens, max_length or pading mode 
         // is different from the stored state, need to set state variable.
@@ -128,12 +133,12 @@ public:
 
         // skip_special_tokens is managed by multiplication with a number, therefore i32.
         ov::Tensor skip_special_tensor = ov::Tensor(ov::element::i32, {1});
-        *skip_special_tensor.data<int>() = skip_special_tokens_flag;
+        *skip_special_tensor.data<int32_t>() = skip_special_tokens_flag;
 
         ov::Tensor max_trunc_length_tensor = ov::Tensor(ov::element::i32, {});
-        *max_trunc_length_tensor.data<int>() = max_trunc_length_val;
+        *max_trunc_length_tensor.data<int32_t>() = max_trunc_length_val;
         ov::Tensor max_pad_length_tensor = ov::Tensor(ov::element::i32, {1});
-        *max_pad_length_tensor.data<int>() = max_pad_length_val;
+        *max_pad_length_tensor.data<int32_t>() = max_pad_length_val;
         
         bool set_padding = max_length_val.has_value();
         // Even if max_length is not set, in order to disable truncation in LONGEST mode
