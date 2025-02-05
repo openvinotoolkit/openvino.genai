@@ -342,7 +342,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer && streamer->put_chunk(extracted_segments.non_timestamp_tokens)) {
+            if (streamer && streamer->write_chunk(extracted_segments.non_timestamp_tokens) != ov::genai::StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

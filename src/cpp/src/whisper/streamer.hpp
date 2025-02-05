@@ -16,7 +16,7 @@ public:
     StreamingStatus write_chunk(std::vector<int64_t> tokens) override;
     void end() override;
 
-    ChunkTextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback)
+    ChunkTextCallbackStreamer(const Tokenizer& tokenizer, std::function<ov::genai::CallbackTypeVariant(std::string)> callback)
         : TextCallbackStreamer(tokenizer, callback){};
 };
 

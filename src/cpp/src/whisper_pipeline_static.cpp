@@ -586,6 +586,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         streamer_ptr = *streamer_obj;
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
+    } else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
     }
 
     size_t max_new_tokens = config.get_max_new_tokens();

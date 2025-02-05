@@ -103,7 +103,6 @@ public:
 
     void cancel();
 
-    GenerationOutputs back();
     // Reads result of a generation for single iteration
     GenerationOutputs read();
     // Reads all generated tokens for all sequences

@@ -339,7 +339,6 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
             streamer = callback_wrapped;
         },
         [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-            std::cout << "streamer_cls " << std::endl;
             streamer = streamer_cls;
         },
         [](std::monostate none){ /*streamer is already a monostate */ }

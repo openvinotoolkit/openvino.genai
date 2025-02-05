@@ -277,7 +277,7 @@ def test_chat_scenario_callback_cancel(model_descr):
         'What was my first question?'
     ]
 
-    generation_config_kwargs = dict(max_new_tokens=20, ignore_eos=True)
+    generation_config_kwargs = dict(max_new_tokens=20)
 
     chat_history_hf = []
     chat_history_ov = []
