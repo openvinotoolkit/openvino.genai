@@ -275,8 +275,9 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                pipe.compile(device, map);
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -339,8 +340,9 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                pipe.compile(device, map);
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -404,8 +406,9 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                pipe.compile(device, map);
             },
             py::arg("device"), "device on which inference will be done",
             R"(

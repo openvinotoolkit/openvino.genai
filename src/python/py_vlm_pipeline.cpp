@@ -194,8 +194,9 @@ void init_vlm_pipeline(py::module_& m) {
                const std::string& prompt,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return py::cast(pipe.generate(prompt, pyutils::kwargs_to_any_map(kwargs)));
+                return py::cast(pipe.generate(prompt, map));
             },
             py::arg("prompt"), "Input string",
             (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
