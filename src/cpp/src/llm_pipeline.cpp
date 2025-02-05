@@ -42,6 +42,23 @@ std::pair<ov::AnyMap, ov::genai::static_llm::ModelConfigDesc> split_model_descr(
     return {main_properties, model_descr};
 }
 
+const std::string PA_BACKEND = "PA";
+const std::string SPDA_BACKEND = "SPDA";
+
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+    ov::AnyMap properties = external_properties;
+    auto it = properties.find("ATTENTION_BACKEND");
+    std::string attention_backend = PA_BACKEND;
+    if (it != properties.end()) {
+        attention_backend = it->second.as<std::string>();
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SPDA_BACKEND,
+            "Attention backend must be either '", PA_BACKEND, "' or '", SPDA_BACKEND, "', got '", attention_backend, "'");
+        properties.erase(it);
+    }
+    return {properties, attention_backend};
+};
+
+
 } // namespace
 
 
@@ -92,21 +109,24 @@ ov::genai::LLMPipeline::LLMPipeline(
     OptionalGenerationConfig generation_config) {
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
+    m_pimpl->save_load_time(start_time);
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& user_properties) {
     auto start_time = std::chrono::steady_clock::now();
+
+    auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
         properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
         properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-        auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, plugin_config);
+        auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
@@ -114,7 +134,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr) {
+    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
@@ -140,8 +160,10 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& properties) {
+    const ov::AnyMap& user_properties) {
     auto start_time = std::chrono::steady_clock::now();
+
+    auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
@@ -156,7 +178,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr) {
+    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
@@ -184,9 +206,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::Tensor& weights_tensor,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& properties,
+    const ov::AnyMap& user_properties,
     const ov::genai::GenerationConfig& generation_config) {
     auto start_time = std::chrono::steady_clock::now();
+
+    auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
@@ -223,7 +247,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
-    if (m_pimpl == nullptr) {
+    if (m_pimpl == nullptr && attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
