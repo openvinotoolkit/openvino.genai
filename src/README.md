@@ -418,7 +418,7 @@ auto tokenzier = pipe.get_tokenizer();
 import openvino_genai as ov_genai
 tokenizer = ov_genai.Tokenizer(models_path)
 
-// Or from LLMPipeline.
+# Or from LLMPipeline.
 pipe = ov_genai.LLMPipeline(models_path, "CPU")
 tokenizer = pipe.get_tokenizer()
 ```
@@ -434,12 +434,34 @@ In Python:
 ```python
 tokens = tokenizer.encode("The Sun is yellow because", add_special_tokens=False)
 ```
+`encode` method returns object of type `TokenizedInputs` with fields `input_ids` and `attention_mask`, which contain `ov::Tensor`. 
+Because a single `ov::Tensor` cannot store sequences of different length (so called ragged tensor), when input is a batch of strings 
+in order to get the regular tensor with fixed number of rows and columns padding to the longest sequence is applied.
 
-Example of getting padded outputs:
+Also, by default every tokenizer model IR (`openvino_tokenizer.xml/bin`) has a subgraph which truncates sequences exeeding certain `max_length` value. Exact value of `max_length` is taken from HugginFace tokenizer object and is written into IR.
+
+Both padding/truncation and `max_length` can be controlled by the user. Padding mode has 3 modes:
+
+|<!-- mode-->  |<!-- description-->|
+|--------------|-------------------|
+| `PaddingMode::TRUNCATE` | - truncates if sequence is longer than max_length. But to get a regular tensor padding to the longest is still applied (**default mode**)|
+| `PaddingMode::LONGEST`| - truncation and padding to `max_length` and instead pads to longest sequence in the batch, `max_length` is ignored. |
+| `PaddingMode::MAX_LENGTH` |- pads to the fixed max_length, and truncates if sequence is longer than `max_length`. |
+
+Below are example how padding could be controlled, in C++:
 ```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 auto tokenizer = ov::genai::Tokenizer(models_path);
 std::vector<std::string> prompts = {"The Sun is yellow because", "The"};
+
+// Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect the resulting length
+tokens = tokenizer.encode({"The Sun is yellow because"}, ov::genai::padding_mode(ov::genai::PaddingMode::TRUNCATE), ov::genai::max_length(1024))
+// out_shape: [1, 6]
+
+// Default regime is TRUNCATE. Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect the resulting length
+// But TRUNCATE also performs padding to the longest to get the regular tensor.
+tokens = tokenizer.encode({"The Sun is yellow because", "The"})
+// out_shape: [2, 6]
 
 // With LONGEST string will be padded to the lengh of the longest sequence, max_length=1024 will be ignored.
 tokens = tokenizer.encode(prompts, ov::genai::padding_mode(ov::genai::PaddingMode::LONGEST), ov::genai::max_length(1024))
@@ -452,33 +474,50 @@ tokens = tokenizer.encode(prompts, ov::genai::padding_mode(ov::genai::PaddingMod
 // With TRUNCATE long string will be truncated to the same 1024 length for the longer sequences 
 // and padded to the same 1024 length for the shorter sequences.
 tokens = tokenizer.encode(
-    ["This is THE LONGESTS string ever of all times " * 1000, "The"], 
+    {"This is a VERY VERY long string consisting or more than million words....", "The"}, 
     ov::genai::padding_mode(ov::genai::PaddingMode::TRUNCATE), 
     ov::genai::max_length(1024)
 )
 // out_shape: [2, 1024]
 ```
 
+In Python:
 ```python
 import openvino_genai as ov_genai
 
 tokenizer = ov_genai.Tokenizer(models_path)
 prompts = ["The Sun is yellow because", "The"]
 
-# String will be padded to the lengh of the longest sequence, max_length=1024 will be ignored.
-tokens = tokenizer.encode(prompts, padding_mode=ov_genai.PaddingMode.LONGEST, max_length=1024)
+# Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect the resulting length
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, truncation=True, padding="longest", max_length=1024)
+tokens = tokenizer.encode(["The Sun is yellow because"], padding_mode=ov_genai.PaddingMode.TRUNCATE, max_length=1024)
+print(tokens.input_ids.shape)
+# out_shape: [1, 6]
+
+# Default regime is TRUNCATE. Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect the resulting length
+# But TRUNCATE also performs padding to the longest to get the regular tensor.
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, truncation=True, padding="longest")
+tokens = tokenizer.encode(["The Sun is yellow because", "The"])
+print(tokens.input_ids.shape)
+# out_shape: [1, 6]
+
+# String will be padded to the lengh of the longest sequence, max_length even if it was set would be ignored.
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest")
+tokens = tokenizer.encode(prompts, padding_mode=ov_genai.PaddingMode.LONGEST)
 print(tokens.input_ids.shape)
 # out_shape: [2, 6]
 
 # String are short and resulting tokens sequence will be padded to 1024.
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
 tokens = tokenizer.encode(prompts, padding_mode=ov_genai.PaddingMode.MAX_LENGTH, max_length=1024)
 print(tokens.input_ids.shape)
 # out_shape: [2, 1024]
 
 # Very long string will be truncated to the same 1024 length for the longer sequences 
 # and padded to the same 1024 length for the shorter sequences.
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, truncation=True, padding="longest", max_length=1024)
 tokens = tokenizer.encode(
-    ["This is THE LONGESTS string ever of all times " * 1000, "The"], 
+    ["This is a VERY VERY long string consisting or more than million words...." * 1000, "The"], 
     padding_mode=ov_genai.PaddingMode.TRUNCATE, 
     max_length=1024)
 print(tokens.input_ids.shape)
