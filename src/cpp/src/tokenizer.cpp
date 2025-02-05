@@ -64,7 +64,7 @@ public:
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;
     bool m_skip_special_tokens = true;
-    int32_t m_max_pad_length = std::numeric_limits<int32_t>::max();
+    int32_t m_max_pad_length = 0;
     int32_t m_max_trunc_length = std::numeric_limits<int32_t>::max();
     bool m_older_than_24_5 = false;
 
@@ -78,39 +78,28 @@ public:
 
     std::string m_chat_template = {};
 
-    std::pair<int32_t, int32_t> get_padding_values(PaddingMode padding_mode, std::optional<size_t> max_length_) {
-        auto max_length = std::numeric_limits<int32_t>::max();
-        if (max_length_.has_value()) {
-            max_length = *max_length_;
-        }
-        
-        switch (padding_mode) {
-            case PaddingMode::TRUNCATE:
-                return {max_length, 0};
-            case PaddingMode::LONGEST:
-                return {std::numeric_limits<int32_t>::max(), 0};
-            case PaddingMode::MAX_LENGTH:
-                return {max_length, max_length};
-            default:
-                OPENVINO_THROW("Unknown padding mode");
-        }
-    }
-
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
         bool add_special_tokens_flag = m_add_special_tokens;
         bool skip_special_tokens_flag = m_skip_special_tokens;
         std::optional<size_t> max_length_val;
-        PaddingMode padding_mode_val = PaddingMode::TRUNCATE;
+        bool pad_to_max_length_val = false;
         
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
-        ov::genai::utils::read_anymap_param(params, padding_mode.name(), padding_mode_val);
+        ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
         
-        int32_t max_trunc_length_val = m_max_trunc_length;
-        int32_t max_pad_length_val = m_max_pad_length;
-
-        std::tie(max_trunc_length_val, max_pad_length_val) = get_padding_values(padding_mode_val, max_length_val);
+        // TODO:
+        int32_t max_trunc_length_val = std::numeric_limits<int32_t>::max();
+        int32_t max_pad_length_val = 0;
+        
+        if (max_length_val.has_value()) {
+            max_trunc_length_val = *max_length_val;
+        
+            if (pad_to_max_length_val) {
+                max_pad_length_val = *max_length_val;
+            }
+        }
 
         // If requested add[skip]_special_tokens, max_length or pading mode 
         // is different from the stored state, need to set state variable.
@@ -140,19 +129,14 @@ public:
         ov::Tensor max_pad_length_tensor = ov::Tensor(ov::element::i32, {1});
         *max_pad_length_tensor.data<int32_t>() = max_pad_length_val;
         
-        bool set_padding = max_length_val.has_value();
-        // Even if max_length is not set, in order to disable truncation in LONGEST mode
-        // MAX_TRUNCATION_LENGTH_VAR_ID should be updated to max numeric limit.
-        bool set_truncation = padding_mode_val == PaddingMode::LONGEST || max_length_val.has_value();
-
         for (auto& state: infer_request_guard.get().query_state()) {
             if (state.get_name().find(add_special_tokens.name()) != std::string::npos) {
                 state.set_state(add_special_tensor);
             } else if (state.get_name().find(skip_special_tokens.name()) != std::string::npos) {
                 state.set_state(skip_special_tensor);
-            } else if (state.get_name().find(MAX_TRUNCATION_LENGTH_VAR_ID) != std::string::npos && set_truncation) {
+            } else if (state.get_name().find(MAX_TRUNCATION_LENGTH_VAR_ID) != std::string::npos && max_length_val.has_value()) {
                 state.set_state(max_trunc_length_tensor);
-            } else if (state.get_name().find(MAX_PAD_LENGTH_VAR_ID) != std::string::npos && set_padding) {
+            } else if (state.get_name().find(MAX_PAD_LENGTH_VAR_ID) != std::string::npos && max_length_val.has_value()) {
                 state.set_state(max_pad_length_tensor);
             }
         }
@@ -631,22 +615,22 @@ Tokenizer::Tokenizer(const std::string& model_str, ov::Tensor& weights_tensor, c
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
     return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
     return m_pimpl->encode(prompts, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
-    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::padding_mode.name()});
+    check_arguments(tokenization_params, {ov::genai::add_special_tokens.name(), ov::genai::max_length.name(), ov::genai::pad_to_max_length.name()});
     return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 

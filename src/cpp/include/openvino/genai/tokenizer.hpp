@@ -107,7 +107,7 @@ public:
     /**
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {"add_special_tokens", false}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
@@ -115,7 +115,7 @@ public:
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {"add_special_tokens", false}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
@@ -126,8 +126,8 @@ public:
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
     * @param add_special_tokens whether to add special tokens
-    * @param max_length maximum length to which output will be padded and/or truncated
-    * @param padding_mode either PaddingMode::TRUNCATE, PaddingMode::LONGEST, or PaddingMode::MAX_LENGTH.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined in taken from IR.
+    * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -139,8 +139,8 @@ public:
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
-    * @param max_length maximum length to which output will be padded and/or truncated
-    * @param padding_mode either PaddingMode::TRUNCATE, PaddingMode::LONGEST, or PaddingMode::MAX_LENGTH.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined in taken from IR.
+    * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -245,30 +245,9 @@ private:
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
-/**
- * @enum PaddingMode
- * @brief Enum class representing different padding modes for tokenization.
- *
- * This enum class defines modes that can be used to pad tokenized sequences. 
- * IMPORTANT NOTICE: even in TRUNCATE mode the padding to the longest sequence in the batch is applied
- * since resulting tokenization is stored as a signe ov::Tensor which cannot store irregular/ragged array.
- * For the same reason also in MAX_LENGTH mode truncation is also applied for sequences longer that max_length,
- * to have the regular tensor with fixed number of columns for each row.
- *
- * @var PaddingMode::TRUNCATE
- * Truncate the sequence to the maximum length specified. But also, regular tensor with fixed number of columns for each row, implicitly applies padding to the longes if input is batched.
- *
- * @var PaddingMode::LONGEST
- * Pad the sequence to the length of the longest sequence in the batch. Truncation and padding to the max_length are switched off.
- *
- * @var PaddingMode::MAX_LENGTH
- * Pad the sequence to a specified maximum length. Truncation is also swithed on in order to get regular tensor with fixed number of columns for each row.
- */
-enum class PaddingMode { TRUNCATE, LONGEST, MAX_LENGTH };
-
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
-static constexpr ov::Property<PaddingMode> padding_mode{"padding_mode"};
+static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
 
 }  // namespace genai
 }  // namespace ov

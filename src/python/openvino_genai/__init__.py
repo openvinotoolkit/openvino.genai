@@ -47,8 +47,7 @@ from .py_openvino_genai import (
 # Tokenizers
 from .py_openvino_genai import (
     TokenizedInputs,
-    Tokenizer,
-    PaddingMode
+    Tokenizer
 )
 
 # Whisper

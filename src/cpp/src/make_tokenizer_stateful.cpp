@@ -114,7 +114,6 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     auto default_pad_length = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{0});
     auto read_max_pad_value = std::make_shared<v6::ReadValue>(default_pad_length, variable);
     auto max_op = std::make_shared<v1::Maximum>(ragged_to_dense_node->input_value(3), read_max_pad_value);
-    // TODO: handle when max_length is already set during tokenzation
     ragged_to_dense_node->input(3).replace_source_output(max_op->output(0));
 
     auto assign = std::make_shared<v6::Assign>(read_max_pad_value, variable);

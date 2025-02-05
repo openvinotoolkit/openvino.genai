@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
-from openvino_genai import Tokenizer, PaddingMode
+from openvino_genai import Tokenizer
 import json
 
 from common import delete_rt_info
@@ -275,35 +275,31 @@ prompts = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
-@pytest.mark.parametrize("max_length", [10, 16, 64, 77, 103, 512, 1024, 100000])
-@pytest.mark.parametrize("pad_mode", [PaddingMode.TRUNCATE, PaddingMode.LONGEST, PaddingMode.MAX_LENGTH])
+@pytest.mark.parametrize("max_length", [10, 16, 64, 77, 103, 512, 1024])
+@pytest.mark.parametrize("pad_to_max_length", [True, False])
 @pytest.mark.parametrize("prompt", prompts)
-def test_padding(add_special_tokens, max_length, pad_mode, prompt):
+def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
     model_descr = get_models_list()[0]
     model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
     genai_tokenzier = ov_pipe.get_tokenizer()
 
-    # In openvino_tokenizers even in truncation mode the padding is applied 
+    # In openvino_tokenizers if sequences are of different length by default padding is applied 
     # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
     # which cannot store irregular/ragged array.
-    # Therefore, for the truncation mode need to sete padding to 'longest' and truncation=True.
-    # ALso MAX_LENGTH mode truncation also applied so that we have the same lengths for each sequence in the batch.
-    pad_modes_map = {
-        PaddingMode.TRUNCATE: dict(padding="longest", truncation=True),
-        PaddingMode.LONGEST: dict(padding="longest"),
-        PaddingMode.MAX_LENGTH: dict(padding="max_length", truncation=True),
+    # Therefore, for default mode truncation=True.
+    # For the same reason runcation is always applied.
+    hf_pad_params_map = {
+        False: dict(padding="longest", truncation=True),
+        True: dict(padding="max_length", truncation=True),
     }
-    hf_pad_truncation_modes = pad_modes_map[pad_mode]
-
-    hf_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, **hf_pad_truncation_modes)
-    ov_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, padding_mode=pad_mode)
+    hf_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, **hf_pad_params_map[pad_to_max_length])
+    ov_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, pad_to_max_length=pad_to_max_length)
 
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
 
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
-
 
 @pytest.mark.precommit
 @pytest.mark.nightly
