@@ -46,11 +46,6 @@ protected:
     // True if chat template should be applied for non-chat scenario
     bool m_apply_chat_template = true;
 
-    // Chat template to use when model's default chat template is not supported
-    virtual std::string get_chat_template_fallback() const {
-        return "";
-    }
-
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
@@ -106,12 +101,7 @@ public:
         }
         m_history = {{{"role", "system"}, {"content", system_message}}};
         constexpr bool add_generation_prompt = false;
-        try {
-            m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        } catch (const std::exception& error) {
-            // Use fallback chat template if it was not found in tokenizer_config.json or if it is not supported by Jinja2Cpp
-            m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, get_chat_template_fallback());
-        }
+        m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
 
     void update_chat_history(const std::string& decoded_results) {
@@ -166,17 +156,12 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}) {
+    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history;
-           try {
-                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            } catch (const std::exception& error) {
-                // Use fallback chat template if it was not found in tokenizer_config.json or if it is not supported by Jinja2Cpp
-                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
-            }
+            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
             ov::Tensor prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
@@ -192,12 +177,7 @@ protected:
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
 
-                try {
-                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-                } catch (const std::exception& error) {
-                    // Use fallback chat template if it was not found in tokenizer_config.json or if it is not supported by Jinja2Cpp
-                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template_fallback);
-                }
+                templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
                 encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
             } else {
                 encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
@@ -268,8 +248,8 @@ protected:
         }
     }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
-        const auto [new_chat_tokens, prev_chat_tokens] = apply_chat_template_tokenize(prompt, metrics, chat_template_fallback);
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
+        const auto [new_chat_tokens, prev_chat_tokens] = apply_chat_template_tokenize(prompt, metrics);
         return update_history(new_chat_tokens, prev_chat_tokens);
     }
 
@@ -674,7 +654,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, get_chat_template_fallback());
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -690,11 +670,6 @@ public:
     }
 
 protected:
-    std::string get_chat_template_fallback() const override {
-        // Adapted from llava-1.5-7b-hf chat_template.json 
-        return "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
-    }
-
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
         const ov::Tensor& text_embeds,
@@ -806,7 +781,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, get_chat_template_fallback());
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -1663,7 +1638,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, get_chat_template_fallback());
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         auto start_tokenizer_time = std::chrono::steady_clock::now();
@@ -1712,11 +1687,6 @@ public:
         m_rope_delta = 0;
     }
 protected:
-    std::string get_chat_template_fallback() const override {
-        // Adapted from Qwen/Qwen2-7B-Instruct
-        return "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
-    }
-
     ov::Tensor merge_text_and_image_embeddings_qwen2vl(
         const ov::Tensor& input_ids,
         const ov::Tensor& text_embeds,
