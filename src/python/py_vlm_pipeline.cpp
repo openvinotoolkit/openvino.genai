@@ -97,7 +97,9 @@ py::object call_vlm_generate(
     auto updated_config = *pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     py::gil_scoped_release rel;
-    return py::cast(pipe.generate(prompt, images, updated_config, streamer));
+    auto res = pipe.generate(prompt, images, updated_config, streamer);
+    py::gil_scoped_acquire acquire;
+    return py::cast(res);
 }
 
 void init_vlm_pipeline(py::module_& m) {
@@ -196,7 +198,9 @@ void init_vlm_pipeline(py::module_& m) {
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return py::cast(pipe.generate(prompt, map));
+                auto res = pipe.generate(prompt, map);
+                py::gil_scoped_acquire acquire;
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()

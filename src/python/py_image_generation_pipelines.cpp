@@ -293,7 +293,9 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return py::cast(pipe.generate(prompt, params));
+                auto res = pipe.generate(prompt, params);
+                py::gil_scoped_acquire acquire;
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
@@ -359,7 +361,9 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return py::cast(pipe.generate(prompt, image, params));
+                auto res = pipe.generate(prompt, image, params);
+                py::gil_scoped_acquire acquire;
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
@@ -426,7 +430,9 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return py::cast(pipe.generate(prompt, image, mask_image, params));
+                auto res = pipe.generate(prompt, image, mask_image, params);
+                py::gil_scoped_acquire acquire;
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",

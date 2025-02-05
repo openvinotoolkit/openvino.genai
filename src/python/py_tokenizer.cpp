@@ -68,7 +68,9 @@ void init_tokenizer(py::module_& m) {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
                 py::gil_scoped_release rel;
-                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
+                auto res = tok.decode(tokens, detokenization_params);
+                py::gil_scoped_acquire acquire;
+                return pyutils::handle_utf8(res);
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a sequence into a string prompt.)"
@@ -80,7 +82,9 @@ void init_tokenizer(py::module_& m) {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
                 py::gil_scoped_release rel;
-                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
+                auto res = tok.decode(tokens, detokenization_params);
+                py::gil_scoped_acquire acquire;
+                return pyutils::handle_utf8(res);
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode tensor into a list of string prompts.)")
@@ -91,7 +95,9 @@ void init_tokenizer(py::module_& m) {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
                 py::gil_scoped_release rel;
-                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
+                auto res = tok.decode(tokens, detokenization_params);
+                py::gil_scoped_acquire acquire;
+                return pyutils::handle_utf8(res);
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a batch of tokens into a list of string prompt.)")
