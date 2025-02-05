@@ -317,7 +317,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
-    name: Sample ${{ matrix.test.name }} (${{ matrix.build-type }})
+    name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
       fail-fast: false
       matrix:
@@ -330,13 +330,17 @@ jobs:
           - name: 'LLM/TinyLlama'
             marker: 'llm'
             filter: 'TinyLlama'
-          - name: 'LLM/TinyLlama'
+          - name: 'LLM/open_llama'
             marker: 'llm'
-            filter: 'TinyLlama'
+            filter: 'open_llama'
             cmd: 'tests/python_tests/samples'
-          - name: 'LLM/Other'
+          - name: 'LLM/phi-2'
             marker: 'llm'
-            filter: 'not TinyLlama and not Qwen'
+            filter: 'phi-2'
+            md: 'tests/python_tests/samples'
+          - name: 'LLM/notus'
+            marker: 'llm'
+            filter: 'notus'
             cmd: 'tests/python_tests/samples'
           - name: 'Whisper'
             marker: 'whisper'
@@ -390,12 +394,11 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
       - name: Test Samples (Python and C++)
-        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ env.TEST_MARKERS }}" -k "${{ env.test.filter }}"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" -k "${{ matrix.test.filter }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
-          TEST_MARKERS: ${{ (matrix.build-type == 'Release') && matrix.test.marker || format('{0} and cpp', matrix.test.marker) }}
 
   genai_build_nodejs_bindings:
     name: Build Node.js bindings
