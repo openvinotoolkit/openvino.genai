@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import pytest
 import numpy as np
 from transformers import AutoTokenizer
@@ -232,6 +233,9 @@ prompts = [
 @pytest.mark.nightly
 @pytest.mark.parametrize("prompt", prompts)
 def test_special_tokens(tmp_path, prompt, model_id):
+    if sys.platform.startswith('win') and isinstance(prompt, str) and (prompt.startswith('如') or prompt.endswith('ה')):
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
