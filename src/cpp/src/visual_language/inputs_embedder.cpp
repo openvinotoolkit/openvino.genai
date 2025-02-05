@@ -1539,41 +1539,48 @@ public:
         ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_images);
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
-        OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1);
+        // if <|image_i|> tag is in the begining, it doesn't split tokes into separate sequences and tokens.size() == images_features_proj.size().
+        OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1 || tokens.size() == images_features_proj.size());
         size_t features_length = 0;
         for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
             size_t text_length = tokens.at(im_id).get_shape().at(1);
             size_t im_length = images_features_proj.at(im_id).get_shape().at(1);
             features_length += text_length + im_length;
         }
-        features_length += tokens.back().get_shape().at(1);
+        if (tokens.size() > images_features_proj.size()) {
+            features_length += tokens.back().get_shape().at(1);
+        }
         ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
         size_t offset = 0;
-        for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
-            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
-            const ov::Tensor& image_embeds = images_features_proj.at(im_id);
+        if (tokens.size() > images_features_proj.size()) {
+            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(0));
             size_t text_length = text_embeds.get_shape().at(1);
-            size_t im_length = image_embeds.get_shape().at(1);
             std::copy_n(
                 text_embeds.data<float>(),
                 text_embeds.get_size(),
-                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+                inputs_embeds.data<float>()
             );
-            offset += text_length;
+            offset = text_length;
+            tokens.erase(tokens.begin());
+        }
+        for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
+            const ov::Tensor& image_embeds = images_features_proj.at(im_id);
+            size_t im_length = image_embeds.get_shape().at(1);
             std::copy_n(
                 image_embeds.data<float>(),
                 image_embeds.get_size(),
                 inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
             );
             offset += im_length;
+            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
+            size_t text_length = text_embeds.get_shape().at(1);
+            std::copy_n(
+                text_embeds.data<float>(),
+                text_embeds.get_size(),
+                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+            );
+            offset += text_length;
         }
-        const ov::Tensor& text_embeds = m_embedding.infer(tokens.back());
-        size_t text_length = text_embeds.get_shape().at(1);
-        std::copy_n(
-            text_embeds.data<float>(),
-            text_embeds.get_size(),
-            inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-        );
 
         if (!m_is_chat_conversation) {
             m_tokens_per_images.clear();
