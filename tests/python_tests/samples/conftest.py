@@ -131,7 +131,7 @@ def download_test_content(request):
         os.remove(file_path)
 
 
-@pytest.fixture(scope="Module", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def run_gc_after_test():
     """
     Fixture to run garbage collection after each test module.
