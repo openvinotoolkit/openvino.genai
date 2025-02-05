@@ -80,6 +80,25 @@ ov::Core get_core_singleton() {
     return core;
 }
 
+const std::pair<std::string, std::string> chat_template_fallback_map[] = {
+    {
+        // llava-1.5, llava-v1.6-vicuna (chat_template.json)
+        "{% for message in messages %}{% if message['role'] != 'system' %}{{ message['role'].upper() + ': '}}{% endif %}{# Render all images first #}{% for content in message['content'] | selectattr('type', 'equalto', 'image') %}{{ '<image>\n' }}{% endfor %}{# Render all text next #}{% if message['role'] != 'assistant' %}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{{ content['text'] + ' '}}{% endfor %}{% else %}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{% generation %}{{ content['text'] + ' '}}{% endgeneration %}{% endfor %}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}",
+        "{% for message in messages %}{% if message['role'] != 'system' %}{{ message['role'] | upper + ': ' }}{% endif %}{{ message['content'] + ' ' }}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}"
+    },
+    {
+        // Qwen2-VL-2B-Instruct (tokenizer_config.json)
+        "{% set image_count = namespace(value=0) %}{% set video_count = namespace(value=0) %}{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n{% endif %}<|im_start|>{{ message['role'] }}\n{% if message['content'] is string %}{{ message['content'] }}<|im_end|>\n{% else %}{% for content in message['content'] %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}{% set image_count.value = image_count.value + 1 %}{% if add_vision_id %}Picture {{ image_count.value }}: {% endif %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}{% set video_count.value = video_count.value + 1 %}{% if add_vision_id %}Video {{ video_count.value }}: {% endif %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}<|im_end|>\n{% endif %}{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}",
+        // Adapted from Qwen/Qwen2-7B-Instruct
+        "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+    },
+    {
+        // Qwen2-VL-2B (tokenizer_config.json)
+        "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}",
+        "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+    }
+};    
+
 }  // namespace
 
 namespace ov {
@@ -178,7 +197,10 @@ public:
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(models_path);
         setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), properties);
-        m_chat_template = chat_template_from_tokenizer_json_if_exists(models_path);
+        m_chat_template = chat_template_from_file_if_exists(models_path, "tokenizer_config.json");
+        if (m_chat_template.empty()) {
+            m_chat_template = chat_template_from_file_if_exists(models_path, "chat_template.json");
+        }
     }
 
     void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
@@ -474,6 +496,12 @@ public:
     }
 
     std::string patch_chat_template(std::string template_str) const {
+        for (const auto& [chat_template, fallback] : chat_template_fallback_map) {
+            if (template_str == chat_template) {
+                return fallback;
+            }
+        }
+
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
             {"'}", "' }"},
@@ -498,8 +526,8 @@ public:
         return template_str;
     }
 
-    std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
-        auto tokenizer_config_file_path = path / "tokenizer_config.json";
+    std::string chat_template_from_file_if_exists(const std::filesystem::path& path, const std::string& file_name) {
+        auto tokenizer_config_file_path = path / file_name;
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return "";
         std::ifstream file(tokenizer_config_file_path);
