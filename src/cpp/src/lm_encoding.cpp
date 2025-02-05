@@ -94,11 +94,14 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups]() {
         GenerationHandle& handle = generations.at(0);
         if (streamer_ptr && handle->can_read()) {
-            std::unordered_map<uint64_t, GenerationOutput> token = handle->back();
-            for (const auto& gen_token : token.begin()->second.generated_ids) {
-                if (streamer_ptr->put(gen_token)) {
-                    handle->drop();
-                    break;
+            std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
+            OPENVINO_ASSERT(generation_outputs.size() <= 1);
+            if (!generation_outputs.empty()) {
+                for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
+                    if (streamer_ptr->put(generated_token_id)) {
+                        handle->drop();
+                        break;
+                    }
                 }
             }
         }

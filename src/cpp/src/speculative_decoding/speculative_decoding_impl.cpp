@@ -261,11 +261,11 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     auto all_requests = get_awaiting_requests();
 
     std::atomic<bool> has_active_requests = has_non_finished_requests();
-    auto& generation = main_generations.at(0);
+    GenerationHandle& generation = main_generations.at(0);
 
     // create variables to make optimal thread-safe streaming
     std::mutex mutex;
-    std::unique_lock lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     std::condition_variable cv;
 
     std::shared_ptr<std::thread> t_stream_ptr = nullptr;
@@ -279,11 +279,14 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                 });
 
                 if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> token = generation->read();
-                for (const auto& gen_token : token.begin()->second.generated_ids) {
-                        if (streamer_ptr->put(gen_token)) {
-                            generation->drop();
-                            break;
+                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+                    if (!generation_outputs.empty()) {
+                        for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
+                            if (streamer_ptr->put(generated_token_id)) {
+                                generation->drop();
+                                break;
+                            }
                         }
                     }
                 }
