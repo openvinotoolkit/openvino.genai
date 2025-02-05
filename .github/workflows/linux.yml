@@ -202,7 +202,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-2-cores-8gb
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
