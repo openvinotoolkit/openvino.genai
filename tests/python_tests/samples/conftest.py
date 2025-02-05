@@ -4,6 +4,7 @@ import tempfile
 import pytest
 import shutil
 import logging
+import gc
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -128,3 +129,13 @@ def download_test_content(request):
     if os.path.exists(file_path):
         logger.info(f"Removing test content: {file_path}")
         os.remove(file_path)
+
+
+@pytest.fixture(scope="Module", autouse=True)
+def run_gc_after_test():
+    """
+    Fixture to run garbage collection after each test module.
+    This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
+    """
+    yield
+    gc.collect()
