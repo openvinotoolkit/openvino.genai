@@ -440,7 +440,7 @@ jobs:
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Clone OpenVINO package
+      - name: Clone OpenVINO
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: 'openvinotoolkit/openvino'
@@ -461,7 +461,7 @@ jobs:
       - name: Pack Node.js bindings libs
         run: tar -cvf - * | pigz > ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
         working-directory: ${{ env.INSTALL_DIR }}
-      
+
       - name: Upload Archive Package with Node.js bindings
         if: ${{ always() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -470,7 +470,7 @@ jobs:
           path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
       
-      - name: Build OV Node.js bindings
+      - name: Build OpenVINO Node.js bindings
         working-directory: ${{ env.OV_DIR }}
         run: |
           cmake \
@@ -500,12 +500,6 @@ jobs:
           npm install
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.OV_JS_DIR }} node_modules/openvino-node/bin
-          ls bin/
-          ls node_modules/openvino-node/bin/
-          readelf -d bin/genai_node_addon.node
-          readelf -d bin/libopenvino_genai.so.2510
-          readelf -d bin/libopenvino_tokenizers.so
-          readelf -d node_modules/openvino-node/bin/libopenvino.so.2510
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
