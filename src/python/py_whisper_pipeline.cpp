@@ -279,9 +279,11 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
     ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
-    py::gil_scoped_release rel;
-    auto res = pipe.generate(raw_speech_input, updated_config, streamer);
-    py::gil_scoped_acquire aquire;
+    ov::genai::WhisperDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(raw_speech_input, updated_config, streamer);
+    }
     return py::cast(res);
 }
 

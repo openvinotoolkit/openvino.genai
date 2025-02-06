@@ -276,8 +276,10 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                pipe.compile(device, map);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -292,9 +294,11 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                auto res = pipe.generate(prompt, params);
-                py::gil_scoped_acquire acquire;
+                ov::Tensor res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, params);
+                }
                 return py::cast(res);
             },
             py::arg("prompt"), "Input string",
@@ -343,8 +347,10 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                pipe.compile(device, map);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -360,9 +366,11 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                auto res = pipe.generate(prompt, image, params);
-                py::gil_scoped_acquire acquire;
+                ov::Tensor res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, image, params);
+                }
                 return py::cast(res);
             },
             py::arg("prompt"), "Input string",
@@ -411,8 +419,10 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                pipe.compile(device, map);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -429,9 +439,11 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                auto res = pipe.generate(prompt, image, mask_image, params);
-                py::gil_scoped_acquire acquire;
+                ov::Tensor res;
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, image, mask_image, params);
+                }
                 return py::cast(res);
             },
             py::arg("prompt"), "Input string",

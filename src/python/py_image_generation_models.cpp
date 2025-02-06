@@ -84,8 +84,10 @@ void init_clip_text_model(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device,  map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device,  map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -155,8 +157,10 @@ void init_clip_text_model_with_projection(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device, map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -217,8 +221,10 @@ void init_t5_encoder_model(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device, map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -288,8 +294,10 @@ void init_unet2d_condition_model(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device,  map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device,  map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -358,8 +366,10 @@ void init_sd3_transformer_2d_model(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device,  map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device,  map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -426,8 +436,10 @@ void init_flux_transformer_2d_model(py::module_& m) {
                const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device,  map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device,  map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -521,8 +533,10 @@ void init_autoencoder_kl(py::module_& m) {
                 const py::kwargs& kwargs
             ) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                self.compile(device,  map);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device,  map);
+                }
             },
             py::arg("device"), "device on which inference will be done"
             R"(
