@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -26,11 +26,6 @@ public:
 
     void push(GenerationOutputs outputs) {
         m_output_queue.push(std::move(outputs));
-    }
-
-    // Retrieving vector of pairs <sequence_id, token_ids> as we can generate multiple outputs for a single prompt
-    GenerationOutputs back() {
-        return m_output_queue.back();
     }
 
     GenerationOutputs read() {

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -12,7 +12,7 @@
 template <typename T>
 void print_array(T * array, size_t size) {
     std::cout << " => [ ";
-    for (size_t i = 0; i < size; ++i) {
+    for (size_t i = 0; i < std::min(size, size_t(10)); ++i) {
         std::cout << array[i] << " ";
     }
     std::cout << " ] " << std::endl;
@@ -20,6 +20,7 @@ void print_array(T * array, size_t size) {
 
 inline void print_tensor(std::string name, ov::Tensor tensor) {
     std::cout << name;
+    std::cout << " " << tensor.get_shape().to_string();
     if (tensor.get_element_type() == ov::element::i32) {
         print_array(tensor.data<int>(), tensor.get_size());
     } else if (tensor.get_element_type() == ov::element::i64) {

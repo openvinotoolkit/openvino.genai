@@ -347,7 +347,7 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
     using namespace ov::op;
     class AttentionMaskInput : public ov::pass::MatcherPass {
     public:
-        OPENVINO_RTTI("AttentionMaskInput");
+        OPENVINO_MATCHER_PASS_RTTI("AttentionMaskInput");
 
         AttentionMaskInput(std::shared_ptr<ov::Model> model) {
             auto range = wrap_type<v4::Range>();
@@ -509,7 +509,7 @@ ov::InferRequest DecoderCache::get_model(uint8_t input_ids_size) {
         reshape_input_ids(m_decoder_model, input_ids_size);
 
         ov::Core core = utils::singleton_core();
-        ov::CompiledModel compiled_model = core.compile_model(m_decoder_model, "NPU");
+        ov::CompiledModel compiled_model = core.compile_model(m_decoder_model, "NPU", m_properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder model");
         m_cache.emplace(input_ids_size, compiled_model.create_infer_request());
     }
@@ -544,14 +544,14 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_decoder(decoder_with_past_model);
 
     ov::CompiledModel compiled_model;
-    compiled_model = core.compile_model(encoder_model, "NPU");
+    compiled_model = core.compile_model(encoder_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
     m_models.encoder = compiled_model.create_infer_request();
 
     // Will compile decoder model when it's needed 
-    m_decoder_cache = DecoderCache(decoder_model);
+    m_decoder_cache = DecoderCache(decoder_model, properties);
 
-    compiled_model = core.compile_model(decoder_with_past_model, "NPU");
+    compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder with past model");
     m_models.decoder_with_past = compiled_model.create_infer_request();
 

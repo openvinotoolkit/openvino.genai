@@ -53,7 +53,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
     output_result = {'metadata': metadata, "perfdata": {'compile_time': pretrain_time, 'results': result}}
 
     with open(report_file, 'w') as outfile:
-        json.dump(output_result, outfile)
+        json.dump(output_result, outfile, indent=4)
 
 
 def get_timestamp(iter_idx, prompt_idx, iter_timestamp):

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -47,6 +47,7 @@ char generation_config_docstring[] = R"(
     echo:           if set to true, the model will echo the prompt in the output.
     logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                     Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+    apply_chat_template: whether to apply chat_template for non-chat scenarios
 
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
     presence_penalty: reduces absolute log prob if the token was generated at least once.
@@ -115,6 +116,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("adapters", &GenerationConfig::adapters)
+        .def_readwrite("apply_chat_template", &GenerationConfig::apply_chat_template)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id, py::arg("tokenizer_eos_token_id"))
         .def("is_beam_search", &GenerationConfig::is_beam_search)
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)

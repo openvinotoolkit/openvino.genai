@@ -29,7 +29,7 @@ Users can change the sample code and play with the following generation paramete
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt

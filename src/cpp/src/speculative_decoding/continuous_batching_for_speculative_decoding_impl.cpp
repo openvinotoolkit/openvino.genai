@@ -1,15 +1,14 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching_for_speculative_decoding_impl.hpp"
 
 namespace ov::genai {
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
-    ov::Core& core,
     const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
     const GenerationConfig& generation_config,
-    const DeviceConfig& device_config,
+    const std::vector<KVHeadConfig>& kv_cache_configs,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& plugin_config,
@@ -17,7 +16,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    initialize_pipeline(model, scheduler_config, plugin_config, device_config, core);
+    initialize_pipeline(model, scheduler_config, device, plugin_config, kv_cache_configs);
 }
 
 void
@@ -290,6 +289,10 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::i
 
 std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_awaiting_requests() {
     return m_awaiting_requests;
+}
+
+size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_processed_tokens_per_iteration() {
+    return m_batch_size;
 }
 
 void

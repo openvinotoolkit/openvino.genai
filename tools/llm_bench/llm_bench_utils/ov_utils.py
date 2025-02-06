@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
-from openvino.runtime import Core
+from openvino import Core
 import openvino as ov
 import logging as log
 import torch
@@ -17,7 +17,10 @@ from llm_bench_utils.config_class import (
     DEFAULT_MODEL_CLASSES,
     IMAGE_GEN_CLS
 )
-import openvino.runtime.opset13 as opset
+try:
+    import openvino.opset13 as opset
+except ImportError:
+    import openvino.runtime.opset13 as opset
 from transformers import pipeline
 import openvino_genai as ov_genai
 import queue
@@ -132,8 +135,19 @@ def build_ov_tokenizer_wrapper(hf_tokenizer, tokenizer_model, detokenizer_model)
     return hf_tokenizer
 
 
-def get_lora_config(lora_paths, lora_alphas):
+def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
     import openvino_genai
+
+    modes = {
+        "auto": openvino_genai.AdapterConfig.Mode.MODE_AUTO,
+        "fuse": openvino_genai.AdapterConfig.Mode.MODE_FUSE,
+        "dynamic": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC,
+        "static": openvino_genai.AdapterConfig.Mode.MODE_STATIC,
+        "static_rank": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC
+    }
+    if lora_mode is not None:
+        lora_mode = modes[lora_mode]
+        log.info(f"LoRA adapters loading mode: {lora_mode}")
 
     adapter_config = list()
     if not lora_paths:
@@ -147,7 +161,7 @@ def get_lora_config(lora_paths, lora_alphas):
         if not Path(lora_paths[idx]).exists():
             log.warning(f'LoRA path is not exists: {lora_paths[idx]}. LoRA will be ignored.')
             continue
-        adapter_config = openvino_genai.AdapterConfig()
+        adapter_config = openvino_genai.AdapterConfig() if lora_mode is None else openvino_genai.AdapterConfig(mode=lora_mode)
         adapter = openvino_genai.Adapter(lora_paths[idx])
         alpha = float(lora_alphas[idx])
         adapter_config.add(adapter, alpha)
@@ -243,9 +257,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     draft_model_path = kwargs.get("draft_model", '')
     cb = kwargs.get("use_cb", False)
-    if cb or draft_model_path:
+    cb_config = kwargs.get("cb_config")
+    use_streamer_metrics = False
+    if cb or cb_config is not None or draft_model_path:
         log.info("Continuous Batching mode activated")
-        ov_config["scheduler_config"] = get_scheduler_config_genai(kwargs.get("cb_config"))
+        ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
+
+        use_streamer_metrics = not openvino_genai.get_version().startswith("2025.") or draft_model_path
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
@@ -256,7 +274,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
             if kwargs.get("draft_cb_config") is not None else {}
         ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
-    adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
+    adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
         ov_config['adapters'] = adapter_config
 
@@ -292,7 +310,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb or draft_model_path else None
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if use_streamer_metrics else None
 
     return llm_pipe, tokenizer, end - start, streamer, True
 
@@ -406,7 +424,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         def get_vae_decoder_step_count(self):
             return 1
 
-    adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []))
+    adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
         ov_config['adapters'] = adapter_config
 

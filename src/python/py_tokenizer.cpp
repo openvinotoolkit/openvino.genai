@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -107,6 +107,12 @@ void init_tokenizer(py::module_& m) {
             "set_chat_template", &Tokenizer::set_chat_template,
             py::arg("chat_template"), "The new template to override with.",
             "Override a chat_template read from tokenizer_config.json."
+        )
+
+        .def_property(
+            "chat_template",
+            &Tokenizer::get_chat_template,
+            &Tokenizer::set_chat_template
         )
 
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)

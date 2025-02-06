@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
@@ -44,7 +44,7 @@ def run_visual_language_generation_optimum(
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
-    input_data = model.preprocess_inputs(text=prompts[0], image=images[0], **processor)
+    input_data = model.preprocess_inputs(text=prompts[0], image=images[0] if images else None, **processor)
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     # Remove `token_type_ids` from inputs
@@ -211,8 +211,13 @@ def run_visual_language_generation_genai(
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
+    kwargs = {}
+    if len(images) >= 1:
+        kwargs["images"] = images[0]
     start = time.perf_counter()
-    generation_result = model.generate(prompts[0], images=images[0], generation_config=gen_config)
+    generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics

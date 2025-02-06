@@ -64,6 +64,7 @@
 - 'src/cpp/src/whisper_pipeline_static.hpp'
 - 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_pipeline.py'
+- 'tests/python_tests/test_whisper_pipeline_static.py'
 
 'category: Python API':
 - 'src/python/**/*'
@@ -98,12 +99,11 @@
 - 'src/cpp/src/continuous_batching_impl.cpp'
 - 'src/cpp/src/continuous_batching_pipeline.cpp'
 - 'src/cpp/src/debug_utils.hpp'
-- 'src/cpp/src/device_config.hpp'
 - 'src/cpp/src/generation_handle.cpp'
 - 'src/cpp/src/generation_stream.hpp'
 - 'src/cpp/src/model_runner.hpp'
-- 'src/cpp/src/utils/paged_attention_transformations.cpp'
-- 'src/cpp/src/utils/paged_attention_transformations.hpp'
+- 'src/cpp/src/paged_attention_transformations.cpp'
+- 'src/cpp/src/paged_attention_transformations.hpp'
 - 'src/cpp/src/scheduler.hpp'
 - 'src/cpp/src/sequence_group.cpp'
 - 'src/cpp/src/sequence_group.hpp'

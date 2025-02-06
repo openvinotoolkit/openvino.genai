@@ -325,9 +325,15 @@ class CacheEvictionConfig:
     
         :param aggregation_mode: The mode used to compute the importance of tokens for eviction
         :type aggregation_mode: openvino_genai.AggregationMode
+    
+        :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction.
+          Set this to false if your model has different RoPE scheme from the one used in the
+          original llama model and you experience accuracy issues with cache eviction enabled.
+        :type apply_rotation: bool
     """
     aggregation_mode: AggregationMode
-    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode) -> None:
+    apply_rotation: bool
+    def __init__(self, start_size: int, recent_size: int, max_cache_size: int, aggregation_mode: AggregationMode, apply_rotation: bool = False) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -348,11 +354,11 @@ class ChunkStreamerBase:
         """
         End is called at the end of generation. It can be used to flush cache if your own streamer has one
         """
-    def put(self, arg0: int) -> bool:
+    def put(self, token: int) -> bool:
         """
         Put is called every time new token is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def put_chunk(self, arg0: list[int]) -> bool:
+    def put_chunk(self, tokens: list[int]) -> bool:
         """
         Put is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
@@ -544,6 +550,7 @@ class GenerationConfig:
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        apply_chat_template: whether to apply chat_template for non-chat scenarios
     
         repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
         presence_penalty: reduces absolute log prob if the token was generated at least once.
@@ -572,6 +579,7 @@ class GenerationConfig:
         num_return_sequences: the number of sequences to generate from a single prompt.
     """
     adapters: AdapterConfig | None
+    apply_chat_template: bool
     assistant_confidence_threshold: float
     diversity_penalty: float
     do_sample: bool
@@ -665,8 +673,6 @@ class GenerationFinishReason:
     def value(self) -> int:
         ...
 class GenerationHandle:
-    def back(self) -> dict[int, GenerationOutput]:
-        ...
     def can_read(self) -> bool:
         ...
     def drop(self) -> None:
@@ -773,6 +779,9 @@ class Image2ImagePipeline:
     """
     This class is used for generation with image-to-image models.
     """
+    @staticmethod
+    def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
     @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
@@ -1049,6 +1058,7 @@ class LLMPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            apply_chat_template: whether to apply chat_template for non-chat scenarios
         
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
             presence_penalty: reduces absolute log prob if the token was generated at least once.
@@ -1134,6 +1144,7 @@ class LLMPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            apply_chat_template: whether to apply chat_template for non-chat scenarios
         
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
             presence_penalty: reduces absolute log prob if the token was generated at least once.
@@ -1733,6 +1744,7 @@ class Tokenizer:
     openvino_genai.Tokenizer object is used to initialize Tokenizer
                if it's located in a different path than the main model.
     """
+    chat_template: str
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
@@ -2033,22 +2045,12 @@ class WhisperDecodedResults:
     @property
     def texts(self) -> list[str]:
         ...
-class WhisperGenerationConfig:
+class WhisperGenerationConfig(GenerationConfig):
     """
     
         WhisperGenerationConfig
-        :param max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                           `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-        :type max_length: int
-    
-        :param max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-        :type max_new_tokens: int
-    
-        :param eos_token_id: End of stream token id.
-        :type eos_token_id: int
-    
+        
         Whisper specific parameters:
-    
         :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
         :type decoder_start_token_id: int
     
@@ -2117,18 +2119,55 @@ class WhisperGenerationConfig:
           auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
           //  He has gone and gone for good answered Polychrome who...
         :type hotwords: Optional[str]
+    
+        Generic parameters:
+        max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                       max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
+        max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+        min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+        ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
+        eos_token_id:  token_id of <eos> (end of sentence)
+        stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
+        include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+        stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
+        echo:           if set to true, the model will echo the prompt in the output.
+        logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                        Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+    
+        repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+        presence_penalty: reduces absolute log prob if the token was generated at least once.
+        frequency_penalty: reduces absolute log prob as many times as the token was generated.
+    
+        Beam search specific parameters:
+        num_beams:         number of beams for beam search. 1 disables beam search.
+        num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+        diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+        length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+            the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
+            likelihood of the sequence (i.e. negative), length_penalty > 0.0 promotes longer sequences, while
+            length_penalty < 0.0 encourages shorter sequences.
+        num_return_sequences: the number of sequences to return for grouped beam search decoding.
+        no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
+        stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+            "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
+            "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+            "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+    
+        Random sampling parameters:
+        temperature:        the value used to modulate token probabilities for random sampling.
+        top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+        top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
+        do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+        num_return_sequences: the number of sequences to generate from a single prompt.
     """
     begin_suppress_tokens: list[int]
     decoder_start_token_id: int
-    eos_token_id: int
     hotwords: str | None
     initial_prompt: str | None
     is_multilingual: bool
     lang_to_id: dict[str, int]
     language: str | None
     max_initial_timestamp_index: int
-    max_length: int
-    max_new_tokens: int
     no_timestamps_token_id: int
     pad_token_id: int
     prev_sot_token_id: int
@@ -2144,8 +2183,6 @@ class WhisperGenerationConfig:
         """
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        ...
-    def set_eos_token_id(self, tokenizer_eos_token_id: int) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
         ...
@@ -2199,18 +2236,8 @@ class WhisperPipeline:
          
          
             WhisperGenerationConfig
-            :param max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                               `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-            :type max_length: int
-        
-            :param max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-            :type max_new_tokens: int
-        
-            :param eos_token_id: End of stream token id.
-            :type eos_token_id: int
-        
+            
             Whisper specific parameters:
-        
             :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
             :type decoder_start_token_id: int
         
@@ -2279,6 +2306,46 @@ class WhisperPipeline:
               auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
               //  He has gone and gone for good answered Polychrome who...
             :type hotwords: Optional[str]
+        
+            Generic parameters:
+            max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                           max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
+            max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens.
+            ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
+            eos_token_id:  token_id of <eos> (end of sentence)
+            stop_strings: a set of strings that will cause pipeline to stop generating further tokens.
+            include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+            stop_token_ids: a set of tokens that will cause pipeline to stop generating further tokens.
+            echo:           if set to true, the model will echo the prompt in the output.
+            logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
+                            Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+            presence_penalty: reduces absolute log prob if the token was generated at least once.
+            frequency_penalty: reduces absolute log prob as many times as the token was generated.
+        
+            Beam search specific parameters:
+            num_beams:         number of beams for beam search. 1 disables beam search.
+            num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+            diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+            length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+                the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
+                likelihood of the sequence (i.e. negative), length_penalty > 0.0 promotes longer sequences, while
+                length_penalty < 0.0 encourages shorter sequences.
+            num_return_sequences: the number of sequences to return for grouped beam search decoding.
+            no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values:
+                "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
+                "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+                "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+        
+            Random sampling parameters:
+            temperature:        the value used to modulate token probabilities for random sampling.
+            top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+            top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
+            do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+            num_return_sequences: the number of sequences to generate from a single prompt.
         """
     def get_generation_config(self) -> WhisperGenerationConfig:
         ...

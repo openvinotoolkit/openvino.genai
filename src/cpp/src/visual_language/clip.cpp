@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 // Based on clip.cpp
@@ -12,7 +12,7 @@ static float clip_lerp(float s, float e, float t) {
 }
 
 // Bilinear resize function
-static void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height) {
+void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height) {
     dst.nx = target_width;
     dst.ny = target_height;
     dst.buf.resize(3 * target_width * target_height);

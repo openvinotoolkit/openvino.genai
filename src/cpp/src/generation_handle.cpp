@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
@@ -26,11 +26,6 @@ bool GenerationHandleImpl::is_dropped() {
 
 void GenerationHandleImpl::drop() {
     m_generation_stream->drop();
-}
-
-std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::back() {
-    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
-    return m_generation_stream->back();
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::read() {

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
 import argparse
 import logging as log
 import llm_bench_utils.model_utils
-from openvino.runtime import get_version
+from openvino import get_version
 import torch
 import traceback
 from llm_bench_utils.memory_profile import MemConsumption
@@ -140,6 +140,7 @@ def get_argprser():
         default=None,
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
+    parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
     parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
     parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings or dict")
     parser.add_argument("--draft_model", required=False, default=None,
@@ -147,9 +148,9 @@ def get_argprser():
     parser.add_argument("--draft_device", required=False, default=None, help="Inference device for Speculative decoding of draft model")
     parser.add_argument("--draft_cb_config", required=False, default=None,
                         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
-    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding")
+    parser.add_argument("--num_assistant_tokens", required=False, default=None, help="Config option num_assistant_tokens for Speculative decoding", type=int)
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Speculative decoding")
+                        help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
@@ -161,6 +162,7 @@ def get_argprser():
     parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
     parser.add_argument("--height", type=int, required=False, help="Generated image height. Applicable only for Image Generation.")
     parser.add_argument("--width", type=int, required=False, help="Generated image width. Applicable only for Image Generation.")
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
     return parser.parse_args()
 
 
@@ -190,7 +192,7 @@ def main():
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
         exit(1)
-    model_path, framework, model_args, model_name = (
+    model_path, framework, model_args, model_name_or_id = (
         llm_bench_utils.model_utils.analyze_args(args)
     )
     # Set the device for running OpenVINO backend for torch.compile()
@@ -238,10 +240,11 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parts)
+                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name_or_id, model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
                 model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
+            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,

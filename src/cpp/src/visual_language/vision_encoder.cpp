@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vision_encoder.hpp"
@@ -644,6 +644,354 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
     }
     return output_tensor;
 }
+
+namespace phi3_v {
+constexpr size_t INPUT_IMAGE_SIZE = 336;
+
+ov::Tensor padding_336(const ov::Tensor& unpadded) {
+    ov::Shape _1ss3 = unpadded.get_shape();
+    size_t s1 = _1ss3.at(1), s2 = _1ss3.at(2);
+    if (s1 < s2) {
+        size_t tar = size_t(std::ceil(float(s1) / INPUT_IMAGE_SIZE) * INPUT_IMAGE_SIZE);
+        size_t top_padding = (tar - s1) / 2;
+        ov::Tensor padded{ov::element::u8, {1, tar, s2, 3}};
+        uint8_t* padded_data = padded.data<uint8_t>();
+        std::fill_n(padded_data, padded.get_size(), 255);
+        std::copy_n(unpadded.data<uint8_t>(), unpadded.get_size(), padded_data + top_padding * s2 * 3);
+        return padded;
+    }
+    size_t tar = size_t(std::ceil(float(s2) / INPUT_IMAGE_SIZE) * INPUT_IMAGE_SIZE);
+    size_t left_padding = (tar - s2) / 2;
+    ov::Tensor padded{ov::element::u8, {1, s1, tar, 3}};
+    uint8_t* padded_data = padded.data<uint8_t>();
+    std::fill_n(padded_data, padded.get_size(), 255);
+    uint8_t* unpadded_data = unpadded.data<uint8_t>();
+    for (size_t row = 0; row < s1; ++row) {
+        std::copy_n(unpadded_data + row * s2 * 3, s2 * 3, padded_data + row * tar * 3 + left_padding * 3);
+    }
+    return padded;
+}
+
+ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
+    ov::Shape _1hwc = uint8.get_shape();
+    size_t height = _1hwc.at(1), width = _1hwc.at(2);
+    bool trans = false;
+    if (width < height) {
+        std::swap(height, width);
+        trans = true;
+    }
+    float ratio = float(width) / height;
+    unsigned scale = 1;
+    while (scale * std::ceil(scale / ratio) <= num_crops) {
+        ++scale;
+    }
+    --scale;
+    size_t new_w = scale * INPUT_IMAGE_SIZE;
+    size_t new_h = new_w / ratio;
+    clip_image_u8 src{}, dst{};
+    uint8_t* uint8_data = uint8.data<uint8_t>();
+    if (trans) {
+        src = clip_image_u8{int(height), int(width), {uint8_data, uint8_data + uint8.get_size()}};
+        bilinear_resize(src, dst, new_h, new_w);
+        return padding_336(ov::Tensor{ov::element::u8, {1, new_w, new_h, 3}, dst.buf.data()});
+    }
+    src = clip_image_u8{int(width), int(height), {uint8_data, uint8_data + uint8.get_size()}};
+    bilinear_resize(src, dst, new_w, new_h);
+    return padding_336(ov::Tensor{ov::element::u8, {1, new_h, new_w, 3}, dst.buf.data()});
+}
+
+ov::Tensor mean_scale(const ov::Tensor& uint8, const ProcessorConfig& config) {
+    uint8_t* uint_8_data = uint8.data<uint8_t>();
+    ov::Tensor float_normalized{ov::element::f32, uint8.get_shape()};
+    float* float_data = float_normalized.data<float>();
+    OPENVINO_ASSERT(0 == uint8.get_size() % 3, "RGB");
+    for (size_t idx = 0; idx < uint8.get_size(); idx += 3) {
+        float_data[idx] = (float(uint_8_data[idx]) / 255.0f - config.image_mean[0]) / config.image_std[0];
+        float_data[idx + 1] = (float(uint_8_data[idx + 1]) / 255.0f - config.image_mean[1]) / config.image_std[1];
+        float_data[idx + 2] = (float(uint_8_data[idx + 2]) / 255.0f - config.image_mean[2]) / config.image_std[2];
+    }
+    return float_normalized;
+}
+
+ov::Tensor channels_first(const ov::Tensor& _1hw3) {
+    ov::Shape shape = _1hw3.get_shape();
+    ov::Tensor _13hw = ov::Tensor{ov::element::f32, {1, 3, shape.at(1), shape.at(2)}};
+    float* _1hw3_data = _1hw3.data<float>();
+    float* _13hw_data = _13hw.data<float>();
+    for (size_t plane = 0; plane < 3; ++plane) {
+        for (size_t row = 0; row < shape.at(1); ++row) {
+            for (size_t col = 0; col < shape.at(2); ++col) {
+                _13hw_data[plane * shape.at(1) * shape.at(2) + row * shape.at(2) + col] = _1hw3_data[row * shape.at(2) * 3 + col * 3 + plane];
+            }
+        }
+    }
+    return _13hw;
+}
+
+// Reimplementation of Python im.reshape(1, 3, h//336, 336, w//336, 336).permute(0,2,4,1,3,5).reshape(-1, 3, 336, 336)
+ov::Tensor slice_image(const ov::Tensor& image) {
+    ov::Shape shape = image.get_shape();
+    size_t N = shape[0];
+    size_t C = shape[1];
+    size_t H = shape[2];
+    size_t W = shape[3];
+
+    size_t num_h_slices = H / INPUT_IMAGE_SIZE;
+    size_t num_w_slices = W / INPUT_IMAGE_SIZE;
+
+    // Step 1: Define and populate the reshaped tensor in the correct shape order
+    ov::Tensor reshaped{ov::element::f32, {N, num_h_slices, num_w_slices, C, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE}};
+    float* reshaped_data = reshaped.data<float>();
+    float* image_data = image.data<float>();
+
+    // Populate the reshaped tensor
+    for (size_t n = 0; n < N; ++n) {
+        for (size_t h = 0; h < num_h_slices; ++h) {
+            for (size_t w = 0; w < num_w_slices; ++w) {
+                for (size_t c = 0; c < C; ++c) {
+                    for (size_t i = 0; i < INPUT_IMAGE_SIZE; ++i) {
+                        for (size_t j = 0; j < INPUT_IMAGE_SIZE; ++j) {
+                            size_t src_idx = n * C * H * W + c * H * W + (h * INPUT_IMAGE_SIZE + i) * W + (w * INPUT_IMAGE_SIZE + j);
+                            size_t dst_idx = n * num_h_slices * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             h * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             w * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             i * INPUT_IMAGE_SIZE + j;
+                            reshaped_data[dst_idx] = image_data[src_idx];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 2: Define the permuted tensor in the final shape
+    ov::Tensor permuted{ov::element::f32, {N * num_h_slices * num_w_slices, C, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE}};
+    float* permuted_data = permuted.data<float>();
+
+    // Perform permutation by flattening N, num_h_slices, and num_w_slices
+    for (size_t n = 0; n < N; ++n) {
+        for (size_t h = 0; h < num_h_slices; ++h) {
+            for (size_t w = 0; w < num_w_slices; ++w) {
+                for (size_t c = 0; c < C; ++c) {
+                    for (size_t i = 0; i < INPUT_IMAGE_SIZE; ++i) {
+                        for (size_t j = 0; j < INPUT_IMAGE_SIZE; ++j) {
+                            size_t src_idx = n * num_h_slices * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             h * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             w * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             i * INPUT_IMAGE_SIZE + j;
+                            size_t dst_idx = (n * num_h_slices * num_w_slices + h * num_w_slices + w) * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             i * INPUT_IMAGE_SIZE + j;
+                            permuted_data[dst_idx] = reshaped_data[src_idx];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return permuted;
+}
+
+ov::Tensor concatenate_batch(const ov::Tensor& float_first, const ov::Tensor& float_second) {
+    ov::Shape shape_first = float_first.get_shape();
+    ov::Shape shape_second = float_second.get_shape();
+    OPENVINO_ASSERT(shape_first.at(1) == shape_second.at(1), "Channels must be the same");
+    OPENVINO_ASSERT(shape_first.at(2) == shape_second.at(2), "Height must be the same");
+    OPENVINO_ASSERT(shape_first.at(3) == shape_second.at(3), "Width must be the same");
+    ov::Tensor concatenated{ov::element::f32, {shape_first.at(0) + shape_second.at(0), shape_first.at(1), shape_first.at(2), shape_first.at(3)}};
+    float* concatenated_data = concatenated.data<float>();
+    float* first_data = float_first.data<float>();
+    float* second_data = float_second.data<float>();
+    std::copy(first_data, first_data + float_first.get_size(), concatenated_data);
+    std::copy(second_data, second_data + float_second.get_size(), concatenated_data + float_first.get_size());
+    return concatenated;
+}
+
+ov::Tensor pad_to_max_num_crops_tensor(const ov::Tensor& nchw, size_t max_crops) {
+    ov::Shape shape = nchw.get_shape();
+    size_t num_crops = shape[0];
+    if (num_crops >= max_crops) {
+        return nchw;
+    }
+    ov::Tensor padded{ov::element::f32, {max_crops, shape[1], shape[2], shape[3]}};
+    float* padded_data = padded.data<float>();
+    float* nchw_data = nchw.data<float>();
+    std::copy_n(nchw_data, nchw.get_size(), padded_data);
+    return padded;
+}
+
+std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
+    ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);
+    ImageSize image_size{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
+    clip_image_u8 img{int(hd_image.get_shape().at(2)), int(hd_image.get_shape().at(1)), {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
+    clip_image_u8 dst;
+    bicubic_resize(img, dst, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE);
+    ov::Tensor global_image{ov::element::u8, {1, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE, 3}, dst.buf.data()};
+    global_image = mean_scale(global_image, config);
+    hd_image = mean_scale(hd_image, config);
+    global_image = channels_first(global_image);
+    hd_image = channels_first(hd_image);
+    ov::Tensor slices = slice_image(hd_image);
+    ov::Tensor concatenated = concatenate_batch(global_image, slices);
+    ov::Tensor pixel_values = pad_to_max_num_crops_tensor(concatenated, config.phi3_v.num_crops);
+    return {std::move(pixel_values), image_size};
+}
+}  // namespace phi3_v
+
+ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
+    if (height < factor || width < factor) {
+        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
+    }
+    if (std::max(height, width) / std::min(height, width) > 200) {
+        OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
+    }
+
+    size_t h_bar = std::round(static_cast<float>(height) / factor) * factor;
+    size_t w_bar = std::round(static_cast<float>(width) / factor) * factor; 
+
+    if (h_bar * w_bar > max_pixels) {
+        double beta = std::sqrt((height * width) / static_cast<double>(max_pixels));
+        h_bar = std::floor(height / beta / factor) * factor;
+        w_bar = std::floor(width / beta / factor) * factor;
+    } else if (h_bar * w_bar < min_pixels) {
+        double beta = std::sqrt(min_pixels / static_cast<double>(height * width));
+        h_bar = std::ceil(height * beta / factor) * factor;
+        w_bar = std::ceil(width * beta / factor) * factor;
+    }
+    
+    return ImageSize{h_bar, w_bar};
+}
+
+ov::Tensor reshape_image_patches_qwen2vl(
+    const ov::Tensor& patches,
+    const size_t grid_t,
+    const size_t grid_h,
+    const size_t grid_w,
+    const size_t channel,
+    const size_t temporal_patch_size,
+    const size_t patch_size,
+    const size_t spatial_merge_size
+) {
+    ov::Shape output_shape{
+        grid_t,                      
+        temporal_patch_size,         
+        channel,                     
+        grid_h / spatial_merge_size, 
+        spatial_merge_size,          
+        patch_size,                  
+        grid_w / spatial_merge_size, 
+        spatial_merge_size,          
+        patch_size                   
+    };
+    
+    ov::Tensor reshaped_patches(patches.get_element_type(), output_shape);
+
+    const float* input_data = patches.data<float>();
+    float* output_data = reshaped_patches.data<float>();
+
+    size_t input_idx = 0;
+    
+    for (size_t gt = 0; gt < output_shape.at(0); ++gt) {
+        for (size_t tp = 0; tp < output_shape.at(1); ++tp) {
+            for (size_t c = 0; c < output_shape.at(2); ++c) {
+                for (size_t gh = 0; gh < output_shape.at(3); ++gh) {
+                    for (size_t ms1 = 0; ms1 < output_shape.at(4); ++ms1) {
+                        for (size_t p1 = 0; p1 < output_shape.at(5); ++p1) {
+                            for (size_t gw = 0; gw < output_shape.at(6); ++gw) {
+                                for (size_t ms2 = 0; ms2 < output_shape.at(7); ++ms2) {
+                                    for (size_t p2 = 0; p2 < output_shape.at(8); ++p2) {
+                                        size_t output_idx = gt;
+                                        output_idx = output_idx * output_shape.at(1) + tp;
+                                        output_idx = output_idx * output_shape.at(2) + c;
+                                        output_idx = output_idx * output_shape.at(3) + gh;
+                                        output_idx = output_idx * output_shape.at(4) + ms1;
+                                        output_idx = output_idx * output_shape.at(5) + p1;
+                                        output_idx = output_idx * output_shape.at(6) + gw;
+                                        output_idx = output_idx * output_shape.at(7) + ms2;
+                                        output_idx = output_idx * output_shape.at(8) + p2;
+
+                                        output_data[output_idx] = input_data[input_idx];
+                                        input_idx++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return reshaped_patches;
+}
+
+ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
+    // Input dimensions order:  [0,1,2,3,4,5,6,7,8]
+    // Output dimensions order: [0,3,6,4,7,2,1,5,8]
+    auto input_shape = reshaped_patches.get_shape();
+    
+    ov::Shape output_shape = {
+        input_shape.at(0), // grid_t
+        input_shape.at(3), // grid_h / spatial_merge_size
+        input_shape.at(6), // grid_w / spatial_merge_size
+        input_shape.at(4), // spatial_merge_size
+        input_shape.at(7), // spatial_merge_size
+        input_shape.at(2), // channel
+        input_shape.at(1), // temporal_patch_size
+        input_shape.at(5), // patch_size
+        input_shape.at(8)  // patch_size
+    };
+
+    ov::Tensor transposed_patches(reshaped_patches.get_element_type(), output_shape);
+    
+    const float* src = reshaped_patches.data<float>();
+    float* dst = transposed_patches.data<float>();
+    
+    size_t shape_size = input_shape.size();
+    std::vector<size_t> input_strides(shape_size);
+    std::vector<size_t> output_strides(shape_size);
+    
+    input_strides[shape_size - 1] = 1;
+    output_strides[shape_size - 1] = 1;
+    for(int i = 7; i >= 0; i--) {
+        input_strides[i] = input_strides[i+1] * input_shape[i+1];
+        output_strides[i] = output_strides[i+1] * output_shape[i+1];
+    }
+
+    size_t total_elements = reshaped_patches.get_size();
+    for(size_t idx = 0; idx < total_elements; idx++) {
+        size_t remaining = idx;
+        std::vector<size_t> input_indices(shape_size);
+        for(int i = 0; i < shape_size; i++) {
+            input_indices[i] = remaining / input_strides[i];
+            remaining %= input_strides[i];
+        }
+        
+        std::vector<size_t> output_indices = {
+            input_indices.at(0),
+            input_indices.at(3),
+            input_indices.at(6),
+            input_indices.at(4),
+            input_indices.at(7),
+            input_indices.at(2),
+            input_indices.at(1),
+            input_indices.at(5),
+            input_indices.at(8)
+        };
+        
+        size_t dst_idx = 0;
+        for(int i = 0; i < shape_size; i++) {
+            dst_idx += output_indices[i] * output_strides[i];
+        }
+        
+        dst[dst_idx] = src[idx];
+    }
+    
+    return transposed_patches;
+}
 }
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config) :
@@ -678,8 +1026,12 @@ EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfi
         return encode_llava(image, config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
         return encode_llava_next(image, config);
-    }  else if (model_type == VLMModelType::INTERNVL_CHAT) {
+    } else if (model_type == VLMModelType::INTERNVL_CHAT) {
         return encode_internvl(image, config);
+    }  else if (model_type == VLMModelType::PHI3_V) {
+        return encode_phi3_v(image, config);
+    } else if (model_type == VLMModelType::QWEN2_VL) {
+        return encode_qwen2vl(image, config);
     } else {
         OPENVINO_THROW("Unsupported type of VisionEncoder");
     }
@@ -750,6 +1102,84 @@ EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const Proce
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+
+    return {std::move(image_features), resized_source_size};
+}
+
+EncodedImage VisionEncoder::encode_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
+    const auto& [pixel_values, image_size] = phi3_v::get_pixel_values_phi3_v(image, config);
+    m_vision_encoder.set_input_tensor(pixel_values);
+    m_vision_encoder.infer();
+    return {m_vision_encoder.get_output_tensor(), image_size};
+}
+
+EncodedImage VisionEncoder::encode_qwen2vl(const ov::Tensor& image, const ProcessorConfig& config) {
+    ov::Shape image_shape = image.get_shape();
+    auto original_height = image_shape.at(1);
+    auto original_width = image_shape.at(2);
+
+    ImageSize target_image_size = smart_resize_qwen2vl(
+        original_height, 
+        original_width, 
+        config.patch_size * config.merge_size,
+        config.min_pixels,
+        config.max_pixels
+    );
+
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+    clip_image_u8 resized_image;
+    bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
+
+    clip_ctx ctx;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
+
+    ov::Tensor patches = clip_image_f32_to_tensor(normalized_image);
+
+    // For single patch tile it to match temporal_patch_size
+    if (patches.get_shape().at(0) == 1) {
+        auto orig_shape = patches.get_shape();
+        ov::Tensor tiled_patches(patches.get_element_type(),
+                                 {config.temporal_patch_size, orig_shape.at(1), orig_shape.at(2), orig_shape.at(3)});
+        
+        for (size_t i = 0; i < config.temporal_patch_size; i++) {
+            std::memcpy(
+                tiled_patches.data<float>() + i * patches.get_byte_size() / sizeof(float),
+                patches.data<float>(),
+                patches.get_byte_size()
+            );
+        }
+        patches = std::move(tiled_patches);
+    }
+
+    auto patches_shape = patches.get_shape();
+    size_t channel = patches_shape.at(1);
+    
+    size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
+    size_t grid_h = target_image_size.height / config.patch_size;
+    size_t grid_w = target_image_size.width / config.patch_size;
+
+    ov::Tensor reshaped_patches = reshape_image_patches_qwen2vl(
+        patches, grid_t, grid_h, grid_w, channel, config.temporal_patch_size, config.patch_size, config.merge_size
+    );
+    ov::Tensor transposed_patches = transpose_image_patches_qwen2vl(reshaped_patches);
+
+    ov::Shape flattened_patches_shape{
+        grid_t * grid_h * grid_w,
+        channel * config.temporal_patch_size * config.patch_size * config.patch_size
+    };
+    ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
+    std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
+
+    m_vision_encoder.set_tensor("hidden_states", flattened_patches);
+    m_vision_encoder.infer();
+
+    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+
+    ImageSize resized_source_size{grid_h, grid_w};
 
     return {std::move(image_features), resized_source_size};
 }
