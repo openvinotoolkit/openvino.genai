@@ -128,11 +128,11 @@ PYBIND11_MODULE(py_openvino_genai, m) {
                 if (auto _token = std::get_if<int64_t>(&token)) {
                     return self.put(*_token);
                 } else {
-                    auto tokens = std::get_if<std::vector<int64_t>>(&token);
-                    return self.put(*tokens);
+                    auto tokens = std::get<std::vector<int64_t>>(token);
+                    return self.put(tokens);
                 }
              },
-             "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops",
+             "Put is called every time new token or vector of tokens is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops",
              py::arg("token")
         )
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");

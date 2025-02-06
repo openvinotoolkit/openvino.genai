@@ -3,10 +3,6 @@
 
 #pragma once
 
-#include <condition_variable>
-#include <queue>
-#include <thread>
-
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "text_callback_streamer.hpp"

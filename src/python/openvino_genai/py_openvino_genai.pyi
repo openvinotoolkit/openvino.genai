@@ -1516,7 +1516,7 @@ class StreamerBase:
         """
     def put(self, token: int | list[int]) -> bool:
         """
-        Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
+        Put is called every time new token or vector of tokens is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
 class T5EncoderModel:
     """

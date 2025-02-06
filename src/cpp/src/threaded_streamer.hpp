@@ -39,8 +39,11 @@ public:
             return;
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_queue.push(tokens);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_queue.push(tokens);
+        }
+
         m_cv.notify_one();
     }
 
@@ -49,8 +52,11 @@ public:
             return;
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_queue.push(token);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_queue.push(token);
+        }
+
         m_cv.notify_one();
     }
 
@@ -73,12 +79,11 @@ public:
         m_streamer_ptr->end();
     }
 
-    bool is_dropped() {
+    bool is_dropped() const {
         if (!m_streamer_ptr) {
             return false;
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
         return m_dropped;
     }
 
@@ -94,7 +99,7 @@ private:
     std::queue<std::variant<int64_t, std::vector<int64_t>>> m_queue;
 
     bool m_stopped = false;
-    bool m_dropped = false;
+    std::atomic<bool> m_dropped = false;
 
     void _worker() {
         while (true) {
@@ -117,22 +122,15 @@ private:
             }
 
             // wait for streamer_ptr result
-            bool is_dropped = false;
-
             if (auto token = std::get_if<int64_t>(&token_variant)) {
-                is_dropped = m_streamer_ptr->put(*token);
+                m_dropped = m_streamer_ptr->put(*token);
             } else {
                 auto tokens = std::get_if<std::vector<int64_t>>(&token_variant);
-                is_dropped = m_streamer_ptr->put(*tokens);
+                m_dropped = m_streamer_ptr->put(*tokens);
             }
 
-            {
-                std::lock_guard<std::mutex> lock(m_mutex);
-                m_dropped = is_dropped;
-
-                if (m_dropped) {
-                    break;
-                }
+            if (m_dropped) {
+                break;
             }
         }
     }

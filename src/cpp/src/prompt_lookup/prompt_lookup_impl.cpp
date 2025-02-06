@@ -136,7 +136,8 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         }
         stream_tokens(streamer_ptr, generation);
         if (thrown_exception) {
-            throw thrown_exception;
+            streamer_ptr->end();
+            std::rethrow_exception(thrown_exception);
         }
     }
 
