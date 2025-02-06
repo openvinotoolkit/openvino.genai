@@ -51,18 +51,6 @@ bool TextCallbackStreamer::put(int64_t token) {
     return m_on_finalized_subword_callback(res.str());
 }
 
-bool TextCallbackStreamer::put(const std::vector<int64_t>& tokens) {
-    if (tokens.empty()) {
-        return false;
-    }
-
-    if (tokens.size() > 1) {
-        m_tokens_cache.insert(m_tokens_cache.end(), tokens.begin(), tokens.end() - 1);
-    }
-
-    return put(tokens.back());
-}
-
 void TextCallbackStreamer::end() {
     std::stringstream res;
     std::string text = m_tokenizer.decode(m_tokens_cache);

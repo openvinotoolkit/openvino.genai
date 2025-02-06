@@ -14,7 +14,6 @@ public:
     TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback);
 
     bool put(int64_t token) override;
-    bool put(const std::vector<int64_t>& tokens) override;
     void end() override;
 
 protected:
