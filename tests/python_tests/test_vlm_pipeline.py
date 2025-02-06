@@ -43,15 +43,17 @@ image_links_for_testing = [
     [image_links[0], image_links[2], image_links[1]]
 ]
 
-@pytest.mark.precommit
-@pytest.mark.nightly
-@pytest.mark.parametrize("model_id", [
+model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-qwen2vl",
-])
+]
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
 def test_vlm_pipeline(model_id, cache):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -69,25 +71,44 @@ def test_vlm_pipeline(model_id, cache):
         for link in links:
             images.append(get_image_by_link(link))
         
-        # Test non chat mode
         result_from_streamer = []
         res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
         assert res.texts[0] == ''.join(result_from_streamer)
 
-        # Test chat mode
-        for system_message in ["", "You are a helpful assistant."]:
-            ov_pipe.start_chat(system_message)
 
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+@pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
+def test_vlm_pipeline_chat(model_id, system_message, cache):
+    def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
+        return False
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    for links in image_links_for_testing:
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        ov_pipe.start_chat(system_message)
+
+        result_from_streamer = []
+        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        assert res.texts[0] == ''.join(result_from_streamer)
+
+        for prompt in prompts[1:]:
             result_from_streamer = []
-            res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+            res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
             assert res.texts[0] == ''.join(result_from_streamer)
 
-            for prompt in prompts[1:]:
-                result_from_streamer = []
-                res = ov_pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
-                assert res.texts[0] == ''.join(result_from_streamer)
-
-            ov_pipe.finish_chat()
+        ov_pipe.finish_chat()
 
 
 @pytest.mark.precommit
@@ -110,6 +131,7 @@ def test_sampling(config, cache):
     image = get_image_by_link(image_links[0])
     pipe = VLMPipeline(models_path, "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly
