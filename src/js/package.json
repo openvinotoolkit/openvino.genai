@@ -23,7 +23,7 @@
     "test": "npm run test_setup && node --test ./tests/*.test.js"
   },
   "dependencies": {
-    "openvino-node": "^2024.6.0"
+    "openvino-node": "^2025.0.0"
   },
   "devDependencies": {
     "@huggingface/hub": "^0.21.0",
