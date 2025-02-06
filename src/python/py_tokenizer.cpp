@@ -71,7 +71,6 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, std::vector<int64_t>& tokens, bool skip_special_tokens) -> py::str {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
-                py::gil_scoped_release rel;
                 std::string res;
                 {
                     py::gil_scoped_release rel;
