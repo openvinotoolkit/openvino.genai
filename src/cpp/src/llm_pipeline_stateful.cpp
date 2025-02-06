@@ -400,6 +400,11 @@ EncodedResults StatefulLLMPipeline::generate(
 }
 
 void StatefulLLMPipeline::start_chat(const std::string& system_message) {
+    bool have_state = 0 != m_model_runner.get_tensor("attention_mask").get_size();
+    if (have_state) {
+        m_model_runner.reset_state();
+        m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
+    }
     is_chat_conversation = true;
     m_kv_history_manager.reset();
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
@@ -438,6 +443,7 @@ void StatefulLLMPipeline::finish_chat() {
     m_last_disappeared_token = std::nullopt;
     if (!m_tokenized_chat_history.empty()) {
         reset_kv_state();
+        m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_history.clear();
         m_templated_chat_history.clear();
         m_tokenized_chat_history.clear();
