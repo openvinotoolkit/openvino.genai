@@ -17,6 +17,143 @@
 
 #include "sampler.hpp"
 
+#include "json_utils.hpp"
+
+namespace {
+
+std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        std::optional<ov::Any> found = std::make_optional(it->second);
+        config.erase(it);
+        return found;
+    }
+    return std::nullopt;
+}
+
+template <typename T>
+T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_value) {
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        if (anyopt.value().empty()) {
+            if (ov::genai::utils::is_container<T>)
+                return T{};
+            else {
+                OPENVINO_THROW("Got empty ov::Any for key: " + key);
+            }
+        }
+        return anyopt.value().as<T>();
+    }
+    return default_value;
+}
+
+std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& key) {
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        const auto any = anyopt.value();
+        int64_t value;
+        // NB: Integer value coming from python has int64_t datatype
+        if (any.is<int64_t>()) {
+            value = any.as<int64_t>();
+        } else if (any.is<int>()) {
+            value = any.as<int>();
+        } else {
+            OPENVINO_THROW("Failed to extract " + key + ". Type mismatch: expected types: int or int64_t");
+        }
+        if (value < 0) {
+            OPENVINO_THROW(key + " cannot be negative!");
+        }
+        return std::make_optional(static_cast<uint32_t>(value));
+    }
+    return std::nullopt;
+}
+
+void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
+    if (config.count(pair.first) == 0) {
+        config.insert(pair);
+    }
+}
+
+void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
+    if (config.count(old_key) != 0) {
+        auto opt_value = pop_option(config, old_key);
+        config[new_key] = opt_value.value();
+    }
+}
+
+// FIXME: Duplicate from llm_pipeline_static
+struct ModelConfigDesc {
+    std::string type;
+    std::string name_or_path;
+    int num_key_value_heads;
+};
+
+ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
+    std::ifstream file(filepath);
+    OPENVINO_ASSERT(file.is_open(), "Could not open file: ", filepath);
+    nlohmann::json config_data = nlohmann::json::parse(file);
+
+    ModelConfigDesc desc;
+    desc.type = config_data["model_type"].get<std::string>();
+    // NB: In case _name_or_path field isn't presented in config.json
+    if (config_data.contains("_name_or_path")) {
+        desc.name_or_path = config_data["_name_or_path"].get<std::string>();
+    }
+    desc.num_key_value_heads = config_data.contains("num_key_value_heads")
+        ? config_data["num_key_value_heads"].get<int>() : -1;
+    return desc;
+}
+
+// FIXME: Need to extend ov::genai::utils::get_seq_len_axis to return also batch dim instead
+struct KVAxesPosition {
+    uint32_t batch;
+    uint32_t seq_len;
+};
+
+KVAxesPosition get_kv_axes(const std::string& model_type) {
+    KVAxesPosition axes;
+    if (model_type == "chatglm") {
+        axes.batch = 1u;
+        axes.seq_len = 0u;
+    } else if (model_type == "qwen") {
+        // Note, qwen2 does not fall into this category and conforms to default layout
+        axes.batch = 0u;
+        axes.seq_len = 1u;
+    } else {
+        axes.batch = 0u;
+        axes.seq_len = 2u;
+    }
+    return axes;
+}
+
+void update_npu_config(const ModelConfigDesc& model_desc, ov::AnyMap& config) {
+    const uint32_t kMaxPromptLen = pop_int_and_cast(config, "MAX_PROMPT_LEN").value_or(1024u);
+    const uint32_t kMinResponseLen = pop_int_and_cast(config, "MIN_RESPONSE_LEN").value_or(128u);
+
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_LLM", "YES"});
+
+    KVAxesPosition axes = get_kv_axes(model_desc.type);
+    update_config(config, {"NPUW_LLM_BATCH_DIM", axes.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
+
+    // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
+    if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
+        (model_desc.type == "llama" && model_desc.num_key_value_heads == 32)) {
+            update_config(config, {"NPUW_LLM_OPTIMIZE_V_TENSORS", true});
+    }
+
+    rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
+    rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
+    rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
+}
+
+} // anonymous
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -412,6 +549,54 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
             std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
         }
     }
+}
+
+ov::CompiledModel compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
+                                          const ov::AnyMap& config,
+                                          const std::filesystem::path& models_path) {
+    OPENVINO_ASSERT(!models_path.empty());
+
+    ov::CompiledModel compiled;
+    ov::AnyMap properties = config;
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+    const bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob file is not found at: " + blob_path);
+        }
+        std::ifstream fin(blob_path, std::ios::in | std::ios::binary);
+        if (!fin.is_open()) {
+            OPENVINO_THROW("Blob file can't be opened: " + blob_path);
+        }
+        compiled = ov::genai::utils::singleton_core().import_model(fin, "NPU", {});
+    } else {
+        const auto model_desc = get_modeldesc_from_json(models_path / "config.json");
+        update_npu_config(model_desc, properties);
+        compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        // Also export compiled model if required
+        if (export_blob) {
+            if (blob_path.empty()) {
+                blob_path = (models_path / "openvino_model.blob").string();
+            }
+            // Check the path is full
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled.export_model(fout);
+        }
+    }
+    return compiled;
 }
 }  // namespace utils
 }  // namespace genai
