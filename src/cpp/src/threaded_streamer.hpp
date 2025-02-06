@@ -3,12 +3,11 @@
 
 #pragma once
 
-#include <condition_variable>
-#include <queue>
 #include <thread>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "synchronized_queue.hpp"
 #include "text_callback_streamer.hpp"
 
 namespace ov {
@@ -39,12 +38,7 @@ public:
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_queue.push(tokens);
-        }
-
-        m_cv.notify_one();
+        m_squeue.push(tokens);
     }
 
     void put(const int64_t token) {
@@ -52,12 +46,7 @@ public:
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_queue.push(token);
-        }
-
-        m_cv.notify_one();
+        m_squeue.push(token);
     }
 
     void end() {
@@ -65,12 +54,8 @@ public:
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_stopped = true;
-        }
-
-        m_cv.notify_one();
+        // push stop token to unblock squeue.pull
+        m_squeue.push(std::monostate());
 
         if (m_worker_thread && m_worker_thread->joinable()) {
             m_worker_thread->join();
@@ -94,39 +79,24 @@ public:
 private:
     std::shared_ptr<StreamerBase> m_streamer_ptr = nullptr;
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
-    std::mutex m_mutex;
-    std::condition_variable m_cv;
-    std::queue<std::variant<int64_t, std::vector<int64_t>>> m_queue;
+    SynchronizedQueue<std::variant<int64_t, std::vector<int64_t>, std::monostate>> m_squeue;
 
-    bool m_stopped = false;
     std::atomic<bool> m_dropped = false;
 
     void _worker() {
         while (true) {
-            std::variant<int64_t, std::vector<int64_t>> token_variant;
-            {
-                std::unique_lock<std::mutex> lock(m_mutex);
-
-                // wait for the next token in queue or streamer stopped
-                m_cv.wait(lock, [this] {
-                    return m_stopped || !m_queue.empty();
-                });
-
-                // continue streaming until queue is empty
-                if (m_stopped && m_queue.empty()) {
-                    break;
-                }
-
-                token_variant = m_queue.front();
-                m_queue.pop();
-            }
+            // wait for queue pull
+            std::variant<int64_t, std::vector<int64_t>, std::monostate> token_variant = m_squeue.pull();
 
             // wait for streamer_ptr result
             if (auto token = std::get_if<int64_t>(&token_variant)) {
                 m_dropped = m_streamer_ptr->put(*token);
-            } else {
-                auto tokens = std::get_if<std::vector<int64_t>>(&token_variant);
+            } else if (auto tokens = std::get_if<std::vector<int64_t>>(&token_variant)) {
                 m_dropped = m_streamer_ptr->put(*tokens);
+            } else if (auto stop_token = std::get_if<std::monostate>(&token_variant)) {
+                break;
+            } else {
+                OPENVINO_THROW("Internal error: unsupported threaded streamer value");
             }
 
             if (m_dropped) {
