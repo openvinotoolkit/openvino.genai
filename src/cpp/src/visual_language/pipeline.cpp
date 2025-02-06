@@ -209,7 +209,7 @@ public:
 
         ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
                                                                                              position_ids, m_embedding, rope_delta);
-        ov::genai::EncodedResults encoded_result = finish_info.results;
+        ov::genai::EncodedResults& encoded_result = finish_info.results;
 
 
         auto decode_start_time = std::chrono::steady_clock::now();

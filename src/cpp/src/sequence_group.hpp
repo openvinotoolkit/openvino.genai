@@ -342,7 +342,7 @@ public:
     }
 
     // must be used only after sequence group generation loop has finished (either by lenght or OOM)
-    // or stopped / cancelled via streamer / generation_stream->stop()
+    // or stopped / cancelled via streamer / generation_stream->stop() / generation_stream->cancel()
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         finished_seqs.reserve(num_total_seqs());

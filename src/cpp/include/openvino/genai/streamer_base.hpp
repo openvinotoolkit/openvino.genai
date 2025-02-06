@@ -12,10 +12,8 @@ namespace genai {
 enum class StreamingStatus {
     RUNNING = 0, // Continue to run of inference
     STOP = 1, // Stop generation, keep history as is, KV cache includes last request and generated tokens
-    CANCEL = 2 // Stop generate, drop last prompt and all generated tokens from history, KV cache include history but last step
+    CANCEL = 2 // Stop generate, drop last prompt and all generated tokens from history, KV cache includes history but last step
 };
-
-using CallbackTypeVariant = std::variant<bool, StreamingStatus, std::monostate>;
 
 /**
  * @brief base class for streamers. In order to use inherit from from this class and implement put, and methods
@@ -26,9 +24,10 @@ class OPENVINO_GENAI_EXPORTS StreamerBase {
 public:
     /// @brief put is called every time new token is decoded. Deprecated. Please, use write instead.
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    OPENVINO_DEPRECATED("Please, use `write()` instead of `put()`.")
+    OPENVINO_DEPRECATED("Please, use `write()` instead of `put()`. Support will be removed in 2026.0.0 release.")
     virtual bool put(int64_t token) {
-        return false;
+        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write() insted.");
+        return true;
     };
 
     /// @brief write is called every time new token is decoded

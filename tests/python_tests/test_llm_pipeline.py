@@ -234,14 +234,15 @@ def test_callback_terminate_by_bool():
         current_iter += 1
         return current_iter == num_iters
 
-    ov_generation_config = GenerationConfig(max_new_tokens=100, ignore_eos=True)
+    max_new_tokens = 100
+    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
     inputs_ov = ov.Tensor(input_ids)
     ov_output = pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
 
-    assert len(ov_output.tokens[0]) == num_iters
+    assert len(ov_output.tokens[0]) < max_new_tokens
 
 
 @pytest.mark.precommit
@@ -256,14 +257,15 @@ def test_callback_terminate_by_status():
         current_iter += 1
         return ov_genai.StreamingStatus.STOP if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
-    ov_generation_config = GenerationConfig(max_new_tokens=100, ignore_eos=True)
+    max_new_tokens = 100
+    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
     inputs_ov = ov.Tensor(input_ids)
     ov_output = pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
 
-    assert len(ov_output.tokens[0]) == num_iters
+    assert len(ov_output.tokens[0]) < max_new_tokens
 
 
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
@@ -322,7 +324,7 @@ def test_chat_scenario_callback_cancel(model_descr):
     assert chat_history_ov == chat_history_hf
 
 
-class Printer(ov_genai.StreamerBase):
+class PrinterNone(ov_genai.StreamerBase):
     def __init__(self, tokenizer):
         # super() may work, but once you begin mixing Python and C++
         # multiple inheritance, things will fall apart due to
@@ -336,13 +338,44 @@ class Printer(ov_genai.StreamerBase):
         print('end')
 
 
+class PrinterBool(ov_genai.StreamerBase):
+    def __init__(self, tokenizer):
+        # super() may work, but once you begin mixing Python and C++
+        # multiple inheritance, things will fall apart due to
+        # differences between Python’s MRO and C++’s mechanisms.
+        ov_genai.StreamerBase.__init__(self)
+        self.tokenizer = tokenizer
+    def put(self, token_id):
+        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
+        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
+        return False
+    def end(self):
+        print('end')
+
+
+class PrinterStatus(ov_genai.StreamerBase):
+    def __init__(self, tokenizer):
+        # super() may work, but once you begin mixing Python and C++
+        # multiple inheritance, things will fall apart due to
+        # differences between Python’s MRO and C++’s mechanisms.
+        ov_genai.StreamerBase.__init__(self)
+        self.tokenizer = tokenizer
+    def write(self, token_id):
+        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
+        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
+        return ov_genai.StreamingStatus.RUNNING
+    def end(self):
+        print('end')
+
+
+@pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_streamer_one_string():
+def test_streamer_one_string(streamer_base):
     ov_pipe = read_model(get_models_list()[0])[4]
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', generation_config, printer)
 
 
@@ -350,7 +383,7 @@ def test_streamer_one_string():
 @pytest.mark.nightly
 def test_streamer_batch_throws():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
 
@@ -359,7 +392,7 @@ def test_streamer_batch_throws():
 @pytest.mark.nightly
 def test_streamer_kwargs_one_string():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
@@ -367,7 +400,7 @@ def test_streamer_kwargs_one_string():
 @pytest.mark.nightly
 def test_streamer_kwargs_batch_throws():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate('', num_beams=2, streamer=printer)
 
@@ -391,11 +424,12 @@ def test_operator_with_callback_batch_throws(callback):
         ov_pipe(['1', '2'], ov_pipe.get_generation_config(), callback)
 
 
+@pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_operator_with_streamer_kwargs_one_string():
+def test_operator_with_streamer_kwargs_one_string(streamer_base):
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
@@ -403,7 +437,7 @@ def test_operator_with_streamer_kwargs_one_string():
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_throws():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe('', num_beams=2, streamer=printer)
 

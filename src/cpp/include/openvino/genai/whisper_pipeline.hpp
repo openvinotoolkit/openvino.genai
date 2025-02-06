@@ -28,7 +28,8 @@ public:
     /// @brief put_chunk is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
     virtual bool put_chunk(std::vector<int64_t> tokens) {
-        return false;
+        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write_chunk() insted.");
+        return true;
     }
 
     /// @brief write_chunk is called every time new token chunk is generated

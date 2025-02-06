@@ -269,17 +269,16 @@ ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVaria
                                 return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> ov::genai::StreamingStatus {
                                     auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                                     std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
-                                    auto result = StreamingStatus::RUNNING;
                                     if (callback_output.has_value()) {
-                                        if (*callback_output == (uint16_t)StreamingStatus::RUNNING) {
-                                            result = StreamingStatus::RUNNING;
-                                        } else if (*callback_output == (uint16_t)StreamingStatus::CANCEL) {
-                                            result = StreamingStatus::CANCEL;
-                                        } else {
-                                            result = StreamingStatus::STOP;
-                                        }
+                                        if (*callback_output == (uint16_t)StreamingStatus::RUNNING)
+                                            return StreamingStatus::RUNNING;
+                                        else if (*callback_output == (uint16_t)StreamingStatus::CANCEL)
+                                            return StreamingStatus::CANCEL;
+                                        std::cout << " AAA STOP " << std::endl;
+                                        return StreamingStatus::STOP;
+                                    } else {
+                                        return StreamingStatus::RUNNING;
                                     }
-                                    return result;
                                 });
                             },
                             [](std::shared_ptr<ChunkStreamerBase> streamer_cls) {

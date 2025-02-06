@@ -14,7 +14,6 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
 
     // Chat scenario specific parameters
     bool is_chat_conversation = false;
-    bool m_trust_encoded_history = true;
     ChatHistory m_history;
     std::string m_templated_chat_history = {};
     std::vector<int64_t> m_tokenized_chat_history;

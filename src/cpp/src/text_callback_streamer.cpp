@@ -51,16 +51,11 @@ StreamingStatus TextCallbackStreamer::write(int64_t token) {
 }
 
 StreamingStatus TextCallbackStreamer::set_streaming_status(CallbackTypeVariant callback_status) {
-    StreamingStatus status = StreamingStatus::RUNNING;
-    if (auto res = std::get_if<StreamingStatus>(&callback_status)) {
-        status = *res;
-    } else if (auto res = std::get_if<bool>(&callback_status)) {
-        status = *res ? StreamingStatus::STOP : StreamingStatus::RUNNING;
-    } else if (auto res = std::get_if<std::monostate>(&callback_status)) {
-        status = StreamingStatus::RUNNING;
-    }
-
-    return status;
+    if (auto res = std::get_if<StreamingStatus>(&callback_status))
+        return *res;
+    if (auto res = std::get_if<bool>(&callback_status))
+        return *res ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+    return StreamingStatus::RUNNING;
 }
 
 void TextCallbackStreamer::end() {
