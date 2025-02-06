@@ -64,8 +64,8 @@ public:
     // this flag holds the current state value of the CompiledModel.
     bool m_add_special_tokens = true;
     bool m_skip_special_tokens = true;
-    int32_t m_max_pad_length = 0;
-    int32_t m_max_trunc_length = std::numeric_limits<int32_t>::max();
+    bool m_pad_to_max_length = false;
+    std::optional<int32_t> m_max_length;
     bool m_older_than_24_5 = false;
 
     int64_t m_pad_token_id = -1;
@@ -81,32 +81,20 @@ public:
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
         bool add_special_tokens_flag = m_add_special_tokens;
         bool skip_special_tokens_flag = m_skip_special_tokens;
-        std::optional<size_t> max_length_val;
+        std::optional<int32_t> max_length_val;
         bool pad_to_max_length_val = false;
         
         ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
         ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
         ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
-        
-        // TODO:
-        int32_t max_trunc_length_val = std::numeric_limits<int32_t>::max();
-        int32_t max_pad_length_val = 0;
-        
-        if (max_length_val.has_value()) {
-            max_trunc_length_val = *max_length_val;
-        
-            if (pad_to_max_length_val) {
-                max_pad_length_val = *max_length_val;
-            }
-        }
 
         // If requested add[skip]_special_tokens, max_length or pading mode 
         // is different from the stored state, need to set state variable.
         if (add_special_tokens_flag == m_add_special_tokens 
             && skip_special_tokens_flag == m_skip_special_tokens
-            && max_trunc_length_val == m_max_trunc_length
-            && max_pad_length_val == m_max_pad_length) {
+            && max_length_val == m_max_length
+            && pad_to_max_length_val == m_pad_to_max_length) {
             return;
         }
         if (m_older_than_24_5) {
@@ -124,26 +112,33 @@ public:
         ov::Tensor skip_special_tensor = ov::Tensor(ov::element::i32, {1});
         *skip_special_tensor.data<int32_t>() = skip_special_tokens_flag;
 
-        ov::Tensor max_trunc_length_tensor = ov::Tensor(ov::element::i32, {});
-        *max_trunc_length_tensor.data<int32_t>() = max_trunc_length_val;
-        ov::Tensor max_pad_length_tensor = ov::Tensor(ov::element::i32, {1});
-        *max_pad_length_tensor.data<int32_t>() = max_pad_length_val;
+        ov::Tensor max_length_tensor = ov::Tensor(ov::element::i32, {});
+        // Exact value will bet set below depending whether optional max_length is defined.
+        ov::Tensor pad_to_max_length_tensor = ov::Tensor(ov::element::boolean, {1});
+        *pad_to_max_length_tensor.data<bool>() = pad_to_max_length_val;
         
         for (auto& state: infer_request_guard.get().query_state()) {
             if (state.get_name().find(add_special_tokens.name()) != std::string::npos) {
                 state.set_state(add_special_tensor);
             } else if (state.get_name().find(skip_special_tokens.name()) != std::string::npos) {
                 state.set_state(skip_special_tensor);
-            } else if (state.get_name().find(MAX_TRUNCATION_LENGTH_VAR_ID) != std::string::npos && max_length_val.has_value()) {
-                state.set_state(max_trunc_length_tensor);
-            } else if (state.get_name().find(MAX_PAD_LENGTH_VAR_ID) != std::string::npos && max_length_val.has_value()) {
-                state.set_state(max_pad_length_tensor);
+            } else if (state.get_name().find(MAX_LENGTH_VAR_ID) != std::string::npos) {
+                if (max_length_val.has_value()) {
+                    *max_length_tensor.data<int32_t>() = *max_length_val;
+                    state.set_state(max_length_tensor);
+                } else {
+                    // If after some time user called encode without max_length we should return
+                    // to the default value stored in constant from IR.
+                    state.reset();
+                }
+            } else if (state.get_name().find(PAD_TO_LONGEST_VAR_ID) != std::string::npos) {
+                state.set_state(pad_to_max_length_tensor);
             }
         }
         m_add_special_tokens = add_special_tokens_flag;
         m_skip_special_tokens = skip_special_tokens_flag;
-        m_max_trunc_length = max_trunc_length_val;
-        m_max_pad_length = max_pad_length_val;
+        m_max_length = max_length_val;
+        m_pad_to_max_length = pad_to_max_length_val;
     }
 
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
@@ -195,7 +190,6 @@ public:
             ov::pass::Manager manager;
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
-            manager.register_pass<MakeTruncationSatateful>();
             manager.run_passes(ov_tokenizer);
             m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
             ov::genai::utils::print_compiled_model_properties(m_tokenizer, "OV Tokenizer");

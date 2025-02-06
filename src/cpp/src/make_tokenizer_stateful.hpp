@@ -40,22 +40,12 @@ public:
 };
 
 /** 
- * @brief This pass modifies tokenizer ov::Model so that max_pad_length input to
- * Makes ends input for CombineSegments stateful so that padding can be controlled at runtime.
+ * @brief This pass modifies tokenizer ov::Model so that inputs to RaggedToDense, CombineSegments 
+ * become modifiable during runtime so that padding can be controlled.
  */
 class MakePaddingSatateful : public ov::pass::ModelPass {
 public:
     OPENVINO_MODEL_PASS_RTTI("MakePaddingSatateful");
-    bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
-};
-
-/** 
- * @brief This pass modifies tokenizer ov::Model so that max_pad_length input to
- * RaggedToDense is made modifiable during runtime so that padding can be controlled.
- */
-class MakeTruncationSatateful : public ov::pass::ModelPass {
-public:
-    OPENVINO_MODEL_PASS_RTTI("MakeTruncationSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
@@ -97,8 +87,8 @@ public:
 
 inline const std::string ADD_SPECIAL_TOKENS_VAR_ID = "add_special_tokens";
 inline const std::string SKIP_SPECIAL_TOKENS_VAR_ID = "skip_special_tokens";
-inline const std::string MAX_PAD_LENGTH_VAR_ID = "max_pad_length";
-inline const std::string MAX_TRUNCATION_LENGTH_VAR_ID = "max_truncation_length";
+inline const std::string MAX_LENGTH_VAR_ID = "max_length";
+inline const std::string PAD_TO_LONGEST_VAR_ID = "PAD_TO_LONGEST";
 
 } // namespace genai
 } // namespace ov

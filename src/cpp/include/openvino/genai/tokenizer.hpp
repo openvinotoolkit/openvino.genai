@@ -126,7 +126,7 @@ public:
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
     * @param add_special_tokens whether to add special tokens
-    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined in taken from IR.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @return pair of [input_ids, attention_mask]
     */
@@ -139,7 +139,7 @@ public:
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
-    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined in taken from IR.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @return pair of [input_ids, attention_mask]
     */

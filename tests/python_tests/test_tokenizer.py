@@ -275,8 +275,8 @@ prompts = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
-@pytest.mark.parametrize("max_length", [10, 16, 64, 77, 103, 512, 1024])
-@pytest.mark.parametrize("pad_to_max_length", [True, False])
+@pytest.mark.parametrize("max_length", [None, 10, 16, 64, 77, 103, 512, 1024])
+@pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
 def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
     model_descr = get_models_list()[0]
@@ -289,12 +289,18 @@ def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
     # Therefore, for default mode truncation=True.
     # For the same reason runcation is always applied.
     hf_pad_params_map = {
+        None: dict(padding="longest", truncation=True),
         False: dict(padding="longest", truncation=True),
         True: dict(padding="max_length", truncation=True),
     }
     hf_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, **hf_pad_params_map[pad_to_max_length])
     ov_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, pad_to_max_length=pad_to_max_length)
-
+    if pad_to_max_length is None:
+        ov_params.pop("pad_to_max_length")
+    if max_length is None:
+        hf_params.pop("max_length")
+        ov_params.pop("max_length")
+        
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
 

@@ -88,7 +88,9 @@ def read_model(params, **tokenizer_kwargs):
     from optimum.intel.openvino import OVModelForCausalLM
     from transformers import AutoTokenizer
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side", "right")
+    
+    if "padding_side" in tokenizer_kwargs:
+        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     if (models_path / "openvino_model.xml").exists():
         opt_model = OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
