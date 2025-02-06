@@ -63,7 +63,7 @@ class IterableStreamer(openvino_genai.StreamerBase):
         """
         return False
     
-    def put_word(self, word: str):
+    def put_word(self, word: str | None):
         """
         Puts a word into the text queue.
         
@@ -72,17 +72,23 @@ class IterableStreamer(openvino_genai.StreamerBase):
         """
         self.text_queue.put(word)
 
-    def put(self, token_id: int) -> bool:
+    def put(self, token: int | list[int]) -> bool:
         """
         Processes a token and manages the decoding buffer. Adds decoded text to the queue.
         
         Args:
-            token_id (int): The token_id to process.
+            token (int | list[int]): The token(s) to process.
         
         Returns:
             bool: True if generation should be stopped, False otherwise.
         """
-        self.tokens_cache.append(token_id)
+
+        if type(token) is int:
+            self.tokens_cache.append(token)
+        elif type(token) is list:
+            self.tokens_cache += token
+            self.decoded_lengths += [-1 for _ in token[:-1]]
+
         text = self.tokenizer.decode(self.tokens_cache)
         self.decoded_lengths.append(len(text))
 
@@ -132,12 +138,18 @@ class ChunkStreamer(IterableStreamer):
         super().__init__(tokenizer)
         self.tokens_len = tokens_len
 
-    def put(self, token_id: int) -> bool:
-        if (len(self.tokens_cache) + 1) % self.tokens_len != 0:
-            self.tokens_cache.append(token_id)
+    def put(self, token: int | list[int]) -> bool:
+        if (len(self.tokens_cache) + 1) % self.tokens_len == 0:
+            return super().put(token)
+        
+        if type(token) is int:
+            self.tokens_cache.append(token)
             self.decoded_lengths.append(-1)
-            return False
-        return super().put(token_id)
+        elif type(token) is list:
+            self.tokens_cache += token
+            self.decoded_lengths += [-1 for _ in token]
+        
+        return False
 
 
 def main():
