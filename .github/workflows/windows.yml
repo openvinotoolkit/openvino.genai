@@ -76,10 +76,10 @@ jobs:
       - name: Clone OpenVINO
         uses: actions/checkout@v4
         with:
-          repository: 'openvinotoolkit/openvino'
+          repository: 'luo-cheng2021/openvino'
           path: ${{ env.OPENVINO_REPO }}
           submodules: 'true'
-          ref: ${{ env.OV_BRANCH }}
+          ref: 'f631222ac9dc782e7038391c932d73797b1d2444'
 
       #
       # Dependencies

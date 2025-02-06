@@ -57,9 +57,9 @@ jobs:
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
-        repository: 'openvinotoolkit/openvino'
+        repository: 'luo-cheng2021/openvino'
         path: 'openvino'
-        ref: ${{ env.OV_BRANCH }}
+        ref: 'f631222ac9dc782e7038391c932d73797b1d2444'
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
