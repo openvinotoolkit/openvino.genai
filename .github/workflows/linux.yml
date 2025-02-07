@@ -51,7 +51,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: all
+        commit_packages_to_provide: wheels,openvino_js_package
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
@@ -407,7 +407,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
-    timeout-minutes: 120
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -419,8 +419,6 @@ jobs:
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING -v ${{ github.workspace }}:${{ github.workspace }}
     env:
       CMAKE_GENERATOR: Unix Makefiles
-      OV_DIR: ${{ github.workspace }}/openvino
-      OV_JS_DIR: ${{ github.workspace }}/openvino/nodejs
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       BUILD_DIR: ${{ github.workspace }}/build
@@ -439,14 +437,6 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
-
-      - name: Clone OpenVINO
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          repository: 'openvinotoolkit/openvino'
-          path: ${{ env.OV_DIR }}
-          ref: ${{ env.OV_BRANCH }}
-          submodules: recursive
 
       - name: Build GenAI Node.js bindings
         run: |
@@ -469,22 +459,6 @@ jobs:
           name: genai_nodejs_bindings
           path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
-      
-      - name: Build OpenVINO Node.js bindings
-        working-directory: ${{ env.OV_DIR }}
-        run: |
-          cmake \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCPACK_GENERATOR=NPM \
-            -DENABLE_SYSTEM_TBB=OFF -UTBB* \
-            -DENABLE_TESTS=OFF \
-            -DENABLE_SAMPLES=OFF \
-            -DENABLE_WHEEL=OFF \
-            -DENABLE_PYTHON=OFF \
-            -DENABLE_INTEL_GPU=OFF \
-            -S . -B build 
-          cmake --build ./build --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          cmake --install ./build --config ${{ matrix.build-type }} --prefix ${{ env.OV_JS_DIR }}
 
       - name: Patch GenAI Node.js bindings for test
         working-directory: ${{ env.INSTALL_DIR }}
@@ -499,7 +473,7 @@ jobs:
           cp -R ${{ env.INSTALL_DIR }} bin
           npm install
           rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_JS_DIR }} node_modules/openvino-node/bin
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -511,7 +485,7 @@ jobs:
         run: |
           npm install
           rm -rf node_modules/openvino-node/bin
-          cp -R ${{ env.OV_JS_DIR }} node_modules/openvino-node/bin
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
       - name: Run samples tests
         run: npm test
