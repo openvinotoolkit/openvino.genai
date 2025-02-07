@@ -329,7 +329,18 @@ public:
     }
 
     void set_generation_config(const GenerationConfig& new_config) {
+        int64_t default_eos_token_id = m_generation_config.eos_token_id;
+        auto default_stop_token_ids = m_generation_config.stop_token_ids;
         m_generation_config = new_config;
+
+        // If stop_token_ids were not provided, take value from default config
+        if (m_generation_config.stop_token_ids.empty())
+            m_generation_config.stop_token_ids = default_stop_token_ids;
+        // if eos_token_id was not provided in config forward from default config
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.set_eos_token_id(default_eos_token_id);
+
+        m_generation_config.validate();
     }
 };
 

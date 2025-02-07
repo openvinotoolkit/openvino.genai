@@ -199,7 +199,12 @@ ov::genai::Tokenizer ov::genai::WhisperPipeline::get_tokenizer() {
 
 void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationConfig& config) {
     int64_t default_eos_token_id = m_impl->m_generation_config.eos_token_id;
+    auto default_stop_token_ids = m_impl->m_generation_config.stop_token_ids;
     m_impl->m_generation_config = config;
+
+    // If stop_token_ids were not provided, take value from default config
+    if (config.stop_token_ids.empty())
+        m_impl->m_generation_config.stop_token_ids = default_stop_token_ids;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
         m_impl->m_generation_config.set_eos_token_id(default_eos_token_id);
