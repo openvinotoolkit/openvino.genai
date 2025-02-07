@@ -59,7 +59,7 @@ jobs:
       with:
         repository: 'luo-cheng2021/openvino'
         path: 'openvino'
-        ref: 'f631222ac9dc782e7038391c932d73797b1d2444'
+        ref: 'a80957aadd928661a320be3b4e0ecebf392a8c00'
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
@@ -261,7 +261,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ openvino_download, genai_build_wheel ]
+    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ]
     timeout-minutes: 60
     strategy:
       fail-fast: false
