@@ -51,7 +51,7 @@ jobs:
       id: openvino_download
       with:
         platform: ubuntu22
-        commit_packages_to_provide: wheels
+        commit_packages_to_provide: all
         revision: latest_available_commit
 
     - name: Clone docker tag from OpenVINO repo
