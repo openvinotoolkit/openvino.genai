@@ -130,7 +130,7 @@ def parse_args():
         type=str,
         choices=["en", "cn"],
         default="en",
-        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'cn'.",
     )
     parser.add_argument(
         "--hf",
