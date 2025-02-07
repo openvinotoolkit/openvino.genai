@@ -34,7 +34,7 @@ public:
 using ChunkStreamerVariant =
     std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
-struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
+struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
     std::vector<MicroSeconds> features_extraction_durations;
 };
