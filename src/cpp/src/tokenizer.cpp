@@ -79,8 +79,10 @@ public:
     std::string m_chat_template = {};
 
     void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
-        bool add_special_tokens_flag = m_add_special_tokens;
-        bool skip_special_tokens_flag = m_skip_special_tokens;
+        // These values should be equal to default values in py_tokenizer.cpp
+        // in order to get the same behavior in C++ when arguments are not specified.
+        bool add_special_tokens_flag = true;
+        bool skip_special_tokens_flag = true;
         std::optional<int32_t> max_length_val;
         bool pad_to_max_length_val = false;
         

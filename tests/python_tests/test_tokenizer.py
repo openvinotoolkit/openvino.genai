@@ -240,7 +240,7 @@ def test_special_tokens(tmp_path, prompt, model_id):
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
-    ov_tokenizer = openvino_genai.Tokenizer(tmp_path)
+    ov_tokenizer = Tokenizer(tmp_path)
 
     # Calling encode with 'add_special_tokens' will set state flag.
     ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
