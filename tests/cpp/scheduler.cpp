@@ -113,6 +113,12 @@ TEST(TestScheduler, general_test) {
         // requests1[1] should be fully scheduled plus 1 slot for requests[0] for generate phase
         EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests[1]->get_context_len() + 1);
         EXPECT_EQ(out4.is_prompt, false);
+
+        for (auto& req : requests) {
+            for (auto& seq : req->get_sequences()) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
     }
 
 }
@@ -193,6 +199,12 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
 
     EXPECT_FALSE(out2.is_prompt);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, AppendSlotsSchedulerTest,
@@ -286,6 +298,12 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     EXPECT_EQ(block_table2[2]->get_index(), 0);
 
     EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, PartialPreemptionSchedulerTest ,
@@ -393,6 +411,12 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         EXPECT_EQ(scheduler.get_block_tables(*seqs[2])[0].size(), 1);
         EXPECT_EQ(scheduler.get_block_tables(*seqs[3])[0].size(), 1);
         EXPECT_EQ(scheduler.get_block_tables(*seqs[4])[0].size(), 1);
+
+        for (auto& req : new_requests) {
+            for (auto& seq : req->get_sequences()) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
     }
 }
 
@@ -492,6 +516,12 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         EXPECT_EQ(block_table2[2]->get_index(), 0);
 
         EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+        for (auto& req : requests) {
+            for (auto& seq : req->get_sequences()) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
     }
 }
 
@@ -555,6 +585,13 @@ TEST(TestScheduler, prefix_caching_test) {
 
             histrory_tokens.insert(histrory_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             histrory_tokens.insert(histrory_tokens.end(), generated_ids.begin(), generated_ids.end());
+
+            for (auto& seq : sequence_group->get_sequences()) {
+                if (seq->get_id() == idx0) {
+                    continue;
+                }
+                scheduler.free_sequence(seq->get_id());
+            }
         }
     }
 
@@ -755,6 +792,15 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     ASSERT_EQ(block_table2[0][2]->get_index(), 0);
 
     EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (seq->get_id() == idx0) {
+                continue;
+            }
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
@@ -840,6 +886,15 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     ASSERT_EQ(block_table2[0][2]->get_index(), 0);
 
     EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (seq->get_id() == idx0) {
+                continue;
+            }
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 
@@ -947,4 +1002,12 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     const std::vector<size_t> ref_block_table2_after_recompute{4, 5, 0, 1, 2};  // should restore the old state before first eviction in terms of block count
     EXPECT_EQ(block_table2, ref_block_table2_after_recompute);
 
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (seq->get_id() == idx1) {
+                continue;
+            }
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
