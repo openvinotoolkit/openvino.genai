@@ -220,7 +220,6 @@ protected:
             // so let's check it out, find the trusted part and use it in on the next step
             size_t trusted_history_length = 0;
             if (!m_tokenized_history.empty()) {
-                OPENVINO_ASSERT(!m_stop_token_ids.empty(), "Stop tokens are not set for InputsEmbedder");
                 trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, m_stop_token_ids);
             }
 
