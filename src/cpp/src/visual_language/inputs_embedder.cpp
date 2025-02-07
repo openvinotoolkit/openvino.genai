@@ -1482,7 +1482,6 @@ public:
         m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
-        OPENVINO_ASSERT(images.empty() || m_history.empty(), "Images can only be provided for initial prompt");
         std::vector<ov::Tensor> images_features_proj;
         std::stringstream images_prompt;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
