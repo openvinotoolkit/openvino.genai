@@ -25,6 +25,20 @@ def get_ov_model(model_id, cache):
     return model_dir
 
 
+def get_image_by_link(link):
+    from PIL import Image
+    import requests
+    from openvino import Tensor
+    import numpy as np
+
+    image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
+    return Tensor(image_data)
+
+
+
 prompts = [
     "What is on the image?",
     "What is special about this image?",

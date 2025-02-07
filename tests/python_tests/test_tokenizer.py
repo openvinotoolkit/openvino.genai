@@ -9,13 +9,13 @@ from typing import Dict, Tuple, List
 import openvino_genai
 import json
 
-from common import delete_rt_info
-from ov_genai_test_utils import (
+from utils.ov_tokenizer_utils import delete_rt_info
+from utils.test_data import (
     get_models_list,
     get_chat_models_list,
-    read_model,
-    model_tmp_path
+    get_default_properties
 )
+from utils.hf_utils import download_and_convert_model
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
@@ -92,7 +92,7 @@ def get_chat_templates():
         "BramVanroy/Llama-2-13b-chat-dutch"
     }
 
-    from tokenizer_configs import get_tokenizer_configs
+    from data.tokenizer_configs import get_tokenizer_configs
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
@@ -108,7 +108,8 @@ prompts = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_encode(model_descr, prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    models_path, hf_tokenizer, opt_model = download_and_convert_model(model_descr)
+    ov_pipe = openvino_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     ov_tokenizer = ov_pipe.get_tokenizer()
 
     encoded_ov = ov_tokenizer.encode(prompt).input_ids.data
@@ -138,7 +139,8 @@ encoded_prompts = [
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
 def test_decode(model_descr, encoded_prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    models_path, hf_tokenizer, opt_model = download_and_convert_model(model_descr)
+    ov_pipe = openvino_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     ov_tokenizer = ov_pipe.get_tokenizer()
     decoded_ov = ov_tokenizer.decode(encoded_prompt)
 
@@ -168,7 +170,8 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 
     # Will load openvino_model for tiny-random-phi as a placeholder
     # but indeed only Tokenizer and apply_chat_template will be tested.
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(get_models_list()[0])
+    models_path, hf_tokenizer, opt_model = download_and_convert_model(get_models_list()[0])
+    ov_pipe = openvino_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(conversation,
         add_generation_prompt=False,
@@ -195,7 +198,9 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.nightly
 def test_set_chat_template():
     model_descr = get_chat_models_list()[0]
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    
+    models_path, hf_tokenizer, opt_model = download_and_convert_model(model_descr)
+    ov_pipe = openvino_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
 
     prompt = "how are you?"
     dummy_conversation = [
@@ -230,7 +235,8 @@ prompts = [
 def test_encode_decode_with_special_tokens_option(prompt):
     import numpy as np
     model_descr = get_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    models_path, hf_tokenizer, opt_model = download_and_convert_model(model_descr)
+    ov_pipe = openvino_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     ov_tokenzier = ov_pipe.get_tokenizer()
 
     # Calling encode with 'add_special_tokens' will set state flag.

@@ -7,14 +7,13 @@ from openvino_genai import GenerationConfig
 import pytest
 import platform
 import sys
-from ov_genai_test_utils import (
+from utils.test_data import (
     get_models_list,
-    get_chat_models_list,
-    read_model
+    get_chat_models_list
 )
-from common import get_default_properties
-
-from common import                                      \
+from utils.test_data import get_default_properties
+from utils.model_utils import read_model
+from utils.generation_config_samples import                                      \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
     get_multinomial_all_parameters,                     \

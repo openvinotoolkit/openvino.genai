@@ -15,7 +15,8 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_cb_pipeline_with_ref, get_default_properties
+from utils.generate_and_compare import TESTS_ROOT, run_cb_pipeline_with_ref
+from utils.test_data import get_default_properties
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:

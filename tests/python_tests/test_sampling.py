@@ -9,7 +9,9 @@ from pathlib import Path
 from openvino_genai import GenerationConfig, StopCriteria
 from typing import List, TypedDict
 
-from common import get_hugging_face_models, convert_models, run_llm_pipeline_with_ref, run_llm_pipeline, compare_generation_results, StreamerWithResults
+from utils.hf_utils import get_hugging_face_models, convert_models
+from utils.ov_genai_utils import run_llm_pipeline
+from utils.generate_and_compare import run_llm_pipeline_with_ref
 
 
 @pytest.mark.precommit
@@ -164,7 +166,7 @@ class RandomSamplingTestStruct:
     prompts: List[str]
     ref_texts: List[List[str]]
 
-from common import get_multinomial_temperature, get_greedy_with_penalties, \
+from utils.generation_config_samples import get_multinomial_temperature, get_greedy_with_penalties, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
     get_multinomial_temperature_top_p_and_top_k, get_multinomial_all_parameters, \
     get_multinomial_temperature_and_num_return_sequence, get_multinomial_max_and_min_token, \

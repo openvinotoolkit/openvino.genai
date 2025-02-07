@@ -5,22 +5,19 @@ import os
 import pytest
 import math
 from typing import Dict
-from functools import partial
-
 from pathlib import Path
+
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
 
-from common import get_default_properties, get_hugging_face_models, convert_models, generate_and_compare_with_reference_text, \
-    get_scheduler_config, get_greedy, run_cb_pipeline_with_ref, get_beam_search, get_greedy, \
-    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
-    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
-from ov_genai_test_utils import (
-    get_chat_models_list,
-    read_model,
-    get_continuous_batching
-)
+from utils.ov_genai_utils import dict_to_scheduler_config, get_continuous_batching
+from utils.hf_utils import get_hugging_face_models, convert_models, download_and_convert_model
+from utils.generate_and_compare import generate_and_compare_with_reference_text, run_cb_pipeline_with_ref
+from utils.generation_config_samples import get_beam_search, get_greedy, \
+    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
+    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
+from utils.test_data import get_chat_models_list, get_default_properties
 
 def read_models_list(file_name: str):
     models = []
@@ -76,10 +73,10 @@ batched_prompts = [
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(prompt, generation_config):
-    model_id, path, tokenizer, model, stateful = read_model((
-        "facebook/opt-125m",
-        Path("opt-125m")
-    ))
+    model_id = "facebook/opt-125m"
+    tmp_path = Path("opt-125m")
+    path, model, tokenizer = download_and_convert_model(model_id, tmp_path)
+    stateful = LLMPipeline(path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     cb_pipe = get_continuous_batching(path)
     generated = cb_pipe.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
@@ -94,10 +91,11 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((
-        "facebook/opt-125m",
-        Path("opt-125m")
-    ))
+    model_id = "facebook/opt-125m"
+    tmp_path = Path("opt-125m")
+    path, opt_model, hf_tokenizer = download_and_convert_model(model_id, tmp_path)
+    stateful = LLMPipeline(path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
+
     cb_pipe = get_continuous_batching(path)
     streamed = []
     generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
@@ -120,7 +118,12 @@ questions = [
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    # model_id, models_path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    model_id = model_descr[0]
+    tmp_path = model_descr[1]
+
+    models_path, opt_model, hf_tokenizer = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     cb_pipe = get_continuous_batching(models_path)
 
     ov_pipe.start_chat()
@@ -149,7 +152,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     generation_config.ignore_eos = True
     generation_config.max_new_tokens = 1000000
 
-    scheduler_config = get_scheduler_config()
+    scheduler_config = dict_to_scheduler_config()
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
@@ -259,7 +262,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     models_path : Path = tmp_path / model_id
     convert_models(model, hf_tokenizer, models_path)
 
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
 
 
@@ -338,7 +341,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     convert_models(opt_model, hf_tokenizer, models_path)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)
 
 def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):

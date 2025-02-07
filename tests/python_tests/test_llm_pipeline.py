@@ -11,14 +11,15 @@ import sys
 from pathlib import Path
 import torch
 
-from common import run_llm_pipeline_with_ref, convert_to_hf
-from ov_genai_test_utils import (
+from utils.hf_utils import ov_generation_config_to_hf
+from utils.generate_and_compare import run_llm_pipeline_with_ref
+from utils.test_data import (
     get_models_list,
-    read_model,
-    load_genai_pipe_with_configs,
-    get_chat_models_list,
-    model_tmp_path,
+    get_chat_models_list
 )
+from utils.ov_genai_utils import load_genai_pipe_with_configs
+from utils.hf_utils import download_and_convert_model
+from utils.test_data import get_default_properties
 
 #
 # e2e work
@@ -47,10 +48,11 @@ input_tensors_list = [
 @pytest.mark.nightly
 def test_encoded_inputs(model_descr, inputs):
     device = 'CPU'
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    models_path, opt_model, hf_tokenizer = download_and_convert_model(model_descr)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
 
     ov_generation_config = GenerationConfig(max_new_tokens=20)
-    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    hf_generation_config = ov_generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     input_ids, attention_mask = inputs
     prompt_len = input_ids.shape[1]
@@ -92,7 +94,8 @@ def test_batch_string_inputs(model_descr, generation_config_dict, prompts):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_size_switch():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    models_path, _, _ = download_and_convert_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     ov_pipe.generate(["a"], max_new_tokens=2)
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
@@ -101,7 +104,8 @@ def test_batch_size_switch():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_empty_encoded_inputs_throw():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    models_path, _, _ = download_and_convert_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
@@ -129,10 +133,11 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    models_path, opt_model, tokenizer = download_and_convert_model(model_descr)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
 
     ov_generation_config = GenerationConfig(**generation_config_kwargs)
-    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    hf_generation_config = ov_generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     ov_pipe.start_chat()
     for prompt in questions:
@@ -171,7 +176,8 @@ def user_defined_callback(subword):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_one_string(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     ov_pipe.generate('table is made of', generation_config, callback)
@@ -181,7 +187,8 @@ def test_callback_one_string(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_batch_throws(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), callback)
 
@@ -190,7 +197,8 @@ def test_callback_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
-    pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 
@@ -204,7 +212,8 @@ def test_callback_decoding_metallama(model_descr, callback):
     prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
     if model_descr[0] != 'meta-llama/Meta-Llama-3-8B-Instruct':
         pytest.skip()
-    ov_pipe = read_model(model_descr)[4]
+    models_path, _, _ = download_and_convert_model(model_descr)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     ov_pipe.generate(prompt, max_new_tokens=300, streamer=callback)
 
 
@@ -212,7 +221,8 @@ def test_callback_decoding_metallama(model_descr, callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_batch_throws(callback):
-    pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
@@ -234,7 +244,8 @@ class Printer(ov_genai.StreamerBase):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_one_string():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     printer = Printer(ov_pipe.get_tokenizer())
@@ -244,7 +255,8 @@ def test_streamer_one_string():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_batch_throws():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     printer = Printer(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
@@ -253,7 +265,8 @@ def test_streamer_batch_throws():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_kwargs_one_string():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     printer = Printer(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
@@ -261,7 +274,8 @@ def test_streamer_kwargs_one_string():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_kwargs_batch_throws():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     printer = Printer(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate('', num_beams=2, streamer=printer)
@@ -271,7 +285,8 @@ def test_streamer_kwargs_batch_throws():
 @pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     ten_tokens = ov_pipe.get_generation_config()
     ten_tokens.max_new_tokens = 10
     ov_pipe('talbe is made of', ten_tokens, callback)
@@ -281,7 +296,8 @@ def test_operator_with_callback_one_string(callback):
 @pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_throws(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     with pytest.raises(RuntimeError):
         ov_pipe(['1', '2'], ov_pipe.get_generation_config(), callback)
 
@@ -289,7 +305,8 @@ def test_operator_with_callback_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_one_string():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     printer = Printer(ov_pipe.get_tokenizer())
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
@@ -297,7 +314,8 @@ def test_operator_with_streamer_kwargs_one_string():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_throws():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    models_path, _, _ = download_and_convert_model(get_models_list()[0])
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     printer = Printer(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe('', num_beams=2, streamer=printer)
@@ -309,7 +327,8 @@ def test_operator_with_streamer_kwargs_batch_throws():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
-    model_id, temp_path = model_tmp_path
+    # remove model_tmp_path, replace by default eos toen from model
+    _, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
 
     config = ov_genai.GenerationConfig()
@@ -323,7 +342,8 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
 @pytest.mark.nightly
 def test_pipeline_validates_generation_config():
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    models_path, _, _ = download_and_convert_model(model_id, path)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     invalid_generation_config = dict(num_beam_groups=3, num_beams=15, do_sample=True) # beam sample is not supported
     with pytest.raises(RuntimeError):
         ov_pipe.generate("dummy prompt", **invalid_generation_config)
@@ -338,7 +358,8 @@ def test_unicode_pybind_decoding_one_string():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    models_path, _, _ = download_and_convert_model(model_id, path)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str[-1]
 
@@ -349,7 +370,8 @@ def test_unicode_pybind_decoding_batched():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    models_path, _, _ = download_and_convert_model(model_id, path)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
@@ -360,7 +382,8 @@ def test_unicode_pybind_decoding_one_string_streamer():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    models_path, _, _ = download_and_convert_model(model_id, path)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     res_str = []
     ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
@@ -370,7 +393,8 @@ def test_unicode_pybind_decoding_one_string_streamer():
 #
 
 def run_perf_metrics_collection(model_descr, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    models_path, _, _ = download_and_convert_model(model_descr)
+    ov_pipe = ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties())
     return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
 
 
@@ -466,7 +490,8 @@ def test_left_pad():
         "The Sun is yellow because",
         "The Sun is yellow because [force left pad tokens]"
     ]
-    models = read_model(("microsoft/phi-1_5", Path("phi-1_5/")))
+    
+    models, _, _ = download_and_convert_model("microsoft/phi-1_5", Path("phi-1_5/"))
 
     generation_config_dict = {
         "max_new_tokens": 20,
@@ -484,4 +509,4 @@ def test_left_pad():
 
     models[2].pad_token = models[2].eos_token
     
-    run_llm_pipeline_with_ref(model_id=models[0], prompts=prompts, generation_config=generation_config_dict, tmp_path=models[1])
+    run_llm_pipeline_with_ref(model_id="microsoft/phi-1_5", prompts=prompts, generation_config=generation_config_dict, tmp_path=Path("phi-1_5/"))
