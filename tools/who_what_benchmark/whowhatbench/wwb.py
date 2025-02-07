@@ -129,7 +129,7 @@ def parse_args():
         "--language",
         type=str,
         choices=["en", "cn"],
-        default=None,
+        default="en",
         help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
     )
     parser.add_argument(
