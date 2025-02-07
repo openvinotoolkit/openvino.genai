@@ -9,7 +9,7 @@
 namespace ov {
 namespace genai {
 
-using CallbackTypeVariant = std::variant<bool, StreamingStatus, std::monostate>;
+using CallbackTypeVariant = std::variant<bool, StreamingStatus>;
 
 class TextCallbackStreamer: public StreamerBase {
     StreamingStatus set_streaming_status(CallbackTypeVariant callback_status);

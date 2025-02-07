@@ -274,7 +274,6 @@ ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVaria
                                             return StreamingStatus::RUNNING;
                                         else if (*callback_output == (uint16_t)StreamingStatus::CANCEL)
                                             return StreamingStatus::CANCEL;
-                                        std::cout << " AAA STOP " << std::endl;
                                         return StreamingStatus::STOP;
                                     } else {
                                         return StreamingStatus::RUNNING;
