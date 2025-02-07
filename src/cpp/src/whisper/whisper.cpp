@@ -161,7 +161,6 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
 
         sampler.sample({sequence_group}, logits);
-        stream_generated_tokens();
     }
 
     stream_generated_tokens();
