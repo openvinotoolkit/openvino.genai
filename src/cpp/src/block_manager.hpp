@@ -195,6 +195,7 @@ class BlockAllocator {
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
+
 public:
     /**
      * Constructs the BlockAllocator.
@@ -215,15 +216,17 @@ public:
                     per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
                 }
             }
-        }
-        else {
+        } else {
             m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
     }
 
     ~BlockAllocator() {
         // sanity check to validate that all blocks are freed
-        // OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
+        for (auto& free_block : m_free_blocks_num) {
+            size_t free_and_overwritable_block_cnt = free_block + num_overwriteable_blocks();
+            OPENVINO_ASSERT(m_total_num_blocks == free_and_overwritable_block_cnt, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_and_overwritable_block_cnt);
+        }
     }
 
     void increase_kv_blocks_number(size_t new_kv_blocks_count) {
@@ -527,7 +530,7 @@ public:
 
     ~BlockManager() {
         // sanity check that all sequences are freed
-        // OPENVINO_ASSERT(m_block_table.empty());
+        OPENVINO_ASSERT(m_block_table.empty());
     }
 
     /**
