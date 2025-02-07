@@ -76,6 +76,9 @@ public:
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
+        // If stop_token_ids were not provided, take value from default m_generation_config
+        if (config.stop_token_ids.empty())
+            config.stop_token_ids = m_generation_config.stop_token_ids;
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
             config.set_eos_token_id(m_generation_config.eos_token_id);
