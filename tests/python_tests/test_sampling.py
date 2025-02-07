@@ -164,7 +164,7 @@ class RandomSamplingTestStruct:
     prompts: List[str]
     ref_texts: List[List[str]]
 
-from common import get_multinomial_temperature, get_greedy_with_penalties, \
+from utils.generation_config import get_multinomial_temperature, get_greedy_with_penalties, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
     get_multinomial_temperature_top_p_and_top_k, get_multinomial_all_parameters, \
     get_multinomial_temperature_and_num_return_sequence, get_multinomial_max_and_min_token, \

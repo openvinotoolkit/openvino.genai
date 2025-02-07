@@ -14,7 +14,7 @@ from ov_genai_test_utils import (
 )
 from common import get_default_properties
 
-from common import                                      \
+from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
     get_multinomial_all_parameters,                     \
