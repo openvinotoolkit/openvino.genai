@@ -20,6 +20,7 @@ from packaging.version import parse
 
 from typing import Any, List, Dict
 
+
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
     """
@@ -158,7 +159,9 @@ def run_genai(
 
     return pipeline.generate(sample, genai_config, streamer=streamer)
 
+
 MAX_DATASET_LENGTH = 30
+
 
 @functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> List:
@@ -183,6 +186,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> List:
     ds = ds.take(MAX_DATASET_LENGTH)
 
     return [x["audio"]["array"] for x in ds]
+
 
 @pytest.fixture
 def sample_from_dataset(request):
@@ -593,7 +597,100 @@ def test_random_sampling(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize(
+    "sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True
+)
+@pytest.mark.precommit
+def test_sampler_interface(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    # callback streamer
+    streamer_result = []
+
+    def streamer(text: str):
+        streamer_result.append(text)
+        return False
+
+    result = genai_pipe.generate(sample_from_dataset, streamer=streamer)
+
+    assert "".join(streamer_result) == result.texts[0]
+
+    streamer_result = []
+
+    result = genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer)
+
+    assert "".join(streamer_result) == result.texts[0]
+
+    # streamer base
+    class Streamer(ov_genai.StreamerBase):
+        def __init__(self):
+            super().__init__()
+            self.tokens = []
+
+        def put(self, token: int | List[int]) -> bool:
+            if type(token) is int:
+                self.tokens.append(token)
+            else:
+                self.tokens += typing.cast(List[int], token)
+            return False
+
+        def end(self) -> None:
+            self.text = genai_pipe.get_tokenizer().decode(self.tokens)
+            self.tokens = []
+
+    streamer_instance = Streamer()
+    result = genai_pipe.generate(sample_from_dataset, streamer=streamer_instance)
+
+    assert streamer_instance.text == result.texts[0]
+
+    result = genai_pipe.generate(
+        sample_from_dataset,
+        streamer=streamer_instance,
+        return_timestamps=True,
+    )
+
+    assert streamer_instance.text == result.texts[0]
+
+    # chunk streamer base
+    class ChunkStreamer(ov_genai.ChunkStreamerBase):
+        def __init__(self):
+            super().__init__()
+            self.tokens = []
+            self.text = ""
+
+        def put(self, token: int) -> bool:
+            print("put: ", token)
+            self.tokens.append(token)
+            return False
+
+        def put_chunk(self, tokens: List[int]) -> bool:
+            self.tokens += tokens
+            return False
+
+        def end(self) -> None:
+            self.text = genai_pipe.get_tokenizer().decode(self.tokens)
+            self.tokens = []
+
+    chunk_streamer_instance = ChunkStreamer()
+    result = genai_pipe.generate(sample_from_dataset, streamer=chunk_streamer_instance)
+
+    assert streamer_instance.text == result.texts[0]
+
+    config = genai_pipe.get_generation_config()
+    config.return_timestamps = True
+    result = genai_pipe.generate(
+        sample_from_dataset,
+        config,
+        chunk_streamer_instance,
+    )
+
+    assert streamer_instance.text == result.texts[0]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True
+)
 @pytest.mark.precommit
 def test_perf_metrics(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
