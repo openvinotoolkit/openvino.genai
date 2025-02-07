@@ -8,7 +8,7 @@ import openvino
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase, Tokenizer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple, Callable
@@ -462,13 +462,17 @@ def convert_models(opt_model : OVModelForCausalLM, hf_tokenizer : AutoTokenizer,
     opt_model.generation_config.save_pretrained(models_path)
 
     # convert tokenizers as well
+    convert_and_save_tokenizer(hf_tokenizer, models_path)
+
+
+def convert_and_save_tokenizer(hf_tokenizer : AutoTokenizer, models_path: Path):
     from openvino_tokenizers import convert_tokenizer
-    from openvino import serialize
+    from openvino import save_model
 
     tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
-    serialize(tokenizer, models_path / "openvino_tokenizer.xml")
-    serialize(detokenizer, models_path / "openvino_detokenizer.xml")
- 
+    save_model(tokenizer, models_path / "openvino_tokenizer.xml")
+    save_model(detokenizer, models_path / "openvino_detokenizer.xml")
+
 
 def run_llm_pipeline_with_ref(model_id: str, 
                               prompts: List[str], 

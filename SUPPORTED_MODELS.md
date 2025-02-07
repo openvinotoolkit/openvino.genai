@@ -275,7 +275,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td><code>Flux</code></td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Supported</td>
       <td>Not supported</td>
       <td>
         <ul>

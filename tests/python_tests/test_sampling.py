@@ -72,7 +72,7 @@ def test_stop_strings(tmp_path, generation_config):
 def test_greedy(tmp_path, generation_config, prompt, use_cb):
     model_id : str = "katuni4ka/tiny-random-phi3"
     if sys.platform.startswith('win') and prompt.startswith('你'):
-        pytest.skip("For unknown reason this prompt fails on Win")
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
 
     run_llm_pipeline_with_ref(model_id=model_id, 
                             prompts=[prompt], 

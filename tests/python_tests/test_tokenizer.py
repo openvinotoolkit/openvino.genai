@@ -2,19 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
 from openvino_genai import Tokenizer
 import json
-
-from common import delete_rt_info
+from common import delete_rt_info, convert_and_save_tokenizer
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
     read_model,
-    model_tmp_path
+    model_tmp_path,
 )
 
 
@@ -220,22 +220,31 @@ prompts = [
     'Why is the Sun yellow?',
     'What was my first question?',
     ['Why is the Sun yellow?'],
-    "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+    "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
     "Multiline\nstring!\nWow!",
 ]
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-phi3",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+])
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("prompt", prompts)
-def test_encode_decode_with_special_tokens_option(prompt):
-    import numpy as np
-    model_descr = get_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
-    ov_tokenzier = ov_pipe.get_tokenizer()
+def test_special_tokens(tmp_path, prompt, model_id):
+    if sys.platform.startswith('win') and isinstance(prompt, str) and (prompt.startswith('如') or prompt.endswith('ה')):
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+
+    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
+    convert_and_save_tokenizer(hf_tokenizer, tmp_path)
+    ov_tokenizer = openvino_genai.Tokenizer(tmp_path)
 
     # Calling encode with 'add_special_tokens' will set state flag.
-    ov_res_add_spec = ov_tokenzier.encode(prompt, add_special_tokens=True).input_ids.data
-    ov_res_no_spec = ov_tokenzier.encode(prompt, add_special_tokens=False).input_ids.data
+    ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
+    ov_res_no_spec = ov_tokenizer.encode(prompt, add_special_tokens=False).input_ids.data
     hf_res_add_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=True)["input_ids"]
     hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
@@ -246,8 +255,8 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert hf_res_add_spec.size != hf_res_no_spec.size
 
     # Decode with 'skip_special_tokens'
-    decoded_genai_skip_spec = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=True)[0]
-    decoded_genai_no_skip = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=False)[0]
+    decoded_genai_skip_spec = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=True)[0]
+    decoded_genai_no_skip = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=False)[0]
     decoded_hf_skip_spec = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=True)
     decoded_hf_no_skip = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=False)
     assert decoded_genai_skip_spec == decoded_hf_skip_spec
