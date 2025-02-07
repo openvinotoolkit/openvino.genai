@@ -12,8 +12,7 @@ from ov_genai_test_utils import (
     get_chat_models_list,
     read_model
 )
-from common import get_default_properties
-
+from utils.constants import default_ov_config
 from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
@@ -33,7 +32,7 @@ common_config = {
                       'NPUW_ONLINE_PIPELINE': 'NONE',
                       'PREFILL_CONFIG': { },
                       'GENERATE_CONFIG': { }
-                } | get_default_properties()
+                } | default_ov_config
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
@@ -55,7 +54,7 @@ def test_generation_compare_with_stateful(generation_config):
     prompt = 'What is OpenVINO?'
     model_path = read_model(get_models_list()[0])[1]
 
-    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_properties())
+    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **default_ov_config)
     ref_out = stateful_pipe.generate(prompt, generation_config)
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
@@ -221,7 +220,7 @@ def test_chat_generation():
 
     model_path = read_model(get_chat_models_list()[0])[1]
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_properties(), questions)
+    chat_history_stateful = generate_chat_history(model_path, "CPU", default_ov_config, questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')

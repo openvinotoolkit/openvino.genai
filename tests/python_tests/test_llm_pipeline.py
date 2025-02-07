@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 import torch
 
-from common import run_llm_pipeline_with_ref, convert_to_hf
+from common import run_llm_pipeline_with_ref
 from ov_genai_test_utils import (
     get_models_list,
     read_model,
@@ -19,6 +19,7 @@ from ov_genai_test_utils import (
     get_chat_models_list,
     model_tmp_path,
 )
+from utils.hugging_face import generation_config_to_hf
 
 #
 # e2e work
@@ -50,7 +51,7 @@ def test_encoded_inputs(model_descr, inputs):
     model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
 
     ov_generation_config = GenerationConfig(max_new_tokens=20)
-    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     input_ids, attention_mask = inputs
     prompt_len = input_ids.shape[1]
@@ -132,7 +133,7 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
     model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
 
     ov_generation_config = GenerationConfig(**generation_config_kwargs)
-    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     ov_pipe.start_chat()
     for prompt in questions:
