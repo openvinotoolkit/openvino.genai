@@ -11,6 +11,7 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "whisper/whisper_models.hpp"
 #include "whisper_pipeline_base.hpp"
+#include "sampler.hpp"
 
 namespace ov {
 namespace genai {
@@ -40,6 +41,7 @@ public:
 private:
     WhisperInitializedModels m_models;
     DecoderCache m_decoder_cache;
+    Sampler m_sampler;
 };
 
 }  // namespace genai
