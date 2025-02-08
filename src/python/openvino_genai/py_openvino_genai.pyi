@@ -884,6 +884,9 @@ class InpaintingPipeline:
     This class is used for generation with inpainting models.
     """
     @staticmethod
+    def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
@@ -1678,12 +1681,12 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: list[str], add_special_tokens: bool = True) -> TokenizedInputs:
+    def encode(self, prompts: list[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: int | None = None) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         """

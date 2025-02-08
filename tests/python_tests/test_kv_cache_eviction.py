@@ -5,7 +5,9 @@ from pathlib import Path
 import sys
 from typing import Dict, List, Optional
 
+import datasets
 import pytest
+from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
 
@@ -16,6 +18,7 @@ from openvino import serialize
 from transformers import AutoTokenizer
 
 from common import TESTS_ROOT, run_cb_pipeline_with_ref, get_default_properties
+from utils_longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -69,6 +72,7 @@ class CacheOptTestStruct:
 
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
 
 
 @pytest.mark.precommit
@@ -190,3 +194,103 @@ scheduler_params_list = [
 def test_dynamic_memory_allocation(tmp_path, params):
     run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
 
+
+@pytest.fixture(scope='module')
+def qwen2_converted_model(tmp_path_factory):
+    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
+    model.save_pretrained(models_path)
+    ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
+    serialize(ov_tokenizer, models_path / "openvino_tokenizer.xml")
+    serialize(ov_detokenizer, models_path / "openvino_detokenizer.xml")
+    qwen2_converted_model = ConvertedModel(model, tokenizer, models_path)
+    yield qwen2_converted_model
+    del qwen2_converted_model
+    del model
+
+
+@dataclass
+class LongBenchTestData:
+    subset: str
+    threshold: float
+    max_cache_usage_optimization_ratio: float
+    avg_cache_usage_optimization_ratio: float
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("device", ["CPU", "GPU"])
+@pytest.mark.parametrize("test_struct", [
+    LongBenchTestData("samsum", 4, 1.6, 3.3),
+    LongBenchTestData("trec", 3.2, 2.0, 3.3),
+    LongBenchTestData("qasper", 5.8, 1.7, 3.6),
+])
+def test_optimized_generation_longbench(qwen2_converted_model, device, test_struct):
+    seqs_per_request = 32
+    num_kv_blocks = 1000 if device == "CPU" else 500
+    models_path = qwen2_converted_model.models_path
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+
+    scheduler_config_opt = get_scheduler_config(num_kv_blocks)
+    scheduler_config_opt.use_cache_eviction = True
+    if scheduler_config_opt.use_cache_eviction:
+        scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_properties())
+
+    model_name = "/".join(models_path.parts[-2:])
+    subset = test_struct.subset
+    max_new_tokens = dataset2maxlen[subset]
+
+    generation_config = GenerationConfig()  # expecting default greedy sampling
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = max_new_tokens
+
+    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    with tqdm(total=len(data)) as progress_bar:
+        batch = []
+        answers = []
+        ref_answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = preprocess_prompt(data_sample, subset, model_name)
+            progress_bar.update(1)
+            batch.append(prompt)
+            answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+            ref_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+
+            if len(batch) == seqs_per_request or p_idx == len(data) - 1:
+                ans_batch = model_cb_opt.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                ref_ans_batch = model_cb_noopt.generate(
+                    batch, [generation_config] * len(batch)
+                )
+                for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(batch)+1):
+                    answers[i]["pred"] = post_process_pred(opt_output.m_generation_ids[0], subset, model_name)
+                    ref_answers[i]["pred"] = post_process_pred(ref_output.m_generation_ids[0], subset, model_name)
+                batch.clear()
+
+    score = evaluate(answers, subset)
+    print(f"Score: {score}")
+
+    ref_score = evaluate(ref_answers, subset)
+    print(f"Reference score: {ref_score}")
+    pipeline_opt_metrics = model_cb_opt.get_metrics()
+    pipeline_noopt_metrics = model_cb_noopt.get_metrics()
+
+    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
+    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+
+    del model_cb_opt
+    del model_cb_noopt
+    import gc
+    gc.collect()
+
+    assert ref_score - score <= test_struct.threshold
+    assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
+    assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio

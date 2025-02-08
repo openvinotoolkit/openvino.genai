@@ -99,6 +99,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
@@ -111,6 +112,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
@@ -255,6 +257,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
+        draft_sampling_params.stop_strings = {};
         std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
