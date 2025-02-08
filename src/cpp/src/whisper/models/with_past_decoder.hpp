@@ -14,9 +14,9 @@ public:
                            const std::string& device,
                            const ov::AnyMap& properties);
 
-    std::pair<Tensor, float> decode(const Tensor& encoder_hidden_state,
-                                    const Tensor& input_ids,
-                                    const Tensor& beam_idx) override;
+    void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) override;
+
+    Tensor wait() override;
 
     void reset_state() override;
 

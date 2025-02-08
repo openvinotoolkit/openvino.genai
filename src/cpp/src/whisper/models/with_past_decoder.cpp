@@ -97,9 +97,9 @@ WhisperWithPastDecoder::WhisperWithPastDecoder(const std::filesystem::path& mode
     m_request_decoder_with_past = compiled_model.create_infer_request();
 }
 
-std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hidden_state,
-                                                        const Tensor& input_ids,
-                                                        const Tensor& beam_idx) {
+void WhisperWithPastDecoder::start_async(const Tensor& encoder_hidden_state,
+                                         const Tensor& input_ids,
+                                         const Tensor& beam_idx) {
     const bool is_initial_step = m_cache_position == 0;
     ov::InferRequest& request = is_initial_step ? m_request_decoder : m_request_decoder_with_past;
 
@@ -117,15 +117,20 @@ std::pair<Tensor, float> WhisperWithPastDecoder::decode(const Tensor& encoder_hi
 
     _set_past_key_value(beam_idx);
 
-    const auto infer_start = std::chrono::steady_clock::now();
-    request.infer();
-    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+    request.start_async();
+}
 
-    auto output_tensor = request.get_tensor("logits");
+Tensor WhisperWithPastDecoder::wait() {
+    const bool is_initial_step = m_cache_position == 0;
+    ov::InferRequest& request = is_initial_step ? m_request_decoder : m_request_decoder_with_past;
+
+    request.wait();
+
+    const size_t seq_length = request.get_tensor("input_ids").get_shape().at(1);
 
     m_cache_position += seq_length;
 
-    return {output_tensor, infer_ms};
+    return request.get_tensor("logits");
 }
 
 void WhisperWithPastDecoder::_set_past_key_value(const Tensor& beam_idx) {
