@@ -258,6 +258,10 @@ public:
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
 
+        if (!m_is_chat_conversation) {
+            m_language.get_tensor("attention_mask").set_shape({0, 0});
+        }
+
         return decoded;
     }
 
@@ -296,7 +300,7 @@ public:
             // Resetting state may be slow.
             m_language.reset_state();
             // Since if is already introduced, move all resetting here.
-            m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_language.get_tensor("attention_mask").set_shape({0, 0});
         }
         m_inputs_embedder->start_chat(system_message);
     }
@@ -305,6 +309,7 @@ public:
         m_is_chat_conversation = false;
         // Resetting state may be slow.
         m_language.reset_state();
+        m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
     }
