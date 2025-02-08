@@ -31,9 +31,28 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
 }
 
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
-    return properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-           properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-           properties.find(ov::genai::prompt_lookup.name()) != properties.end();
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
+#ifdef OPENVINO_ARCH_X86_64
+        return true;
+#else
+        OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 platform only");
+#endif
+    }
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+#ifdef OPENVINO_ARCH_X86_64
+        return true;
+#else
+        OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 platform only");
+#endif
+    }
+        if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+#ifdef OPENVINO_ARCH_X86_64
+        return true;
+#else
+        OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 platform only");
+#endif
+    }
+    return false;
 }
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
