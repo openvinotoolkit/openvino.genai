@@ -590,7 +590,7 @@ private:
                        const ov::Tensor image_latent,
                        const ov::Tensor mask,
                        const ov::Tensor noise,
-                       size_t inference_step) {
+                       size_t inference_step) override {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latents.get_shape(),
                         "Shapes for current", latents.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
