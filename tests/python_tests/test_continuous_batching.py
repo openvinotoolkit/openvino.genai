@@ -397,7 +397,7 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
     convert_models(opt_model, hf_tokenizer, models_path)
     
     generation_config = GenerationConfig()
-    generation_config.stop_strings = {" the "}
+    generation_config.stop_strings = {" the"}
     generation_config.include_stop_str_in_output = False
 
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
