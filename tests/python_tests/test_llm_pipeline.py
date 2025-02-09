@@ -167,7 +167,12 @@ def user_defined_callback(subword):
     print(subword)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def user_defined_status_callback(subword):
+    print(subword)
+    return ov_genai.StreamingStatus.RUNNING
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_one_string(callback):
@@ -177,7 +182,7 @@ def test_callback_one_string(callback):
     ov_pipe.generate('table is made of', generation_config, callback)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_batch_throws(callback):
@@ -186,7 +191,7 @@ def test_callback_batch_throws(callback):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), callback)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
@@ -194,7 +199,7 @@ def test_callback_kwargs_one_string(callback):
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_descr", get_models_list())
@@ -208,7 +213,7 @@ def test_callback_decoding_metallama(model_descr, callback):
     ov_pipe.generate(prompt, max_new_tokens=300, streamer=callback)
 
 
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_batch_throws(callback):
@@ -217,7 +222,109 @@ def test_callback_kwargs_batch_throws(callback):
         pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
 
-class Printer(ov_genai.StreamerBase):
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_callback_terminate_by_bool():
+    pipe = read_model(get_models_list()[0])[4]
+
+    current_iter = 0
+    num_iters = 10
+    def callback(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return current_iter == num_iters
+
+    max_new_tokens = 100
+    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
+
+    # without attention mask
+    input_ids, _ = input_tensors_list[0]
+    inputs_ov = ov.Tensor(input_ids)
+    ov_output = pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
+
+    assert len(ov_output.tokens[0]) < max_new_tokens
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_callback_terminate_by_status():
+    pipe = read_model(get_models_list()[0])[4]
+
+    current_iter = 0
+    num_iters = 10
+    def callback(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return ov_genai.StreamingStatus.STOP if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
+
+    max_new_tokens = 100
+    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
+
+    # without attention mask
+    input_ids, _ = input_tensors_list[0]
+    inputs_ov = ov.Tensor(input_ids)
+    ov_output = pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
+
+    assert len(ov_output.tokens[0]) < max_new_tokens
+
+
+@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_chat_scenario_callback_cancel(model_descr):
+    callback_questions = [
+        '1+1=',
+        'Why is the Sun yellow?',
+        'What is the previous answer?',
+        'What was my first question?'
+    ]
+
+    generation_config_kwargs = dict(max_new_tokens=20)
+
+    chat_history_hf = []
+    chat_history_ov = []
+
+    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+
+    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    
+    current_iter = 0
+    num_iters = 3
+    def callback(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return ov_genai.StreamingStatus.CANCEL if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
+
+    ov_pipe.start_chat()
+    for prompt in callback_questions:
+        if (prompt != callback_questions[1]):
+            chat_history_hf.append({'role': 'user', 'content': prompt})
+            chat_history_ov.append({'role': 'user', 'content': prompt})
+
+            chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+            tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+            prompt_len = tokenized['input_ids'].numel()
+
+            answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
+            answer_str = tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
+            chat_history_hf.append({'role': 'assistant', 'content': answer_str})
+
+            answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
+            chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+        else:
+            answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config, streamer=callback)
+
+    ov_pipe.finish_chat()
+
+    if chat_history_ov != chat_history_hf:
+        print(f'hf_output: {chat_history_hf}')
+        print(f'ov_output: {chat_history_ov}')
+
+    assert chat_history_ov == chat_history_hf
+
+
+class PrinterNone(ov_genai.StreamerBase):
     def __init__(self, tokenizer):
         # super() may work, but once you begin mixing Python and C++
         # multiple inheritance, things will fall apart due to
@@ -231,13 +338,44 @@ class Printer(ov_genai.StreamerBase):
         print('end')
 
 
+class PrinterBool(ov_genai.StreamerBase):
+    def __init__(self, tokenizer):
+        # super() may work, but once you begin mixing Python and C++
+        # multiple inheritance, things will fall apart due to
+        # differences between Python’s MRO and C++’s mechanisms.
+        ov_genai.StreamerBase.__init__(self)
+        self.tokenizer = tokenizer
+    def put(self, token_id):
+        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
+        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
+        return False
+    def end(self):
+        print('end')
+
+
+class PrinterStatus(ov_genai.StreamerBase):
+    def __init__(self, tokenizer):
+        # super() may work, but once you begin mixing Python and C++
+        # multiple inheritance, things will fall apart due to
+        # differences between Python’s MRO and C++’s mechanisms.
+        ov_genai.StreamerBase.__init__(self)
+        self.tokenizer = tokenizer
+    def write(self, token_id):
+        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
+        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
+        return ov_genai.StreamingStatus.RUNNING
+    def end(self):
+        print('end')
+
+
+@pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_streamer_one_string():
+def test_streamer_one_string(streamer_base):
     ov_pipe = read_model(get_models_list()[0])[4]
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', generation_config, printer)
 
 
@@ -245,7 +383,7 @@ def test_streamer_one_string():
 @pytest.mark.nightly
 def test_streamer_batch_throws():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
 
@@ -254,7 +392,7 @@ def test_streamer_batch_throws():
 @pytest.mark.nightly
 def test_streamer_kwargs_one_string():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
@@ -262,14 +400,14 @@ def test_streamer_kwargs_one_string():
 @pytest.mark.nightly
 def test_streamer_kwargs_batch_throws():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate('', num_beams=2, streamer=printer)
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
     ov_pipe = read_model(get_models_list()[0])[4]
     ten_tokens = ov_pipe.get_generation_config()
@@ -279,18 +417,19 @@ def test_operator_with_callback_one_string(callback):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_throws(callback):
     ov_pipe = read_model(get_models_list()[0])[4]
     with pytest.raises(RuntimeError):
         ov_pipe(['1', '2'], ov_pipe.get_generation_config(), callback)
 
 
+@pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_operator_with_streamer_kwargs_one_string():
+def test_operator_with_streamer_kwargs_one_string(streamer_base):
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
@@ -298,7 +437,7 @@ def test_operator_with_streamer_kwargs_one_string():
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_throws():
     ov_pipe = read_model(get_models_list()[0])[4]
-    printer = Printer(ov_pipe.get_tokenizer())
+    printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe('', num_beams=2, streamer=printer)
 

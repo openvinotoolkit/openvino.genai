@@ -37,6 +37,8 @@ ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& co
             streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
+        } else if (any_val.is<std::function<ov::genai::StreamingStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<ov::genai::StreamingStatus(std::string)>>();
         }
     }
     return streamer;
@@ -90,6 +92,8 @@ public:
         } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
             streamer_ptr = *streamer_obj;
         } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
+        }  else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
             streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
 
@@ -148,6 +152,8 @@ private:
 std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(*streamer_obj)};
+    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
     } else {
         auto callback = std::get<std::function<bool(std::string)>>(func);
         return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};

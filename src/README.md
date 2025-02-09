@@ -172,8 +172,7 @@ int main(int argc, char* argv[]) {
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
-        // false means continue generation.
-        return false;
+        return ov::genai::StreamingStatus::RUNNING;
     };
     std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
 }

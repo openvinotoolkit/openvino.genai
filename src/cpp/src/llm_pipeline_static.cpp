@@ -660,8 +660,9 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
-            if (streamer_ptr->put(gen_token)) {
-                handle->drop();
+            auto streaming_status = streamer_ptr->write(gen_token);
+            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                 break;
             }
         }
@@ -847,7 +848,11 @@ DecodedResults StatefulLLMPipeline::generate(
 
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
-        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        if (m_chat_generation_finish_status == GenerationStatus::CANCEL)
+            // If chat generation process was cancelled by user, let's rollback to previous state of history
+            m_history.pop_back();
+        else
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
 
     // generate_durations
@@ -893,14 +898,7 @@ EncodedResults StatefulLLMPipeline::generate(
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
-    std::shared_ptr<StreamerBase> streamer_ptr;
-    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-        streamer_ptr = nullptr;
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
-        streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
-    }
+    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
         "Currently only greedy and multinomial decoding are supported");
@@ -967,7 +965,7 @@ EncodedResults StatefulLLMPipeline::generate(
     m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 
-    while (sequence_group->is_running() && !sequence_group->handle_dropped()) {
+    while (sequence_group->is_running() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         // KV Cache is full, no further generation is possible
         if (position_ids_data + 1 == m_kvcache_total) {
             sequence_group->set_out_of_memory();
@@ -1003,6 +1001,7 @@ EncodedResults StatefulLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
     auto stop_time = std::chrono::steady_clock::now();
@@ -1325,7 +1324,11 @@ DecodedResults StatelessLLMPipeline::generate(
 
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
-        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        if (m_chat_generation_finish_status == GenerationStatus::CANCEL)
+            // If chat generation process was cancelled by user, let's rollback to previous state of history
+            m_history.pop_back();
+        else
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
     // generate_durations
     decoded_results.perf_metrics = encoded_results.perf_metrics;
@@ -1373,14 +1376,7 @@ EncodedResults StatelessLLMPipeline::generate(
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
-    std::shared_ptr<StreamerBase> streamer_ptr;
-    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-        streamer_ptr = nullptr;
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
-        streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
-    }
+    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     if (!config.is_greedy_decoding() && !config.is_multinomial()) {
         OPENVINO_THROW("Currently only greedy and multinomial decoding are supported");
@@ -1483,7 +1479,7 @@ EncodedResults StatelessLLMPipeline::generate(
     std::fill(attention_mask_data, attention_mask_data + m_kvcache_desc.num_stored_tokens - 1u, 1u);
     attention_mask_data[m_kvcache_desc.total_size - 1] = 1u;
 
-    while (sequence_group->is_running() && !sequence_group->handle_dropped()) {
+    while (sequence_group->is_running() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         sequence_group->schedule_tokens(1);
         const auto running_sequences = sequence_group->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() == 1u);
@@ -1502,7 +1498,7 @@ EncodedResults StatelessLLMPipeline::generate(
             {sequence_group}, m_kvcache_request.get_tensor("logits"));
         stream_generated_tokens(streamer_ptr, handle);
 
-        if (sequence_group->handle_dropped())
+        if (sequence_group->handle_stopped() || sequence_group->handle_cancelled())
             break;
 
         // NB: KV-cache is full, further generation is impossible
@@ -1535,6 +1531,7 @@ EncodedResults StatelessLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
     auto stop_time = std::chrono::steady_clock::now();
