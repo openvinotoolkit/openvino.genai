@@ -1,2 +1,0 @@
--r ../samples/requirements.txt
-diffusers==0.29.2

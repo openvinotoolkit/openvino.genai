@@ -9,16 +9,15 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git
 
 ### Windows
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git for Windows
-- [NSIS](https://sourceforge.net/projects/nsis/)
 
 ### macOS
 
@@ -31,11 +30,32 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
     ```sh
     xcode-select --install
     ```
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git
 
 
 ## Build Instructions
+
+### Build OpenVINO GenAI as OpenVINO Extra Module
+
+OpenVINO GenAI can be built as an extra module during the OpenVINO build process. This method simplifies the build process by integrating OpenVINO GenAI directly into the OpenVINO build.
+
+1. Clone OpenVINO and OpenVINO GenAI repositories:
+    ```sh
+    git clone --recursive https://github.com/openvinotoolkit/openvino.git
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    ```
+2. Configure CMake with OpenVINO extra modules:
+    ```sh
+    cmake -DOPENVINO_EXTRA_MODULES=./openvino.genai -DCPACK_ARCHIVE_COMPONENT_INSTALL=OFF -S ./openvino -B ./build
+    ```
+3. Build OpenVINO archive with GenAI:
+    ```sh
+    cmake --build ./build --target package -j
+    ```
+
+After the build process completes, you should find the packaged OpenVINO with GenAI in the `build` directory.
+Follow the OpenVINO [build instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build) and [install instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/installing.md) for additional information.
 
 ### Build OpenVINO, OpenVINO Tokenizers, and OpenVINO GenAI From Source
 
@@ -171,8 +191,10 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 4. Build the wheel in the `dist` directory:
     ```sh
-    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     ```
+
+> **NOTE**: You'd need to build ABI compatible OpenVINO and OpenVINO Tokenizers for Ubuntu instead of downloading them from PyPI. See [OpenVINO™ GenAI Dependencies](../README.md#openvino-genai-dependencies) for the explanation.
 
 ### Install OpenVINO GenAI From Source
 

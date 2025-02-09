@@ -1,4 +1,4 @@
-name: Windows (VS 2019, Python 3.11)
+name: Windows (VS 2022, Python 3.11)
 on:
   workflow_dispatch:
   pull_request:
@@ -7,6 +7,8 @@ on:
     branches:
       - master
       - 'releases/**'
+
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 concurrency:
   # github.ref is not unique in post-commit
@@ -17,8 +19,6 @@ env:
   PYTHON_VERSION: '3.11'
   OV_BRANCH: 'master'
   OV_TARBALL: ''
-
-permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
   openvino_download:
@@ -59,7 +59,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019-16-core
+    runs-on: windows-2022-16-core
     env:
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
@@ -121,6 +121,8 @@ jobs:
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
 
       - name: CMake configure - OpenVINO
         run: |
@@ -135,14 +137,13 @@ jobs:
             -DENABLE_WHEEL=ON `
             -DENABLE_JS=OFF `
             -DENABLE_SAMPLES=ON `
-            -DENABLE_INTEL_NPU=OFF `
             -DENABLE_OV_ONNX_FRONTEND=OFF `
             -DENABLE_OV_PADDLE_FRONTEND=OFF `
             -DENABLE_OV_PYTORCH_FRONTEND=ON `
             -DENABLE_OV_TF_FRONTEND=ON `
             -DENABLE_OV_TF_LITE_FRONTEND=OFF `
             -DENABLE_INTEL_GPU=OFF `
-            -DENABLE_INTEL_NPU=OFF `
+            -DENABLE_INTEL_NPU=ON `
             -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON `
             -S ${{ env.OPENVINO_REPO }} `
             -B ${{ env.BUILD_DIR }}
@@ -189,11 +190,11 @@ jobs:
     if: |
       always() &&
       (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -226,26 +227,167 @@ jobs:
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
 
       - name: Build genai libs
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --parallel --verbose
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/test_tokenizer.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
       - name: Test bindings (wheel)
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/
+          python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
+
+  genai_python_lib_whisper:
+    name: OpenVINO genai extension whisper tests (cmake + wheel)
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-2022
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}\\ov
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${{ env.OV_INSTALL_DIR }}
+            Expand-Archive openvino_package.zip -DestinationPath ./tmp
+            mv ./tmp/*/* .
+          popd
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      - name: Build genai libs
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
+        env:
+          CMAKE_TLS_VERIFY: 0
+
+      - name: Test bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k test_smoke
+        env:
+          PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+
+      - name: Test bindings (wheel)
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install . --verbose --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install ./tools/who_what_benchmark --find-links ${env:OV_INSTALL_DIR}/wheels
+          
+          # transformers 4.46.3 will enable return_timestamps tests
+          # this check enabled for windows only. Ticket: 160205.
+          python -m pip install transformers==4.46.3
+          
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke"
+
+  genai_python_lib_vlm:
+    name: OpenVINO genai VLM tests (cmake + wheel)
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-2022-16-core
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}\\ov
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${{ env.OV_INSTALL_DIR }}
+            Expand-Archive openvino_package.zip -DestinationPath ./tmp
+            mv ./tmp/*/* .
+          popd
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      - name: Build genai libs
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
+        env:
+          CMAKE_TLS_VERIFY: 0
+
+      - name: Test bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py
+        env:
+          PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -260,7 +402,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -293,19 +435,24 @@ jobs:
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
 
       - name: Build genai libs
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
           cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Build and Install dependencies
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/wheels
+          python -m pip install -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
       - name: Install samples
         run: |
@@ -330,9 +477,34 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           Start-Process -FilePath "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm.exe" -ArgumentList "TinyLlama-1.1B-Chat-v1.0 ''"
 
+      - name: Test C++ samples (whisper_speech_recognition)
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          curl -o how_are_you_doing_today.wav https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+          Start-Process -FilePath "${{ github.workspace }}/samples_install/samples_bin/whisper_speech_recognition.exe" -ArgumentList "whisper-tiny how_are_you_doing_today.wav"
+
       - name: Test python samples (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
+          python ${{ env.OV_INSTALL_DIR }}\samples\python\text_generation\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
 
+      - name: Test python samples (whisper_speech_recognition)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python ${{ env.OV_INSTALL_DIR }}\samples\python\whisper_speech_recognition\whisper_speech_recognition.py whisper-tiny how_are_you_doing_today.wav
+
+  Overall_Status:
+    name: ci/gha_overall_status_windows
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_vlm, genai_python_lib_whisper]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1

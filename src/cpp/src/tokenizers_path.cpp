@@ -57,12 +57,19 @@ std::string get_ov_genai_library_path() {
 }
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
+#if !defined(NDEBUG) && (defined(__APPLE__) || defined(_WIN32))
+# define LIB_POSTFIX "d"
+#else
+# define LIB_POSTFIX ""
+#endif
 #ifdef _WIN32
-    constexpr char tokenizers[] = "openvino_tokenizers.dll";
-#elif __linux__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
-#elif __APPLE__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
+    constexpr char tokenizers[] = "openvino_tokenizers" LIB_POSTFIX ".dll";
+#elif defined(__linux__)
+    constexpr char tokenizers[] = "libopenvino_tokenizers" LIB_POSTFIX ".so";
+#elif defined(__APPLE__)
+    constexpr char tokenizers[] = "libopenvino_tokenizers" LIB_POSTFIX ".dylib";
+#else
+#    error "Unsupported OS"
 #endif
     return path.parent_path() / tokenizers;
 }

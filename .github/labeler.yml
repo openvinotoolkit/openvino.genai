@@ -1,0 +1,142 @@
+'category: GHA':
+- '.github/**/*'
+
+'category: tokenizers':
+- 'src/cpp/include/openvino/genai/tokenizer.hpp'
+- 'src/cpp/src/tokenizer.cpp'
+- 'src/cpp/src/tokenizers_path.cpp'
+- 'src/cpp/src/tokenizers_path.hpp'
+- 'src/cpp/src/circular_buffer_queue.hpp'
+- 'src/cpp/src/synchronized_queue.hpp'
+- 'src/cpp/src/make_tokenizer_stateful.cpp'
+- 'src/cpp/src/make_tokenizer_stateful.hpp'
+- 'src/python/py_tokenizer.cpp'
+- 'thirdparty/openvino_tokenizers'
+- 'tests/python_tests/tokenizer_configs.py'
+- 'tests/python_tests/test_tokenizer.py'
+
+'category: LLM':
+- 'src/cpp/include/openvino/genai/llm_pipeline.hpp'
+- 'src/cpp/src/llm_pipeline.cpp'
+- 'src/cpp/src/lm_encoding.hpp'
+- 'src/cpp/src/lm_encoding.cpp'
+- 'src/cpp/src/llm_pipeline_base.hpp'
+- 'src/cpp/src/llm_pipeline_static.hpp'
+- 'src/cpp/src/llm_pipeline_static.cpp'
+- 'src/cpp/src/text_callback_streamer.cpp'
+- 'src/cpp/src/text_callback_streamer.hpp'
+- 'src/python/py_llm_pipeline.cpp'
+- 'tests/python_tests/test_llm_pipeline.py'
+
+'category: sampling':
+- 'src/cpp/include/openvino/genai/generation_config.hpp'
+- 'src/cpp/src/generation_config.cpp'
+- 'src/cpp/src/sampler.hpp'
+- 'src/cpp/src/sampler.cpp'
+- 'src/cpp/src/logit_processor.hpp'
+- 'src/python/py_generation_config.cpp'
+- 'tests/cpp/logit_filtering.cpp'
+- 'tests/cpp/generate_config.cpp'
+- 'tests/cpp/sampler.cpp'
+- 'tests/python_tests/test_sampling.py'
+
+'category: LoRA':
+- 'src/cpp/include/openvino/genai/lora_adapter.hpp'
+- 'src/cpp/src/lora_adapter.cpp'
+- 'src/cpp/src/lora_helper.cpp'
+- 'src/cpp/src/lora_helper.hpp'
+- 'src/cpp/src/lora_names_mapping.cpp'
+- 'src/cpp/src/lora_names_mapping.hpp'
+- 'src/cpp/src/safetensors.c'
+- 'src/python/py_lora_adapter.cpp'
+
+'category: samples':
+- 'samples/**/*'
+
+'category: whisper':
+- 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
+- 'src/cpp/include/openvino/genai/whisper_pipeline.hpp'
+- 'src/cpp/src/whisper/**/*'
+- 'src/cpp/src/whisper_generation_config.cpp'
+- 'src/cpp/src/whisper_pipeline_base.hpp'
+- 'src/cpp/src/whisper_pipeline.cpp'
+- 'src/cpp/src/whisper_pipeline_static.cpp'
+- 'src/cpp/src/whisper_pipeline_static.hpp'
+- 'src/python/py_whisper_pipeline.cpp'
+- 'tests/python_tests/test_whisper_pipeline.py'
+- 'tests/python_tests/test_whisper_pipeline_static.py'
+
+'category: Python API':
+- 'src/python/**/*'
+
+'category: visual language':
+- 'src/include/openvino/genai/visual_language/**/*'
+- 'src/cpp/src/visual_language/**/*'
+- 'src/python/py_vlm_pipeline.cpp'
+- 'tests/python_tests/test_vlm_pipeline.py'
+
+'category: speculative decoding':
+- 'src/cpp/src/speculative_decoding/**/*'
+- 'tests/cpp/speculative_decoding.cpp'
+
+'category: prompt lookup':
+- 'src/cpp/src/prompt_lookup/**/*'
+
+'category: continuous batching':
+- 'src/cpp/include/openvino/genai/cache_eviction.hpp'
+- 'src/cpp/include/openvino/genai/continuous_batching_pipeline.hpp'
+- 'src/cpp/include/openvino/genai/generation_handle.hpp'
+- 'src/cpp/include/openvino/genai/scheduler_config.hpp'
+- 'src/cpp/src/attention_output.hpp'
+- 'src/cpp/src/block_manager.hpp'
+- 'src/cpp/src/cache_eviction.hpp'
+- 'src/cpp/src/cache_eviction.cpp'
+- 'src/cpp/src/cache_manager.hpp'
+- 'src/cpp/src/cache_state_dumper.hpp'
+- 'src/cpp/src/continuous_batching_impl_interface.hpp'
+- 'src/cpp/src/continuous_batching_impl_interface.cpp'
+- 'src/cpp/src/continuous_batching_impl.hpp'
+- 'src/cpp/src/continuous_batching_impl.cpp'
+- 'src/cpp/src/continuous_batching_pipeline.cpp'
+- 'src/cpp/src/debug_utils.hpp'
+- 'src/cpp/src/generation_handle.cpp'
+- 'src/cpp/src/generation_stream.hpp'
+- 'src/cpp/src/model_runner.hpp'
+- 'src/cpp/src/paged_attention_transformations.cpp'
+- 'src/cpp/src/paged_attention_transformations.hpp'
+- 'src/cpp/src/scheduler.hpp'
+- 'src/cpp/src/sequence_group.cpp'
+- 'src/cpp/src/sequence_group.hpp'
+- 'src/cpp/src/timer.hpp'
+- 'src/python/py_continuous_batching_pipeline.cpp'
+- 'tests/python_tests/test_continuous_batching.py'
+- 'tests/python_tests/test_kv_cache_eviction.py'
+- 'tests/cpp/block_allocator.cpp'
+- 'tests/cpp/block_hash_store.cpp'
+- 'tests/cpp/block_manager.cpp'
+- 'tests/cpp/cache_eviction.cpp'
+- 'tests/cpp/cache_manager.cpp'
+- 'tests/cpp/device_config.cpp'
+- 'tests/cpp/scheduler.cpp'
+
+'category: cmake / build':
+- 'cmake/**/*'
+- '**/CMakeLists.txt'
+- '**/*.cmake'
+- 'pyproject.toml'
+
+'category: text to image':
+- 'src/include/openvino/genai/image_generation/**/*'
+- 'src/cpp/src/image_generation/**/*'
+- 'src/python/py_image_generation_models.cpp'
+- 'src/python/py_image_generation_pipelines.cpp'
+
+'category: GenAI C++ API':
+- 'src/cpp/include/openvino/genai/**/*'
+
+'category: llm_bench':
+- 'tools/llm_bench/**/*'
+- '.github/workflows/llm_bench-python.yml'
+
+'category: WWB':
+- 'tools/who_what_benchmark/**/*'

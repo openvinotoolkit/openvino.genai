@@ -1,4 +1,4 @@
-name: macOS (12, Python 3.8)
+name: macOS (12, Python 3.10)
 on:
   workflow_dispatch:
   pull_request:
@@ -8,17 +8,17 @@ on:
       - master
       - 'releases/**'
 
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
 concurrency:
   # github.ref is not unique in post-commit
   group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-mac
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.8'
-  OV_BRANCH: ''
+  PYTHON_VERSION: '3.10'
+  OV_BRANCH: master
   OV_TARBALL: ''
-
-permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
   openvino_download:
@@ -30,7 +30,6 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04
-
     steps:
       - name: Download OpenVINO build
         id: openvino_download
@@ -61,7 +60,7 @@ jobs:
         shell: bash
     runs-on: 'macos-12-large'
     env:
-      MACOSX_DEPLOYMENT_TARGET: '10.12'
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -126,7 +125,6 @@ jobs:
             -DCPACK_GENERATOR=TGZ \
             -DENABLE_JS=OFF \
             -DENABLE_SAMPLES=ON \
-            -DENABLE_INTEL_NPU=OFF \
             -DENABLE_OV_ONNX_FRONTEND=OFF \
             -DENABLE_OV_PADDLE_FRONTEND=OFF \
             -DENABLE_OV_PYTORCH_FRONTEND=ON \
@@ -180,7 +178,7 @@ jobs:
     if: |
       always() &&
       (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -221,22 +219,88 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake --build ./build/ --config Release --parallel --verbose
 
       - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/test_tokenizer.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
       - name: Test bindings (wheel)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/
+          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
+
+  genai_python_lib_whisper:
+    name: OpenVINO genai extension whisper tests (cmake + wheel)
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
+
+      - name: Install build dependencies
+        run: brew install coreutils ninja scons
+
+      - name: Build genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
+
+      - name: Test bindings
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k test_smoke
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+
+      - name: Test bindings (wheel)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
+          python -c "from openvino_genai import LLMPipeline"
+          python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "not test_smoke"
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -286,14 +350,15 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package --parallel --verbose
 
       - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/wheels
+          python -m pip install -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 
       - name: Install samples
         run: |
@@ -316,10 +381,40 @@ jobs:
       - name: Test C++ samples (greedy_causal_lm)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+          ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+        timeout-minutes: 1
+
+      - name: Test C++ samples (whisper_speech_recognition)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+          ${{ github.workspace }}/s\ pace/samples_bin/whisper_speech_recognition ./whisper-tiny/ how_are_you_doing_today.wav
+        timeout-minutes: 1
 
       - name: Test python samples (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          ${OV_INSTALL_DIR}/samples/python/text_generation/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        timeout-minutes: 1
+
+      - name: Test python samples (whisper_speech_recognition)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          ${OV_INSTALL_DIR}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        timeout-minutes: 1
+
+  Overall_Status:
+    name: ci/gha_overall_status_macos
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1
