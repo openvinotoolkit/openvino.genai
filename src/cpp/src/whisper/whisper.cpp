@@ -80,9 +80,12 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, (void*)input_ids.data()};
 
-    auto [logits, infer_ms] = decoder->decode(encoder_hidden_state, input_ids_tensor, beam_idx);
+    const auto infer_start = std::chrono::steady_clock::now();
+    decoder->start_async(encoder_hidden_state, input_ids_tensor, beam_idx);
 
+    auto logits = decoder->wait();
     const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
     raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
     raw_metrics.m_new_token_times.emplace_back(infer_end);
@@ -138,11 +141,18 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             batch_to_generated_ids[next_beams.size() - 1] = sequence->get_generated_ids();
         }
 
-        auto [logits, infer_ms] = decoder->decode(encoder_hidden_state,
-                                                  new_input_ids,
-                                                  ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+        const auto infer_start = std::chrono::steady_clock::now();
+
+        decoder->start_async(encoder_hidden_state,
+                             new_input_ids,
+                             ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+
+        stream_generated_tokens();
+
+        auto logits = decoder->wait();
 
         const auto infer_end = std::chrono::steady_clock::now();
+        const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
         raw_metrics.m_new_token_times.emplace_back(infer_end);
@@ -151,8 +161,9 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         process_whisper_logits(logits, config, return_timestamps, batch_to_generated_ids);
 
         sampler.sample({sequence_group}, logits);
-        stream_generated_tokens();
     }
+
+    stream_generated_tokens();
 
     ov::genai::EncodedResults results;
 
