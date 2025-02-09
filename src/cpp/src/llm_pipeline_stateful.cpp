@@ -79,6 +79,9 @@ DecodedResults StatefulLLMPipeline::generate(
 
     auto start_time = std::chrono::steady_clock::now();
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (config.stop_token_ids.empty())
+        config.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
@@ -140,8 +143,8 @@ DecodedResults StatefulLLMPipeline::generate(
                     trusted_history_length = m_kv_history_manager.trusted_history_length;
                 } else {
                     m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_tokenized_chat_history.size() - trusted_history_length;
-                    // if prev generation was finished because of max len was reached, kv cache is missed one last token, let's keep it
-                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache -= m_last_disappeared_token.has_value() ? 1 : 0;
+                    // last generated token is present in tokenized_history, but not included to attention mask, let's keep it in history
+                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache -= 1;
                 }
 
                 ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.input_ids.get_element_type(),
@@ -246,6 +249,9 @@ EncodedResults StatefulLLMPipeline::generate(
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (config.stop_token_ids.empty())
+        config.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
