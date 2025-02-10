@@ -20,12 +20,12 @@ public:
     std::vector<int64_t> tokens;
 
     MockStreamerBase() {
-        ON_CALL(*this, put(An<int64_t>())).WillByDefault([this](int64_t token) {
+        ON_CALL(*this, write(An<int64_t>())).WillByDefault([this](int64_t token) {
             if (should_sleep) {
                 std::this_thread::sleep_for(m_sleep_for);
             }
             tokens.push_back(token);
-            return should_stop;
+            return should_stop ? ov::genai::StreamingStatus::STOP : ov::genai::StreamingStatus::RUNNING;
         });
 
         ON_CALL(*this, end()).WillByDefault([this]() {
@@ -35,7 +35,7 @@ public:
         });
     }
 
-    MOCK_METHOD(bool, put, (int64_t), (override));
+    MOCK_METHOD(ov::genai::StreamingStatus, write, (int64_t), (override));
     MOCK_METHOD(void, end, (), (override));
     ~MockStreamerBase() override{};
 };
@@ -52,7 +52,7 @@ TEST_P(MockStreamerBaseFixture, general_test) {
     streamer->should_sleep = should_sleep;
 
     std::vector<int64_t> generated_tokens{0, 1, 2, 3, 4};
-    EXPECT_CALL(*streamer, put(An<int64_t>())).Times(generated_tokens.size());
+    EXPECT_CALL(*streamer, write(An<int64_t>())).Times(generated_tokens.size());
     EXPECT_CALL(*streamer, end());
 
     threaded_streamer.start();
@@ -75,7 +75,7 @@ INSTANTIATE_TEST_SUITE_P(SleepModes, MockStreamerBaseFixture, ::testing::Values(
 
 TEST_F(MockStreamerBaseFixture, heavy_main_thread_test) {
     std::vector<int64_t> generated_tokens{0, 1, 2, 3, 4};
-    EXPECT_CALL(*streamer, put(An<int64_t>())).Times(generated_tokens.size());
+    EXPECT_CALL(*streamer, write(An<int64_t>())).Times(generated_tokens.size());
     EXPECT_CALL(*streamer, end());
 
     threaded_streamer.start();
@@ -97,7 +97,7 @@ TEST_F(MockStreamerBaseFixture, heavy_main_thread_test) {
 }
 
 TEST_F(MockStreamerBaseFixture, put_end_test) {
-    EXPECT_CALL(*streamer, put(An<int64_t>()));
+    EXPECT_CALL(*streamer, write(An<int64_t>()));
     EXPECT_CALL(*streamer, end());
 
     threaded_streamer.start();
@@ -114,7 +114,7 @@ TEST_F(MockStreamerBaseFixture, put_end_test) {
 
 TEST_F(MockStreamerBaseFixture, drop_test) {
     std::vector<int64_t> generated_tokens{0, 1};
-    EXPECT_CALL(*streamer, put(An<int64_t>())).Times(generated_tokens.size());
+    EXPECT_CALL(*streamer, write(An<int64_t>())).Times(generated_tokens.size());
     EXPECT_CALL(*streamer, end());
 
     threaded_streamer.start();
