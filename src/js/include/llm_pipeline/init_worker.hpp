@@ -9,10 +9,10 @@ class InitWorker : public AsyncWorker {
  public:
   InitWorker(Function& callback, std::shared_ptr<ov::genai::LLMPipeline>& pipe,
     const std::string model_path, std::string device);
-  virtual ~InitWorker(){};
+  virtual ~InitWorker(){}
 
-  void Execute();
-  void OnOK();
+  void Execute() override;
+  void OnOK() override;
 
  private:
   std::shared_ptr<ov::genai::LLMPipeline>& pipe;
