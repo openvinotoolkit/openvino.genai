@@ -73,7 +73,6 @@ private:
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
     SynchronizedQueue<std::variant<int64_t, std::monostate>> m_squeue;
 
-    // std::atomic<bool> m_dropped = false;
     std::atomic<StreamingStatus> m_status = StreamingStatus::RUNNING;
 
     void _worker() {
