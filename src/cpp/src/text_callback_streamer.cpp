@@ -26,17 +26,17 @@ StreamingStatus TextCallbackStreamer::write(int64_t token) {
         return set_streaming_status(on_finalized_subword_callback(res.str()));
     }
 
+    constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
+    if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
+        m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
+        // Don't print incomplete text
+        return set_streaming_status(on_finalized_subword_callback(res.str()));
+    }
     constexpr size_t delay_n_tokens = 3;
     // In some cases adding the next token can shorten the text, 
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
     if (m_decoded_lengths.size() < delay_n_tokens) {
-        return set_streaming_status(on_finalized_subword_callback(res.str()));
-    }
-    constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
-    if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
-        m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
-        // Don't print incomplete text
         return set_streaming_status(on_finalized_subword_callback(res.str()));
     }
     auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];

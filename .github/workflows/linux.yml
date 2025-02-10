@@ -259,6 +259,15 @@ jobs:
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
 
+  genai_test_text_streamer:
+    name: GenAI TextStreamer Tests
+    needs: [ openvino_download, genai_build_cmake ]
+    timeout-minutes: 5
+    run: |
+      python -m pytest -v tests/python_tests/test_text_streamer.py
+    env:
+      PYTHONPATH: "./build/:./build/tests/python_tests/pybind_wrapper:$PYTHONPATH"
+
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
@@ -272,7 +281,7 @@ jobs:
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py --ignore tests/python_tests/test_text_streamer.py'
     defaults:
       run:
         shell: bash
