@@ -37,7 +37,7 @@ public:
 
     MOCK_METHOD(bool, put, (int64_t), (override));
     MOCK_METHOD(void, end, (), (override));
-    virtual ~MockStreamerBase() override{};
+    ~MockStreamerBase() override{};
 };
 
 class MockStreamerBaseFixture : public ::testing::TestWithParam<int> {
