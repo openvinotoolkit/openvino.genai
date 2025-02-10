@@ -152,13 +152,14 @@ Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeli
 
 ## benchmarking sample for text to image pipeline
 
-This `benchmark_text2image.cpp` sample script demonstrates how to benchmark the text to image pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
+This `benchmark_text2image.cpp` sample script demonstrates how to benchmark the text to image pipeline, image to image pipeline and inpainting pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
 
 The usage of this sample is:
 ```bash
 ./benchmark_text2image [OPTIONS]
 ```
 Options:
+- `-pt, --pipeline_type` (default: `"text2image"`): Pipeline type(text2image, image2image, inpainting).
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
@@ -169,10 +170,13 @@ Options:
 - `-is, --num_inference_steps` (default: `20`): The number of inference steps.
 - `-ni, --num_images_per_prompt` (default: `1`): The number of images to generate per generate() call.
 - `-o, --output_dir` (default: `""`): Path to save output image.
+- `-i, --image`: Path to input image.
+- `-s, --strength`: Indicates extent to transform the reference `image`. Must be between 0 and 1.
+- `-mi, --mask_image`: Path to mask image.
 
 For example:
 
-`./benchmark_text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
+`./benchmark_text2image -pt text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
 
 Performance output:
 

@@ -653,7 +653,6 @@ private:
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;
     std::shared_ptr<SD3Transformer2DModel> m_transformer = nullptr;
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
-    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 }  // namespace genai

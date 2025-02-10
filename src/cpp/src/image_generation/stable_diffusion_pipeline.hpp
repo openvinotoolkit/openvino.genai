@@ -527,7 +527,6 @@ protected:
     std::shared_ptr<AutoencoderKL> m_vae = nullptr;
     std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
-    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 }  // namespace genai

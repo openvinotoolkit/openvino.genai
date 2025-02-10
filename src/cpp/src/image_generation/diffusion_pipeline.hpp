@@ -143,6 +143,7 @@ protected:
     std::shared_ptr<IScheduler> m_scheduler;
     ImageGenerationConfig m_generation_config;
     float m_load_time_ms = 0.f;
+    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 } // namespace genai

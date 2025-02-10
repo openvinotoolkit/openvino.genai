@@ -99,7 +99,6 @@ public:
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
-    ImageGenerationPerfMetrics m_perf_metrics;
 
     explicit Image2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
 

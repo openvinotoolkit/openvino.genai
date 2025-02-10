@@ -517,7 +517,6 @@ private:
     std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
     ImageGenerationConfig m_custom_generation_config;
-    ImageGenerationPerfMetrics m_perf_metrics;
     float m_latent_timestep = -1;
 };
 

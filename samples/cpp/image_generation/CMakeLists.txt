@@ -122,8 +122,9 @@ FetchContent_Declare(cxxopts
     URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
 FetchContent_MakeAvailable(cxxopts)
 
-add_executable(benchmark_text2image benchmark_text2image.cpp imwrite.cpp)
-target_link_libraries(benchmark_text2image PRIVATE openvino::genai cxxopts::cxxopts)
+add_executable(benchmark_text2image benchmark_text2image.cpp load_image.cpp imwrite.cpp)
+target_include_directories(benchmark_text2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_link_libraries(benchmark_text2image PRIVATE openvino::genai cxxopts::cxxopts indicators::indicators)
 set_target_properties(benchmark_text2image PROPERTIES
     COMPILE_PDB_NAME benchmark_text2image
     # Ensure out of box LC_RPATH on macOS with SIP
