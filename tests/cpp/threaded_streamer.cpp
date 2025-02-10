@@ -37,7 +37,6 @@ public:
 
     MOCK_METHOD(ov::genai::StreamingStatus, write, (int64_t), (override));
     MOCK_METHOD(void, end, (), (override));
-    ~MockStreamerBase() override{};
 };
 
 class MockStreamerBaseFixture : public ::testing::TestWithParam<int> {

@@ -69,5 +69,8 @@ void TextCallbackStreamer::end() {
     m_on_finalized_subword_callback(res.str());
     return;
 }
+
+ov::genai::StreamerBase::~StreamerBase() = default;
+
 }  // namespace genai
 }  // namespace ov
