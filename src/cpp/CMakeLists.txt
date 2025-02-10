@@ -34,14 +34,14 @@ function(ov_genai_build_jinja2cpp)
         # options for Jinja2Cpp dependencies
         option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
-        add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
-
         if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
-            target_compile_options(jinja2cpp PRIVATE -Wno-undef)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-undef")
         endif()
         if(SUGGEST_OVERRIDE_SUPPORTED)
-            target_compile_options(jinja2cpp PRIVATE -Wno-suggest-override)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-suggest-override")
         endif()
+
+        add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
 
         target_compile_definitions(jinja2cpp PUBLIC JINJA2CPP_LINK_AS_SHARED=0)
     endif()
