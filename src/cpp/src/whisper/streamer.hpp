@@ -12,11 +12,11 @@ namespace genai {
 
 class ChunkTextCallbackStreamer : private TextCallbackStreamer, public ChunkStreamerBase {
 public:
-    bool put(int64_t token) override;
-    bool put_chunk(std::vector<int64_t> tokens) override;
+    StreamingStatus write(int64_t token) override;
+    StreamingStatus write_chunk(std::vector<int64_t> tokens) override;
     void end() override;
 
-    ChunkTextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback)
+    ChunkTextCallbackStreamer(const Tokenizer& tokenizer, std::function<ov::genai::CallbackTypeVariant(std::string)> callback)
         : TextCallbackStreamer(tokenizer, callback){};
 };
 

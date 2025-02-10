@@ -161,7 +161,7 @@ size_t FlowMatchEulerDiscreteScheduler::_index_for_timestep(float timestep) {
 }
 
 void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) {
-    OPENVINO_ASSERT(timestep == -1, "Timestep is not computed yet");
+    OPENVINO_ASSERT(timestep > 0, "Timestep is not computed yet");
     
     size_t index_for_timestep;
     if (m_begin_index == -1) {
@@ -180,7 +180,6 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
     for (size_t i = 0; i < sample.get_size(); ++i) {
         sample_data[i] = sigma * noise_data[i] + (1.0f - sigma) * sample_data[i];
     }
-
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps_with_sigma(std::vector<float> sigma, float mu) {

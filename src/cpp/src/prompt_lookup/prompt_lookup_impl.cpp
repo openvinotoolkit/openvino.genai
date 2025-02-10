@@ -3,6 +3,7 @@
 
 #include <thread>
 
+#include "utils.hpp"
 #include "prompt_lookup_impl.hpp"
 #include "text_callback_streamer.hpp"
 
@@ -108,17 +109,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     m_pipeline->set_adapters(sampling_params[0].adapters);
 
-    const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
-        [](std::monostate) -> std::shared_ptr<StreamerBase> {
-            return nullptr;
-        },
-        [](const std::shared_ptr<StreamerBase>& streamer) {
-            return streamer;
-        },
-        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
-        }
-    }, streamer);
+    const std::shared_ptr<StreamerBase>& streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
@@ -155,8 +146,9 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                     OPENVINO_ASSERT(generation_outputs.size() <= 1);
                     if (!generation_outputs.empty()) {
                         for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                            if (streamer_ptr->put(generated_token_id)) {
-                                generation->drop();
+                            auto streaming_status = streamer_ptr->write(generated_token_id);
+                            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                                streaming_status == ov::genai::StreamingStatus::CANCEL ? generation->cancel() : generation->stop();
                                 break;
                             }
                         }
@@ -207,6 +199,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
