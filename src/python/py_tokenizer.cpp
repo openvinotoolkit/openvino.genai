@@ -54,7 +54,6 @@ void init_tokenizer(py::module_& m) {
                 if (max_length.has_value()) {
                     tokenization_params[ov::genai::max_length.name()] = *max_length;
                 }
-                py::gil_scoped_release rel;
                 return tok.encode(prompts, tokenization_params);
             },
             py::arg("prompts"),
@@ -86,12 +85,7 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, std::vector<int64_t>& tokens, bool skip_special_tokens) -> py::str {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
-                std::string res;
-                {
-                    py::gil_scoped_release rel;
-                    res = tok.decode(tokens, detokenization_params);
-                }
-                return pyutils::handle_utf8(res);
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a sequence into a string prompt.)"
@@ -102,12 +96,7 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, ov::Tensor& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
-                std::vector<std::string> res;
-                {
-                    py::gil_scoped_release rel;
-                    res = tok.decode(tokens, detokenization_params);
-                }
-                return pyutils::handle_utf8(res);
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode tensor into a list of string prompts.)")
@@ -117,12 +106,7 @@ void init_tokenizer(py::module_& m) {
             [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens, bool skip_special_tokens) -> py::typing::List<py::str> {
                 ov::AnyMap detokenization_params;
                 detokenization_params[ov::genai::skip_special_tokens.name()] = skip_special_tokens;
-                std::vector<std::string> res;
-                {
-                    py::gil_scoped_release rel;
-                    res = tok.decode(tokens, detokenization_params);
-                }
-                return pyutils::handle_utf8(res);
+                return pyutils::handle_utf8(tok.decode(tokens, detokenization_params));
             },
             py::arg("tokens"), py::arg("skip_special_tokens") = true,
             R"(Decode a batch of tokens into a list of string prompt.)")
