@@ -266,8 +266,8 @@ ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVaria
                                 // Wrap python streamer with manual utf-8 decoding. Do not rely
                                 // on pybind automatic decoding since it raises exceptions on incomplete
                                 // strings.
-                                py::gil_scoped_acquire acquire;
                                 return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> ov::genai::StreamingStatus {
+                                    py::gil_scoped_acquire acquire;
                                     auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                                     std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
                                     if (callback_output.has_value()) {
