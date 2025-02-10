@@ -138,8 +138,8 @@ def test_chat_scenario(model_descr, intpus):
     hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
 
     ov_pipe.start_chat(system_massage)
-    chat_history_hf.append({"role", "system", "content", system_massage})
-    chat_history_ov.append({"role", "system", "content", system_massage})
+    chat_history_hf.append({"role": "system", "content": system_massage})
+    chat_history_ov.append({"role": "system", "content": system_massage})
     for prompt in questions:
         chat_history_hf.append({'role': 'user', 'content': prompt})
         chat_history_ov.append({'role': 'user', 'content': prompt})

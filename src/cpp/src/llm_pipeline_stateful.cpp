@@ -405,6 +405,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
 void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     finish_chat();
+    is_chat_conversation = true;
 
     if (system_message.empty())
         return;
