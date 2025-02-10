@@ -15,7 +15,7 @@ private:
     std::queue<std::function<void()>> tasks;
     std::mutex queue_mutex;
     std::condition_variable cv;
-    std::atomic<bool> stop{false};
+    bool stop{false};
 
 public:
     ThreadPool(const ThreadPool& rhs) = delete;
@@ -34,7 +34,7 @@ public:
                         if (stop && tasks.empty()) {
                             return;
                         }
-                        task = move(tasks.front());
+                        task = std::move(tasks.front());
                         tasks.pop();
                     }
                     task();
@@ -45,7 +45,10 @@ public:
 
     ~ThreadPool()
     {
-        stop = true;
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            stop = true;
+        }
         cv.notify_all();
         for (auto& thread : threads) {
             thread.join();
