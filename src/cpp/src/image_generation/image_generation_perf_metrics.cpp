@@ -76,7 +76,7 @@ float ImageGenerationPerfMetrics::get_inference_total_duration() {
                                       raw_metrics.unet_inference_durations.end(),
                                       0.0f,
                                       [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-                                          return acc + duration.count();
+                                          return acc + duration.count() / 1000.0f;
                                       });
         total_duration += total;
     } else if (!raw_metrics.transformer_inference_durations.empty()) {
@@ -84,7 +84,7 @@ float ImageGenerationPerfMetrics::get_inference_total_duration() {
                                       raw_metrics.transformer_inference_durations.end(),
                                       0.0f,
                                       [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-                                          return acc + duration.count();
+                                          return acc + duration.count() / 1000.0f;
                                       });
         total_duration += total;
     }
@@ -95,7 +95,7 @@ float ImageGenerationPerfMetrics::get_inference_total_duration() {
         total_duration += encoder->second;
     }
     // Return milliseconds
-    return total_duration / 1000.0f;
+    return total_duration;
 }
 
 float ImageGenerationPerfMetrics::get_load_time() {

@@ -14,18 +14,31 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
     std::string prefix_idx = "[" + prefix + "-" + std::to_string(idx) + "]";
     std::cout << "\n";
     std::cout << prefix_idx << " generate time: " << metrics.get_generate_duration()
-              << " ms, total infer time:" << metrics.get_inference_total_duration() << " ms" << std::endl;
+              << " ms, total infer time:" << metrics.get_inference_total_duration()
+              << " ms, infer step num:" << metrics.raw_metrics.iteration_durations.size() << std::endl;
     std::cout << prefix_idx << " encoder infer time: ";
     for (auto encoder : metrics.encoder_inference_duration) {
-        std::cout << encoder.first << "-" << encoder.second << "ms ";
+        std::cout << "(" << encoder.first << "-" << encoder.second << " ms) ";
     }
     std::cout << std::endl;
     if (!metrics.raw_metrics.transformer_inference_durations.empty()) {
-        std::cout << prefix_idx << " transformer avg infer time:" << metrics.get_transformer_inference_duration().mean
-                  << " ms" << std::endl;
+        float duration_sum = std::accumulate(metrics.raw_metrics.transformer_inference_durations.begin(),
+                                             metrics.raw_metrics.transformer_inference_durations.end(),
+                                             0.0f,
+                                             [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+                                                 return acc + duration.count() / 1000.0f;
+                                             });
+        std::cout << prefix_idx << " transformer total infer time:" << duration_sum
+                  << " ms, infer number:" << metrics.raw_metrics.transformer_inference_durations.size() << std::endl;
     } else {
-        std::cout << prefix_idx << " unet avg infer time:" << metrics.get_transformer_inference_duration().mean << " ms"
-                  << std::endl;
+        float duration_sum = std::accumulate(metrics.raw_metrics.unet_inference_durations.begin(),
+                                             metrics.raw_metrics.unet_inference_durations.end(),
+                                             0.0f,
+                                             [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+                                                 return acc + duration.count() / 1000.0f;
+                                             });
+        std::cout << prefix_idx << " unet total infer time:" << duration_sum
+                  << " ms, infer number:" << metrics.raw_metrics.unet_inference_durations.size() << std::endl;
     }
     std::cout << prefix_idx << " vae decoder infer time:" << metrics.vae_decoder_inference_duration
               << " ms, vae encoder infer time:" << metrics.vae_encoder_inference_duration << std::endl;
@@ -101,11 +114,11 @@ void text2image(cxxopts::ParseResult& result) {
     float decoder_mean = calculate_average(decoder_durations);
     float encoder_mean = calculate_average(encoder_durations);
 
-    std::cout << "Load time: " << load_time << " ms" << std::endl;
-    std::cout << "First generate warmup time:" << generate_warmup << " ms, infer warmup time:" << inference_warmup
-              << " ms" << std::endl;
-    std::cout << "Other generate avg time: " << generate_mean << " ms, infer avg time:" << inference_mean
-              << " ms, total encoder infer avg time:" << encoder_mean
+    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
+    std::cout << "Warmup number:" << num_warmup << ", first generate warmup time:" << generate_warmup
+              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
+    std::cout << "Generate iteration number:" << num_iter << ", for one iteration, generate avg time: " << generate_mean
+              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
               << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
 }
 
@@ -164,11 +177,11 @@ void image2image(cxxopts::ParseResult& result) {
     float decoder_mean = calculate_average(decoder_durations);
     float encoder_mean = calculate_average(encoder_durations);
 
-    std::cout << "Load time: " << load_time << " ms" << std::endl;
-    std::cout << "First generate warmup time:" << generate_warmup << " ms, infer warmup time:" << inference_warmup
-              << " ms" << std::endl;
-    std::cout << "Other generate avg time: " << generate_mean << " ms, infer avg time:" << inference_mean
-              << " ms, total encoder infer avg time:" << encoder_mean
+    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
+    std::cout << "Warmup number:" << num_warmup << ", first generate warmup time:" << generate_warmup
+              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
+    std::cout << "Generate iteration number:" << num_iter << ", for one iteration, generate avg time: " << generate_mean
+              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
               << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
 }
 
@@ -228,11 +241,11 @@ void inpainting(cxxopts::ParseResult& result) {
     float decoder_mean = calculate_average(decoder_durations);
     float encoder_mean = calculate_average(encoder_durations);
 
-    std::cout << "Load time: " << load_time << " ms" << std::endl;
-    std::cout << "First generate warmup time:" << generate_warmup << " ms, infer warmup time:" << inference_warmup
-              << " ms" << std::endl;
-    std::cout << "Other generate avg time: " << generate_mean << " ms, infer avg time:" << inference_mean
-              << " ms, total encoder infer avg time:" << encoder_mean
+    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
+    std::cout << "Warmup number:" << num_warmup << ", first generate warmup time:" << generate_warmup
+              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
+    std::cout << "Generate iteration number:" << num_iter << ", for one iteration, generate avg time: " << generate_mean
+              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
               << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
 }
 
