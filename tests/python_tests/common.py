@@ -211,20 +211,6 @@ def generate_and_compare_with_reference_text(models_path: Path, prompts: List[st
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
             assert ref_text == ov_text
 
-
-def get_image_by_link(link):
-    from PIL import Image
-    import requests
-    from openvino import Tensor
-    import numpy as np
-
-    image = Image.open(requests.get(link, stream=True).raw)
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
-    return Tensor(image_data)
-
-
 """rt_info has the highest priority. Delete it to respect configs."""
 def delete_rt_info(configs: List[Tuple], temp_path):
     core = openvino.Core()

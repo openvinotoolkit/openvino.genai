@@ -18,7 +18,7 @@ from openvino import serialize
 from transformers import AutoTokenizer
 
 from common import TESTS_ROOT, run_cb_pipeline_with_ref
-from utils_longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 from utils.constants import default_ov_config
 
