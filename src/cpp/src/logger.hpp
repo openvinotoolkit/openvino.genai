@@ -9,7 +9,7 @@ namespace ov::genai {
 
 class Logger {
 public:
-    static void warn(std::string message) {
+    static void warn(const std::string& message) {
         std::cout << "[WARN] " << message << '\n';
     };
 };

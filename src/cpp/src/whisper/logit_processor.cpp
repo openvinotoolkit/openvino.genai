@@ -28,7 +28,6 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
                                       const std::vector<int64_t>& generated_tokens,
                                       bool initial_step = false) {
     const size_t batch_size = logits.get_shape().at(0);
-    OPENVINO_ASSERT(batch_size == 1, "Batch != 1 is not supported");
 
     size_t vocab_size = logits.get_shape().back();
     size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;

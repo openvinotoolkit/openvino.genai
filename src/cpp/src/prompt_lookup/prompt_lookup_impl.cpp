@@ -1,6 +1,9 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <thread>
+
+#include "utils.hpp"
 #include "prompt_lookup_impl.hpp"
 #include "text_callback_streamer.hpp"
 
@@ -106,17 +109,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     m_pipeline->set_adapters(sampling_params[0].adapters);
 
-    const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
-        [](std::monostate) -> std::shared_ptr<StreamerBase> {
-            return nullptr;
-        },
-        [](const std::shared_ptr<StreamerBase>& streamer) {
-            return streamer;
-        },
-        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
-        }
-    }, streamer);
+    const std::shared_ptr<StreamerBase>& streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
@@ -129,42 +122,69 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 
-    bool continue_generation = true;
-    while (has_non_finished_requests() && continue_generation) {
+    std::atomic<bool> has_active_requests = has_non_finished_requests();
+    auto& generation = generations.at(0);
+
+    // create variables to make optimal thread-safe streaming
+    std::mutex mutex;
+    std::unique_lock lock(mutex);
+    std::condition_variable cv;
+
+    // to define streaming thread
+    std::shared_ptr<std::thread> t_stream_ptr = nullptr;
+    if (streamer_ptr) {
+        // define stream token lambda to use in `t_stream_ptr`
+        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
+            while (has_active_requests || generation->can_read()) {
+                // waiting for any tokens or request finishing
+                cv.wait(lock, [&generation, &has_active_requests]{
+                    return generation->can_read() || !has_active_requests;
+                });
+
+                if (generation->can_read()) {
+                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
+                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+                    if (!generation_outputs.empty()) {
+                        for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
+                            auto streaming_status = streamer_ptr->write(generated_token_id);
+                            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                                streaming_status == ov::genai::StreamingStatus::CANCEL ? generation->cancel() : generation->stop();
+                                break;
+                            }
+                        }
+                    }
+                }
+            };
+            streamer_ptr->end();
+        };
+
+        // to define streaming thread
+        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
+            stream_tokens();
+        });
+    }
+
+    std::exception_ptr thrown_exception = nullptr;
+    while (has_active_requests) {
         try {
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            throw;
+            thrown_exception = std::current_exception();
         }
-        if (streamer_ptr) {
-            // not generated tokens like several prompt phase
-            auto& generation = generations.at(0);
-            if (!generation->can_read()) {
-                continue;
-            }
-            std::unordered_map<uint64_t, GenerationOutput> token = generation->back();
-            OPENVINO_ASSERT(1 <= token.size());
-            OPENVINO_ASSERT(1 <= token.begin()->second.generated_ids.size());
-            for (const auto& gen_token : token.begin()->second.generated_ids) {
-                continue_generation = !streamer_ptr->put(gen_token);
-                if (!continue_generation) {
-                    generation->drop();
-                    break;
-                }
-            }
+        has_active_requests = has_non_finished_requests();
+        cv.notify_one();
+        if (thrown_exception) {
+            throw thrown_exception;
         }
     }
 
-    if (streamer_ptr) { // push streamer's cache
-        streamer_ptr->end();
+    // waiting for competion of streaming
+    if (t_stream_ptr && t_stream_ptr->joinable()) {
+        t_stream_ptr->join();
     }
 
-    if (!continue_generation) {
-        drop_requests();
-    } else {
-        OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
-    }
+    OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());
@@ -179,6 +199,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
@@ -204,6 +225,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
+    generate_timer.end();
     return results;
 }
 

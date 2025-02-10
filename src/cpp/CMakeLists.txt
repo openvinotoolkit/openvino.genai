@@ -147,12 +147,41 @@ if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
 
+# Put binaries at the top level for NPM package
+if(CPACK_GENERATOR STREQUAL "NPM")
+    set(LIBRARY_DESTINATION .)
+    set(ARCHIVE_DESTINATION .)
+    set(RUNTIME_DESTINATION .)
+
+    # setting RPATH / LC_RPATH depending on platform
+    if(LINUX)
+        # to find libopenvino.so in the same folder
+        set(rpaths "$ORIGIN")
+    elseif(APPLE)
+        # to find libopenvino.dylib in the same folder
+        set(rpaths "@loader_path")
+    endif()
+
+    if(rpaths)
+        set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
+    endif()
+else()
+    set(LIBRARY_DESTINATION runtime/lib/${ARCH_DIR})
+    set(ARCHIVE_DESTINATION runtime/lib/${ARCH_DIR})
+    set(RUNTIME_DESTINATION runtime/bin/${ARCH_DIR})
+endif()
+
 install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
-        LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
+        LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
             NAMELINK_COMPONENT core_genai_dev
-        ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
-        RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
+        ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
+        RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
         INCLUDES DESTINATION runtime/include)
+
+# development files do not need to be built for NPM package
+if(CPACK_GENERATOR STREQUAL "NPM")
+    return()
+endif()
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
         DESTINATION runtime/include COMPONENT core_genai_dev)

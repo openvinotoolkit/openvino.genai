@@ -14,7 +14,7 @@ import shutil
 import json
 
 import openvino_genai as ov_genai
-from common import get_default_properties
+from common import get_default_properties, delete_rt_info
 
 def get_models_list():
     precommit_models = [
@@ -55,7 +55,6 @@ def get_models_list():
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
 
-    # pytest.set_trace()
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
@@ -89,6 +88,9 @@ def read_model(params, **tokenizer_kwargs):
     from optimum.intel.openvino import OVModelForCausalLM
     from transformers import AutoTokenizer
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    
+    if "padding_side" in tokenizer_kwargs:
+        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     if (models_path / "openvino_model.xml").exists():
         opt_model = OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
@@ -173,6 +175,7 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
+    delete_rt_info(configs, temp_path)
 
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:

@@ -68,8 +68,6 @@ private:
 
 // for BW compatibility with 2024.6.0
 ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::string& device, ov::AnyMap properties) {
-    std::cout << ov::Any(properties).as<std::string>() << std::endl;
-
     auto it = properties.find("WA_INFERENCE_PRECISION_HINT");
     ov::element::Type wa_inference_precision = it != properties.end() ? it->second.as<ov::element::Type>() : ov::element::undefined;
     if (it != properties.end()) {
@@ -257,6 +255,7 @@ ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
 }
 
 ov::Tensor AutoencoderKL::encode(ov::Tensor image, std::shared_ptr<Generator> generator) {
+    OPENVINO_ASSERT(m_encoder_request || m_encoder_model, "AutoencoderKL is created without 'VAE encoder' capability. Please, pass extra argument to constructor to create 'VAE encoder'");
     OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
 
     m_encoder_request.set_input_tensor(image);

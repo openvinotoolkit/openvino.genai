@@ -14,14 +14,14 @@ public:
                             const std::string& device,
                             const ov::AnyMap& properties);
 
-    std::pair<int64_t, float> detect_language(const ov::Tensor& encoder_hidden_state,
-                                              const int64_t decoder_start_token_id) override;
+    void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) override;
 
-    std::pair<ov::Tensor, float> decode(const ov::Tensor& encoder_hidden_state,
-                                        const std::vector<int64_t>& input_ids,
-                                        const size_t cache_position) override;
+    Tensor wait() override;
 
     void reset_state() override;
+
+private:
+    void _set_cache_position_tensor(const size_t seq_len);
 
 private:
     ov::InferRequest m_request;

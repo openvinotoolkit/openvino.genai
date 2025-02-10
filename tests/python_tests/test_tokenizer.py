@@ -2,22 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
-import openvino_genai
+from openvino_genai import Tokenizer
 import json
-
+from common import delete_rt_info, convert_and_save_tokenizer
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
     read_model,
-    model_tmp_path
+    model_tmp_path,
 )
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
+    delete_rt_info(configs, temp_path)
+
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 
@@ -25,7 +28,7 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
 
-    ov_tokenizer = openvino_genai.Tokenizer(temp_path)
+    ov_tokenizer = Tokenizer(temp_path)
 
     for _, config_name in configs:
         os.remove(temp_path / config_name)
@@ -217,22 +220,31 @@ prompts = [
     'Why is the Sun yellow?',
     'What was my first question?',
     ['Why is the Sun yellow?'],
-    "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+    "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
     "Multiline\nstring!\nWow!",
 ]
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-phi3",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+])
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("prompt", prompts)
-def test_encode_decode_with_special_tokens_option(prompt):
-    import numpy as np
-    model_descr = get_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
-    ov_tokenzier = ov_pipe.get_tokenizer()
+def test_special_tokens(tmp_path, prompt, model_id):
+    if sys.platform.startswith('win') and isinstance(prompt, str) and (prompt.startswith('如') or prompt.endswith('ה')):
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+
+    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
+    convert_and_save_tokenizer(hf_tokenizer, tmp_path)
+    ov_tokenizer = Tokenizer(tmp_path)
 
     # Calling encode with 'add_special_tokens' will set state flag.
-    ov_res_add_spec = ov_tokenzier.encode(prompt, add_special_tokens=True).input_ids.data
-    ov_res_no_spec = ov_tokenzier.encode(prompt, add_special_tokens=False).input_ids.data
+    ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
+    ov_res_no_spec = ov_tokenizer.encode(prompt, add_special_tokens=False).input_ids.data
     hf_res_add_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=True)["input_ids"]
     hf_res_no_spec = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=False)["input_ids"]
     assert np.all(ov_res_add_spec == hf_res_add_spec)
@@ -243,8 +255,8 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert hf_res_add_spec.size != hf_res_no_spec.size
 
     # Decode with 'skip_special_tokens'
-    decoded_genai_skip_spec = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=True)[0]
-    decoded_genai_no_skip = ov_tokenzier.decode(hf_res_add_spec, skip_special_tokens=False)[0]
+    decoded_genai_skip_spec = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=True)[0]
+    decoded_genai_no_skip = ov_tokenizer.decode(hf_res_add_spec, skip_special_tokens=False)[0]
     decoded_hf_skip_spec = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=True)
     decoded_hf_no_skip = hf_tokenizer.decode(hf_res_add_spec[0], skip_special_tokens=False)
     assert decoded_genai_skip_spec == decoded_hf_skip_spec
@@ -254,6 +266,55 @@ def test_encode_decode_with_special_tokens_option(prompt):
     assert decoded_genai_skip_spec != decoded_genai_no_skip
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
+prompts = [
+    ['1+1=', 'What is the previous answer?'],
+    'What is the previous answers? ' * 1000,  # long sentence exceeding max_length, check that is truncated
+    'what',                                   # check that short sentence is padded to long
+    # check that large batch with multilangual data is correctly padded
+    [   
+        '1+1=',
+        'What is the previous answer?',
+        'Why is the Sun yellow?',
+        'What was my first question?',
+        "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+        "מחרוזת בדיקה",
+        "Multiline\nstring!\nWow!",
+    ]
+]
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("add_special_tokens", [True, False])
+@pytest.mark.parametrize("max_length", [None, 10, 16, 64, 77, 103, 512, 1024])
+@pytest.mark.parametrize("pad_to_max_length", [None, True, False])
+@pytest.mark.parametrize("prompt", prompts)
+def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
+    model_descr = get_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    genai_tokenzier = ov_pipe.get_tokenizer()
+
+    # In openvino_tokenizers if sequences are of different length by default padding is applied 
+    # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
+    # which cannot store irregular/ragged array.
+    # Therefore, for default mode truncation=True.
+    # For the same reason runcation is always applied.
+    hf_pad_params_map = {
+        None: dict(padding="longest", truncation=True),
+        False: dict(padding="longest", truncation=True),
+        True: dict(padding="max_length", truncation=True),
+    }
+    hf_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, **hf_pad_params_map[pad_to_max_length])
+    ov_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, pad_to_max_length=pad_to_max_length)
+    if pad_to_max_length is None:
+        ov_params.pop("pad_to_max_length")
+    if max_length is None:
+        hf_params.pop("max_length")
+        ov_params.pop("max_length")
+        
+    ov_res = genai_tokenzier.encode(prompt, **ov_params)
+    hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
+
+    assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
+    assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
 @pytest.mark.precommit
 @pytest.mark.nightly

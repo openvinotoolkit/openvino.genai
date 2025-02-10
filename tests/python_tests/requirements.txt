@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.32.2
-optimum-intel @ git+https://github.com/eaidova/optimum-intel@ea/stateful_seq2seq
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main
 numpy<2.0.0; platform_system == "Darwin" and platform_machine == "x86_64"
 onnx==1.17.0
 pytest
@@ -35,3 +35,4 @@ sacremoses
 librosa
 soundfile
 datasets
+rouge

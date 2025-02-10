@@ -43,6 +43,11 @@ auto cache_eviction_config_docstring = R"(
 
     :param aggregation_mode: The mode used to compute the importance of tokens for eviction
     :type aggregation_mode: openvino_genai.AggregationMode
+
+    :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction.
+      Set this to false if your model has different RoPE scheme from the one used in the
+      original llama model and you experience accuracy issues with cache eviction enabled.
+    :type apply_rotation: bool
 )";
 
 auto scheduler_config_docstring = R"(
@@ -78,8 +83,9 @@ auto generation_result_docstring = R"(
         RUNNING = 0 - Default status for ongoing generation.
         FINISHED = 1 - Status set when generation has been finished.
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-        DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
-        DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
+        STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+        DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
     perf_metrics:
                         Performance metrics for each generation result.
 
@@ -118,6 +124,35 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
     return stream << std::endl;
 }
 
+py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
+                              const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
+                              const std::vector<ov::genai::GenerationConfig>& sampling_params,
+                              const pyutils::PyBindStreamerVariant& py_streamer) {
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    py::object results;
+
+    std::visit(pyutils::overloaded {
+    [&](std::vector<ov::Tensor> input_ids) {
+        std::vector<ov::genai::EncodedGenerationResult> encoded_results;
+        {
+            py::gil_scoped_release rel;
+            encoded_results = pipe.generate(input_ids, sampling_params, streamer);
+        }  
+        results = py::cast(encoded_results);
+    },
+    [&](std::vector<std::string> prompts) {
+        std::vector<ov::genai::GenerationResult> generated_results;
+        {
+            py::gil_scoped_release rel;
+            generated_results = pipe.generate(prompts, sampling_params, streamer);
+        }  
+        results = py::cast(generated_results);
+    }},
+    inputs);
+
+    return results;
+}
+
 } // namespace
 
 void init_continuous_batching_pipeline(py::module_& m) {
@@ -125,8 +160,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
         .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
         .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
-        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
-        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
+        .value("CANCEL", ov::genai::GenerationStatus::CANCEL)
+        .value("STOP", ov::genai::GenerationStatus::STOP);
 
     py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
@@ -175,7 +210,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
         .def("drop", &GenerationHandleImpl::drop)
-        .def("back", &GenerationHandleImpl::back)
+        .def("stop", &GenerationHandleImpl::stop)
+        .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
 
@@ -188,10 +224,11 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .value("NORM_SUM", AggregationMode::NORM_SUM);
 
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
-            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode) {
-                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode}; }),
-                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"))
+            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation) {
+                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode, apply_rotation}; }),
+                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"), py::arg("apply_rotation") = false)
             .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode)
+            .def_readwrite("apply_rotation", &CacheEvictionConfig::apply_rotation)
             .def("get_start_size", &CacheEvictionConfig::get_start_size)
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
@@ -243,16 +280,31 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
+
+
         .def(
             "generate",
-            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<ov::Tensor>& input_ids,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
+                return __call_cb_generate(pipe, input_ids, generation_config, streamer);
+            },
             py::arg("input_ids"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         )
+
         .def(
             "generate",
-            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<std::string>& prompts,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                return __call_cb_generate(pipe, prompts, generation_config, streamer);
+            },
             py::arg("prompts"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}

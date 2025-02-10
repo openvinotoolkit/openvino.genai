@@ -3,6 +3,7 @@
 
 #include "utils.hpp"
 
+#include <variant>
 #include <fstream>
 #include <memory>
 
@@ -14,6 +15,8 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
+
+#include "text_callback_streamer.hpp"
 
 #include "sampler.hpp"
 
@@ -44,22 +47,6 @@ void print_tensor(const ov::Tensor& tensor) {
         std::cout << "|";
     }
     std::cout << "]" << std::endl;
-}
-
-int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
-    if (logits.get_shape()[0] <= batch_idx) {
-        OPENVINO_THROW("logits batch size doesn't match the number of beams");
-    }
-
-    size_t vocab_size = logits.get_shape().back();
-    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
-    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
-    const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
-
-    int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-    float max_logit = logits_data[out_token];
-
-    return out_token;
 }
 
 /**
@@ -129,23 +116,6 @@ void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_b
 }
 
 /**
- * Set position ids tensor data for next token inference based on provided attention mask
- * Supports multi batch
- * Supports sparse attention_mask
- */
-void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape().at(0);
-    const size_t atten_length = attention_mask.get_shape().at(1);
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* start = attention_mask.data<int64_t>() + batch * atten_length;
-        // todo: be careful with start + atten_length, probably need to replace with start + atten_length -1
-        position_ids.data<int64_t>()[batch] = std::accumulate(start, start + atten_length, 0);
-    }
-}
-
-/**
  * Get attention mask tensor for next token inference
  * Supports multi batch
  * Supports sparse attention_mask
@@ -174,9 +144,30 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
+        } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
         }
     }
     return streamer;
+}
+
+std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
+    std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
+        [](std::monostate) -> std::shared_ptr<StreamerBase> {
+            return nullptr;
+        },
+        [](const std::shared_ptr<StreamerBase>& streamer) {
+            return streamer;
+        },
+        [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+        },
+        [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+        }
+    }, streamer);
+
+    return streamer_ptr;
 }
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
@@ -201,21 +192,6 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
     return extracted_config;
 }
-
-/**
- * scheduler_config is a separate config for continuous batching pipeline. 
- * This routine splits scheduler_config from plugin_config.
- */
-std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    }
-    return {plugin_config, scheduler_config};
-};
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();

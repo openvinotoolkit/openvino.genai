@@ -44,21 +44,40 @@ void init_tokenizer(py::module_& m) {
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, kwargs_properties);
         }), py::arg("tokenizer_path"), py::arg("properties") = ov::AnyMap({}))
 
-        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, 
+                          bool add_special_tokens, 
+                          bool pad_to_max_length,
+                          std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
                 return tok.encode(prompts, tokenization_params);
             },
             py::arg("prompts"),
             py::arg("add_special_tokens") = true,
+            py::arg("pad_to_max_length") = false,
+            py::arg("max_length") = std::nullopt,
             R"(Encodes a list of prompts into tokenized inputs.)")
 
-        .def("encode", [](Tokenizer& tok, const std::string prompt, bool add_special_tokens) {
+        .def("encode", [](Tokenizer& tok, const std::string prompt, 
+                          bool add_special_tokens, 
+                          bool pad_to_max_length,
+                          std::optional<size_t> max_length) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
+                if (max_length.has_value()) {
+                    tokenization_params[ov::genai::max_length.name()] = *max_length;
+                }
                 return tok.encode(prompt, tokenization_params);
             },
-            py::arg("prompt"), py::arg("add_special_tokens") = true,
+            py::arg("prompt"), 
+            py::arg("add_special_tokens") = true, 
+            py::arg("pad_to_max_length") = false,
+            py::arg("max_length") = std::nullopt,
             R"(Encodes a single prompt into tokenized input.)")
 
         .def(
@@ -107,6 +126,12 @@ void init_tokenizer(py::module_& m) {
             "set_chat_template", &Tokenizer::set_chat_template,
             py::arg("chat_template"), "The new template to override with.",
             "Override a chat_template read from tokenizer_config.json."
+        )
+
+        .def_property(
+            "chat_template",
+            &Tokenizer::get_chat_template,
+            &Tokenizer::set_chat_template
         )
 
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
