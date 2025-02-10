@@ -43,6 +43,27 @@ inline float get_load_time(std::chrono::steady_clock::time_point start_time) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
+inline bool ends_with(std::string str, std::string postfix) {
+    return str.rfind(postfix) == str.size() - postfix.size();
+}
+
+std::string get_directory(const std::string& s) {
+    // Linux-style separator
+    auto pos = s.find_last_of('/');
+    if (pos != std::string::npos) {
+        return s.substr(0, pos ? pos : 1);
+    }
+    // Windows-style separator
+    pos = s.find_last_of('\\');
+    if (pos != std::string::npos) {
+        return s.substr(0, pos);
+    } else if (s.empty()) {
+        return {};
+    } else {
+        return {'.'};
+    }
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
@@ -54,9 +75,18 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
 
-    auto model = utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, properties);
-    auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
-    auto generation_config = utils::from_config_json_if_exists(models_path);
+    std::filesystem::path model_path = models_path;
+    std::filesystem::path directory = models_path;
+    if (!ends_with(model_path, ".xml")) {
+        model_path = model_path / "openvino_model.xml";
+    }
+    else {
+        directory = get_directory(models_path);
+    }
+
+    auto model = utils::singleton_core().read_model(model_path, {}, properties);
+    auto tokenizer = ov::genai::Tokenizer(directory, tokenizer_properties);
+    auto generation_config = utils::from_config_json_if_exists(directory);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -82,9 +112,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    std::filesystem::path openvino_model_name = "openvino_model.xml";
-    auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, properties_without_draft_model);
-    auto generation_config = utils::from_config_json_if_exists(models_path);
+    std::filesystem::path model_path = models_path;
+    std::filesystem::path directory = models_path;
+    if (!ends_with(model_path, ".xml")) {
+        model_path = model_path / "openvino_model.xml";
+    }
+    else {
+        directory = get_directory(models_path);
+    }
+    auto model = utils::singleton_core().read_model(model_path, {}, properties_without_draft_model);
+    auto generation_config = utils::from_config_json_if_exists(directory);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
