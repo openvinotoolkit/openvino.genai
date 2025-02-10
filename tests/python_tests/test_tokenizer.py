@@ -11,14 +11,12 @@ from openvino_genai import Tokenizer
 import json
 from common import delete_rt_info
 from ov_genai_test_utils import (
-    get_models_list,
-    get_chat_models_list,
     read_model,
     model_tmp_path,
 )
 
 from utils.hugging_face import convert_and_save_tokenizer
-
+from data.models import get_models_list, get_chat_models_list
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
     delete_rt_info(configs, temp_path)

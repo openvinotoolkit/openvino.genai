@@ -8,8 +8,6 @@ import pytest
 import platform
 import sys
 from ov_genai_test_utils import (
-    get_models_list,
-    get_chat_models_list,
     read_model
 )
 from utils.constants import default_ov_config
@@ -19,6 +17,7 @@ from utils.generation_config import                     \
     get_multinomial_all_parameters,                     \
     get_multinomial_temperature_and_presence_penalty,   \
     get_beam_search
+from data.models import get_models_list, get_chat_models_list
 
 
 if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64"]:
