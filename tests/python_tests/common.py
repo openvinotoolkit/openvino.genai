@@ -194,12 +194,15 @@ def convert_to_hf(
     kwargs['bos_token_id'] = default_generation_config.bos_token_id
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
 
-    if len(generation_config.stop_token_ids) > 0:
-        kwargs['eos_token_id'] = list(generation_config.stop_token_ids)
-    elif generation_config.eos_token_id != -1:
-        kwargs['eos_token_id'] = generation_config.eos_token_id
+    if (generation_config.ignore_eos):
+        kwargs['eos_token_id'] = []
     else:
-        kwargs['eos_token_id'] = default_generation_config.eos_token_id
+        if len(generation_config.stop_token_ids) > 0:
+            kwargs['eos_token_id'] = list(generation_config.stop_token_ids)
+        elif generation_config.eos_token_id != -1:
+            kwargs['eos_token_id'] = generation_config.eos_token_id
+        else:
+            kwargs['eos_token_id'] = default_generation_config.eos_token_id
 
     # copy penalties
     kwargs['repetition_penalty'] = generation_config.repetition_penalty

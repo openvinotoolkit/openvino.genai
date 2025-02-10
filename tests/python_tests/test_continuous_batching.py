@@ -79,7 +79,7 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id, path, tokenizer, model, stateful = read_model((
         "facebook/opt-125m",
         Path("opt-125m")
-    ))
+    ), padding_side="left")
     cb_pipe = get_continuous_batching(path)
     generated = cb_pipe.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
