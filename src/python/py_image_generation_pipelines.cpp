@@ -13,6 +13,7 @@
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "utils.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -150,6 +151,16 @@ public:
         create_torch_generator(new_seed);
     }
 };
+
+bool params_have_torch_generator(ov::AnyMap params) {
+    std::shared_ptr<ov::genai::Generator> generator = nullptr;
+    ov::genai::utils::read_anymap_param(params, "generator", generator);
+    if (std::dynamic_pointer_cast<::TorchGenerator>(generator)) {
+        return true;
+    }
+    return false;
+}
+
 
 } // namespace
 
@@ -296,8 +307,15 @@ void init_image_generation_pipelines(py::module_& m) {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
                 {
-                    py::gil_scoped_release rel;
-                    res = pipe.generate(prompt, params);
+                    if (params_have_torch_generator(params)) {
+                        // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                        // so if it was passed, we don't release GIL
+                        res = pipe.generate(prompt, params);
+                    }
+                    else {
+                        py::gil_scoped_release rel;
+                        res = pipe.generate(prompt, params);
+                    }
                 }
                 return py::cast(res);
             },
@@ -368,8 +386,15 @@ void init_image_generation_pipelines(py::module_& m) {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
                 {
-                    py::gil_scoped_release rel;
-                    res = pipe.generate(prompt, image, params);
+                    if (params_have_torch_generator(params)) {
+                        // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                        // so if it was passed, we don't release GIL
+                        res = pipe.generate(prompt, image, params);
+                    }
+                    else {
+                        py::gil_scoped_release rel;
+                        res = pipe.generate(prompt, image, params);
+                    }
                 }
                 return py::cast(res);
             },
@@ -441,8 +466,15 @@ void init_image_generation_pipelines(py::module_& m) {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
                 {
-                    py::gil_scoped_release rel;
-                    res = pipe.generate(prompt, image, mask_image, params);
+                    if (params_have_torch_generator(params)) {
+                        // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                        // so if it was passed, we don't release GIL
+                        res = pipe.generate(prompt, image, mask_image, params);
+                    }
+                    else {
+                        py::gil_scoped_release rel;
+                        res = pipe.generate(prompt, image, mask_image, params);
+                    }
                 }
                 return py::cast(res);
             },
