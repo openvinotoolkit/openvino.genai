@@ -459,6 +459,108 @@ jobs:
           & "${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition.exe" "whisper-tiny" "how_are_you_doing_today.wav"
         working-directory: ${{ env.MODELS_DIR }}
 
+  genai_build_nodejs_bindings:
+    name: Build Node.js bindings
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-2022
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}\\build
+      INSTALL_DIR: ${{ github.workspace }}\\install
+      OV_INSTALL_DIR: ${{ github.workspace }}\\ov
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+      NODE_VERSION: 21
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${{ env.OV_INSTALL_DIR }}
+            Expand-Archive openvino_package.zip -DestinationPath ./tmp
+            mv ./tmp/*/* .
+          popd
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      - name: Build GenAI Node.js bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
+            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
+            -S ./ -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config Release --parallel --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Pack Node.js bindings libs
+        run: |
+          $file=Get-ChildItem -Path "${{ env.INSTALL_DIR }}"
+          $compress = @{
+            Path = $file
+            CompressionLevel = "Optimal"
+            DestinationPath = "${{ env.BUILD_DIR }}/genai_nodejs_bindings.zip"
+          }
+          Compress-Archive @compress
+
+      - name: Upload Archive Package with Node.js bindings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.zip
+          if-no-files-found: 'error'
+
+      - name: Install npm package tests dependencies
+        working-directory: ./src/js
+        run: |
+          cp -R ${{ env.INSTALL_DIR }} bin
+          npm install
+          rm -rf node_modules/openvino-node/bin
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run npm package tests
+        working-directory: ./src/js
+        run: |
+          npm test
+
+      - name: Install genai-node samples dependencies
+        working-directory: ./samples/js/text_generation
+        run: |
+          npm install
+          rm -rf node_modules/openvino-node/bin
+          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run samples tests
+        run: npm test
+        env:
+          MODEL_PATH: ./src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
+        working-directory: ./samples/js/text_generation
+
   Overall_Status:
     name: ci/gha_overall_status_windows
     needs: [openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_samples_tests]
