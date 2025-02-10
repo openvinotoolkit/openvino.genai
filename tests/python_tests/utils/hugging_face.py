@@ -12,7 +12,7 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import default_ov_config
+from utils.constants import DEFAULT_OV_CONFIG
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -156,7 +156,7 @@ def run_hugging_face(
 
 def get_hugging_face_models(model_id: str):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=default_ov_config)
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=DEFAULT_OV_CONFIG)
     return opt_model, hf_tokenizer
 
 

@@ -20,7 +20,7 @@ from transformers import AutoTokenizer
 from common import TESTS_ROOT, run_cb_pipeline_with_ref
 from utils_longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
-from utils.constants import default_ov_config
+from utils.constants import DEFAULT_OV_CONFIG
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -47,7 +47,7 @@ class ConvertedModel:
 @pytest.fixture(scope='module')
 def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=default_ov_config)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=DEFAULT_OV_CONFIG)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
@@ -126,8 +126,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
     models_path = converted_model.models_path
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, default_ov_config)
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, default_ov_config)
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, DEFAULT_OV_CONFIG)
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, DEFAULT_OV_CONFIG)
 
     tokenizer = converted_model.tokenizer
 
@@ -239,8 +239,8 @@ def test_optimized_generation_longbench(qwen2_converted_model, device, test_stru
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
 
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, default_ov_config)
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, default_ov_config)
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, DEFAULT_OV_CONFIG)
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, DEFAULT_OV_CONFIG)
 
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset
