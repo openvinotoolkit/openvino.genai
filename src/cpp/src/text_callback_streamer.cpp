@@ -6,12 +6,12 @@
 namespace ov {
 namespace genai {
 
-TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback) {
+TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<ov::genai::CallbackTypeVariant(std::string)> callback) {
     m_tokenizer = tokenizer;
     m_on_finalized_subword_callback = callback;
 }
 
-bool TextCallbackStreamer::put(int64_t token) {
+StreamingStatus TextCallbackStreamer::write(int64_t token) {
     std::stringstream res;
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);
@@ -23,7 +23,7 @@ bool TextCallbackStreamer::put(int64_t token) {
         m_tokens_cache.clear();
         m_decoded_lengths.clear();
         m_printed_len = 0;
-        return m_on_finalized_subword_callback(res.str());
+        return set_streaming_status(m_on_finalized_subword_callback(res.str()));
     }
 
     constexpr size_t delay_n_tokens = 3;
@@ -31,13 +31,13 @@ bool TextCallbackStreamer::put(int64_t token) {
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
     if (m_decoded_lengths.size() < delay_n_tokens) {
-        return m_on_finalized_subword_callback(res.str());
+        return set_streaming_status(m_on_finalized_subword_callback(res.str()));
     }
     constexpr char replacement[] = "\xef\xbf\xbd";  // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0) {
         m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
         // Don't print incomplete text
-        return m_on_finalized_subword_callback(res.str());
+        return set_streaming_status(m_on_finalized_subword_callback(res.str()));
     }
     auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];
     if (print_until != -1 && print_until > m_printed_len) {
@@ -46,7 +46,15 @@ bool TextCallbackStreamer::put(int64_t token) {
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
         m_printed_len = print_until;
     }
-    return m_on_finalized_subword_callback(res.str());
+
+    return set_streaming_status(m_on_finalized_subword_callback(res.str()));
+}
+
+StreamingStatus TextCallbackStreamer::set_streaming_status(CallbackTypeVariant callback_status) {
+    if (auto res = std::get_if<StreamingStatus>(&callback_status))
+        return *res;
+    else
+        return std::get<bool>(callback_status) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
 }
 
 void TextCallbackStreamer::end() {

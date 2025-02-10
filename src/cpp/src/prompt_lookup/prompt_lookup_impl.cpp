@@ -3,6 +3,7 @@
 
 #include <thread>
 
+#include "utils.hpp"
 #include "prompt_lookup_impl.hpp"
 #include "text_callback_streamer.hpp"
 
@@ -158,6 +159,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];

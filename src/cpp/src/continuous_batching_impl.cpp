@@ -248,6 +248,9 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
                                                                ov::genai::GenerationConfig sampling_params) {
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (sampling_params.stop_token_ids.empty())
+        sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params.eos_token_id == -1)
         sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
@@ -488,6 +491,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
@@ -522,7 +526,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
-        if (request->has_finished() || request->handle_dropped()) {
+        if(request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
             for (const auto& sequence: request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());
@@ -540,7 +544,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_requests_droppe
     // Notify the last time by pushing empty output
     // This causes read() to unblock by adding anything to the queue
     for (SequenceGroup::Ptr& request : m_requests) {
-        if (request->handle_dropped())
+        if (request->handle_stopped() || request->handle_cancelled())
             request->push_empty_outputs();
     }
 }

@@ -9,21 +9,15 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "synchronized_queue.hpp"
 #include "text_callback_streamer.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
 
 class ThreadedStreamerWrapper {
 public:
-    ThreadedStreamerWrapper(const StreamerVariant& streamer, Tokenizer& tokenizer) {
-        if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-            m_streamer_ptr = nullptr;
-        } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
-            m_streamer_ptr = *streamer_obj;
-        } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-            m_streamer_ptr = std::make_shared<TextCallbackStreamer>(tokenizer, *callback);
-        }
-    }
+    ThreadedStreamerWrapper(const StreamerVariant& streamer, Tokenizer& tokenizer)
+        : m_streamer_ptr{utils::create_streamer(streamer, tokenizer)} {}
 
     void start() {
         if (!m_streamer_ptr) {
@@ -33,8 +27,8 @@ public:
         m_worker_thread = std::make_shared<std::thread>(&ThreadedStreamerWrapper::_worker, this);
     }
 
-    void put(const std::vector<int64_t>& tokens) {
-        if (!m_streamer_ptr || m_dropped) {
+    void write(const std::vector<int64_t>& tokens) {
+        if (!m_streamer_ptr || tokens.empty() || m_status != StreamingStatus::RUNNING) {
             return;
         }
 
@@ -43,8 +37,8 @@ public:
         }
     }
 
-    void put(const int64_t token) {
-        if (!m_streamer_ptr || m_dropped) {
+    void write(const int64_t token) {
+        if (!m_streamer_ptr || m_status != StreamingStatus::RUNNING) {
             return;
         }
 
@@ -66,12 +60,8 @@ public:
         m_streamer_ptr->end();
     }
 
-    bool is_dropped() const {
-        if (!m_streamer_ptr) {
-            return false;
-        }
-
-        return m_dropped;
+    StreamingStatus get_status() const {
+        return m_status;
     }
 
     bool has_callback() const {
@@ -83,25 +73,30 @@ private:
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
     SynchronizedQueue<std::variant<int64_t, std::monostate>> m_squeue;
 
-    std::atomic<bool> m_dropped = false;
+    // std::atomic<bool> m_dropped = false;
+    std::atomic<StreamingStatus> m_status = StreamingStatus::RUNNING;
 
     void _worker() {
-        while (true) {
+        while (m_status == StreamingStatus::RUNNING) {
             // wait for queue pull
             std::variant<int64_t, std::monostate> token_variant = m_squeue.pull();
 
             // wait for streamer_ptr result
             if (auto token = std::get_if<int64_t>(&token_variant)) {
-                m_dropped = m_streamer_ptr->put(*token);
+                m_status = _get_streaming_status(m_streamer_ptr->write(*token));
             } else if (auto stop_token = std::get_if<std::monostate>(&token_variant)) {
                 break;
             } else {
                 OPENVINO_THROW("Internal error: unsupported threaded streamer value");
             }
+        }
+    }
 
-            if (m_dropped) {
-                break;
-            }
+    StreamingStatus _get_streaming_status(CallbackTypeVariant callback_status) {
+        if (auto status = std::get_if<StreamingStatus>(&callback_status)) {
+            return *status;
+        } else {
+            return std::get<bool>(callback_status) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
         }
     }
 };
