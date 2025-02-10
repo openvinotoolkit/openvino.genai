@@ -10,6 +10,7 @@ using ov::genai::ThreadedStreamerWrapper;
 using ::testing::An;
 using ::testing::ElementsAreArray;
 
+namespace {
 class MockStreamerBase : public ov::genai::StreamerBase {
 private:
     std::chrono::milliseconds m_sleep_for{200};
@@ -38,6 +39,7 @@ public:
     MOCK_METHOD(ov::genai::StreamingStatus, write, (int64_t), (override));
     MOCK_METHOD(void, end, (), (override));
 };
+}  // namespace
 
 class MockStreamerBaseFixture : public ::testing::TestWithParam<int> {
 protected:
