@@ -16,7 +16,7 @@ private:
 
 public:
     bool should_sleep = false;
-    bool should_drop = false;
+    bool should_stop = false;
     std::vector<int64_t> tokens;
 
     MockStreamerBase() {
@@ -25,7 +25,7 @@ public:
                 std::this_thread::sleep_for(m_sleep_for);
             }
             tokens.push_back(token);
-            return should_drop;
+            return should_stop;
         });
 
         ON_CALL(*this, end()).WillByDefault([this]() {
@@ -57,15 +57,15 @@ TEST_P(MockStreamerBaseFixture, general_test) {
 
     threaded_streamer.start();
 
-    EXPECT_FALSE(threaded_streamer.is_dropped());
-    threaded_streamer.put(generated_tokens[0]);
-    threaded_streamer.put(generated_tokens[1]);
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
+    threaded_streamer.write(generated_tokens[0]);
+    threaded_streamer.write(generated_tokens[1]);
 
-    EXPECT_FALSE(threaded_streamer.is_dropped());
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
     std::vector<int64_t> value{generated_tokens[2], generated_tokens[3], generated_tokens[4]};
-    threaded_streamer.put(value);
+    threaded_streamer.write(value);
 
-    EXPECT_FALSE(threaded_streamer.is_dropped());
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
     threaded_streamer.end();
 
     EXPECT_THAT(streamer->tokens, ElementsAreArray(generated_tokens));
@@ -80,14 +80,14 @@ TEST_F(MockStreamerBaseFixture, heavy_main_thread_test) {
 
     threaded_streamer.start();
 
-    threaded_streamer.put(generated_tokens[0]);
+    threaded_streamer.write(generated_tokens[0]);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    threaded_streamer.put(generated_tokens[1]);
+    threaded_streamer.write(generated_tokens[1]);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     std::vector<int64_t> value{generated_tokens[2], generated_tokens[3], generated_tokens[4]};
-    threaded_streamer.put(value);
+    threaded_streamer.write(value);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -102,12 +102,12 @@ TEST_F(MockStreamerBaseFixture, put_end_test) {
 
     threaded_streamer.start();
 
-    EXPECT_FALSE(threaded_streamer.is_dropped());
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
 
-    threaded_streamer.put(0);
+    threaded_streamer.write(0);
     threaded_streamer.end();
 
-    EXPECT_FALSE(threaded_streamer.is_dropped());
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
 
     EXPECT_THAT(streamer->tokens, ElementsAreArray({0}));
 }
@@ -119,18 +119,18 @@ TEST_F(MockStreamerBaseFixture, drop_test) {
 
     threaded_streamer.start();
 
-    EXPECT_FALSE(threaded_streamer.is_dropped());
-    threaded_streamer.put(generated_tokens[0]);
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
+    threaded_streamer.write(generated_tokens[0]);
 
     // wait to process prev token
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    EXPECT_FALSE(threaded_streamer.is_dropped());
-    streamer->should_drop = true;
-    threaded_streamer.put(generated_tokens[1]);
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::RUNNING);
+    streamer->should_stop = true;
+    threaded_streamer.write(generated_tokens[1]);
 
     // wait to process prev token
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    EXPECT_TRUE(threaded_streamer.is_dropped());
+    EXPECT_TRUE(threaded_streamer.get_status() == ov::genai::StreamingStatus::STOP);
 
     threaded_streamer.end();
 
