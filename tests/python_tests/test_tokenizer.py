@@ -9,13 +9,15 @@ from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
 import openvino_genai
 import json
-from common import delete_rt_info, convert_and_save_tokenizer
+from common import delete_rt_info
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
     read_model,
     model_tmp_path,
 )
+
+from utils.hugging_face import convert_and_save_tokenizer
 
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):

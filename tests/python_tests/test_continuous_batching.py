@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
 
-from common import get_hugging_face_models, convert_models, generate_and_compare_with_reference_text, \
+from common import generate_and_compare_with_reference_text, \
     get_scheduler_config, run_cb_pipeline_with_ref
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -37,6 +37,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.constants import default_ov_config
+from utils.hugging_face import get_hugging_face_models, convert_models
 
 #
 # e2e tests on random and real models
