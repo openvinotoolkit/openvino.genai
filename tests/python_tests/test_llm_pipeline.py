@@ -20,7 +20,6 @@ from ov_genai_test_utils import (
     model_tmp_path,
 )
 from utils.hugging_face import generation_config_to_hf
-
 #
 # e2e work
 #
@@ -288,7 +287,7 @@ def test_chat_scenario_callback_cancel(model_descr):
     model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
 
     ov_generation_config = GenerationConfig(**generation_config_kwargs)
-    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     
     current_iter = 0
     num_iters = 3

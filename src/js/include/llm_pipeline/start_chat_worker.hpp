@@ -8,10 +8,10 @@ using namespace Napi;
 class StartChatWorker : public AsyncWorker {
  public:
   StartChatWorker(Function& callback, std::shared_ptr<ov::genai::LLMPipeline>& pipe);
-  virtual ~StartChatWorker(){};
+  virtual ~StartChatWorker(){}
 
-  void Execute();
-  void OnOK();
+  void Execute() override;
+  void OnOK() override;
 
  private:
   std::shared_ptr<ov::genai::LLMPipeline>& pipe;
