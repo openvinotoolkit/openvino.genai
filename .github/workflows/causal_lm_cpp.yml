@@ -256,6 +256,8 @@ jobs:
           call .\ov\setupvars.bat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
+        env:
+          CMAKE_TLS_VERIFY: 0
       - name: Download and convert model
         run: |
           call .\ov\setupvars.bat
@@ -974,6 +976,8 @@ jobs:
           call .\ov\setupvars.bat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
+        env:
+          CMAKE_TLS_VERIFY: 0
       - name: Download and convert and model
         run: |
           call .\ov\setupvars.bat

@@ -7,7 +7,7 @@ import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
-import openvino_genai
+from openvino_genai import Tokenizer
 import json
 from common import delete_rt_info
 from ov_genai_test_utils import (
@@ -30,7 +30,7 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
 
-    ov_tokenizer = openvino_genai.Tokenizer(temp_path)
+    ov_tokenizer = Tokenizer(temp_path)
 
     for _, config_name in configs:
         os.remove(temp_path / config_name)
@@ -242,7 +242,7 @@ def test_special_tokens(tmp_path, prompt, model_id):
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
-    ov_tokenizer = openvino_genai.Tokenizer(tmp_path)
+    ov_tokenizer = Tokenizer(tmp_path)
 
     # Calling encode with 'add_special_tokens' will set state flag.
     ov_res_add_spec = ov_tokenizer.encode(prompt, add_special_tokens=True).input_ids.data
@@ -268,6 +268,55 @@ def test_special_tokens(tmp_path, prompt, model_id):
     assert decoded_genai_skip_spec != decoded_genai_no_skip
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
+prompts = [
+    ['1+1=', 'What is the previous answer?'],
+    'What is the previous answers? ' * 1000,  # long sentence exceeding max_length, check that is truncated
+    'what',                                   # check that short sentence is padded to long
+    # check that large batch with multilangual data is correctly padded
+    [   
+        '1+1=',
+        'What is the previous answer?',
+        'Why is the Sun yellow?',
+        'What was my first question?',
+        "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+        "מחרוזת בדיקה",
+        "Multiline\nstring!\nWow!",
+    ]
+]
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("add_special_tokens", [True, False])
+@pytest.mark.parametrize("max_length", [None, 10, 16, 64, 77, 103, 512, 1024])
+@pytest.mark.parametrize("pad_to_max_length", [None, True, False])
+@pytest.mark.parametrize("prompt", prompts)
+def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
+    model_descr = get_models_list()[0]
+    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    genai_tokenzier = ov_pipe.get_tokenizer()
+
+    # In openvino_tokenizers if sequences are of different length by default padding is applied 
+    # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
+    # which cannot store irregular/ragged array.
+    # Therefore, for default mode truncation=True.
+    # For the same reason runcation is always applied.
+    hf_pad_params_map = {
+        None: dict(padding="longest", truncation=True),
+        False: dict(padding="longest", truncation=True),
+        True: dict(padding="max_length", truncation=True),
+    }
+    hf_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, **hf_pad_params_map[pad_to_max_length])
+    ov_params = dict(add_special_tokens=add_special_tokens, max_length=max_length, pad_to_max_length=pad_to_max_length)
+    if pad_to_max_length is None:
+        ov_params.pop("pad_to_max_length")
+    if max_length is None:
+        hf_params.pop("max_length")
+        ov_params.pop("max_length")
+        
+    ov_res = genai_tokenzier.encode(prompt, **ov_params)
+    hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
+
+    assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
+    assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
 @pytest.mark.precommit
 @pytest.mark.nightly
