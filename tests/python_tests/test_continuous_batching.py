@@ -36,7 +36,7 @@ from shutil import rmtree
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from utils.constants import DEFAULT_OV_CONFIG
+from utils.constants import get_default_llm_propeties
 from utils.hugging_face import get_hugging_face_models, convert_models
 
 #
@@ -162,7 +162,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU", **DEFAULT_OV_CONFIG)
+    cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU", **get_default_llm_propeties())
 
     # First run should return incomplete response
     output = cb_pipe.generate(["What is OpenVINO?"], [generation_config])
