@@ -14,12 +14,11 @@ import torch
 from common import run_llm_pipeline_with_ref
 from ov_genai_test_utils import (
     read_model,
-    load_genai_pipe_with_configs,
-    get_chat_models_list,
-    model_tmp_path,
+    load_genai_pipe_with_configs
 )
 from utils.hugging_face import generation_config_to_hf
-from data.models import get_models_list
+from utils.tokenizers import model_tmp_path
+from data.models import get_models_list, get_chat_models_list
 
 #
 # e2e work
