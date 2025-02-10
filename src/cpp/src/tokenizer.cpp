@@ -716,6 +716,17 @@ void Tokenizer::set_chat_template(const std::string& chat_template) {
     m_pimpl->set_chat_template(chat_template);
 }
 
-Tokenizer::~Tokenizer() = default;
+Tokenizer::~Tokenizer() {
+    m_pimpl.reset();
+
+    // release CPU plugin ()
+    try {
+        get_core_singleton().unload_plugin("CPU");
+    } catch (const ov::Exception&) {
+        // Note: in a theory it can throw an exception when 2 different Tokenizers are created from
+        // different threads and then both of them unload plugin for 'device' from ov::Core
+    }
+}
+
 }  // namespace genai
 }  // namespace ov

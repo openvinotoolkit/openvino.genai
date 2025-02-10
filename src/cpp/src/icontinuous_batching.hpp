@@ -49,6 +49,8 @@ protected:
     friend class ContinuousBatchingPipeline;
 
 public:
+    virtual ~IContinuousBatchingPipeline();
+
     GenerationConfig get_config() const;
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
