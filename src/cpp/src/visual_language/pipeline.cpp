@@ -21,9 +21,6 @@
 using namespace ov::genai;
 
 namespace {
-   
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 } // namespace
 
@@ -158,10 +155,15 @@ public:
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+        // If stop_token_ids were not provided, take value from default m_generation_config
+        if (generation_config.stop_token_ids.empty())
+            generation_config.stop_token_ids = m_generation_config.stop_token_ids;
         // If eos_token_id was not provided, take value from default m_generation_config
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
+        
+        m_inputs_embedder->set_stop_token_ids(generation_config.stop_token_ids);
 
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
@@ -181,25 +183,14 @@ public:
 
         auto tokenized_history = m_inputs_embedder->get_tokenized_history();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
+        OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
         std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size);
         requests.push_back(sequence_group);
 
-        std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
-            [&m_tokenizer = m_tokenizer](
-                const std::function<bool(std::string)>& callback
-            ) -> std::shared_ptr<StreamerBase> {
-                return std::make_shared<TextCallbackStreamer>(m_tokenizer, callback);
-            },
-            [](const std::shared_ptr<StreamerBase>& ptr) {
-                return ptr;
-            },
-            [](std::monostate) {
-                return std::shared_ptr<StreamerBase>{nullptr};
-            },
-        }, streamer);
+        std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
         OPENVINO_ASSERT(streamer_ptr == nullptr || generation_config.num_return_sequences == 1 &&
             (generation_config.is_greedy_decoding() || generation_config.is_multinomial()),
@@ -216,10 +207,10 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        ov::genai::EncodedResults encoded_result;
-        std::optional<int64_t> last_disappeared_token;
-        std::tie(encoded_result, last_disappeared_token) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
+        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
                                                                                              position_ids, m_embedding, rope_delta);
+        ov::genai::EncodedResults& encoded_result = finish_info.results;
+
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -229,7 +220,7 @@ public:
         }
         auto decode_end_time = std::chrono::steady_clock::now();
 
-        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], last_disappeared_token, generation_config.is_beam_search(),
+        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], finish_info.probably_disappeared_token, generation_config.is_beam_search(),
                                                     m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
@@ -257,6 +248,10 @@ public:
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
+
+        if (!m_is_chat_conversation) {
+            m_language.get_tensor("attention_mask").set_shape({0, 0});
+        }
 
         return decoded;
     }
@@ -296,7 +291,7 @@ public:
             // Resetting state may be slow.
             m_language.reset_state();
             // Since if is already introduced, move all resetting here.
-            m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_language.get_tensor("attention_mask").set_shape({0, 0});
         }
         m_inputs_embedder->start_chat(system_message);
     }
@@ -305,6 +300,7 @@ public:
         m_is_chat_conversation = false;
         // Resetting state may be slow.
         m_language.reset_state();
+        m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
     }
@@ -323,7 +319,18 @@ public:
     }
 
     void set_generation_config(const GenerationConfig& new_config) {
+        int64_t default_eos_token_id = m_generation_config.eos_token_id;
+        auto default_stop_token_ids = m_generation_config.stop_token_ids;
         m_generation_config = new_config;
+
+        // If stop_token_ids were not provided, take value from default config
+        if (m_generation_config.stop_token_ids.empty())
+            m_generation_config.stop_token_ids = default_stop_token_ids;
+        // if eos_token_id was not provided in config forward from default config
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.set_eos_token_id(default_eos_token_id);
+
+        m_generation_config.validate();
     }
 };
 

@@ -46,9 +46,14 @@ public:
         return m_status;
     }
 
-    void drop() {
+    void stop() {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status = GenerationStatus::DROPPED_BY_HANDLE;
+        m_status = GenerationStatus::STOP;
+    }
+
+    void cancel() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status = GenerationStatus::CANCEL;
     }
 };
 }

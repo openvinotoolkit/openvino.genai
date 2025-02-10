@@ -9,8 +9,7 @@ import queue
 def streamer(subword):
     print(subword, end='', flush=True)
     # Return flag corresponds whether generation should be stopped. 
-    # False means continue generation.
-    return False
+    return openvino_genai.StreamingStatus.RUNNING
 
 def main():
     parser = argparse.ArgumentParser()

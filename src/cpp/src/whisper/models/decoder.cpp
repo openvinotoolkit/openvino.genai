@@ -30,7 +30,11 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
     Tensor beam_idx_tensor{ov::element::i32, {1}};
     beam_idx_tensor.data<int32_t>()[0] = 0;
 
-    auto [output_tensor, infer_ms] = decode(encoder_hidden_state, input_ids_tensor, beam_idx_tensor);
+    const auto infer_start = std::chrono::steady_clock::now();
+    start_async(encoder_hidden_state, input_ids_tensor, beam_idx_tensor);
+
+    auto output_tensor = wait();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 

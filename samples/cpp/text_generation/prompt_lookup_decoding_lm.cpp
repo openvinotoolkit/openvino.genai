@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) try {
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
-        return false;
+        return ov::genai::StreamingStatus::RUNNING;
     };
 
     // Since the streamer is set, the results will
