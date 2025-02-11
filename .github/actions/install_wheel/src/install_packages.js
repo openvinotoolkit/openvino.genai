@@ -7,15 +7,21 @@ const util = require('util');
 const execAsync = util.promisify(exec);
 
 async function installPackages(packages, localWheelDir, requirementsFiles) {
+  core.debug(`Packages to install: ${packages}`);
+  core.debug(`Local wheel directory: ${localWheelDir}`);
+  core.debug(`Requirements files: ${requirementsFiles}`);
+
   // Resolve local wheels
   const localWheels = {};
   if (localWheelDir) {
     const wheels = glob.sync(path.join(localWheelDir, '*.whl'));
+    core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
       localWheels[packageName] = whl;
     }
   }
+  core.debug(`Resolved local wheels: ${JSON.stringify(localWheels)}`);
 
   // Collect wheel paths
   const wheelPaths = [];
@@ -29,13 +35,16 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
       return;
     }
   }
+  core.debug(`Collected wheel paths: ${wheelPaths}`);
 
   // Collect requirements files
   const requirementsArgs = requirementsFiles.map(reqFile => `-r ${reqFile}`);
+  core.debug(`Requirements arguments: ${requirementsArgs}`);
 
   // Install all wheels and requirements in one command
   const installArgs = [...wheelPaths, ...requirementsArgs];
   if (installArgs.length > 0) {
+    core.debug(`Installing packages with arguments: ${installArgs.join(' ')}`);
     console.log(`Installing packages: ${installArgs.join(' ')}`);
     const { stdout, stderr } = await execAsync(
       `pip install ${installArgs.join(' ')}`,
