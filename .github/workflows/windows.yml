@@ -46,7 +46,7 @@ jobs:
         commit_packages_to_provide: 'wheels'
         revision: 'latest_available_commit'
 
-  genai_cpack:
+  genai_build_cpack:
     name: genai cpack (${{ matrix.build_type }})
     strategy:
       matrix:
@@ -171,7 +171,7 @@ jobs:
           path: ${{ env.BUILD_DIR }}/*.zip
           if-no-files-found: 'error'
   
-  genai_wheel:
+  genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
     timeout-minutes: 25
@@ -277,7 +277,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: genai_wheel
+          name: genai_wheels
           path: ${{ env.BUILD_DIR }}/*.whl
           if-no-files-found: 'error'
 
@@ -287,7 +287,7 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [Release, Debug]
-    needs: [ openvino_download, genai_cpack ]
+    needs: [ openvino_download, genai_build_cpack ]
     timeout-minutes: 10
     defaults:
       run:
@@ -296,8 +296,8 @@ jobs:
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
-      SRC_DIR: ${{ github.workspace }}\src\genai
-      BUILD_DIR: ${{ github.workspace }}\build\genai
+      SRC_DIR: ${{ github.workspace }}\src
+      BUILD_DIR: ${{ github.workspace }}\build
 
     steps:
       - name: Clone openvino.genai
@@ -333,6 +333,57 @@ jobs:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
+
+  genai_tests_wheel:
+    name: Python (${{ matrix.test.name}}) Tests (wheel)
+    needs: [ openvino_download, genai_build_wheel ]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: 'Whisper'
+            cmd: 'tests\\python_tests\\test_whisper_pipeline.py tests\\python_tests\\test_whisper_pipeline_static.py'
+          - name: 'VLM'
+            cmd: 'tests\\python_tests\\test_vlm_pipeline.py'
+          - name: 'LLM'
+            cmd: 'tests\\python_tests --ignore tests\\python_tests\\test_whisper_pipeline.py --ignore tests\\python_tests\\test_vlm_pipeline.py --ignore tests\\python_tests\\test_whisper_pipeline_static.py -k "not test_set_chat_template"'
+            
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-latest
+    env:
+      INSTALL_DIR: ${{ github.workspace }}\\install
+      SRC_DIR: ${{ github.workspace }}\\src
+      BUILD_DIR: ${{ github.workspace }}\\build
+      TRANSFORMERS_CACHE: ${{ github.workspace }}\\models  # Hugging Face transformers cache
+      HF_HOME: ${{ github.workspace }}\\datasets           # Hugging Face datasets cache
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Install GenAI Wheels
+        uses: ./src/.github/actions/install_wheel
+        with:
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
+          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
+          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+
+      - name: Tests
+        run: python -m pytest -v ${{ matrix.test.cmd }}
+        working-directory: ${{ env.SRC_DIR }}          
           
   genai_python_lib:
     name: OpenVINO genai extension (cmake + wheel)
@@ -628,7 +679,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [openvino_download, genai_cpack, genai_wheel, genai_build_samples, genai_python_lib, genai_package, genai_python_lib_vlm, genai_python_lib_whisper]
+    needs: [openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_python_lib, genai_package, genai_python_lib_vlm, genai_python_lib_whisper]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
