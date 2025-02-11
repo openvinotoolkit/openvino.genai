@@ -449,7 +449,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     
     streamer_ptr->start();
 
-    std::exception_ptr thrown_exception = nullptr;
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
@@ -464,13 +463,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            thrown_exception = std::current_exception();
+            streamer_ptr->end();
+            std::rethrow_exception(std::current_exception());
         }
         stream_tokens(streamer_ptr, generation);
-        if (thrown_exception) {
-            streamer_ptr->end();
-            std::rethrow_exception(thrown_exception);
-        }
     }
 
     // waiting for competion of streaming
