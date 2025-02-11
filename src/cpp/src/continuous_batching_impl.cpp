@@ -309,6 +309,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         const auto& sched_config = m_scheduler->get_config();
         if (true && false) {
+            static bool printed_once = false;
+            if (!printed_once) {
+                std::cout << "VSHAMPOR: rotating cache" << std::endl;
+            }
             _compute_cache_rotation_data(m_requests, scheduler_output);
             m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
                                                     std::move(m_current_step_rotation_deltas));
@@ -345,6 +349,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // evict unimportant blocks from KV cache, if requested
     const auto& sched_config = m_scheduler->get_config();
     if (true) {
+        static bool printed_once = false;
+        if (!printed_once) {
+            std::cout << "VSHAMPOR: evicting from cache" << std::endl;
+        }
         _maybe_evict_cache_blocks(sched_config);
     }
 
