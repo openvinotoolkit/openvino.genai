@@ -96,7 +96,7 @@ endif()
 
 target_include_directories(${TEST_TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::runtime nlohmann_json::nlohmann_json jinja2cpp gtest_main gmock_main)
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::runtime nlohmann_json::nlohmann_json jinja2cpp gtest_main gmock_main ${CMAKE_DL_LIBS})
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src" "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/include")
 target_sources(${TEST_TARGET_NAME} PRIVATE ${src_files})
 
