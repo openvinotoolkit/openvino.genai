@@ -300,10 +300,10 @@ jobs:
     runs-on: windows-2022
 
     env:
-      OV_INSTALL_DIR: ${{ github.workspace }}\\install\\ov
-      SRC_DIR: ${{ github.workspace }}\\src
-      BUILD_DIR: ${{ github.workspace }}\\build
-      INSTALL_DIR: ${{ github.workspace }}\\install\genai
+      OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build
+      INSTALL_DIR: ${{ github.workspace }}/install/genai
 
     steps:
       - name: Clone openvino.genai
@@ -321,13 +321,13 @@ jobs:
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
         run: |
-          & ${{ env.OV_INSTALL_DIR }}\\samples\\cpp\\build_samples.ps1 -i ${{ env.INSTALL_DIR }}
+          & ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.ps1 -i ${{ env.INSTALL_DIR }}
 
       - name: Build Samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}
         run: |
-          . "${{ env.OV_INSTALL_DIR }}\\setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.OV_INSTALL_DIR }}\\samples\\cpp -B ${{ env.BUILD_DIR }}
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.OV_INSTALL_DIR }}/samples/cpp -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $ENV:NUMBER_OF_PROCESSORS
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --component samples_bin --prefix ${{ env.INSTALL_DIR }}
 
@@ -348,22 +348,22 @@ jobs:
       matrix:
         test:
           - name: 'Whisper'
-            cmd: 'tests\\python_tests\\test_whisper_pipeline.py tests\\python_tests\\test_whisper_pipeline_static.py'
+            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
           - name: 'VLM'
-            cmd: 'tests\\python_tests\\test_vlm_pipeline.py'
+            cmd: 'tests/python_tests/test_vlm_pipeline.py'
           - name: 'LLM'
-            cmd: 'tests\\python_tests --ignore tests\\python_tests\\test_whisper_pipeline.py --ignore tests\\python_tests\\test_vlm_pipeline.py --ignore tests\\python_tests\\test_whisper_pipeline_static.py -k "not test_set_chat_template"'
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_vlm_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py -k "not test_set_chat_template"'
             
     defaults:
       run:
         shell: pwsh
     runs-on: windows-latest
     env:
-      INSTALL_DIR: ${{ github.workspace }}\\install
-      SRC_DIR: ${{ github.workspace }}\\src
-      BUILD_DIR: ${{ github.workspace }}\\build
-      TRANSFORMERS_CACHE: ${{ github.workspace }}\\models  # Hugging Face transformers cache
-      HF_HOME: ${{ github.workspace }}\\datasets           # Hugging Face datasets cache
+      INSTALL_DIR: ${{ github.workspace }}/install
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build
+      TRANSFORMERS_CACHE: ${{ github.workspace }}/models  # Hugging Face transformers cache
+      HF_HOME: ${{ github.workspace }}/datasets           # Hugging Face datasets cache
 
     steps:
       - name: Clone openvino.genai
@@ -388,7 +388,7 @@ jobs:
 
       - name: Tests
         run: python -m pytest -v ${{ matrix.test.cmd }}
-        working-directory: ${{ env.SRC_DIR }}          
+        working-directory: ${{ env.SRC_DIR }}
           
   genai_python_lib:
     name: OpenVINO genai extension (cmake + wheel)
