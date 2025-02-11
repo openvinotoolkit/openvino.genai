@@ -13,7 +13,6 @@
 
 #include "py_utils.hpp"
 
-
 namespace {
 
 constexpr char class_docstring[] = R"(
@@ -24,7 +23,7 @@ constexpr char class_docstring[] = R"(
     1. chat_template entry from tokenizer_config.json
     2. chat_template entry from processor_config.json
     3. chat_template entry from chat_template.json
-    4. chat_tempalte entry from rt_info section of openvino::Model
+    4. chat_tempalte entry from rt_info section of openvino.Model
     5. If the tempalte is known to be not supported by GenAI, it's
         replaced with a simplified supported version.
     6. Patch chat_tempalte replacing not supported instructions with
@@ -32,7 +31,7 @@ constexpr char class_docstring[] = R"(
     7. If the template was not in the list of not supported GenAI
         templates from (5), it's blindly replaced with
         simplified_chat_template entry from rt_info section of
-        openvino::Model if the entry exists.
+        openvino.Model if the entry exists.
 )";
 
 }  // namespace
