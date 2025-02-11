@@ -184,6 +184,7 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
+      INSTALL_DIR: ${{ github.workspace }}\install\genai
       WHEELS_DIR: ${{ github.workspace }}\install\genai\wheels
       CCACHE_DIR: ${{ github.workspace }}\\ccache
 
@@ -278,7 +279,7 @@ jobs:
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: genai_wheels
-          path: ${{ env.BUILD_DIR }}/*.whl
+          path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
   genai_build_samples:
