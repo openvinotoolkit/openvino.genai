@@ -379,6 +379,9 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
+      - name: List wheels
+        run: Get-ChildItem -Path "${{ env.INSTALL_DIR }}/wheels"
+          
       - name: Install GenAI Wheels
         uses: ./src/.github/actions/install_wheel
         with:
