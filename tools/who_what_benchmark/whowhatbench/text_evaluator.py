@@ -88,7 +88,7 @@ class TextEvaluator(BaseEvaluator):
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
-        language=None,
+        language="en",
         gen_answer_fn=None,
         generation_config=None,
         generation_config_base=None,
