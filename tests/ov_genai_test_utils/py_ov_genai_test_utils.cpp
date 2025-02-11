@@ -8,7 +8,7 @@
 namespace py = pybind11;
 using namespace ov::genai;
 
-PYBIND11_MODULE(pywrapper_for_tests, m) {
+PYBIND11_MODULE(ov_genai_test_utils, m) {
     py::class_<TextCallbackStreamer>(m, "TextCallbackStreamer")
         .def(py::init<const Tokenizer&, std::function<CallbackTypeVariant(std::string)>>(), py::arg("tokenizer"), py::arg("callback"))
         .def("write", &TextCallbackStreamer::write)

@@ -1,0 +1,23 @@
+[build-system]
+requires = [
+    "py-build-cmake==0.4.0",
+    "pybind11-stubgen==2.5.1",
+]
+build-backend = "py_build_cmake.build"
+[project]
+name = "ov-genai-test-utils"
+version = "2025.1.0.0"
+description = "Library with utilities Python binding to test OpenVINO GenAI"
+authors = [
+    { name = "OpenVINO Developers", email = "openvino@intel.com" },
+]
+
+
+[tool.pytest.ini_options]
+markers = [
+    "nightly",
+    "precommit: (deselect with '-m \"precommit\"')",
+]
+
+[tool.py-build-cmake]
+cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]
