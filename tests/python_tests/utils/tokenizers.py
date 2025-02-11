@@ -1,27 +1,21 @@
 # Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import shutil
 import pytest
+from pathlib import Path
+from typing import List, Tuple
+
 import openvino
 
-from optimum.intel import openvinoModelForCausalLM
-from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase, Tokenizer
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import GenerationConfig as HFGenerationConfig
-from typing import List, Tuple, Callable
-
-from utils.generation_config import get_greedy, get_beam_search
-from utils.constants import get_default_llm_propeties
-from utils.hugging_face import convert_models, get_hugging_face_models, run_hugging_face
-from utils.comparation import compare_generation_results
+from utils.hugging_face import download_and_convert_model
 from data.models import get_models_list
 
 @pytest.fixture(scope="module")
 def model_tmp_path(tmpdir_factory):
-    model_id, models_path, _, _, _ = read_model(get_models_list()[0])
+    model_id, tmp_path = get_models_list()[0]
+    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+
     temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
 
     # copy openvino converted model and tokenizers
@@ -35,8 +29,12 @@ def model_tmp_path(tmpdir_factory):
 
 @pytest.fixture(scope="module")
 def model_tokenizers_tmp_path(tmpdir_factory):
-    model_id, models_path, _, _, _ = read_model(get_models_list()[0])
+    model_id, tmp_path = get_models_list()[0]
+    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+
     temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
+
+    from utils.constants import OV_DETOKENIZER_FILENAME, OV_TOKENIZER_FILENAME
 
     # If tokens were not found in IR, it fallback to reading from config.
     # There was no easy way to add tokens to IR in tests, so we remopenvinoe them
@@ -48,7 +46,7 @@ def model_tokenizers_tmp_path(tmpdir_factory):
         for src_file in models_path.glob(pattern):
 
             # Update files if they are openvino_tokenizer.xml or openvino_detokenizer.xml
-            if src_file.name in ['openvino_tokenizer.xml', 'openvino_detokenizer.xml']:
+            if src_file.name in [ OV_TOKENIZER_FILENAME, OV_DETOKENIZER_FILENAME ]:
                 if src_file.exists():
                     # Load the XML content
                     openvino_model = core.read_model(src_file)

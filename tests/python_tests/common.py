@@ -14,8 +14,8 @@ from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple, Callable
 
 from utils.generation_config import get_greedy, get_beam_search
-from utils.constants import get_default_llm_propeties
-from utils.hugging_face import convert_models, get_hugging_face_models, run_hugging_face
+from utils.constants import get_default_llm_properties
+from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
 
 TESTS_ROOT = Path(__file__).parent
@@ -67,7 +67,7 @@ def run_continuous_batching(
     if type(generation_configs) is not list:
         generation_configs = [generation_configs] * len(prompts)
  
-    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_llm_propeties())
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_llm_properties())
     output = cb_pipe.generate(prompts, generation_configs)
 
     del cb_pipe
@@ -115,7 +115,7 @@ def run_llm_pipeline(
     use_cb : bool = False,
     streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
-    properties = get_default_llm_propeties()
+    properties = get_default_llm_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
@@ -162,13 +162,10 @@ def run_llm_pipeline_with_ref(model_id: str,
                               tmp_path: Path, 
                               use_cb : bool = False,
                               streamer: StreamerWithResults | Callable | StreamerBase = None):
-    models_path : Path = tmp_path / model_id
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    convert_models(opt_model, hf_tokenizer, models_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
@@ -176,7 +173,10 @@ def run_llm_pipeline_with_ref(model_id: str,
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
 
 
-def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dict = {}, generation_config : GenerationConfig | dict = None):
+def run_cb_pipeline_with_ref(tmp_path: str,
+                             model_id: str,
+                             scheduler_params: dict = {},
+                             generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = get_scheduler_config(scheduler_params)
 
@@ -186,10 +186,7 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
             generation_config = GenerationConfig(**generation_config)
         generation_configs = [generation_config] * len(prompts)
 
-    models_path : Path = tmp_path / model_id
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-
-    convert_models(opt_model, hf_tokenizer, models_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)

@@ -7,10 +7,10 @@ from openvino_genai import GenerationConfig
 import pytest
 import platform
 import sys
-from ov_genai_test_utils import (
-    read_model
-)
-from utils.constants import get_default_llm_propeties
+
+from utils.constants import get_default_llm_properties
+from utils.hugging_face import download_and_convert_model
+from utils.ov_genai_pipelines import create_ov_pipeline
 from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
@@ -31,7 +31,7 @@ common_config = {
                       'NPUW_ONLINE_PIPELINE': 'NONE',
                       'PREFILL_CONFIG': { },
                       'GENERATE_CONFIG': { }
-                } | get_default_llm_propeties()
+                } | get_default_llm_properties()
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
@@ -51,9 +51,10 @@ generation_configs = [
 @pytest.mark.parametrize("generation_config", generation_configs)
 def test_generation_compare_with_stateful(generation_config):
     prompt = 'What is OpenVINO?'
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
 
-    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_llm_propeties())
+    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
@@ -79,7 +80,8 @@ def test_multinomial_sampling(generation_config):
     # variations in raw logits. Therefore, there is no reliable reference for validation,
     # so only ensure that no exceptions are raised.
     prompt = 'What is OpenVINO?'
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
@@ -87,7 +89,8 @@ def test_multinomial_sampling(generation_config):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_length_properties_set_no_exception():
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
@@ -104,7 +107,8 @@ pipeline_configs = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_invalid_length_properties_raise_error(pipeline_config):
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     pipeline_config |= common_config
     with pytest.raises(RuntimeError):
         pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
@@ -113,7 +117,8 @@ def test_invalid_length_properties_raise_error(pipeline_config):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_one_no_exception():
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     # Check it doesn't throw any exception when batch of size 1 is provided
@@ -124,7 +129,8 @@ def test_batch_one_no_exception():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_raise_error():
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
@@ -141,7 +147,8 @@ generation_configs = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config):
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'What is OpenVINO?'
 
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
@@ -152,7 +159,8 @@ def test_unsupported_sampling_raise_error(generation_config):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_terminate_by_max_number_of_tokens():
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
@@ -167,7 +175,8 @@ def test_terminate_by_max_number_of_tokens():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_terminate_by_out_of_memory():
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
@@ -186,7 +195,8 @@ def test_terminate_by_out_of_memory():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_terminate_by_sampler():
-    model_path = read_model(get_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
 
     current_iter = 0
@@ -217,9 +227,10 @@ def test_chat_generation():
         'What was my first question?'
     ]
 
-    model_path = read_model(get_chat_models_list()[0])[1]
+    model_id, tmp_path = get_models_list()[0]
+    _, _, model_path = download_and_convert_model(model_id, tmp_path)
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_propeties(), questions)
+    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')

@@ -46,7 +46,7 @@ def get_models_list():
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
 
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
-    return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
+    return [ (model_id, prefix) for model_id in model_ids ]
 
 
 def get_chat_models_list():

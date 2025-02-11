@@ -10,11 +10,12 @@ from typing import Dict, Tuple, List
 from openvino_genai import Tokenizer
 import json
 from common import delete_rt_info
-from ov_genai_test_utils import read_model
 
-from utils.hugging_face import convert_and_save_tokenizer
+from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.tokenizers import model_tmp_path
-from data.models import get_models_list, get_chat_models_list
+from utils.ov_genai_pipelines import PipelineType, create_ov_pipeline
+from utils.constants import get_disabled_mmap_ov_config
+from data.models import get_models_list
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
     delete_rt_info(configs, temp_path)
@@ -106,7 +107,12 @@ prompts = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_encode(model_descr, prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path=models_path,
+                                 pipeline_type=PipelineType.STATEFUL,
+                                 ov_config=get_disabled_mmap_ov_config())
+
     ov_tokenizer = ov_pipe.get_tokenizer()
 
     encoded_ov = ov_tokenizer.encode(prompt).input_ids.data
@@ -136,7 +142,12 @@ encoded_prompts = [
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
 def test_decode(model_descr, encoded_prompt):
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path=models_path,
+                                 pipeline_type=PipelineType.STATEFUL,
+                                 ov_config=get_disabled_mmap_ov_config())
+
     ov_tokenizer = ov_pipe.get_tokenizer()
     decoded_ov = ov_tokenizer.decode(encoded_prompt)
 
@@ -166,7 +177,12 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 
     # Will load openvino_model for tiny-random-phi as a placeholder
     # but indeed only Tokenizer and apply_chat_template will be tested.
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(get_models_list()[0])
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path=models_path,
+                                 pipeline_type=PipelineType.STATEFUL,
+                                 ov_config=get_disabled_mmap_ov_config())
+
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(conversation,
         add_generation_prompt=False,
@@ -192,8 +208,11 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_set_chat_template():
-    model_descr = get_chat_models_list()[0]
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path=models_path,
+                                 pipeline_type=PipelineType.STATEFUL,
+                                 ov_config=get_disabled_mmap_ov_config())
 
     prompt = "how are you?"
     dummy_conversation = [
@@ -286,8 +305,12 @@ prompts = [
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
 def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
-    model_descr = get_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path=models_path,
+                                 pipeline_type=PipelineType.STATEFUL,
+                                 ov_config=get_disabled_mmap_ov_config())
+
     genai_tokenzier = ov_pipe.get_tokenizer()
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied 
