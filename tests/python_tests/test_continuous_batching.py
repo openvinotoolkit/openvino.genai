@@ -370,22 +370,24 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
     model_id : str = "facebook/opt-125m"
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
-    models_path : Path = tmp_path / "t_streaming" / model_id
+    models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
 
     generation_config = GenerationConfig()
-    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
+    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
+    it_cnt = 0
     def py_streamer(py_str: str):
+        nonlocal it_cnt
+        it_cnt += 1
         return False
 
-    try:
-        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-    except Exception:
-        assert True
+    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
+
+    assert it_cnt > 0
 
 @pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
 @pytest.mark.precommit
@@ -393,7 +395,7 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
     model_id : str = "facebook/opt-125m"
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
-    models_path : Path = tmp_path / "t_streaming" / model_id
+    models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
     
     generation_config = GenerationConfig()
@@ -402,13 +404,15 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
 
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
+    it_cnt = 0
     def py_streamer(py_str: str):
-        raise Exception("Streamer was called")
+        nonlocal it_cnt
+        it_cnt += 1
+        return False
 
-    try:
-        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-    except Exception:
-        assert False
+    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
+
+    assert it_cnt == 0
