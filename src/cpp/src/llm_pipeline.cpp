@@ -43,7 +43,7 @@ std::pair<ov::AnyMap, ov::genai::static_llm::ModelConfigDesc> split_model_descr(
 }
 
 const std::string PA_BACKEND = "PA";
-const std::string SPDA_BACKEND = "SPDA";
+const std::string SDPA_BACKEND = "SDPA";
 
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
@@ -65,8 +65,8 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     auto it = properties.find("ATTENTION_BACKEND");
     if (it != properties.end()) {
         attention_backend = it->second.as<std::string>();
-        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SPDA_BACKEND,
-            "Attention backend must be either '", PA_BACKEND, "' or '", SPDA_BACKEND, "', got '", attention_backend, "'");
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
+            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
         properties.erase(it);
     }
 
@@ -98,7 +98,9 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
-    } else  {
+    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
+    } else {
         auto callback = std::get<std::function<bool(std::string)>>(func);
         return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
     }
