@@ -85,6 +85,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<EmbeddingsModel> m_embedding,
     std::optional<int64_t> rope_delta
 ) {
+    size_t init_attention_mask_size = attention_mask.get_size();
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
         generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
@@ -92,7 +93,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     auto active_sequence_groups{sequence_groups};
 
-    auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups]() {
+    size_t streamed_token_nums = 0;
+
+    auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups, &streamed_token_nums]() {
         GenerationHandle& handle = generations.at(0);
         if (streamer_ptr && handle->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
@@ -100,6 +103,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             if (!generation_outputs.empty()) {
                 for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
                     auto streaming_status = streamer_ptr->write(generated_token_id);
+                    streamed_token_nums++;
                     if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
                         streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                         break;
@@ -254,12 +258,16 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     stream_generated_tokens();
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
+        finish_info.diff_tokens_in_cache_and_result = (m_llm.get_tensor("attention_mask").get_size() - init_attention_mask_size) - streamed_token_nums;
+    } else {
+        finish_info.diff_tokens_in_cache_and_result = (m_llm.get_tensor("attention_mask").get_size() - init_attention_mask_size) - sequence_groups[0]->get_finished_sequences().at(0)->get_generated_ids().size();
     }
 
     for (auto& sequence_group : sequence_groups) {
         auto sampling_params = sequence_group->get_sampling_parameters();
         const auto& sequences = sequence_group->get_finished_sequences();
         size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
+        finish_info.streaming_finish_status = sequence_group->get_generation_stream()->get_status();
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
@@ -316,7 +324,7 @@ void update_kv_history_manager(
     const ov::Tensor& prev_chat_tokens,
     const std::vector<int64_t> tokenized_history,
     const std::set<int64_t> stop_tokens,
-    const ov::genai::GenerationStatus finish_status) {
+    const int64_t diff_tokens_in_cache_and_result) {
     // some symbols combinations can be encoded by the tokenizer in different ways
     // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
     // so let's check it out, find the trusted part and use it in on the next step
@@ -334,8 +342,10 @@ void update_kv_history_manager(
     if (trusted_history_length != SIZE_MAX && kv_history_manager.trusted_history_length == 0) {
         kv_history_manager.trusted_history_length = trusted_history_length;
         size_t num_tokens_to_remove_from_kv_cache = tokenized_history.size() - trusted_history_length;
+
         // last generated token is present in tokenized_history, but not included to attention mask, let's keep it in historyt
-        num_tokens_to_remove_from_kv_cache -= 1;
+        if (diff_tokens_in_cache_and_result < 0)
+            num_tokens_to_remove_from_kv_cache += diff_tokens_in_cache_and_result;
 
         // if streaming was used and cancelled on prev step, m_kv_history_manager.num_tokens_to_remove_from_kv_cache could be already set
         // and it would be bigger as it includes answer + prompt
@@ -343,6 +353,10 @@ void update_kv_history_manager(
                                                                 kv_history_manager.num_tokens_to_remove_from_kv_cache : num_tokens_to_remove_from_kv_cache;
 
     }
+
+    if (diff_tokens_in_cache_and_result > 0)
+        kv_history_manager.num_tokens_to_remove_from_kv_cache += diff_tokens_in_cache_and_result;
+
 }
 
 void update_tokenized_history(std::vector<int64_t>& tokenized_history, const ov::Tensor& new_chat_tokens) {

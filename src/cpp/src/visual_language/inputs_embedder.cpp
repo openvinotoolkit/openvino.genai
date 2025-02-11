@@ -43,11 +43,11 @@ protected:
     // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
     // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
-    ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
+    ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0, 2};
     // True if chat template should be applied for non-chat scenario
     bool m_apply_chat_template = true;
-    // Finish reason of last generation for chat scenario
-    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
+    // Finish info of last generation for chat scenario
+    ov::genai::utils::GenerationFinishInfo m_chat_finish_info = {};
 
     std::set<int64_t> m_stop_token_ids;
 public:
@@ -87,8 +87,7 @@ public:
             m_kv_history_manager.reset();
         }
 
-        m_last_disappeared_token = finish_info.probably_disappeared_token;
-        m_chat_generation_finish_status = finish_info.streaming_finish_status;
+        m_chat_finish_info = finish_info;
   
         std::copy(finish_info.results.tokens.at(0).begin(), finish_info.results.tokens.at(0).end(), std::back_inserter(m_tokenized_history));
     }
@@ -200,7 +199,7 @@ protected:
     ov::Tensor update_history(const ov::Tensor& new_chat_tokens, const ov::Tensor& prev_chat_tokens) {
         ov::Tensor encoded_inputs;
         if (m_is_chat_conversation) {
-            ov::genai::update_kv_history_manager(m_kv_history_manager, prev_chat_tokens, m_tokenized_history, m_stop_token_ids, m_chat_generation_finish_status);
+            ov::genai::update_kv_history_manager(m_kv_history_manager, prev_chat_tokens, m_tokenized_history, m_stop_token_ids, m_chat_finish_info.diff_tokens_in_cache_and_result);
             encoded_inputs = ov::genai::get_chat_encoded_input(new_chat_tokens, prev_chat_tokens, m_tokenized_history, m_kv_history_manager).input_ids;
         } else {
             encoded_inputs = new_chat_tokens;

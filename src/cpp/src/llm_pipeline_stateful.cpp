@@ -126,8 +126,7 @@ DecodedResults StatefulLLMPipeline::generate(
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
             auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false));
 
-
-            ov::genai::update_kv_history_manager(m_kv_history_manager, prev_chat_tokens.input_ids, m_tokenized_chat_history, {m_tokenizer.get_eos_token_id()}, m_chat_generation_finish_status);
+            ov::genai::update_kv_history_manager(m_kv_history_manager, prev_chat_tokens.input_ids, m_tokenized_chat_history, {m_tokenizer.get_eos_token_id()}, m_chat_finish_info.diff_tokens_in_cache_and_result);
 
             encoded_input = ov::genai::get_chat_encoded_input(new_chat_tokens.input_ids, prev_chat_tokens.input_ids, m_tokenized_chat_history, m_kv_history_manager);
 
@@ -165,7 +164,7 @@ DecodedResults StatefulLLMPipeline::generate(
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     if (is_chat_conversation) {
-        if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
+        if (m_chat_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
             // If chat generation process was cancelled by user, let's rollback to previous state of history
             m_history.pop_back();
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache += m_tokenized_chat_history.size() - prev_tokenized_chat_history.size();
@@ -326,21 +325,21 @@ EncodedResults StatefulLLMPipeline::generate(
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask,
                                                                         streamer_ptr, m_sampler, requests, position_ids, std::nullopt);
     ov::genai::EncodedResults& result = finish_info.results;
+
     m_last_disappeared_token = finish_info.probably_disappeared_token;
-    m_chat_generation_finish_status = finish_info.streaming_finish_status;
+    m_chat_finish_info = finish_info;
 
     if (is_chat_conversation) {
         m_kv_history_manager.reset();
 
-        // m_kv_history_manager.num_tokens_to_remove_from_kv_cache = finis_info.num_extra_tokens_in_cache;
-
-        // force remove from kv_cache last answer
+        // in case of beam_search in chat mode, kv cache contains info about longest generated result among all sequences
+        // let's remove last answer from kv_cache and include it to the prompt on the next step
         if (config.is_beam_search() && m_chat_input_type != ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
             m_kv_history_manager.trusted_history_length = m_tokenized_chat_history.size();
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
 
-        if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
+        if (m_chat_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
 
             if (m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {

@@ -13,7 +13,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(ov::InferRequest& 
                                                               std::optional<ov::Tensor> position_ids, std::optional<EmbeddingsModel> m_embedding, std::optional<int64_t> rope_delta = std::nullopt);
 
 void update_kv_history_manager(ov::genai::utils::HistoryRemoveManager& kv_history_manager, const ov::Tensor& prev_chat_tokens, const std::vector<int64_t> tokenized_history,
-                               const std::set<int64_t> stop_tokens, const ov::genai::GenerationStatus finish_status);
+                               const std::set<int64_t> stop_tokens, const int64_t diff_tokens_in_cache_and_result);
 
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, const ov::Tensor& prev_chat_tokens, const std::vector<int64_t> tokenized_history, ov::genai::utils::HistoryRemoveManager kv_history_manager);
 

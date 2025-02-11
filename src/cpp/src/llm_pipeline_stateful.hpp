@@ -24,8 +24,8 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0, 2};
-    // Finish reason of last generation for chat scenario
-    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
+    // Finish info about last generation for chat scenario
+    ov::genai::utils::GenerationFinishInfo m_chat_finish_info = {};
 
     void reset_kv_state();
 public:

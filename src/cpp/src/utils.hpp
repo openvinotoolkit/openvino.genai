@@ -55,7 +55,7 @@ struct GenerationFinishInfo
     EncodedResults results;
     std::optional<int64_t> probably_disappeared_token = std::nullopt;
     GenerationStatus streaming_finish_status;
-    int64_t num_extra_tokens_in_cache;
+    int64_t diff_tokens_in_cache_and_result;
 };
 
 Tensor init_attention_mask(const Tensor& position_ids);
