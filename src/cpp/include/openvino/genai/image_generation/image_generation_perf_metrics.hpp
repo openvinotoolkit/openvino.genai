@@ -34,12 +34,15 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationPerfMetrics {
     void clean_up();
     void evaluate_statistics();
 
-    MeanStdPair get_unet_inference_duration();
-    MeanStdPair get_transformer_inference_duration();
-    MeanStdPair get_iteration_duration();
-    float get_inference_total_duration();
+    MeanStdPair get_unet_infer_meanstd();
+    MeanStdPair get_transformer_infer_meanstd();
+    MeanStdPair get_iteration_meanstd();
+    float get_unet_infer_duration();
+    float get_transformer_infer_duration();
+    float get_encoder_infer_duration();
+    float get_decoder_infer_duration();
+    float get_all_infer_duration();
     float get_load_time();
     float get_generate_duration();
-
 };
 }

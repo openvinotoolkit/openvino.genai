@@ -14,30 +14,14 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
     std::string prefix_idx = "[" + prefix + "-" + std::to_string(idx) + "]";
     std::cout << "\n";
     std::cout << prefix_idx << " generate time: " << metrics.get_generate_duration()
-              << " ms, total infer time:" << metrics.get_inference_total_duration()
+              << " ms, total infer time:" << metrics.get_all_infer_duration()
               << " ms, infer step num:" << metrics.raw_metrics.iteration_durations.size() << std::endl;
-    std::cout << prefix_idx << " encoder infer time: ";
-    for (auto encoder : metrics.encoder_inference_duration) {
-        std::cout << "(" << encoder.first << "-" << encoder.second << " ms) ";
-    }
-    std::cout << std::endl;
+    std::cout << prefix_idx << " encoder infer time: " << metrics.get_encoder_infer_duration() << " ms"<< std::endl;
     if (!metrics.raw_metrics.transformer_inference_durations.empty()) {
-        float duration_sum = std::accumulate(metrics.raw_metrics.transformer_inference_durations.begin(),
-                                             metrics.raw_metrics.transformer_inference_durations.end(),
-                                             0.0f,
-                                             [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-                                                 return acc + duration.count() / 1000.0f;
-                                             });
-        std::cout << prefix_idx << " transformer total infer time:" << duration_sum
+        std::cout << prefix_idx << " transformer total infer time:" << metrics.get_transformer_infer_duration()
                   << " ms, infer number:" << metrics.raw_metrics.transformer_inference_durations.size() << std::endl;
     } else {
-        float duration_sum = std::accumulate(metrics.raw_metrics.unet_inference_durations.begin(),
-                                             metrics.raw_metrics.unet_inference_durations.end(),
-                                             0.0f,
-                                             [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-                                                 return acc + duration.count() / 1000.0f;
-                                             });
-        std::cout << prefix_idx << " unet total infer time:" << duration_sum
+        std::cout << prefix_idx << " unet total infer time:" << metrics.get_unet_infer_duration()
                   << " ms, infer number:" << metrics.raw_metrics.unet_inference_durations.size() << std::endl;
     }
     std::cout << prefix_idx << " vae decoder infer time:" << metrics.vae_decoder_inference_duration
@@ -57,6 +41,43 @@ inline float calculate_average(std::vector<float>& durations) {
     return duration_mean;
 }
 
+inline void print_statistic(std::vector<ov::genai::ImageGenerationPerfMetrics>& warmup_metrics, std::vector<ov::genai::ImageGenerationPerfMetrics>& iter_metrics) {
+    std::vector<float> generate_durations;
+    std::vector<float> total_inference_durations;
+    std::vector<float> encoder_durations;
+    std::vector<float> decoder_durations;
+    float load_time = 0.0f;
+    int warmup_num = warmup_metrics.size();
+    int iter_num = iter_metrics.size();
+
+    float generate_warmup = 0.0f;
+    float inference_warmup = 0.0f;
+    if (!warmup_metrics.empty()) {
+        generate_warmup = warmup_metrics[0].get_generate_duration();
+        inference_warmup = warmup_metrics[0].get_all_infer_duration();
+    }
+
+    for (auto& metrics : iter_metrics) {
+        generate_durations.emplace_back(metrics.get_generate_duration());
+        total_inference_durations.emplace_back(metrics.get_all_infer_duration());
+        decoder_durations.emplace_back(metrics.get_decoder_infer_duration());
+        encoder_durations.emplace_back(metrics.get_encoder_infer_duration());
+        load_time = metrics.get_load_time();
+    }
+
+    float generate_mean = calculate_average(generate_durations);
+    float inference_mean = calculate_average(total_inference_durations);
+    float decoder_mean = calculate_average(decoder_durations);
+    float encoder_mean = calculate_average(encoder_durations);
+
+    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
+    std::cout << "Warmup number:" << warmup_num << ", first generate warmup time:" << generate_warmup
+              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
+    std::cout << "Generate iteration number:" << iter_num << ", for one iteration, generate avg time: " << generate_mean
+              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
+              << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
+}
+
 void text2image(cxxopts::ParseResult& result) {
     std::string prompt = result["prompt"].as<std::string>();
     const std::string models_path = result["model"].as<std::string>();
@@ -73,53 +94,26 @@ void text2image(cxxopts::ParseResult& result) {
     config.num_images_per_prompt = result["num_images_per_prompt"].as<size_t>();
     pipe.set_generation_config(config);
 
-    std::vector<float> generate_warmup_durations;
-    std::vector<float> inference_warmup_durations;
     std::cout << std::fixed << std::setprecision(2);
+    std::vector<ov::genai::ImageGenerationPerfMetrics> warmup_metrics;
     for (size_t i = 0; i < num_warmup; i++) {
         pipe.generate(prompt);
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
-        generate_warmup_durations.emplace_back(metrics.get_generate_duration());
-        inference_warmup_durations.emplace_back(metrics.get_inference_total_duration());
+        warmup_metrics.emplace_back(metrics);
         print_one_generate(metrics, "warmup", i);
     }
 
-    float generate_warmup = generate_warmup_durations.empty() ? 0.0f : generate_warmup_durations[0];
-    float inference_warmup = inference_warmup_durations.empty() ? 0.0f : inference_warmup_durations[0];
-
-    std::vector<float> generate_durations;
-    std::vector<float> total_inference_durations;
-    std::vector<float> encoder_durations;
-    std::vector<float> decoder_durations;
-    float load_time;
+    std::vector<ov::genai::ImageGenerationPerfMetrics> iter_metrics;
     for (size_t i = 0; i < num_iter; i++) {
         ov::Tensor image = pipe.generate(prompt);
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
-        generate_durations.emplace_back(metrics.get_generate_duration());
-        total_inference_durations.emplace_back(metrics.get_inference_total_duration());
-        decoder_durations.emplace_back(metrics.vae_decoder_inference_duration);
-        float encoder_duration = 0.f;
-        for(auto encoder : metrics.encoder_inference_duration) {
-            encoder_duration += encoder.second;
-        }
-        encoder_durations.emplace_back(encoder_duration);
+        iter_metrics.emplace_back(metrics);
         std::string image_name = output_dir + "/image_" + std::to_string(i) + ".bmp";
         imwrite(image_name, image, true);
-        load_time = metrics.get_load_time();
         print_one_generate(metrics, "iter", i);
     }
 
-    float generate_mean = calculate_average(generate_durations);
-    float inference_mean = calculate_average(total_inference_durations);
-    float decoder_mean = calculate_average(decoder_durations);
-    float encoder_mean = calculate_average(encoder_durations);
-
-    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
-    std::cout << "Warmup number:" << num_warmup << ", first generate warmup time:" << generate_warmup
-              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
-    std::cout << "Generate iteration number:" << num_iter << ", for one iteration, generate avg time: " << generate_mean
-              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
-              << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
+    print_statistic(warmup_metrics, iter_metrics);
 }
 
 void image2image(cxxopts::ParseResult& result) {
@@ -136,53 +130,26 @@ void image2image(cxxopts::ParseResult& result) {
 
     ov::genai::Image2ImagePipeline pipe(models_path, device);
 
-    std::vector<float> generate_warmup_durations;
-    std::vector<float> inference_warmup_durations;
+    std::vector<ov::genai::ImageGenerationPerfMetrics> warmup_metrics;
     std::cout << std::fixed << std::setprecision(2);
     for (size_t i = 0; i < num_warmup; i++) {
         pipe.generate(prompt, image_input, ov::genai::strength(strength), ov::genai::callback(progress_bar));
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
-        generate_warmup_durations.emplace_back(metrics.get_generate_duration());
-        inference_warmup_durations.emplace_back(metrics.get_inference_total_duration());
+        warmup_metrics.emplace_back(metrics);
         print_one_generate(metrics, "warmup", i);
     }
 
-    float generate_warmup = generate_warmup_durations.empty() ? 0.0f : generate_warmup_durations[0];
-    float inference_warmup = inference_warmup_durations.empty() ? 0.0f : inference_warmup_durations[0];
-
-    std::vector<float> generate_durations;
-    std::vector<float> total_inference_durations;
-    std::vector<float> encoder_durations;
-    std::vector<float> decoder_durations;
-    float load_time;
+    std::vector<ov::genai::ImageGenerationPerfMetrics> iter_metrics;
     for (size_t i = 0; i < num_iter; i++) {
         ov::Tensor image = pipe.generate(prompt, image_input, ov::genai::strength(strength), ov::genai::callback(progress_bar));
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
-        generate_durations.emplace_back(metrics.get_generate_duration());
-        total_inference_durations.emplace_back(metrics.get_inference_total_duration());
-        decoder_durations.emplace_back(metrics.vae_decoder_inference_duration);
-        float encoder_duration = 0.f;
-        for(auto encoder : metrics.encoder_inference_duration) {
-            encoder_duration += encoder.second;
-        }
-        encoder_durations.emplace_back(encoder_duration);
+        iter_metrics.emplace_back(metrics);
         std::string image_name = output_dir + "/image_" + std::to_string(i) + ".bmp";
         imwrite(image_name, image, true);
-        load_time = metrics.get_load_time();
         print_one_generate(metrics, "iter", i);
     }
 
-    float generate_mean = calculate_average(generate_durations);
-    float inference_mean = calculate_average(total_inference_durations);
-    float decoder_mean = calculate_average(decoder_durations);
-    float encoder_mean = calculate_average(encoder_durations);
-
-    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
-    std::cout << "Warmup number:" << num_warmup << ", first generate warmup time:" << generate_warmup
-              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
-    std::cout << "Generate iteration number:" << num_iter << ", for one iteration, generate avg time: " << generate_mean
-              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
-              << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
+    print_statistic(warmup_metrics, iter_metrics);
 }
 
 void inpainting(cxxopts::ParseResult& result) {
@@ -200,53 +167,26 @@ void inpainting(cxxopts::ParseResult& result) {
 
     ov::genai::InpaintingPipeline pipe(models_path, device);
 
-    std::vector<float> generate_warmup_durations;
-    std::vector<float> inference_warmup_durations;
     std::cout << std::fixed << std::setprecision(2);
+    std::vector<ov::genai::ImageGenerationPerfMetrics> warmup_metrics;
     for (size_t i = 0; i < num_warmup; i++) {
         pipe.generate(prompt, image_input, mask_image, ov::genai::callback(progress_bar));
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
-        generate_warmup_durations.emplace_back(metrics.get_generate_duration());
-        inference_warmup_durations.emplace_back(metrics.get_inference_total_duration());
+        warmup_metrics.emplace_back(metrics);
         print_one_generate(metrics, "warmup", i);
     }
 
-    float generate_warmup = generate_warmup_durations.empty() ? 0.0f : generate_warmup_durations[0];
-    float inference_warmup = inference_warmup_durations.empty() ? 0.0f : inference_warmup_durations[0];
-
-    std::vector<float> generate_durations;
-    std::vector<float> total_inference_durations;
-    std::vector<float> encoder_durations;
-    std::vector<float> decoder_durations;
-    float load_time;
+    std::vector<ov::genai::ImageGenerationPerfMetrics> iter_metrics;
     for (size_t i = 0; i < num_iter; i++) {
         ov::Tensor image = pipe.generate(prompt, image_input, mask_image, ov::genai::callback(progress_bar));
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
-        generate_durations.emplace_back(metrics.get_generate_duration());
-        total_inference_durations.emplace_back(metrics.get_inference_total_duration());
-        decoder_durations.emplace_back(metrics.vae_decoder_inference_duration);
-        float encoder_duration = 0.f;
-        for(auto encoder : metrics.encoder_inference_duration) {
-            encoder_duration += encoder.second;
-        }
-        encoder_durations.emplace_back(encoder_duration);
+        iter_metrics.emplace_back(metrics);
         std::string image_name = output_dir + "/image_" + std::to_string(i) + ".bmp";
         imwrite(image_name, image, true);
-        load_time = metrics.get_load_time();
         print_one_generate(metrics, "iter", i);
     }
 
-    float generate_mean = calculate_average(generate_durations);
-    float inference_mean = calculate_average(total_inference_durations);
-    float decoder_mean = calculate_average(decoder_durations);
-    float encoder_mean = calculate_average(encoder_durations);
-
-    std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
-    std::cout << "Warmup number:" << num_warmup << ", first generate warmup time:" << generate_warmup
-              << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
-    std::cout << "Generate iteration number:" << num_iter << ", for one iteration, generate avg time: " << generate_mean
-              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
-              << " ms, vae decoder infer avg time:" << decoder_mean << " ms" << std::endl;
+    print_statistic(warmup_metrics, iter_metrics);
 }
 
 int main(int argc, char* argv[]) try {
@@ -254,7 +194,7 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     //common parameters
-    ("pt,pipeline_type", "pipeline type: text2image, image2image, inpainting", cxxopts::value<std::string>()->default_value("text2image"))
+    ("pt,pipeline_type", "pipeline type: text2image/image2image/inpainting", cxxopts::value<std::string>()->default_value("text2image"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))

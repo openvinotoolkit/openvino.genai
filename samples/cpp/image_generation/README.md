@@ -152,11 +152,11 @@ Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeli
 
 ## benchmarking sample for text to image pipeline
 
-This `benchmark_text2image.cpp` sample script demonstrates how to benchmark the text to image pipeline, image to image pipeline and inpainting pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
+This `benchmark_image.cpp` sample script demonstrates how to benchmark the text to image pipeline, image to image pipeline and inpainting pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
 
 The usage of this sample is:
 ```bash
-./benchmark_text2image [OPTIONS]
+./benchmark_image [OPTIONS]
 ```
 Options:
 - `-pt, --pipeline_type` (default: `"text2image"`): Pipeline type(text2image, image2image, inpainting).
@@ -176,7 +176,7 @@ Options:
 
 For example:
 
-`./benchmark_text2image -pt text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
+`./benchmark_image -pt text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
 
 Performance output:
 

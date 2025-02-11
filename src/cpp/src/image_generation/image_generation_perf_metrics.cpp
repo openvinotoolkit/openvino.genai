@@ -55,45 +55,65 @@ void ImageGenerationPerfMetrics::evaluate_statistics() {
     m_evaluated = true;
 }
 
-MeanStdPair ImageGenerationPerfMetrics::get_unet_inference_duration() {
+MeanStdPair ImageGenerationPerfMetrics::get_unet_infer_meanstd() {
     evaluate_statistics();
     return unet_inference_duration;
 }
 
-MeanStdPair ImageGenerationPerfMetrics::get_transformer_inference_duration() {
+MeanStdPair ImageGenerationPerfMetrics::get_transformer_infer_meanstd() {
     evaluate_statistics();
     return transformer_inference_duration;
 }
-MeanStdPair ImageGenerationPerfMetrics::get_iteration_duration() {
+
+MeanStdPair ImageGenerationPerfMetrics::get_iteration_meanstd() {
     evaluate_statistics();
     return iteration_duration;
 }
 
-float ImageGenerationPerfMetrics::get_inference_total_duration() {
+float ImageGenerationPerfMetrics::get_unet_infer_duration() {
+    float total = std::accumulate(raw_metrics.unet_inference_durations.begin(),
+                                  raw_metrics.unet_inference_durations.end(),
+                                  0.0f,
+                                  [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+                                      return acc + duration.count() / 1000.0f;
+                                  });
+    return total;
+}
+
+float ImageGenerationPerfMetrics::get_transformer_infer_duration() {
+    float total = std::accumulate(raw_metrics.transformer_inference_durations.begin(),
+                                  raw_metrics.transformer_inference_durations.end(),
+                                  0.0f,
+                                  [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+                                      return acc + duration.count() / 1000.0f;
+                                  });
+    return total;
+}
+
+float ImageGenerationPerfMetrics::get_encoder_infer_duration() {
+    float duration = 0.0f;
+    for (auto encoder = encoder_inference_duration.begin(); encoder != encoder_inference_duration.end(); encoder++) {
+        duration += encoder->second;
+    }
+    return duration;
+}
+
+float ImageGenerationPerfMetrics::get_decoder_infer_duration() {
+    return vae_decoder_inference_duration;
+}
+
+float ImageGenerationPerfMetrics::get_all_infer_duration() {
     float total_duration = 0;
     if (!raw_metrics.unet_inference_durations.empty()) {
-        float total = std::accumulate(raw_metrics.unet_inference_durations.begin(),
-                                      raw_metrics.unet_inference_durations.end(),
-                                      0.0f,
-                                      [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-                                          return acc + duration.count() / 1000.0f;
-                                      });
-        total_duration += total;
+        total_duration += get_unet_infer_duration();
     } else if (!raw_metrics.transformer_inference_durations.empty()) {
-        float total = std::accumulate(raw_metrics.transformer_inference_durations.begin(),
-                                      raw_metrics.transformer_inference_durations.end(),
-                                      0.0f,
-                                      [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-                                          return acc + duration.count() / 1000.0f;
-                                      });
-        total_duration += total;
+        total_duration += get_transformer_infer_duration();
     }
+
+    total_duration += get_encoder_infer_duration();
 
     total_duration += vae_decoder_inference_duration;
 
-    for (auto encoder = encoder_inference_duration.begin(); encoder != encoder_inference_duration.end(); encoder++) {
-        total_duration += encoder->second;
-    }
     // Return milliseconds
     return total_duration;
 }
