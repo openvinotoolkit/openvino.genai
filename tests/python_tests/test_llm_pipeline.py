@@ -1,22 +1,23 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import openvino_genai as ov_genai
-from openvino_genai import GenerationConfig
+
 import pytest
-from typing import Union, List, Dict, Optional
-import numpy as np
-import openvino as ov
-import sys
-from pathlib import Path
 import torch
+import os
+import json
+import numpy as np
+from pathlib import Path
+from typing import Tuple, List, Dict
+
+import openvino as ov
+import openvino_genai as ov_genai
 
 from common import run_llm_pipeline_with_ref
-from ov_genai_test_utils import (
-    load_genai_pipe_with_configs
-)
+
+from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
-from utils.tokenizers import model_tmp_path
+from utils.tokenizers import model_tmp_path, delete_rt_info
 from utils.ov_genai_pipelines import create_ov_pipeline
 from data.models import get_models_list, get_chat_models_list
 
@@ -52,7 +53,7 @@ def test_encoded_inputs(model_descr, inputs):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
     ov_pipe = create_ov_pipeline(models_path)
 
-    ov_generation_config = GenerationConfig(max_new_tokens=20)
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     input_ids, attention_mask = inputs
@@ -142,7 +143,7 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
     ov_pipe = create_ov_pipeline(models_path)
 
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     ov_pipe.start_chat()
@@ -258,7 +259,7 @@ def test_callback_terminate_by_bool():
         return current_iter == num_iters
 
     max_new_tokens = 100
-    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
@@ -283,7 +284,7 @@ def test_callback_terminate_by_status():
         return ov_genai.StreamingStatus.STOP if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
     max_new_tokens = 100
-    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
@@ -314,7 +315,7 @@ def test_chat_scenario_callback_cancel(model_descr):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
     ov_pipe = create_ov_pipeline(models_path)
 
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     
     current_iter = 0
@@ -489,13 +490,33 @@ def test_operator_with_streamer_kwargs_batch_throws():
 # Tests on generation configs handling
 #
 
+
+def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
+    # Load LLMPipeline where all configs are cleared.
+    # remove existing jsons from previous tests
+    for json_file in temp_path.glob("*.json"):
+        json_file.unlink()
+    delete_rt_info(configs, temp_path)
+
+    for config_json, config_name in configs:
+        with (temp_path / config_name).open('w') as f:
+            json.dump(config_json, f)
+
+    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
+
+    for _, config_name in configs:
+        os.remove(temp_path / config_name)
+
+    return ov_pipe
+
+
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     model_id, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
 
-    config = ov_genai.GenerationConfig()
+    config = ov_genai.ov_genai.GenerationConfig()
     config.do_sample = True  # no eos_token_id but it's loaded from config.json
     ov_pipe.set_generation_config(config)
 

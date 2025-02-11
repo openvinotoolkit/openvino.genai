@@ -1,25 +1,22 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-from dataclasses import dataclass
-from pathlib import Path
-import sys
-from typing import Dict, List, Optional
 
+import sys
 import datasets
 import pytest
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
 from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
-
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult, GenerationConfig, CacheEvictionConfig, AggregationMode
-
 from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
 from common import TESTS_ROOT, run_cb_pipeline_with_ref
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
-
 from utils.constants import get_default_llm_properties
 
 

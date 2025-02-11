@@ -4,15 +4,26 @@
 import os
 import pytest
 import math
-from typing import Dict
-from functools import partial
 
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
+from shutil import rmtree
 
-from common import generate_and_compare_with_reference_text, \
-    get_scheduler_config, run_cb_pipeline_with_ref
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model
+
+from common import generate_and_compare_with_reference_text, run_cb_pipeline_with_ref
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
+
+from utils.generation_config import get_greedy, get_beam_search, \
+    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
+    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
+from utils.constants import get_default_llm_properties
+from utils.hugging_face import download_and_convert_model
+from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config
+from data.models import get_chat_models_list
+
+#
+# e2e tests on random and real models
+#
 
 def read_models_list(file_name: str):
     models = []
@@ -24,19 +35,6 @@ def read_models_list(file_name: str):
                 continue
             models.append(model_name)
     return models
-
-from shutil import rmtree
-
-from utils.generation_config import get_greedy, get_beam_search, \
-    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
-    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from utils.constants import get_default_llm_properties
-from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType
-from data.models import get_chat_models_list
-#
-# e2e tests on random and real models
-#
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
@@ -154,7 +152,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     generation_config.ignore_eos = True
     generation_config.max_new_tokens = 1000000
 
-    scheduler_config = get_scheduler_config()
+    scheduler_config = dict_to_scheduler_config()
     scheduler_config.num_kv_blocks = 10 # Low cache size to trigger OOM quickly
 
     model_id : str = "facebook/opt-125m"
@@ -262,7 +260,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 3, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
 
 
@@ -338,7 +336,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
-    scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(models_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, multinomial_params_n_seq.generation_config, scheduler_config)
 
 def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_config: GenerationConfig):

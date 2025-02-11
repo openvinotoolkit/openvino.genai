@@ -4,13 +4,14 @@
 import os
 import sys
 import pytest
+import json
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
-from openvino_genai import Tokenizer
-import json
-from common import delete_rt_info
 
+from openvino_genai import Tokenizer
+
+from utils.tokenizers import delete_rt_info
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.tokenizers import model_tmp_path
 from utils.ov_genai_pipelines import PipelineType, create_ov_pipeline

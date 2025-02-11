@@ -17,6 +17,7 @@ from utils.generation_config import get_greedy, get_beam_search
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
+from utils.ov_genai_pipelines import dict_to_scheduler_config
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -34,28 +35,6 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
         get_beam_search(),
     ]
     return (prompts, generation_configs)
-
-
-def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
-    scheduler_config = SchedulerConfig()
-    if scheduler_params is None:
-        scheduler_config.dynamic_split_fuse = True
-        # vLLM specific
-        scheduler_config.max_num_batched_tokens = 256
-        scheduler_config.max_num_seqs = 256
-
-        # Expedited number of blocks = text_blocks_n * G * n_prompts, where
-        # text_blocks_n - number of blocks required for storing prompt and generated text,
-        # currently it is 1 block for prompt (31 token with block_size 32) + 1 block for generated text (max length of generated text - 30 tokens);
-        # G - number of sequences in a sequence group, for beam search it is 2(group_size) * 3 (num_groups);
-        # n_prompts - number of prompts.
-        # For current parameters in tests expedited number of blocks is approximately 48.
-        scheduler_config.num_kv_blocks = 60
-    else:
-        for param, value in scheduler_params.items():
-            setattr(scheduler_config, param, value)
-
-    return scheduler_config
 
 
 def run_continuous_batching(
@@ -178,7 +157,7 @@ def run_cb_pipeline_with_ref(tmp_path: str,
                              scheduler_params: dict = {},
                              generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
-    scheduler_config = get_scheduler_config(scheduler_params)
+    scheduler_config = dict_to_scheduler_config(scheduler_params)
 
     # override dataset's generation config
     if generation_config is not None:
@@ -208,17 +187,3 @@ def generate_and_compare_with_reference_text(models_path: Path, prompts: List[st
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
             assert ref_text == ov_text
 
-"""rt_info has the highest priority. Delete it to respect configs."""
-def delete_rt_info(configs: List[Tuple], temp_path):
-    core = openvino.Core()
-    core.set_property({'ENABLE_MMAP': False})
-    for model_path in temp_path / "openvino_tokenizer.xml", temp_path / "openvino_detokenizer.xml":
-        tokenizer = core.read_model(model_path)
-        rt_info = tokenizer.get_rt_info()
-        for config, _ in configs:
-            for key in config.keys():
-                try:
-                    del rt_info[key]
-                except KeyError:
-                    pass
-        openvino.save_model(tokenizer, model_path)

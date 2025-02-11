@@ -1,8 +1,7 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import openvino_genai as ov_genai
-from openvino_genai import GenerationConfig
+from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline
 
 import pytest
 import platform
@@ -35,7 +34,7 @@ common_config = {
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
-    pipe = ov_genai.LLMPipeline(model_path, device, **pipeline_config)
+    pipe = LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
     chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
     pipe.finish_chat()
@@ -54,10 +53,10 @@ def test_generation_compare_with_stateful(generation_config):
     model_id, tmp_path = get_models_list()[0]
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
 
-    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    stateful_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
 
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    static_pipe = LLMPipeline(model_path, "NPU", **common_config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
     if ref_out != actual_out:
@@ -82,7 +81,7 @@ def test_multinomial_sampling(generation_config):
     prompt = 'What is OpenVINO?'
     model_id, tmp_path = get_models_list()[0]
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    static_pipe = LLMPipeline(model_path, "NPU", **common_config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
 
@@ -94,7 +93,7 @@ def test_length_properties_set_no_exception():
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
 pipeline_configs = [
@@ -111,7 +110,7 @@ def test_invalid_length_properties_raise_error(pipeline_config):
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
     pipeline_config |= common_config
     with pytest.raises(RuntimeError):
-        pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
+        pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
 @pytest.mark.precommit
@@ -120,7 +119,7 @@ def test_batch_one_no_exception():
     model_id, tmp_path = get_models_list()[0]
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
-    static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    static_pipe = LLMPipeline(model_path, "NPU", **common_config)
     # Check it doesn't throw any exception when batch of size 1 is provided
     actual_out = static_pipe.generate([prompt], max_new_tokens=20)
 
@@ -132,7 +131,7 @@ def test_batch_raise_error():
     model_id, tmp_path = get_models_list()[0]
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'The Sun is yellow because'
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    pipe = LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
         pipe.generate([prompt] * 3, max_new_tokens=100)
 
@@ -151,7 +150,7 @@ def test_unsupported_sampling_raise_error(generation_config):
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
     prompt = 'What is OpenVINO?'
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    pipe = LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
         pipe.generate(prompt, generation_config)
 
@@ -164,8 +163,8 @@ def test_terminate_by_max_number_of_tokens():
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
-    tokenizer = ov_genai.Tokenizer(model_path)
+    pipe = LLMPipeline(model_path, "NPU", **common_config)
+    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     # ignore_eos=True to ensure model will generate exactly num_tokens
     encoded_results = pipe.generate(tokenized_input, max_new_tokens=num_tokens, ignore_eos=True)
@@ -182,11 +181,11 @@ def test_terminate_by_out_of_memory():
     pipeline_config |= common_config
     kv_cache_size = pipeline_config['MAX_PROMPT_LEN'] + pipeline_config['MIN_RESPONSE_LEN']
 
-    tokenizer = ov_genai.Tokenizer(model_path)
+    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     input_len = tokenized_input.input_ids.get_shape()[1]
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **pipeline_config)
+    pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
     encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True)
 
     assert len(encoded_results.tokens[0]) == (kv_cache_size - input_len + 1)
@@ -206,10 +205,10 @@ def test_terminate_by_sampler():
         current_iter += 1
         return current_iter == num_iters
 
-    tokenizer = ov_genai.Tokenizer(model_path)
+    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    pipe = LLMPipeline(model_path, "NPU", **common_config)
     encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=callback)
 
     assert len(encoded_results.tokens[0]) == num_iters
