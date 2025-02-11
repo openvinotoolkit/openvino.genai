@@ -22,9 +22,9 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     m_request = compiled_model.create_infer_request();
 }
 
-std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encoder_hidden_state,
-                                                             const Tensor& input_ids,
-                                                             const Tensor& beam_idx) {
+void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
+                                          const Tensor& input_ids,
+                                          const Tensor& beam_idx) {
     const size_t batch_size = input_ids.get_shape().at(0);
     const size_t seq_len = input_ids.get_shape().at(1);
 
@@ -34,13 +34,7 @@ std::pair<ov::Tensor, float> WhisperStatefullDecoder::decode(const Tensor& encod
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("beam_idx", beam_idx);
 
-    const auto infer_start = std::chrono::steady_clock::now();
-    m_request.infer();
-    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-
-    auto output_tensor = m_request.get_tensor("logits");
-
-    return {output_tensor, infer_ms};
+    m_request.start_async();
 };
 
 void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
@@ -57,6 +51,11 @@ void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
     auto cache_data = cache_position_tensor.data<int64_t>();
     std::iota(cache_data, cache_data + seq_len, start_cache_position);
 };
+
+Tensor WhisperStatefullDecoder::wait() {
+    m_request.wait();
+    return m_request.get_tensor("logits");
+}
 
 void WhisperStatefullDecoder::reset_state() {
     m_request.reset_state();
