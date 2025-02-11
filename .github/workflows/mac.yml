@@ -43,13 +43,14 @@ jobs:
       - id: openvino_download
         uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
         with:
-          platform: macos
+          platform: macos_12_6
           commit_packages_to_provide: all
           revision: latest_available_commit
 
   genai_python_lib:
     name: OpenVINO genai extension (cmake + wheel)
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 120
     defaults:
       run:
@@ -107,6 +108,7 @@ jobs:
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 90
     defaults:
       run:
@@ -167,6 +169,7 @@ jobs:
       matrix:
         build-type: [Release, Debug]
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 30
     defaults:
       run:
@@ -263,6 +266,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 20
     defaults:
       run:
@@ -324,7 +328,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           cp -R ${{ env.INSTALL_DIR }} bin
-          npm install
+          npm install --verbose
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
@@ -335,7 +339,7 @@ jobs:
       - name: Install genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
-          npm install
+          npm install --verbose
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 

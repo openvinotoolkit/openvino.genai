@@ -50,6 +50,7 @@ jobs:
   genai_python_lib:
     name: OpenVINO genai extension (cmake + wheel)
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 90
     defaults:
       run:
@@ -110,6 +111,7 @@ jobs:
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 90
     defaults:
       run:
@@ -175,6 +177,7 @@ jobs:
   genai_python_lib_vlm:
     name: OpenVINO genai VLM tests (cmake + wheel)
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 90
     defaults:
       run:
@@ -231,6 +234,7 @@ jobs:
       matrix:
         build-type: [Release, Debug]
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 60
     defaults:
       run:
@@ -325,6 +329,7 @@ jobs:
   genai_build_nodejs_bindings:
     name: Build Node.js bindings
     needs: [ openvino_download ]
+    if: needs.openvino_download.outputs.status == 'success'
     timeout-minutes: 90
     defaults:
       run:
@@ -393,9 +398,11 @@ jobs:
         working-directory: ./src/js
         run: |
           Copy-Item -Recurse ${{ env.INSTALL_DIR }} bin
-          npm install
+          Get-ChildItem ./bin
+          npm install --verbose
           Remove-Item -Recurse -Force node_modules/openvino-node/bin
           Copy-Item -Recurse ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+          Get-ChildItem node_modules/openvino-node/bin
 
       - name: Run npm package tests
         working-directory: ./src/js
@@ -405,9 +412,10 @@ jobs:
       - name: Install genai-node samples dependencies
         working-directory: ./samples/js/text_generation
         run: |
-          npm install
+          npm install --verbose
           Remove-Item -Recurse -Force node_modules/openvino-node/bin
           Copy-Item -Recurse ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+          Get-ChildItem node_modules/openvino-node/bin
 
       - name: Run samples tests
         run: npm test
