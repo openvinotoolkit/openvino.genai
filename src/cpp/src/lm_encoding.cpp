@@ -85,6 +85,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<EmbeddingsModel> m_embedding,
     std::optional<int64_t> rope_delta
 ) {
+    size_t init_attention_mask_size = attention_mask.get_size();
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
         generations.push_back(std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters()));
@@ -92,7 +93,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     auto active_sequence_groups{sequence_groups};
 
-    auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups]() {
+    size_t streamed_token_nums = 0;
+
+    auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups, &streamed_token_nums]() {
         GenerationHandle& handle = generations.at(0);
         if (streamer_ptr && handle->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
@@ -100,6 +103,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             if (!generation_outputs.empty()) {
                 for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
                     auto streaming_status = streamer_ptr->write(generated_token_id);
+                    streamed_token_nums++;
                     if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
                         streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                         break;
@@ -127,6 +131,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
+
     m_llm.set_tensor(m_embedding.has_value() ? "inputs_embeds" : "input_ids", input_ids);
     m_llm.set_tensor("attention_mask", attention_mask);
     if (position_ids.has_value())
@@ -253,6 +258,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     stream_generated_tokens();
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
+        finish_info.diff_tokens_in_cache_and_result = (m_llm.get_tensor("attention_mask").get_size() - init_attention_mask_size) - streamed_token_nums;
+    } else {
+        finish_info.diff_tokens_in_cache_and_result = (m_llm.get_tensor("attention_mask").get_size() - init_attention_mask_size) - sequence_groups[0]->get_finished_sequences().at(0)->get_generated_ids().size();
     }
 
     for (auto& sequence_group : sequence_groups) {
@@ -270,6 +278,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         }
     }
 
+    finish_info.streaming_finish_status = sequence_groups[0]->get_generation_stream()->get_status();
+
     for (SequenceGroup::Ptr sequence_group : sequence_groups)
         sampler.clear_request_info(sequence_group->get_request_id());
 
@@ -278,6 +288,81 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         finish_info.probably_disappeared_token = finish_info.results.tokens[0].back();
 
     return finish_info;
+}
+
+
+TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, const ov::Tensor& prev_chat_tokens, const std::vector<int64_t> tokenized_history, ov::genai::utils::HistoryRemoveManager kv_history_manager) {
+    TokenizedInputs encoded_input;
+    if (tokenized_history.empty()) {
+        encoded_input.input_ids = new_chat_tokens;
+        ov::Tensor new_attention_mask(ov::element::i64, new_chat_tokens.get_shape());
+        std::fill_n(new_attention_mask.data<int64_t>(), new_chat_tokens.get_shape()[1], 1);
+        encoded_input.attention_mask = new_attention_mask;
+    } else if (kv_history_manager.does_history_cache_need_to_update()) {
+        size_t trusted_history_length = kv_history_manager.trusted_history_length;
+        ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
+                                            {1, new_chat_tokens.get_shape().at(1) - trusted_history_length},
+                                            new_chat_tokens.data<int64_t>() + trusted_history_length);
+
+        ov::Tensor new_attention_mask(ov::element::i64, new_tensor.get_shape());
+        std::fill_n(new_attention_mask.data<int64_t>(), new_tensor.get_shape()[1], 1);
+
+        encoded_input.input_ids = ov::Tensor(new_chat_tokens.get_element_type(),
+                                             {1, new_chat_tokens.get_shape().at(1) - trusted_history_length});
+        new_tensor.copy_to(encoded_input.input_ids);
+        encoded_input.attention_mask = new_attention_mask;
+    } else {
+        encoded_input = utils::subtract_chat_tokenized_inputs({new_chat_tokens}, {prev_chat_tokens});
+    }
+
+    return encoded_input;
+}
+
+
+void update_kv_history_manager(
+    ov::genai::utils::HistoryRemoveManager& kv_history_manager,
+    const ov::Tensor& prev_chat_tokens,
+    const std::vector<int64_t> tokenized_history,
+    const std::set<int64_t> stop_tokens,
+    const int64_t diff_tokens_in_cache_and_result) {
+    // some symbols combinations can be encoded by the tokenizer in different ways
+    // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
+    // so let's check it out, find the trusted part and use it in on the next step
+
+    if (tokenized_history.empty()) {
+        return;
+    }
+
+    size_t trusted_history_length = 0;
+    trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, tokenized_history, stop_tokens);
+
+    // does_history_cache_need_to_update will be true here if beam search is activated
+    // in beam search mode we want to remove all history about last model answer from kv cache and add the best answer directly
+    // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_kv_history_manager
+    if (trusted_history_length != SIZE_MAX && kv_history_manager.trusted_history_length == 0) {
+        kv_history_manager.trusted_history_length = trusted_history_length;
+        size_t num_tokens_to_remove_from_kv_cache = tokenized_history.size() - trusted_history_length;
+
+        // last generated token is present in tokenized_history, but not included to attention mask, let's keep it in historyt
+        if (diff_tokens_in_cache_and_result < 0)
+            num_tokens_to_remove_from_kv_cache += diff_tokens_in_cache_and_result;
+
+        // if streaming was used and cancelled on prev step, m_kv_history_manager.num_tokens_to_remove_from_kv_cache could be already set
+        // and it would be bigger as it includes answer + prompt
+        kv_history_manager.num_tokens_to_remove_from_kv_cache = kv_history_manager.num_tokens_to_remove_from_kv_cache > num_tokens_to_remove_from_kv_cache ?
+                                                                kv_history_manager.num_tokens_to_remove_from_kv_cache : num_tokens_to_remove_from_kv_cache;
+
+    }
+
+    if (diff_tokens_in_cache_and_result > 0)
+        kv_history_manager.num_tokens_to_remove_from_kv_cache += diff_tokens_in_cache_and_result;
+
+}
+
+void update_tokenized_history(std::vector<int64_t>& tokenized_history, const ov::Tensor& new_chat_tokens) {
+    tokenized_history.clear();
+    tokenized_history.reserve(new_chat_tokens.get_size());
+    std::copy_n(new_chat_tokens.data<int64_t>(), new_chat_tokens.get_size(), std::back_inserter(tokenized_history));
 }
 
 }  // namespace genai

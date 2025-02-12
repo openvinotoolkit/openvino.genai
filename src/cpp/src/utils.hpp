@@ -7,6 +7,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
+#include "openvino/genai/generation_handle.hpp"
 #include "visual_language/processor_config.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -54,6 +55,7 @@ struct GenerationFinishInfo
     EncodedResults results;
     std::optional<int64_t> probably_disappeared_token = std::nullopt;
     GenerationStatus streaming_finish_status;
+    int64_t diff_tokens_in_cache_and_result;
 };
 
 Tensor init_attention_mask(const Tensor& position_ids);
