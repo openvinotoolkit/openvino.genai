@@ -7,6 +7,7 @@ import math
 
 from pathlib import Path
 from shutil import rmtree
+from typing import Dict
 
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model
 
