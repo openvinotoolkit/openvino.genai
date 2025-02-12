@@ -3,14 +3,13 @@
 
 import sys
 import pytest
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from openvino_genai import GenerationConfig, StopCriteria
 from typing import List, TypedDict
 
-from common import run_llm_pipeline_with_ref, run_llm_pipeline
+from openvino_genai import GenerationConfig, StopCriteria
 
+from common import run_llm_pipeline_with_ref, run_llm_pipeline
 from utils.hugging_face import get_hugging_face_models, convert_models
 
 @pytest.mark.precommit
@@ -166,6 +165,7 @@ class RandomSamplingTestStruct:
     prompts: List[str]
     ref_texts: List[List[str]]
 
+from utils.generation_config import get_multinomial_temperature, get_greedy_with_penalties, \
 from utils.generation_config import get_multinomial_temperature, get_greedy_with_penalties, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
     get_multinomial_temperature_top_p_and_top_k, get_multinomial_all_parameters, \

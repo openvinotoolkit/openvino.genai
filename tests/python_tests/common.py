@@ -15,7 +15,9 @@ from typing import List, Tuple, Callable
 
 from utils.generation_config import get_greedy, get_beam_search
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import convert_models, get_hugging_face_models, run_hugging_face
+from utils.hugging_face import download_and_convert_model, run_hugging_face
+from utils.comparation import compare_generation_results
+from utils.ov_genai_pipelines import dict_to_scheduler_config
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -35,28 +37,6 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     return (prompts, generation_configs)
 
 
-def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
-    scheduler_config = SchedulerConfig()
-    if scheduler_params is None:
-        scheduler_config.dynamic_split_fuse = True
-        # vLLM specific
-        scheduler_config.max_num_batched_tokens = 256
-        scheduler_config.max_num_seqs = 256
-
-        # Expedited number of blocks = text_blocks_n * G * n_prompts, where
-        # text_blocks_n - number of blocks required for storing prompt and generated text,
-        # currently it is 1 block for prompt (31 token with block_size 32) + 1 block for generated text (max length of generated text - 30 tokens);
-        # G - number of sequences in a sequence group, for beam search it is 2(group_size) * 3 (num_groups);
-        # n_prompts - number of prompts.
-        # For current parameters in tests expedited number of blocks is approximately 48.
-        scheduler_config.num_kv_blocks = 60
-    else:
-        for param, value in scheduler_params.items():
-            setattr(scheduler_config, param, value)
-
-    return scheduler_config
-
-
 def run_continuous_batching(
     models_path : Path,
     scheduler_config : SchedulerConfig,
@@ -66,6 +46,7 @@ def run_continuous_batching(
     if type(generation_configs) is not list:
         generation_configs = [generation_configs] * len(prompts)
  
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_llm_properties())
     cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device='CPU', tokenizer_properties={}, properties=get_default_llm_properties())
     output = cb_pipe.generate(prompts, generation_configs)
 
@@ -115,6 +96,7 @@ def run_llm_pipeline(
     streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_llm_properties()
+    properties = get_default_llm_properties()
     if use_cb:
         properties['scheduler_config'] = SchedulerConfig()
     ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
@@ -155,47 +137,16 @@ def run_llm_pipeline(
     return generation_results
 
 
-def compare_generation_result(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
-    if generation_config.is_beam_search():
-        assert len(hf_result.m_scores) == len(ov_result.m_scores)
-        for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
-            # Note, that for fp32 / fp16 models scores are different less than 0.001
-            assert abs(hf_score - ov_score) < 0.02
-
-    if not generation_config.include_stop_str_in_output and len(generation_config.stop_strings) > 0:
-        assert len(hf_result.m_generation_ids) >= len(ov_result.m_generation_ids)
-        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
-            assert ov_text in hf_text
-    else:
-        assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
-        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
-            assert hf_text == ov_text
-
-
-def compare_generation_results(prompts: List[str], hf_results: List[GenerationResult], ov_results: List[GenerationResult], generation_configs: List[GenerationConfig] | GenerationConfig):
-    if type(generation_configs) is not list:
-        generation_configs = [generation_configs]
-
-    assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(ov_results)
-
-    for prompt, ref_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nReference result = {ref_result}\nOpenVINO result = {ov_result.m_generation_ids}")
-        compare_generation_result(ref_result, ov_result, generation_config)
-
 def run_llm_pipeline_with_ref(model_id: str, 
                               prompts: List[str], 
                               generation_config: GenerationConfig | dict, 
                               tmp_path: Path, 
                               use_cb : bool = False,
                               streamer: StreamerWithResults | Callable | StreamerBase = None):
-    models_path : Path = tmp_path / model_id
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    convert_models(opt_model, hf_tokenizer, models_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
@@ -203,9 +154,12 @@ def run_llm_pipeline_with_ref(model_id: str,
     compare_generation_results(prompts, hf_results, ov_results, generation_config)
 
 
-def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dict = {}, generation_config : GenerationConfig | dict = None):
+def run_cb_pipeline_with_ref(tmp_path: str,
+                             model_id: str,
+                             scheduler_params: dict = {},
+                             generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
-    scheduler_config = get_scheduler_config(scheduler_params)
+    scheduler_config = dict_to_scheduler_config(scheduler_params)
 
     # override dataset's generation config
     if generation_config is not None:
@@ -213,10 +167,7 @@ def run_cb_pipeline_with_ref(tmp_path: str, model_id: str, scheduler_params: dic
             generation_config = GenerationConfig(**generation_config)
         generation_configs = [generation_config] * len(prompts)
 
-    models_path : Path = tmp_path / model_id
-    opt_model, hf_tokenizer = get_hugging_face_models(model_id)
-
-    convert_models(opt_model, hf_tokenizer, models_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
@@ -238,31 +189,3 @@ def generate_and_compare_with_reference_text(models_path: Path, prompts: List[st
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
             assert ref_text == ov_text
 
-
-def get_image_by_link(link):
-    from PIL import Image
-    import requests
-    from openvino import Tensor
-    import numpy as np
-
-    image = Image.open(requests.get(link, stream=True).raw)
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
-    return Tensor(image_data)
-
-
-"""rt_info has the highest priority. Delete it to respect configs."""
-def delete_rt_info(configs: List[Tuple], temp_path):
-    core = openvino.Core()
-    core.set_property({'ENABLE_MMAP': False})
-    for model_path in temp_path / "openvino_tokenizer.xml", temp_path / "openvino_detokenizer.xml":
-        tokenizer = core.read_model(model_path)
-        rt_info = tokenizer.get_rt_info()
-        for config, _ in configs:
-            for key in config.keys():
-                try:
-                    del rt_info[key]
-                except KeyError:
-                    pass
-        openvino.save_model(tokenizer, model_path)
