@@ -392,6 +392,9 @@ class ContinuousBatchingPipeline:
     @typing.overload
     def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
+    @typing.overload
+    def generate(self, prompt: str, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+        ...
     def get_config(self) -> GenerationConfig:
         ...
     def get_metrics(self) -> PipelineMetrics:
@@ -533,7 +536,7 @@ class FluxTransformer2DModel:
         """
     def get_config(self) -> FluxTransformer2DModel.Config:
         ...
-    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> FluxTransformer2DModel:
         ...
@@ -1371,7 +1374,7 @@ class SD3Transformer2DModel:
         """
     def get_config(self) -> SD3Transformer2DModel.Config:
         ...
-    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
         ...
@@ -1535,7 +1538,7 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int) -> ...:
         """
         Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
