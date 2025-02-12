@@ -119,9 +119,10 @@ def test_empty_encoded_inputs_throw():
 # Chat scenario
 #
 
-generation_configs = [
-    dict(max_new_tokens=20),
-    dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0)
+chat_intpus = [
+    (dict(max_new_tokens=20),  ""),
+    (dict(max_new_tokens=20),  "You are a helpful assistant."),
+    (dict(max_new_tokens=10, num_beam_groups=3, num_beams=15, num_return_sequences=1, diversity_penalty=1.0), "")
 ]
 
 questions = [
@@ -131,11 +132,11 @@ questions = [
     'What was my first question?'
 ]
 
-@pytest.mark.parametrize("generation_config_kwargs", generation_configs)
+@pytest.mark.parametrize("intpus", chat_intpus)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
+def test_chat_scenario(model_descr, intpus):
     chat_history_hf = []
     chat_history_ov = []
 
@@ -146,7 +147,9 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
-    ov_pipe.start_chat()
+    ov_pipe.start_chat(system_massage)
+    chat_history_hf.append({"role": "system", "content": system_massage})
+    chat_history_ov.append({"role": "system", "content": system_massage})
     for prompt in questions:
         chat_history_hf.append({'role': 'user', 'content': prompt})
         chat_history_ov.append({'role': 'user', 'content': prompt})
@@ -169,6 +172,44 @@ def test_chat_scenario(model_descr, generation_config_kwargs: Dict):
         print(f'ov_output: {chat_history_ov}')
 
     assert chat_history_ov == chat_history_hf
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_chat_scenario_several_chats_in_series():
+    model_descr = get_chat_models_list()[0]
+    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+
+    generation_config_kwargs, _ = chat_intpus[0]
+    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
+
+    for i in range(2):
+        chat_history_hf = []
+        chat_history_ov = []
+        ov_pipe.start_chat()
+        for prompt in questions[:2]:
+            chat_history_hf.append({'role': 'user', 'content': prompt})
+            chat_history_ov.append({'role': 'user', 'content': prompt})
+
+        chat_prompt = hf_tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+        tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+        prompt_len = tokenized['input_ids'].numel()
+
+        answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
+        answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
+        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
+
+            answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
+            chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+
+        ov_pipe.finish_chat()
+
+        if chat_history_ov != chat_history_hf:
+            print(f'hf_output: {chat_history_hf}')
+            print(f'ov_output: {chat_history_ov}')
+
+        assert chat_history_ov == chat_history_hf
 
 
 #
