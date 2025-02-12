@@ -723,11 +723,11 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         std::shared_ptr<ov::CompiledModel> compiled;
         // CACHE_DIR + weightless flow support
         auto cache_mode = get_option<CacheMode>(config, "CACHE_MODE");
-        if (cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SIZE) {
-            compiled = setupAndCompileModel(models_path / "openvino_model.xml", model_desc, properties);
-        } else {
+        if (cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED) {
             auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
             compiled = setupAndCompileModel(model, model_desc, properties);
+        } else {
+            compiled = setupAndCompileModel(models_path / "openvino_model.xml", model_desc, properties);
         }
         // Also export compiled model if required
         if (export_blob) {
