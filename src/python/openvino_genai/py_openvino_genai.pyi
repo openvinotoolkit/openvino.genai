@@ -1715,11 +1715,11 @@ class TextStreamer:
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
     
     """
-    def __init__(self, tokenizer: ..., callback: typing.Callable[[str], bool | ...]) -> None:
+    def __init__(self, tokenizer: ..., callback: typing.Callable[[str], bool | StreamingStatus]) -> None:
         ...
     def end(self) -> None:
         ...
-    def write(self, arg0: int) -> ...:
+    def write(self, arg0: int) -> StreamingStatus:
         ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
