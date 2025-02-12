@@ -78,7 +78,7 @@ jobs:
     needs: [ openvino_download_linux ]
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash
     env:
       build_dir: ${{ github.workspace }}//build
       SRC_DIR: ${{ github.workspace }}

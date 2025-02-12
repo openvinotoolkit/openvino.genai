@@ -245,6 +245,11 @@ EncodedResults StatefulLLMPipeline::generate(
         OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.back()["role"] == "user",
                         "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
+    if (!is_chat_conversation) {
+        reset_kv_state();
+        m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
+    }
+
     auto start_time = std::chrono::steady_clock::now();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
@@ -385,7 +390,6 @@ EncodedResults StatefulLLMPipeline::generate(
             std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
         }
     } else {
-        reset_kv_state();
         m_last_disappeared_token = std::nullopt;
     }
 
@@ -401,16 +405,9 @@ EncodedResults StatefulLLMPipeline::generate(
 }
 
 void StatefulLLMPipeline::start_chat(const std::string& system_message) {
+    finish_chat();
     is_chat_conversation = true;
-    m_kv_history_manager.reset();
-    m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
-    m_last_disappeared_token = std::nullopt;
-    if (!m_tokenized_chat_history.empty()) {
-        reset_kv_state();
-        m_history = {};
-        m_templated_chat_history.clear();
-        m_tokenized_chat_history.clear();
-    }
+
     if (system_message.empty())
         return;
 
@@ -437,8 +434,10 @@ void StatefulLLMPipeline::finish_chat() {
     m_kv_history_manager.reset();
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     m_last_disappeared_token = std::nullopt;
-    if (!m_tokenized_chat_history.empty()) {
+    bool have_state = 0 != m_model_runner.get_tensor("attention_mask").get_size();
+    if (!m_tokenized_chat_history.empty() || have_state) {
         reset_kv_state();
+        m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_history.clear();
         m_templated_chat_history.clear();
         m_tokenized_chat_history.clear();
