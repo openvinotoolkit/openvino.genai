@@ -9,6 +9,7 @@
 #include "sampler.hpp"
 #include "model_runner.hpp"
 #include "scheduler.hpp"
+#include "threaded_streamer.hpp"
 
 namespace ov::genai {
 
@@ -46,6 +47,7 @@ protected:
     // to access m_load_time_ms
     friend class ContinuousBatchingPipeline;
 
+    void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
     GenerationConfig get_config() const;
     PipelineMetrics get_metrics() const;
