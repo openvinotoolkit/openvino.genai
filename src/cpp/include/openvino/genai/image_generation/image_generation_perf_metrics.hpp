@@ -44,5 +44,6 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationPerfMetrics {
     float get_all_infer_duration();
     float get_load_time();
     float get_generate_duration();
+    float get_iteration_duration();
 };
 }

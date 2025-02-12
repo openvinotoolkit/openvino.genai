@@ -8,12 +8,12 @@ from PIL import Image
 
 def print_one_generate(metrics, prefix, idx):
     prefix_idx = "[" + prefix + "-" + str(idx) + "]"
-    print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration()} ms, total infer time: {metrics.get_inference_total_duration()} ms, infer step num: {metrics.raw_metrics.iteration_durations.size()}\n")
+    print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration()} ms, total infer time: {metrics.get_inference_total_duration()} ms\n")
     print(f"{prefix_idx} encoder infer time: {metrics.get_encoder_infer_duration()} ms\n")
     if not metrics.raw_metrics.transformer_inference_durations:
-        print(f"{prefix_idx} transformer total infer time: {metrics.get_transformer_infer_duration()} ms, infer number: {len(metrics.raw_metrics.transformer_inference_durations)}\n")
+        print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.transformer_inference_durations)}, total iteration time: {metrics.get_iteration_duration()} ms, total infer time: {metrics.get_transformer_infer_duration()} ms\n")
     else:
-        print(f"{prefix_idx} unet total infer time: {metrics.get_unet_infer_duration()} ms, infer number: {len(metrics.raw_metrics.unet_inference_durations)}\n")
+        print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.unet_inference_durations)}, total iteration time: {metrics.get_iteration_duration()} ms, total infer time: {metrics.get_unet_infer_duration()} ms\n")
     print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration} ms, vae encoder infer time: {metrics.vae_encoder_inference_duration} ms\n")
     
 def print_statistic(warmup_metrics, iter_metrics):

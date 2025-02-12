@@ -315,9 +315,12 @@ void init_image_generation_pipelines(py::module_& m) {
         .def("get_decoder_infer_duration", &ImageGenerationPerfMetrics::get_decoder_infer_duration)
         .def("get_load_time", &ImageGenerationPerfMetrics::get_load_time)
         .def("get_generate_duration", &ImageGenerationPerfMetrics::get_generate_duration)
-        .def("get_unet_infer_meanstd", &ImageGenerationPerfMetrics::get_unet_infer_meanstd)
-        .def("get_transformer_infer_meanstd", &ImageGenerationPerfMetrics::get_transformer_infer_meanstd)
+        .def("get_iteration_duration", &ImageGenerationPerfMetrics::get_iteration_duration)
         .def("get_iteration_meanstd", &ImageGenerationPerfMetrics::get_iteration_meanstd)
+        .def("get_transformer_infer_duration", &ImageGenerationPerfMetrics::get_transformer_infer_duration)
+        .def("get_transformer_infer_meanstd", &ImageGenerationPerfMetrics::get_transformer_infer_meanstd)
+        .def("get_unet_infer_duration", &ImageGenerationPerfMetrics::get_unet_infer_duration)
+        .def("get_unet_infer_meanstd", &ImageGenerationPerfMetrics::get_unet_infer_meanstd)
         .def_readonly("raw_metrics", &ImageGenerationPerfMetrics::raw_metrics);
 
     auto text2image_pipeline = py::class_<ov::genai::Text2ImagePipeline>(m, "Text2ImagePipeline", "This class is used for generation with text-to-image models.")

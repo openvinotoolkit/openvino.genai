@@ -125,5 +125,15 @@ float ImageGenerationPerfMetrics::get_load_time() {
 float ImageGenerationPerfMetrics::get_generate_duration() {
     return generate_duration;
 }
+
+float ImageGenerationPerfMetrics::get_iteration_duration() {
+    float total = std::accumulate(raw_metrics.iteration_durations.begin(),
+                                  raw_metrics.iteration_durations.end(),
+                                  0.0f,
+                                  [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+                                      return acc + duration.count() / 1000.0f;
+                                  });
+    return total;
+}
 }  // namespace genai
 }  // namespace ov
