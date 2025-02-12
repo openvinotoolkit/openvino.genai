@@ -145,16 +145,6 @@ jobs:
       - name: Show ccache stats
         run: ccache --show-stats
 
-      - name: Pack Artifacts
-        run: |
-          $file=Get-ChildItem -Path "${{ env.GENAI_INSTALL_DIR }}"
-          $compress = @{
-            Path = $file
-            CompressionLevel = "Optimal"
-            DestinationPath = "${{ env.BUILD_DIR }}/genai.zip"
-          }
-          Compress-Archive @compress
-
       #
       # Upload build artifacts
       #
@@ -325,7 +315,7 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.OV_INSTALL_DIR }}/samples/cpp -B ${{ env.BUILD_DIR }}
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }}/samples/cpp -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $ENV:NUMBER_OF_PROCESSORS
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --component samples_bin --prefix ${{ env.INSTALL_DIR }}
 
