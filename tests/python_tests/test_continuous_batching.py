@@ -12,6 +12,8 @@ from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationCo
 
 from common import generate_and_compare_with_reference_text, \
     get_scheduler_config, run_cb_pipeline_with_ref
+from common import generate_and_compare_with_reference_text, \
+    get_scheduler_config, run_cb_pipeline_with_ref
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
 from ov_genai_test_utils import (
