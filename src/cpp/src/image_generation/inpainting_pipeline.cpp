@@ -151,8 +151,7 @@ ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::
 }
 
 ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
-    float infer_duration;
-    return m_impl->decode(latent, infer_duration);
+    return m_impl->decode(latent);
 }
 
 ImageGenerationPerfMetrics InpaintingPipeline::get_performance_metrics() {

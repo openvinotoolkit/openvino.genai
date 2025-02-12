@@ -112,9 +112,9 @@ void UNet2DConditionModel::set_adapters(const std::optional<AdapterConfig>& adap
     }
 }
 
-ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep, float& infer_duration) {
+ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {
     OPENVINO_ASSERT(m_impl, "UNet model must be compiled first. Cannot infer non-compiled model");
-    return m_impl->infer(sample, timestep, infer_duration);
+    return m_impl->infer(sample, timestep);
 }
 
 } // namespace genai

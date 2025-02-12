@@ -147,8 +147,7 @@ ov::Tensor Image2ImagePipeline::generate(const std::string& positive_prompt, ov:
 }
 
 ov::Tensor Image2ImagePipeline::decode(const ov::Tensor latent) {
-    float infer_duration;
-    return m_impl->decode(latent, infer_duration);
+    return m_impl->decode(latent);
 }
 
 ImageGenerationPerfMetrics Image2ImagePipeline::get_performance_metrics() {

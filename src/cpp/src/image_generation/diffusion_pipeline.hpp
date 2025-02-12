@@ -88,7 +88,7 @@ public:
 
     virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties) = 0;
 
-    virtual ov::Tensor decode(const ov::Tensor latent, float& infer_duration) = 0;
+    virtual ov::Tensor decode(const ov::Tensor latent) = 0;
 
     virtual ImageGenerationPerfMetrics get_performance_metrics() = 0;
 

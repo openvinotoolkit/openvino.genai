@@ -117,14 +117,12 @@ void SD3Transformer2DModel::set_hidden_states(const std::string& tensor_name, ov
     m_request.set_tensor(tensor_name, encoder_hidden_states);
 }
 
-ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep, float& infer_duration) {
+ov::Tensor SD3Transformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
     m_request.set_tensor("hidden_states", latent_model_input);
     m_request.set_tensor("timestep", timestep);
-    const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
-    infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
     return m_request.get_output_tensor();
 }

@@ -246,14 +246,10 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     return *this;
 }
 
-ov::Tensor AutoencoderKL::decode(ov::Tensor latent, float& infer_duration) {
+ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
-
     m_decoder_request.set_input_tensor(latent);
-    const auto infer_start = std::chrono::steady_clock::now();
     m_decoder_request.infer();
-    infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-
     return m_decoder_request.get_output_tensor();
 }
 

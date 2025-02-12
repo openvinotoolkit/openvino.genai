@@ -75,8 +75,7 @@ void init_clip_text_model(py::module_& m) {
             py::call_guard<py::gil_scoped_release>(), 
             py::arg("pos_prompt"), 
             py::arg("neg_prompt"), 
-            py::arg("do_classifier_free_guidance"),
-            py::arg("infer_duration"))
+            py::arg("do_classifier_free_guidance"))
         .def("get_output_tensor", &ov::genai::CLIPTextModel::get_output_tensor, py::arg("idx"))
         .def(
             "compile",
@@ -147,8 +146,7 @@ void init_clip_text_model_with_projection(py::module_& m) {
             py::call_guard<py::gil_scoped_release>(), 
             py::arg("pos_prompt"), 
             py::arg("neg_prompt"), 
-            py::arg("do_classifier_free_guidance"),
-            py::arg("infer_duration"))
+            py::arg("do_classifier_free_guidance"))
         .def("get_config", &ov::genai::CLIPTextModelWithProjection::get_config)
         .def("get_output_tensor", &ov::genai::CLIPTextModelWithProjection::get_output_tensor, py::arg("idx"))
         .def("set_adapters", &ov::genai::CLIPTextModelWithProjection::set_adapters, py::arg("adapters"))
@@ -214,8 +212,7 @@ void init_t5_encoder_model(py::module_& m) {
             py::arg("pos_prompt"), 
             py::arg("neg_prompt"), 
             py::arg("do_classifier_free_guidance"), 
-            py::arg("max_sequence_length"),
-            py::arg("infer_duration"))
+            py::arg("max_sequence_length"))
         .def("get_output_tensor", &ov::genai::T5EncoderModel::get_output_tensor, py::arg("idx"))
         .def(
             "compile",
@@ -287,8 +284,7 @@ void init_unet2d_condition_model(py::module_& m) {
             &ov::genai::UNet2DConditionModel::infer, 
             py::call_guard<py::gil_scoped_release>(),
             py::arg("sample"), 
-            py::arg("timestep"),
-            py::arg("infer_duration"))
+            py::arg("timestep"))
         .def("set_hidden_states", &ov::genai::UNet2DConditionModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"))
         .def("do_classifier_free_guidance", &ov::genai::UNet2DConditionModel::do_classifier_free_guidance, py::arg("guidance_scale"))
         .def(
@@ -361,8 +357,7 @@ void init_sd3_transformer_2d_model(py::module_& m) {
             &ov::genai::SD3Transformer2DModel::infer, 
             py::call_guard<py::gil_scoped_release>(),
             py::arg("latent"), 
-            py::arg("timestep"),
-            py::arg("infer_duration"))
+            py::arg("timestep"))
         .def("set_hidden_states", &ov::genai::SD3Transformer2DModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"))
         .def(
             "compile",
@@ -432,8 +427,7 @@ void init_flux_transformer_2d_model(py::module_& m) {
             &ov::genai::FluxTransformer2DModel::infer, 
             py::call_guard<py::gil_scoped_release>(), 
             py::arg("latent"), 
-            py::arg("timestep"),
-            py::arg("infer_duration"))
+            py::arg("timestep"))
         .def("set_hidden_states", &ov::genai::FluxTransformer2DModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"))
         .def(
             "compile",
@@ -550,7 +544,7 @@ void init_autoencoder_kl(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )")
-        .def("decode", &ov::genai::AutoencoderKL::decode, py::call_guard<py::gil_scoped_release>(), py::arg("latent"), py::arg("infer_duration"))
+        .def("decode", &ov::genai::AutoencoderKL::decode, py::call_guard<py::gil_scoped_release>(), py::arg("latent"))
         .def("encode", &ov::genai::AutoencoderKL::encode, py::call_guard<py::gil_scoped_release>(), py::arg("image"), py::arg("generator"))
         .def("get_config", &ov::genai::AutoencoderKL::get_config)
         .def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor);

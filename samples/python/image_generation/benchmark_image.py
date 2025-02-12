@@ -14,7 +14,7 @@ def print_one_generate(metrics, prefix, idx):
         print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.transformer_inference_durations)}, total iteration time: {metrics.get_iteration_duration()} ms, total infer time: {metrics.get_transformer_infer_duration()} ms\n")
     else:
         print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.unet_inference_durations)}, total iteration time: {metrics.get_iteration_duration()} ms, total infer time: {metrics.get_unet_infer_duration()} ms\n")
-    print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration} ms, vae encoder infer time: {metrics.vae_encoder_inference_duration} ms\n")
+    print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration} ms\n")
     
 def print_statistic(warmup_metrics, iter_metrics):
     generate_durations = []
@@ -55,7 +55,7 @@ def print_statistic(warmup_metrics, iter_metrics):
         
     print(f"\nTest finish, load time: {load_time} ms\n")
     print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup} ms, infer warmup time: {inference_warmup} ms\n")
-    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean} ms, infer avg time: {inference_mean} ms, total encoder infer avg time: {encoder_mean} ms, vae decoder infer avg time: {decoder_mean} ms\n")
+    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean} ms, infer avg time: {inference_mean} ms, total encoder infer avg time: {encoder_mean} ms, decoder infer avg time: {decoder_mean} ms\n")
 
 def text2image(args):
     prompt = [args.prompt]

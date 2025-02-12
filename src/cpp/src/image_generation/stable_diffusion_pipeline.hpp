@@ -179,12 +179,13 @@ public:
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        float infer_duration;
 
         std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        auto infer_start = std::chrono::steady_clock::now();
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
-            batch_size_multiplier > 1, infer_duration);
-        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration / 1000.0f;
+            batch_size_multiplier > 1);
+        auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
@@ -235,9 +236,13 @@ public:
             // - inpainting with strength < 1.0
             // - inpainting with non-specialized model
             if (!is_strength_max || return_image_latent) {
+                // auto encode_start = std::chrono::steady_clock::now();
                 image_latent = m_vae->encode(proccesed_image, generation_config.generator);
-
-                // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with image_latent
+                // m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                //                                                     std::chrono::steady_clock::now() - encode_start)
+                //                                                     .count();
+                // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with
+                // image_latent
                 if (!is_strength_max) {
                     image_latent.copy_to(latent);
                     latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
@@ -293,7 +298,10 @@ public:
             }
 
             // encode masked image to latent scape
+            // auto encode_start = std::chrono::steady_clock::now();
             masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
+            // m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
+            //     std::chrono::steady_clock::now() - encode_start).count();
             masked_image_latent = numpy_utils::repeat(masked_image_latent, generation_config.num_images_per_prompt * batch_size_multiplier);
         }
 
@@ -310,7 +318,6 @@ public:
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
         const auto gen_start = std::chrono::steady_clock::now();
-        float infer_duration;
         using namespace numpy_utils;
         m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
@@ -373,7 +380,9 @@ public:
 
             ov::Tensor latent_model_input = is_inpainting_model() ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
-            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep, infer_duration);
+            auto infer_start = std::chrono::steady_clock::now();
+            ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
+            auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.unet_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
@@ -418,15 +427,18 @@ public:
                 return image;
             }
         }
-        auto image = decode(denoised, infer_duration);
-        m_perf_metrics.vae_decoder_inference_duration = infer_duration / 1000.0f;
+        auto decode_start = std::chrono::steady_clock::now();
+        auto image = decode(denoised);
+        m_perf_metrics.vae_decoder_inference_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
+                .count();
         m_perf_metrics.generate_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
         return image;
     }
 
-    ov::Tensor decode(const ov::Tensor latent, float& infer_duration) override {
-        return m_vae->decode(latent, infer_duration);
+    ov::Tensor decode(const ov::Tensor latent) override {
+        return m_vae->decode(latent);
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {

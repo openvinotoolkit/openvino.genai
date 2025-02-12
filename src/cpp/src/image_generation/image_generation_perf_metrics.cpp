@@ -95,6 +95,7 @@ float ImageGenerationPerfMetrics::get_encoder_infer_duration() {
     for (auto encoder = encoder_inference_duration.begin(); encoder != encoder_inference_duration.end(); encoder++) {
         duration += encoder->second;
     }
+    duration += vae_encoder_inference_duration;
     return duration;
 }
 
@@ -135,5 +136,6 @@ float ImageGenerationPerfMetrics::get_iteration_duration() {
                                   });
     return total;
 }
+
 }  // namespace genai
 }  // namespace ov

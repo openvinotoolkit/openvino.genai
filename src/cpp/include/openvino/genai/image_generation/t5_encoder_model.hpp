@@ -69,8 +69,7 @@ public:
     ov::Tensor infer(const std::string& pos_prompt,
                      const std::string& neg_prompt,
                      bool do_classifier_free_guidance,
-                     int max_sequence_length,
-                     float& infer_duration);
+                     int max_sequence_length);
 
     ov::Tensor get_output_tensor(const size_t idx);
 
