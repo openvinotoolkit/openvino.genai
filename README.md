@@ -335,10 +335,10 @@ NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling
  ### Converting and quantizing speech-to-text model from Hugging Face library
 ```sh
 #Download and convert to OpenVINO whisper-base model
-optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
+optimum-cli export openvino --model openai/whisper-base whisper-base
 
 #Download, convert and apply int8 static quantization to whisper-base model
-optimum-cli export openvino --trust-remote-code --model openai/whisper-base \
+optimum-cli export openvino --model openai/whisper-base \
 --quant-mode int8 --dataset librispeech --num-samples 32 whisper-base-int8
 ```
 
