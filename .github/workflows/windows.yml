@@ -25,31 +25,27 @@ jobs:
     name: Download OpenVINO package
     outputs:
       status: ${{ steps.openvino_download.outcome }}
+      ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
+      ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
     timeout-minutes: 10
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-20.04
+    runs-on: aks-linux-2-cores-8gb
+    container:
+      image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    continue-on-error: true
 
     steps:
-      - name: Download OpenVINO build
-        id: openvino_download
-        run: |
-          wget ${{ env.OV_TARBALL}} --progress=bar:force:noscroll -O openvino_package.zip
-          unzip -l openvino_package.zip
-        continue-on-error: true
-
-      #
-      # Upload to artifacts
-      #
-
-      - name: Upload openvino package
-        if: steps.openvino_download.outcome == 'success'
-        uses: actions/upload-artifact@v4
+      - id: openvino_download
+        uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
         with:
-          name: openvino_package
-          path: openvino_package.zip
-          if-no-files-found: 'error'
+          platform: windows
+          commit_packages_to_provide: all
+          revision: latest_available_commit
 
   openvino_build:
     name: Build OpenVINO package
@@ -213,17 +209,11 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: openvino_package
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
-
-      - name: Extract OpenVINO packages
-        run: |
-          pushd ${{ env.OV_INSTALL_DIR }}
-            Expand-Archive openvino_package.zip -DestinationPath ./tmp
-            mv ./tmp/*/* .
-          popd
+          merge-multiple: true
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
@@ -282,17 +272,11 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: openvino_package
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
-
-      - name: Extract OpenVINO packages
-        run: |
-          pushd ${{ env.OV_INSTALL_DIR }}
-            Expand-Archive openvino_package.zip -DestinationPath ./tmp
-            mv ./tmp/*/* .
-          popd
+          merge-multiple: true
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
@@ -356,17 +340,11 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: openvino_package
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
-
-      - name: Extract OpenVINO packages
-        run: |
-          pushd ${{ env.OV_INSTALL_DIR }}
-            Expand-Archive openvino_package.zip -DestinationPath ./tmp
-            mv ./tmp/*/* .
-          popd
+          merge-multiple: true
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
@@ -421,17 +399,11 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: openvino_package
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
-
-      - name: Extract OpenVINO packages
-        run: |
-          pushd ${{ env.OV_INSTALL_DIR }}
-            Expand-Archive openvino_package.zip -DestinationPath ./tmp
-            mv ./tmp/*/* .
-          popd
+          merge-multiple: true
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
@@ -494,6 +466,102 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python ${{ env.OV_INSTALL_DIR }}\samples\python\whisper_speech_recognition\whisper_speech_recognition.py whisper-tiny how_are_you_doing_today.wav
+
+  genai_build_nodejs_bindings:
+    name: Build Node.js bindings
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-2022
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}\\build
+      INSTALL_DIR: ${{ github.workspace }}\\install
+      OV_INSTALL_DIR: ${{ github.workspace }}\\ov
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+      NODE_VERSION: 21
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      - name: Build GenAI Node.js bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=Release `
+            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM `
+            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF `
+            -S ./ -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config Release --parallel --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Pack Node.js bindings libs
+        run: |
+          $file=Get-ChildItem -Path "${{ env.INSTALL_DIR }}"
+          $compress = @{
+            Path = $file
+            CompressionLevel = "Optimal"
+            DestinationPath = "${{ env.BUILD_DIR }}/genai_nodejs_bindings.zip"
+          }
+          Compress-Archive @compress
+
+      - name: Upload Archive Package with Node.js bindings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.zip
+          if-no-files-found: 'error'
+
+      - name: Install npm package tests dependencies
+        working-directory: ./src/js
+        run: |
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }} bin
+          npm install
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin
+          Copy-Item -Recurse ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run npm package tests
+        working-directory: ./src/js
+        run: |
+          npm test
+
+      - name: Install genai-node samples dependencies
+        working-directory: ./samples/js/text_generation
+        run: |
+          npm install
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin
+          Copy-Item -Recurse ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run samples tests
+        run: npm test
+        env:
+          MODEL_PATH: ./src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
+        working-directory: ./samples/js/text_generation
 
   Overall_Status:
     name: ci/gha_overall_status_windows
