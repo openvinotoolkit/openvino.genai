@@ -60,7 +60,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-16-cores-32gb
     env:
       OV_REPO: ${{ github.workspace }}\src\ov
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
@@ -182,7 +182,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-16-cores-32gb
     env:
       OV_REPO: ${{ github.workspace }}\src\ov
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
@@ -297,7 +297,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
