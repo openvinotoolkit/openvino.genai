@@ -267,6 +267,7 @@ ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVaria
                                 // on pybind automatic decoding since it raises exceptions on incomplete
                                 // strings.
                                 return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> ov::genai::StreamingStatus {
+                                    py::gil_scoped_acquire acquire;
                                     auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                                     std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
                                     if (callback_output.has_value()) {
@@ -302,8 +303,12 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
     ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
-
-    return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
+    ov::genai::WhisperDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(raw_speech_input, updated_config, streamer);
+    }
+    return py::cast(res);
 }
 
 }  // namespace
