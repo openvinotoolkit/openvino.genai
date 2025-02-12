@@ -13,6 +13,7 @@
 
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
@@ -117,6 +118,8 @@ public:
     }
 
     ov::Tensor decode(const ov::Tensor latent);
+
+    ImageGenerationPerfMetrics get_performance_metrics();
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;

@@ -13,6 +13,7 @@
 #include "openvino/runtime/tensor.hpp"
 
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov {
 namespace genai {

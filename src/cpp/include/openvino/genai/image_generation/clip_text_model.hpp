@@ -9,6 +9,7 @@
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/tensor.hpp"

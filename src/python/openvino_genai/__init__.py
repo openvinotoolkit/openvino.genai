@@ -77,6 +77,8 @@ from .py_openvino_genai import (
     Generator,
     CppStdGenerator,
     TorchGenerator,
+    ImageGenerationPerfMetrics,
+    RawImageGenerationPerfMetrics,
 )
 
 # Continuous batching
