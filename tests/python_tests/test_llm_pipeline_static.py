@@ -31,6 +31,7 @@ common_config = {
                       'PREFILL_CONFIG': { },
                       'GENERATE_CONFIG': { }
                 } | get_default_llm_properties()
+                } | get_default_llm_properties()
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
@@ -229,6 +230,7 @@ def test_chat_generation():
     model_id, tmp_path = get_models_list()[0]
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
 
+    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
