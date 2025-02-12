@@ -14,7 +14,9 @@ import shutil
 import json
 
 import openvino_genai as ov_genai
-from common import get_default_properties, delete_rt_info
+from common import delete_rt_info
+
+from utils.constants import get_default_llm_properties
 
 def get_models_list():
     precommit_models = [
@@ -94,7 +96,7 @@ def read_model(params, **tokenizer_kwargs):
 
     if (models_path / "openvino_model.xml").exists():
         opt_model = OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
-                                                       compile=False, device='CPU', ov_config=get_default_properties())
+                                                       compile=False, device='CPU', ov_config=get_default_llm_properties())
     else:
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(hf_tokenizer,
                                                                              with_detokenizer=True,
@@ -106,7 +108,7 @@ def read_model(params, **tokenizer_kwargs):
         hf_tokenizer.save_pretrained(models_path)
 
         opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True,
-                                                       compile=False, device='CPU', load_in_8bit=False, ov_config=get_default_properties())
+                                                       compile=False, device='CPU', load_in_8bit=False, ov_config=get_default_llm_properties())
         opt_model.generation_config.save_pretrained(models_path)
         opt_model.config.save_pretrained(models_path)
         opt_model.save_pretrained(models_path)
@@ -116,7 +118,7 @@ def read_model(params, **tokenizer_kwargs):
         models_path,
         hf_tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties()),
+        ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_llm_properties()),
     )
 
 
@@ -181,7 +183,7 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
 
-    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_properties())
+    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
 
     for _, config_name in configs:
         os.remove(temp_path / config_name)
@@ -191,4 +193,4 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
-    return ov_genai.LLMPipeline(path, 'CPU', scheduler_config=ov_genai.SchedulerConfig(), **get_default_properties())
+    return ov_genai.LLMPipeline(path, 'CPU', scheduler_config=ov_genai.SchedulerConfig(), **get_default_llm_properties())

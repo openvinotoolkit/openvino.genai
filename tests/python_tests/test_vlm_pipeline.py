@@ -7,7 +7,10 @@ import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
-from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters, get_default_properties
+from common import get_image_by_link
+
+from utils.generation_config import get_beam_search, get_multinomial_all_parameters
+from utils.constants import get_default_llm_properties
 
 def get_ov_model(model_id, cache):
     model_dir = cache.mkdir(model_id.split('/')[-1])
@@ -18,7 +21,7 @@ def get_ov_model(model_id, cache):
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
+    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
     if processor.tokenizer.chat_template is not None:
         processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)

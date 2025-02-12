@@ -1,4 +1,4 @@
-name: macOS (12, Python 3.10)
+name: macOS (13, Python 3.10)
 on:
   workflow_dispatch:
   pull_request:
@@ -29,7 +29,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Download OpenVINO build
         id: openvino_download
@@ -58,7 +58,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: 'macos-12-large'
+    runs-on: 'macos-13-large'
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.15'
       CMAKE_BUILD_TYPE: 'Release'

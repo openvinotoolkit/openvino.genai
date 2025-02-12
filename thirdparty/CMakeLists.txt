@@ -24,8 +24,8 @@ if(BUILD_TOKENIZERS)
         # Prebuilt dependencies
         if(WIN32)
             set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/core_tokenizers.dll"
-                        "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/third_party/lib/icudt70.dll"
-                        "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/third_party/lib/icuuc70.dll")
+                        "${CMAKE_BINARY_DIR}/_deps/icu/icu-src/bin64/icudt70.dll"
+                        "${CMAKE_BINARY_DIR}/_deps/icu/icu-src/bin64/icuuc70.dll")
         elseif(LINUX)
             set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.so")
         elseif(APPLE)
