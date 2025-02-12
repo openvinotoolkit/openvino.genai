@@ -409,6 +409,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    runs-on: windows-latest
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
