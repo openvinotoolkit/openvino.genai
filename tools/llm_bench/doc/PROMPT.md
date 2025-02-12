@@ -40,5 +40,5 @@ Prompt file example：
 
 ## 5. Visual Language Models
 Supported parameters that can be set are:
-* `media` - imge file path
+* `media` - image file path or url
 * `prompt`- input text prompt
