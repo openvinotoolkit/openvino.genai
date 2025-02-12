@@ -11,6 +11,7 @@
 #include <pybind11/typing.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/version.hpp"
 
 #include "py_utils.hpp"
@@ -18,12 +19,15 @@
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
+using ov::genai::CallbackTypeVariant;
 using ov::genai::DecodedResults;
 using ov::genai::EncodedResults;
 using ov::genai::StreamerBase;
 using ov::genai::StringInputs;
-using ov::genai::get_version;
 using ov::genai::StreamingStatus;
+using ov::genai::TextStreamer;
+using ov::genai::Tokenizer;
+using ov::genai::get_version;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -63,6 +67,14 @@ auto encoded_results_docstring = R"(
 
 auto streamer_base_docstring =  R"(
     Base class for streamers. In order to use inherit from from this class and implement put, and methods.
+)";
+
+auto text_streamer_docstring =  R"(
+TextStreamer is used to decode tokens into text and call a user-defined callback function.
+
+tokenizer: Tokenizer object to decode tokens into text.
+callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
+
 )";
 
 class ConstructableStreamer: public StreamerBase {
@@ -127,6 +139,11 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"))
         .def("write", &StreamerBase::write, "Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled", py::arg("token"))
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
+
+    py::class_<TextStreamer, std::shared_ptr<TextStreamer>>(m, "TextStreamer", text_streamer_docstring)
+        .def(py::init<const Tokenizer&, std::function<CallbackTypeVariant(std::string)>>(), py::arg("tokenizer"), py::arg("callback"))
+        .def("write", &TextStreamer::write)
+        .def("end", &TextStreamer::end);
 
     py::enum_<ov::genai::StreamingStatus>(m, "StreamingStatus")
         .value("RUNNING", ov::genai::StreamingStatus::RUNNING)

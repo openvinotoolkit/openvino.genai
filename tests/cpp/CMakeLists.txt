@@ -25,7 +25,7 @@ file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching*.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/icontinuous_batching.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/lora_helper.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_callback_streamer.cpp")
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_streamer.cpp")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src})
 

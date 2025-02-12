@@ -4,7 +4,7 @@
 #include <atomic>
 #include <thread>
 
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "utils.hpp"
 #include "paged_attention_transformations.hpp"

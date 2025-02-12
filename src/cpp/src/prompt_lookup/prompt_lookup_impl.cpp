@@ -5,7 +5,8 @@
 
 #include "utils.hpp"
 #include "prompt_lookup_impl.hpp"
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
+
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};

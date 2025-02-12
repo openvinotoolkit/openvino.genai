@@ -36,7 +36,7 @@ if(NOT DEFINED OpenVINOGenAI_SOURCE_DIR)
     message(STATUS "OpenVINOGenAI_SOURCE_DIR was found at: ${OpenVINOGenAI_LOCATION}")
 endif()
 
-file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_callback_streamer.cpp")
+file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_streamer.cpp")
 
 # Add source files
 add_library(${TARGET_PYWRAPPER_NAME} MODULE py_genai_test_utils.cpp)

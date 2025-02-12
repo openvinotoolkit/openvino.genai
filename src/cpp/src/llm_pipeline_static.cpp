@@ -22,10 +22,11 @@
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "openvino/core/parallel.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
-#include "text_callback_streamer.hpp"
+
 #include "json_utils.hpp"
 #include "utils.hpp"
 

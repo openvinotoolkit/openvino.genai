@@ -3,13 +3,13 @@
 
 #include "streamer.hpp"
 
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 namespace ov {
 namespace genai {
 
 StreamingStatus ChunkTextCallbackStreamer::write(int64_t token) {
-    return ov::genai::TextCallbackStreamer::write(token);
+    return ov::genai::TextStreamer::write(token);
 }
 
 StreamingStatus ChunkTextCallbackStreamer::write_chunk(std::vector<int64_t> tokens) {
@@ -21,11 +21,11 @@ StreamingStatus ChunkTextCallbackStreamer::write_chunk(std::vector<int64_t> toke
         m_tokens_cache.insert(m_tokens_cache.end(), tokens.begin(), tokens.end() - 1);
     }
 
-    return ov::genai::TextCallbackStreamer::write(tokens.back());
+    return ov::genai::TextStreamer::write(tokens.back());
 }
 
 void ChunkTextCallbackStreamer::end() {
-    ov::genai::TextCallbackStreamer::end();
+    ov::genai::TextStreamer::end();
 }
 
 }  // namespace genai
