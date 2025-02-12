@@ -159,7 +159,7 @@ def test_text_verbose():
     assert "## Diff:" in result.stderr
 
 
-def test_text_language_autodetect():
+def test_text_language():
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_file_name = os.path.join(temp_dir, "gt.csv")
         result = run_wwb(
@@ -172,6 +172,8 @@ def test_text_language_autodetect():
                 "2",
                 "--device",
                 "CPU",
+                "--language",
+                "cn",
             ]
         )
         assert result.returncode == 0

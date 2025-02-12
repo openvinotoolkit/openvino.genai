@@ -73,21 +73,6 @@ default_data = {
 }
 
 
-def autodetect_language(model):
-    model2language = {
-        "chatglm": "cn",
-        "qwen2": "cn",
-        "qwen": "cn",
-        "baichuan": "cn",
-        "minicpmv": "cn",
-        "internlm": "cn",
-    }
-
-    if not hasattr(model, "config"):
-        return "en"
-    return model2language.get(model.config.model_type, "en")
-
-
 @register_evaluator(
     "text"
 )
@@ -103,7 +88,7 @@ class TextEvaluator(BaseEvaluator):
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
-        language=None,
+        language="en",
         gen_answer_fn=None,
         generation_config=None,
         generation_config_base=None,
@@ -130,9 +115,6 @@ class TextEvaluator(BaseEvaluator):
 
         # Take language from the base model if provided
         self.language = language
-        if self.language is None:
-            if base_model is not None:
-                self.language = autodetect_language(base_model)
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -233,11 +215,6 @@ class TextEvaluator(BaseEvaluator):
                     data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            if self.language is None:
-                print(
-                    "No language detecting in the base model or ground truth data. Taking language from target model."
-                )
-                self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
         prompt_data = data["prompts"]
