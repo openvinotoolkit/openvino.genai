@@ -58,6 +58,12 @@ void WhisperDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hid
     }
 
     OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1);
+
+    if (batch_size == 1) {
+        request.set_tensor("encoder_hidden_states", encoder_hidden_state);
+        return;
+    }
+
     Shape shape{encoder_hidden_state.get_shape()};
     shape[0] = batch_size;
 
