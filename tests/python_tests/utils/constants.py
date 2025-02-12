@@ -4,7 +4,7 @@
 import openvino.properties.hint as hints
 import openvino as ov
 
-def get_default_llm_propeties():
+def get_default_llm_properties():
     return {
         hints.inference_precision : ov.Type.f32,
         hints.kv_cache_precision : ov.Type.f16,
