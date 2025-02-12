@@ -35774,10 +35774,23 @@ const util = __nccwpck_require__(9023);
 
 const execAsync = util.promisify(exec);
 
+async function getPythonVersion() {
+  const { stdout } = await execAsync('python --version');
+  const versionMatch = stdout.match(/Python (\d+\.\d+\.\d+)/);
+  if (versionMatch) {
+    return versionMatch[1];
+  } else {
+    throw new Error('Unable to detect Python version');
+  }
+}
+
 async function installPackages(packages, localWheelDir, requirementsFiles) {
   core.debug(`Packages to install: ${packages}`);
   core.debug(`Local wheel directory: ${localWheelDir}`);
   core.debug(`Requirements files: ${requirementsFiles}`);
+
+  const pythonVersion = await getPythonVersion();
+  core.debug(`Detected Python version: ${pythonVersion}`);
 
   // Resolve local wheels
   const localWheels = {};
@@ -35786,7 +35799,13 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
     core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
-      localWheels[packageName] = whl;
+      const wheelPythonVersion = path.basename(whl).match(/cp(\d{2})/);
+      if (
+        wheelPythonVersion &&
+        wheelPythonVersion[1] === pythonVersion.replace('.', '')
+      ) {
+        localWheels[packageName] = whl;
+      }
     }
   }
   core.debug(`Resolved local wheels: ${JSON.stringify(localWheels)}`);
@@ -35815,7 +35834,7 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
     core.debug(`Installing packages with arguments: ${installArgs.join(' ')}`);
     console.log(`Installing packages: ${installArgs.join(' ')}`);
     const { stdout, stderr } = await execAsync(
-      `pip install ${installArgs.join(' ')}`,
+      `python -m pip install ${installArgs.join(' ')}`,
       {
         stdio: 'inherit'
       }
