@@ -283,23 +283,6 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
-    if (!model)
-        return;
-    if (model->get_rt_info().count(name) == 0)
-        return;
-    auto str_value = model->get_rt_info().at(name).as<std::string>();
-    if constexpr (std::is_same<T, int64_t>::value) {
-        value = std::stoll(str_value);
-    } else if constexpr (std::is_same<T, std::string>::value) {
-        value = str_value;
-    }
-}
-
-template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
-template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
-
 ov::Core singleton_core() {
     static ov::Core core;
     return core;

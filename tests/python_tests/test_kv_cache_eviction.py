@@ -117,6 +117,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     generation_config = GenerationConfig()  # expecting default greedy sampling
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = test_struct.max_new_tokens
+    generation_config.apply_chat_template = False
 
     scheduler_config_opt = get_scheduler_config(test_struct.num_kv_blocks)
     scheduler_config_opt.use_cache_eviction = test_struct.use_cache_eviction
