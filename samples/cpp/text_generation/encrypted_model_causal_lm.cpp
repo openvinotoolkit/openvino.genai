@@ -11,15 +11,12 @@ std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, 
         throw std::runtime_error("Cannot open model or weights file");
     }
 
-    std::cout << "Before decoding\n" << std::endl;
     // User can add file decryption of model_file and weights_file in memory here.
 
     std::string model_str((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
     std::vector<char> weights_buffer((std::istreambuf_iterator<char>(weights_file)), std::istreambuf_iterator<char>());
-    std::cout << "start successfully\n" << std::endl;
-
     auto weights_tensor = ov::Tensor(ov::element::u8, {weights_buffer.size()}, weights_buffer.data());
-    return {model_str, std::move(weights_tensor)};
+    return {model_str, weights_tensor};
 }
 
 ov::genai::Tokenizer decrypt_tokenizer(const std::string& models_path) {
@@ -34,11 +31,6 @@ ov::genai::Tokenizer decrypt_tokenizer(const std::string& models_path) {
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
 }
 
-auto streamer = [](std::string subword) {
-    std::cout << subword << std::flush;
-    return ov::genai::StreamingStatus::RUNNING;
-};
-
 int main(int argc, char* argv[]) try {
     if (3 > argc)
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<PROMPT>\"");
@@ -48,14 +40,11 @@ int main(int argc, char* argv[]) try {
     std::string prompt = argv[2];
 
     auto [model_str, model_weights] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
-    std::cout << "Decrypt loaded successfully\n" << std::endl;
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
-    std::cout << "Tokenizer loaded successfully\n" << std::endl;
     
     ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device);
-    std::cout << "Model loaded successfully\n" << std::endl;
 
-    std::string result = pipe.generate(prompt, ov::genai::streamer(streamer), ov::genai::max_new_tokens(10));
+    std::string result = pipe.generate(prompt, ov::genai::max_new_tokens(100));
     std::cout << result << std::endl;
 } catch (const std::exception& error) {
     try {

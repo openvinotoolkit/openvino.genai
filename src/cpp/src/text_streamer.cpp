@@ -65,6 +65,7 @@ StreamingStatus TextStreamer::run_callback_if_needed(const std::string& text) {
         return set_streaming_status(m_subword_callback(text));
     }
 }
+
 void TextStreamer::end() {
     std::stringstream res;
     std::string text = m_tokenizer.decode(m_tokens_cache);
