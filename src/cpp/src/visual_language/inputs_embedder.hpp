@@ -7,6 +7,7 @@
 #include <vector>
 #include <filesystem>
 
+#include "utils.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -49,16 +50,19 @@ public:
     std::vector<int64_t> get_tokenized_history() const;
 
     // add new results to tokenized history
-    void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len);
+    void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len, size_t inputs_embeds_size);
 
     // returns amount of elements, which need to remove from the end of the KV cache
     size_t get_num_tokens_to_remove_from_hist() const;
+
+    // returns true, if we need to remove full kv cache, in that case it's needed to reset it instead of manually updating
+    bool should_reset_kv_cache() const;
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
 
     // adds currently generated text to chat history
-    void update_chat_history(const std::string& decoded_results);
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
