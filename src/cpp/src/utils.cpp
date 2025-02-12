@@ -15,8 +15,8 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
-#include "text_callback_streamer.hpp"
 
 #include "sampler.hpp"
 
@@ -160,10 +160,10 @@ std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenize
             return streamer;
         },
         [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
         },
         [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(tokenizer, streamer);
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
         }
     }, streamer);
 
