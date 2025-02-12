@@ -22,9 +22,12 @@
     "test_setup": "node ./tests/setup.js",
     "test": "npm run test_setup && node --test ./tests/*.test.js"
   },
+  "dependencies": {
+    "openvino-node": "^2025.0.0"
+  },
   "devDependencies": {
-    "node-fetch": "^3.3.2",
+    "@huggingface/hub": "^0.21.0",
     "global-agent": "^3.0.0",
-    "@huggingface/hub": "^0.21.0"
+    "node-fetch": "^3.3.2"
   }
 }
