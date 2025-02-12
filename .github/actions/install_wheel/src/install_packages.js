@@ -63,8 +63,13 @@ async function run() {
     const localWheelDir = core.getInput('local_wheel_dir') || null;
     const requirementsInput = core.getInput('requirements_files') || '';
     const packages = packagesInput.split(';');
-    const requirementsFiles = requirementsInput.split(';').filter(Boolean).map(reqFile => path.normalize(reqFile));
-    const normalizedLocalWheelDir = localWheelDir ? path.normalize(localWheelDir) : null;
+    const requirementsFiles = requirementsInput
+      .split(';')
+      .filter(Boolean)
+      .map(reqFile => path.normalize(reqFile));
+    const normalizedLocalWheelDir = localWheelDir
+      ? path.normalize(localWheelDir)
+      : null;
     await installPackages(packages, normalizedLocalWheelDir, requirementsFiles);
   } catch (error) {
     core.setFailed(error.message);
