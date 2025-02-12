@@ -10,6 +10,7 @@ namespace ov::genai {
 
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
     ov::InferRequest m_model_runner;
+    ov::CompiledModel compiled_model;
     Sampler m_sampler;
 
     // Chat scenario specific parameters
@@ -72,6 +73,8 @@ public:
     void start_chat(const std::string& system_message) override;
 
     void finish_chat() override;
+
+    ~StatefulLLMPipeline() override;
 };
 
 } // namespace ov::genai
