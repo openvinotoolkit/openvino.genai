@@ -8,9 +8,13 @@ const execAsync = util.promisify(exec);
 
 async function getPythonVersion() {
   const { stdout } = await execAsync('python --version');
-  const versionMatch = stdout.match(/Python (\d+\.\d+\.\d+)/);
+  const versionMatch = stdout.match(/Python (\d+)\.(\d+)\.(\d+)/);
   if (versionMatch) {
-    return versionMatch[1];
+    return {
+      major: versionMatch[1],
+      minor: versionMatch[2],
+      patch: versionMatch[3]
+    };
   } else {
     throw new Error('Unable to detect Python version');
   }
@@ -22,7 +26,7 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
   core.debug(`Requirements files: ${requirementsFiles}`);
 
   const pythonVersion = await getPythonVersion();
-  core.debug(`Detected Python version: ${pythonVersion}`);
+  core.debug(`Detected Python version: ${JSON.stringify(pythonVersion)}`);
 
   // Resolve local wheels
   const localWheels = {};
@@ -31,10 +35,10 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
     core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
-      const wheelPythonVersion = path.basename(whl).match(/cp(\d{2})/);
+      const wheelPythonVersion = path.basename(whl).match(/cp(\d{2,3})/);
       if (
-        wheelPythonVersion &&
-        wheelPythonVersion[1] === pythonVersion.replace('.', '')
+        !wheelPythonVersion ||
+        wheelPythonVersion[1] === `${pythonVersion.major}${pythonVersion.minor}`
       ) {
         localWheels[packageName] = whl;
       }
