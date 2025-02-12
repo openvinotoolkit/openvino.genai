@@ -35,6 +35,7 @@ def run_visual_language_generation_optimum(
         args["batch_size"] = 1
     images = []
     prompts = []
+    inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
             images.append(load_image(input_data["media"]))
@@ -194,6 +195,7 @@ def run_visual_language_generation_genai(
         args["batch_size"] = 1
     images = []
     prompts = []
+    inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
             images.append(load_image_genai(input_data["media"]))
@@ -211,6 +213,7 @@ def run_visual_language_generation_genai(
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    gen_config.ignore_eos = True
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
     kwargs = {}
@@ -364,8 +367,7 @@ def get_image_text_prompt(args):
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
                 if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    vlm_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), vlm_file['media'].replace('./', ''))
-                    vlm_file['media'] = Path(vlm_file['media'])
+                    vlm_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), vlm_file['media'].replace('./', '')) if not vlm_file["media"].startswith("https://") else vlm_file["media"]
                 vlm_file_list.append(vlm_file)
     else:
         vlm_file_list.append(output_data_list)
