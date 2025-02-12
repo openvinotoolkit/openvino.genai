@@ -226,9 +226,8 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels
           python -m pytest -v ./tests/python_tests/test_tokenizer.py::test_set_chat_template
-          python -m pytest -v tests/python_tests/test_text_streamer.py
         env:
-          PYTHONPATH: "./build/:./build/tests/python_tests/pybind_wrapper:$PYTHONPATH"
+          PYTHONPATH: "./build/:$PYTHONPATH"
 
       - name: Test bindings (wheel)
         run: |
@@ -236,7 +235,7 @@ jobs:
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/wheels
           python -c "from openvino_genai import LLMPipeline"
           python -m pip install ./tools/who_what_benchmark --find-links ${OV_INSTALL_DIR}/wheels
-          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py --ignore tests/python_tests/test_text_streamer.py -k "not test_set_chat_template"
+          python -m pytest -v ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_pipeline.py --ignore ./tests/python_tests/test_whisper_pipeline_static.py --ignore ./tests/python_tests/test_vlm_pipeline.py -k "not test_set_chat_template"
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)

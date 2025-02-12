@@ -147,6 +147,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
+      GENAI_BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
       - name: Clone openvino.genai
@@ -177,6 +178,17 @@ jobs:
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
+        env:
+          PY_BUILD_CMAKE_BINARY_DIR: ${{ env.GENAI_BUILD_DIR }}
+
+      - name: Build GenAI Test Utils wheel
+        run: |
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              ${{ env.SRC_DIR }}/tests/genai_test_utils
+        env: 
+          OpenVINOGenAI_DIR: ${{ env.GENAI_BUILD_DIR }}
+          OpenVINO_DIR: ${{ env.OV_INSTALL_DIR }}/runtime/cmake/
 
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
@@ -259,14 +271,6 @@ jobs:
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
           if-no-files-found: 'error'
 
-  genai_test_text_streamer:
-    name: GenAI TextStreamer Tests
-    needs: [ openvino_download, genai_build_cmake ]
-    timeout-minutes: 5
-    run: |
-      python -m pytest -v tests/python_tests/test_text_streamer.py
-    env:
-      PYTHONPATH: "./build/:./build/tests/python_tests/pybind_wrapper:$PYTHONPATH"
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
@@ -281,7 +285,7 @@ jobs:
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py --ignore tests/python_tests/test_text_streamer.py'
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
     defaults:
       run:
         shell: bash
@@ -316,13 +320,14 @@ jobs:
       - name: Install GenAI Wheels
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench;genai_test_utils"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
         run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
+
 
   genai_samples_tests:
     name: Samples Tests - ${{ matrix.build-type }}

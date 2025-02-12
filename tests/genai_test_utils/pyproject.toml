@@ -1,0 +1,19 @@
+[project]
+name = "genai_test_utils"
+version = "2025.1.0.0"
+description = "Python binding utilities to test OpenVINO GenAI"
+authors = [{ name = "OpenVINO Developers", email = "openvino@intel.com" }]
+license = { text = "Apache-2.0" }
+
+[tool.py-build-cmake.module]
+directory = "./"
+
+[tool.py-build-cmake]
+cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]
+
+[build-system]
+requires = [
+    "py-build-cmake==0.3.4",
+    "cmake~=3.14",
+]
+build-backend = "py_build_cmake.build"
