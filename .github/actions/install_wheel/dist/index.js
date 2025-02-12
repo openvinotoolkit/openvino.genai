@@ -35782,7 +35782,7 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
   // Resolve local wheels
   const localWheels = {};
   if (localWheelDir) {
-    const wheels = glob.sync(path.join(localWheelDir, '*.whl'));
+    const wheels = glob.sync(path.posix.join(localWheelDir, '*.whl'));
     core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
