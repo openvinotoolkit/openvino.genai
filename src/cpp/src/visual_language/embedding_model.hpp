@@ -37,12 +37,14 @@ public:
 
     EmbeddingsModel() = default;
 
-    ov::Tensor infer(ov::Tensor input_idx);
+    ov::Tensor infer(const ov::Tensor& input_idx, bool return_remote_tensor=false);
 
 private:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;
 
     ov::InferRequest m_request;
+    ov::Tensor m_cpu_tensor;
+    ov::Tensor m_remote_tensor;
 };
 
 } // namespace genai
