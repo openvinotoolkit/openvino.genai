@@ -11,6 +11,12 @@ if(NOT TARGET gtest)
     URL_HASH SHA256=edd885a1ab32b6999515a880f669efadb80b3f880215f315985fa3f6eca7c4d3
   )
   FetchContent_MakeAvailable(googletest)
+
+  foreach(gtarget IN ITEMS gtest gmock gtest_main gmock_main)
+    if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
+      target_compile_options(${gtarget} PUBLIC -Wno-undef)
+    endif()
+  endforeach()
 endif()
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
