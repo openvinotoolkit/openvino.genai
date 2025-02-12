@@ -1,9 +1,11 @@
+import { createRequire } from 'module'
 import path from 'path';
 import util from 'node:util';
 import { platform } from 'node:os';
 import getGenAIAddon from './bindings.cjs';
 
 let ovPath;
+const require = createRequire(import.meta.url);
 try {
   ovPath = require.resolve('openvino-node');
 } catch (error) {

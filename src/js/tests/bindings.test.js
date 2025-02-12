@@ -1,4 +1,4 @@
-import addon from '../lib/bindings.cjs';
+import getGenAIAddon from '../lib/bindings.cjs';
 
 import assert from 'node:assert';
 import { describe, it, before, after } from 'node:test';
@@ -11,6 +11,7 @@ describe('bindings', () => {
   let pipeline = null;
 
   before((_, done) => {
+    const addon = getGenAIAddon();
     pipeline = new addon.LLMPipeline();
 
     pipeline.init(MODEL_PATH, 'CPU', (err) => {
