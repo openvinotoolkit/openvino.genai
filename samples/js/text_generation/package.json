@@ -5,7 +5,7 @@
   "type": "module",
   "devDependencies": {
     "openvino-node": "^2025.0.0",
-    "genai-node": "../../../src/js/"
+    "genai-node": "file:../../../src/js/"
   },
   "engines": {
     "node": ">=21.0.0"
