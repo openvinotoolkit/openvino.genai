@@ -22,7 +22,8 @@
     "all": "npm run format:write && npm run package"
   },
   "dependencies": {
-    "@actions/core": "^1.11.1"
+    "@actions/core": "^1.11.1",
+    "glob": "^11.0.1"
   },
   "devDependencies": {
     "@vercel/ncc": "^0.38.3",
