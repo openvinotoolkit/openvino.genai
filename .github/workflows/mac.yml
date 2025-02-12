@@ -25,32 +25,159 @@ jobs:
     name: Download OpenVINO package
     outputs:
       status: ${{ steps.openvino_download.outcome }}
-      ov_artifact_name: ${{ steps.openvino_download.outputs.ov_artifact_name }}
-      ov_wheel_source: ${{ steps.openvino_download.outputs.ov_wheel_source }}
     timeout-minutes: 10
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-2-cores-8gb
-    container:
-      image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
-      volumes:
-        - /mount:/mount
-        - ${{ github.workspace }}:${{ github.workspace }}
-    continue-on-error: true
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download OpenVINO build
+        id: openvino_download
+        run: |
+          wget ${{ env.OV_TARBALL}} --progress=bar:force:noscroll -O openvino_package.tar.gz
+          tar -tvf openvino_package.tar.gz
+        continue-on-error: true
+
+      #
+      # Upload to artifacts
+      #
+
+      - name: Upload openvino package
+        if: steps.openvino_download.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openvino_package
+          path: openvino_package.tar.gz
+          if-no-files-found: 'error'
+
+  openvino_build:
+    name: Build OpenVINO package
+    needs: [openvino_download]
+    if: needs.openvino_download.outputs.status != 'success'
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    runs-on: 'macos-13-large'
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
+      CMAKE_BUILD_TYPE: 'Release'
+      CMAKE_GENERATOR: 'Ninja Multi-Config'
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      OPENVINO_REPO: ${{ github.workspace }}/openvino
+      INSTALL_DIR: ${{ github.workspace }}/openvino/install
+      BUILD_DIR: ${{ github.workspace }}/openvino/build
 
     steps:
-      - id: openvino_download
-        uses: openvinotoolkit/openvino/.github/actions/openvino_provider@master
+      - name: Clone OpenVINO
+        uses: actions/checkout@v4
         with:
-          platform: macos_12_6
-          commit_packages_to_provide: all
-          revision: latest_available_commit
+          repository: 'openvinotoolkit/openvino'
+          path: ${{ env.OPENVINO_REPO }}
+          submodules: 'true'
+          ref: ${{ env.OV_BRANCH }}
+
+      #
+      # Dependencies
+      #
+
+      - name: Install build dependencies
+        run: brew install coreutils ninja
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install python dependencies
+        run: |
+          # For Python API: build and wheel packaging
+          python3 -m pip install -r ${OPENVINO_REPO}/src/bindings/python/wheel/requirements-dev.txt
+
+      #
+      # Build
+      #
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          max-size: "2000M"
+          # Should save cache only if run in the master branch of the base repo
+          # github.ref_name is 'ref/PR_#' in case of the PR, and 'branch_name' when executed on push
+          save: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
+          verbose: 2
+          key: ccache-mac
+          restore-keys: |
+            ccache-mac
+
+      - name: CMake configure - OpenVINO
+        run: |
+          cmake \
+            -G "${{ env.CMAKE_GENERATOR }}" \
+            -DENABLE_CPPLINT=OFF \
+            -DENABLE_NCC_STYLE=OFF \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_STRICT_DEPENDENCIES=OFF \
+            -DENABLE_SYSTEM_OPENCL=ON \
+            -DCMAKE_VERBOSE_MAKEFILE=ON \
+            -DCPACK_GENERATOR=TGZ \
+            -DENABLE_JS=OFF \
+            -DENABLE_SAMPLES=ON \
+            -DENABLE_OV_ONNX_FRONTEND=OFF \
+            -DENABLE_OV_PADDLE_FRONTEND=OFF \
+            -DENABLE_OV_PYTORCH_FRONTEND=ON \
+            -DENABLE_OV_TF_FRONTEND=ON \
+            -DENABLE_OV_TF_LITE_FRONTEND=OFF \
+            -DENABLE_INTEL_GPU=OFF \
+            -DENABLE_INTEL_NPU=OFF \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DENABLE_PYTHON=ON \
+            -DENABLE_WHEEL=ON \
+            -S ${OPENVINO_REPO} \
+            -B ${BUILD_DIR}
+
+      - name: Clean ccache stats
+        run: ccache --zero-stats --show-config
+
+      - name: Cmake build - OpenVINO
+        run: cmake --build ${BUILD_DIR} --parallel --config ${{ env.CMAKE_BUILD_TYPE }}
+
+      - name: Show ccache stats
+        run: ccache --show-stats
+
+      - name: Cmake install - OpenVINO
+        run: |
+          cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}/openvino_package -P ${BUILD_DIR}/cmake_install.cmake
+          cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}/openvino_package -DCOMPONENT=python_wheels -P ${BUILD_DIR}/cmake_install.cmake
+
+      - name: Pack Artifacts
+        run: |
+          pushd ${INSTALL_DIR}
+            tar -czvf ${BUILD_DIR}/openvino_package.tar.gz *
+          popd
+
+      #
+      # Upload build artifacts and logs
+      #
+
+      - name: Upload openvino package
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.BUILD_DIR }}/openvino_package.tar.gz
+          if-no-files-found: 'error'
 
   genai_python_lib:
     name: OpenVINO genai extension (cmake + wheel)
-    needs: [ openvino_download ]
-    if: needs.openvino_download.outputs.status == 'success'
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
     timeout-minutes: 120
     defaults:
       run:
@@ -74,11 +201,16 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          name: openvino_package
           path: ${{ env.OV_INSTALL_DIR }}
-          merge-multiple: true
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
 
       - name: Install build dependencies
         run: brew install coreutils ninja scons
@@ -107,8 +239,10 @@ jobs:
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
-    needs: [ openvino_download ]
-    if: needs.openvino_download.outputs.status == 'success'
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
     timeout-minutes: 90
     defaults:
       run:
@@ -132,11 +266,16 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          name: openvino_package
           path: ${{ env.OV_INSTALL_DIR }}
-          merge-multiple: true
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
 
       - name: Install build dependencies
         run: brew install coreutils ninja scons
@@ -168,8 +307,10 @@ jobs:
     strategy:
       matrix:
         build-type: [Release, Debug]
-    needs: [ openvino_download ]
-    if: needs.openvino_download.outputs.status == 'success'
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
     timeout-minutes: 30
     defaults:
       run:
@@ -191,11 +332,16 @@ jobs:
           cache: 'pip'
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          name: openvino_package
           path: ${{ env.OV_INSTALL_DIR }}
-          merge-multiple: true
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
 
       - name: Install build dependencies
         run: brew install coreutils scons
@@ -288,11 +434,16 @@ jobs:
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          name: openvino_package
           path: ${{ env.OV_INSTALL_DIR }}
-          merge-multiple: true
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
 
       - name: Install build dependencies
         run: brew install coreutils scons
@@ -351,7 +502,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_macos
-    needs: [openvino_download, genai_python_lib, genai_package, genai_python_lib_whisper]
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
