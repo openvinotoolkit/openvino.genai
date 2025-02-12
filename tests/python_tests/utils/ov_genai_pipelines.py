@@ -7,7 +7,9 @@ from typing import List, Callable
 from shutil import rmtree
 
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
-    LLMPipeline, GenerationConfig, GenerationResult, StreamerBase
+    LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
+
+from utils.comparation import compare_generation_results
 
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -85,15 +87,33 @@ def prepare_generation_config_by_pipe_type(generation_config : GenerationConfig,
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
         generation_config.num_assistant_tokens = 5
         generation_config.max_ngram_size = 3
-    else:
-        pass
     return generation_config
 
 def prepare_generation_configs_by_pipe_type(generation_configs : List[GenerationConfig],
                                             pipeline_type: PipelineType = PipelineType.STATEFUL):
     return [ prepare_generation_config_by_pipe_type(generation_config, pipeline_type) for generation_config in generation_configs ]
 
-# todo: typing
+
+def convert_decoded_results_to_generation_result(generate_outputs: DecodedResults,
+                                                 num_prompts: int,
+                                                 num_return_sequences: int,
+                                                 is_beam_search: bool) -> List[GenerationResult]:
+    index = 0
+    generation_results = []
+
+    for _ in range(num_prompts):
+        generation_result = GenerationResult()
+
+        generation_result.m_generation_ids = generate_outputs.texts[index : index + num_return_sequences]
+        # sequences_scores are available only for beam search case
+        if is_beam_search:
+            generation_result.m_scores = generate_outputs.scores[index : index + num_return_sequences]
+        generation_results.append(generation_result)
+
+        index += num_return_sequences
+    return generation_results
+
+
 def run_ov_pipeline(models_path: Path,
                     prompt : str | List[str],
                     generation_config : GenerationConfig | List[GenerationConfig],
@@ -103,31 +123,52 @@ def run_ov_pipeline(models_path: Path,
                     draft_model: draft_model = None,
                     ov_config: dict = {},
                     device: str = "CPU"
-    ):
+    ) -> List[GenerationResult]:
     # update the generation config according pipeline_type
     updated_generation_config = None
-    if isinstance(generation_config, List[GenerationConfig]):
+    if isinstance(generation_config, List):
         if pipeline_type != PipelineType.CONTINIOUS_BATCHING:
             raise Exception(f"\'generation_config\' is \'List[GenerationConfig]\'. This type is supported only for \'PipelineType.CONTINIOUS_BATCHING\'! Please change pipeline_type or generation_config type!")
-        assert isinstance(prompt, List[str])
+        assert isinstance(prompt, List)
         assert len(generation_config) == len(prompt)
         updated_generation_config = prepare_generation_configs_by_pipe_type(generation_config, pipeline_type)
     else:
-        updated_generation_config = prepare_generation_configs_by_pipe_type(generation_config, pipeline_type)
+        updated_generation_config = prepare_generation_config_by_pipe_type(generation_config, pipeline_type)
 
+    # checking streamer
+    if isinstance(prompt, str):
+        if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
+            # We can use streamer only if we have a single prompt and not beam search.
+            streamer = StreamerWithResults()
+        if isinstance(streamer, StreamerWithResults):
+            # Clear the accumulated strings to avoid side effects
+            streamer.reset()
+    else:
+        assert streamer is None
+
+    # create pipeline and generate results
     ov_pipe = create_ov_pipeline(models_path=models_path,
                                  pipeline_type=pipeline_type,
                                  device=device,
                                  ov_config=ov_config,
                                  scheduler_config=scheduler_config,
                                  draft_model=draft_model)
+    generation_results = ov_pipe.generate(prompt, updated_generation_config, streamer)
 
-    results = ov_pipe.generate(prompt, updated_generation_config)
+    # convert results to `List[GenerationResult]`
+    if isinstance(generation_results, DecodedResults):
+        assert isinstance(generation_config, GenerationConfig)
+        num_prompts = 1 if isinstance(prompt, str) else len(prompt)
+        generation_results = convert_decoded_results_to_generation_result(generation_results, num_prompts, generation_config.num_return_sequences, generation_config.is_beam_search())
     
+    # cleanup test artifacts
     del ov_pipe
     rmtree(models_path)
 
-    
+    # compare streaming results with generated results
+    if isinstance(streamer, StreamerWithResults):
+        prompts = [ prompt ] if isinstance(prompt, str) else prompt
+        compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
-    return results
+    return generation_results
 

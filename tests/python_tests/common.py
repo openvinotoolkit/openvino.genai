@@ -17,7 +17,7 @@ from utils.generation_config import get_greedy, get_beam_search
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
-from utils.ov_genai_pipelines import dict_to_scheduler_config
+from utils.ov_genai_pipelines import dict_to_scheduler_config, run_ov_pipeline, StreamerWithResults, PipelineType
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -67,23 +67,23 @@ def get_models_list_from_path(file_name: str):
     return models
 
 
-class StreamerWithResults:
-    # Return a streamer which accumulates results in order to compare with results returned from generate.
-    results: List[str] = []
-    def __init__(self):
-        self.results = []
+# class StreamerWithResults:
+#     # Return a streamer which accumulates results in order to compare with results returned from generate.
+#     results: List[str] = []
+#     def __init__(self):
+#         self.results = []
 
-    def accumulate(self, subword) -> bool:
-        self.results.append(subword)
-        return False
+#     def accumulate(self, subword) -> bool:
+#         self.results.append(subword)
+#         return False
     
-    def get_results(self) -> List[GenerationResult]:
-        streaming_result = GenerationResult()
-        streaming_result.m_generation_ids = [''.join(self.results)]
-        return [streaming_result]
+#     def get_results(self) -> List[GenerationResult]:
+#         streaming_result = GenerationResult()
+#         streaming_result.m_generation_ids = [''.join(self.results)]
+#         return [streaming_result]
     
-    def reset(self):
-        self.results = []
+#     def reset(self):
+#         self.results = []
 
 
 
@@ -95,44 +95,50 @@ def run_llm_pipeline(
     streamer: StreamerWithResults | Callable | StreamerBase = None
 ) -> List[GenerationResult]:
     properties = get_default_llm_properties()
-    if use_cb:
-        properties['scheduler_config'] = SchedulerConfig()
-    ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
+    return run_ov_pipeline(models_path=models_path,
+                           prompt=prompts,
+                           generation_config=generation_config,
+                           pipeline_type=(PipelineType.STATELESS if use_cb else PipelineType.STATEFUL),
+                           streamer=streamer,
+                           ov_config=properties)
+    # if use_cb:
+    #     properties['scheduler_config'] = SchedulerConfig()
+    # ov_pipe = LLMPipeline(models_path, device='CPU', **properties)
     
-    if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
-        # We can use streamer only if we have a single prompt and not beam search.
-        streamer = StreamerWithResults()
-    if isinstance(streamer, StreamerWithResults):
-        # Clear the accumulated strings to avoid side effects
-        streamer.reset()
+    # if streamer is None and not (generation_config.is_beam_search() or generation_config.num_return_sequences > 1) and len(prompts) == 1:
+    #     # We can use streamer only if we have a single prompt and not beam search.
+    #     streamer = StreamerWithResults()
+    # if isinstance(streamer, StreamerWithResults):
+    #     # Clear the accumulated strings to avoid side effects
+    #     streamer.reset()
 
-    generate_outputs : DecodedResults = ov_pipe.generate(
-        inputs=prompts, 
-        generation_config=generation_config, 
-        streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
-    )
+    # generate_outputs : DecodedResults = ov_pipe.generate(
+    #     inputs=prompts, 
+    #     generation_config=generation_config, 
+    #     streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer
+    # )
 
-    index = 0
-    generation_results = []
+    # index = 0
+    # generation_results = []
 
-    for _ in prompts:
-        generation_result = GenerationResult()
+    # for _ in prompts:
+    #     generation_result = GenerationResult()
 
-        generation_result.m_generation_ids = generate_outputs.texts[index : index + generation_config.num_return_sequences]
-        # sequences_scores are available only for beam search case
-        if generation_config.is_beam_search():
-            generation_result.m_scores = generate_outputs.scores[index : index + generation_config.num_return_sequences]
-        generation_results.append(generation_result)
+    #     generation_result.m_generation_ids = generate_outputs.texts[index : index + generation_config.num_return_sequences]
+    #     # sequences_scores are available only for beam search case
+    #     if generation_config.is_beam_search():
+    #         generation_result.m_scores = generate_outputs.scores[index : index + generation_config.num_return_sequences]
+    #     generation_results.append(generation_result)
 
-        index += generation_config.num_return_sequences
+    #     index += generation_config.num_return_sequences
 
-    del ov_pipe
-    shutil.rmtree(models_path)
+    # del ov_pipe
+    # shutil.rmtree(models_path)
     
-    if isinstance(streamer, StreamerWithResults):
-        compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
+    # if isinstance(streamer, StreamerWithResults):
+    #     compare_generation_results(prompts, generation_results, streamer.get_results(), generation_config)
 
-    return generation_results
+    # return generation_results
 
 
 def run_llm_pipeline_with_ref(model_id: str, 
