@@ -27,7 +27,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish
         }
     }
     m_sampler->clear_request_info(request->get_request_id());
-    request->set_generation_status(GenerationStatus::DROPPED_BY_HANDLE);
+    request->set_generation_status(GenerationStatus::STOP);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(int64_t request_id) {

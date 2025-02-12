@@ -235,6 +235,8 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel --verbose
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Test bindings
         run: |
@@ -302,6 +304,8 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Test bindings
         run: |
@@ -374,6 +378,8 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --target py_openvino_genai --parallel --verbose
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Test bindings
         run: |
@@ -437,6 +443,8 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
           cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+        env:
+          CMAKE_TLS_VERIFY: 0
 
       - name: Build and Install dependencies
         run: |

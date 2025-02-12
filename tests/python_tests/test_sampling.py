@@ -34,24 +34,25 @@ def test_basic_stop_criteria(tmp_path, generation_config, prompt):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("generation_config",
-                         [dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), # expected match on "manage"
-                          dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True),
-                          dict(max_new_tokens=50, min_new_tokens=1, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True), # expected no match
-                          dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=False),
-                          dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=True),
-                          dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=False),
-                          dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=True),],
+@pytest.mark.parametrize("generation_config,model_id",
+                         [(dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected match on "manage"
+                          (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected no match
+                          (dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=False),'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=True), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=False), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=True), 'facebook/opt-125m'),
+                          (dict(max_new_tokens=30, stop_strings={ "software toolkit developed 1 by", "Intel" }, include_stop_str_in_output=False), 'TinyLlama/TinyLlama-1.1B-Chat-v1.0')],
                          ids=["single_stop_string",
                               "multiple_stop_strings_match",
                               "multiple_stop_strings_no_match",
                               "single_stop_string_exclude_from_output",
                               "single_stop_string_include_to_output",
                               "multiple_stop_strings_exclude_from_output",
-                              "multiple_stop_strings_include_to_output"])
-def test_stop_strings(tmp_path, generation_config):
+                              "multiple_stop_strings_include_to_output",
+                              "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
+def test_stop_strings(tmp_path, generation_config, model_id):
     prompts = [ "What is OpenVINO?" ]
-    model_id : str = "facebook/opt-125m"
     run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
 
 
@@ -72,7 +73,7 @@ def test_stop_strings(tmp_path, generation_config):
 def test_greedy(tmp_path, generation_config, prompt, use_cb):
     model_id : str = "katuni4ka/tiny-random-phi3"
     if sys.platform.startswith('win') and prompt.startswith('你'):
-        pytest.skip("For unknown reason this prompt fails on Win")
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
 
     run_llm_pipeline_with_ref(model_id=model_id, 
                             prompts=[prompt], 
