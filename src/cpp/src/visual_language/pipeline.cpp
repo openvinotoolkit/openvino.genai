@@ -42,6 +42,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Axis num in kv cache from m_language model, which contains information about history len
     size_t m_kv_cache_seq_length_axis = 2;
+    // Load pipeline time
+    float m_load_time_ms = 0;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
@@ -93,7 +95,7 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
         m_language = compiled_language_model.create_infer_request();
-        m_kv_cache_seq_length_axis = utils::get_kv_axes_pos(language_model).seq_len;
+        m_kv_cache_seq_length_axis = kv_pos.seq_len;
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
         auto embedder_properties = device_propertes.empty()
@@ -186,17 +188,21 @@ public:
         ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
-        utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
+        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        if (m_is_chat_conversation)
+            if (kv_cache_state.get_state().empty())
+                m_language.reset_state();
+            else
+                ov::genai::utils::trim_kv_cache(m_language, kv_cache_state.num_tokens_to_trim, kv_cache_state.seq_length_axis, std::nullopt);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+
         std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
@@ -237,7 +243,7 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
-            m_inputs_embedder->update_chat_history(decoded_results);
+            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
         else
             kv_cache_state.reset_state();
 

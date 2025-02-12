@@ -229,8 +229,8 @@ KVCacheState& InputsEmbedder::get_kv_cache_state() {
     return  m_impl->get_kv_cache_state();
 }
 
-size_t InputsEmbedder::get_num_tokens_to_remove_from_hist() const {
-    return m_impl->get_num_tokens_to_remove_from_hist();
+bool InputsEmbedder::should_reset_kv_cache() const {
+    return m_impl->should_reset_kv_cache();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
@@ -241,8 +241,8 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
     return m_impl->start_chat(system_message);
 }
 
-void InputsEmbedder::update_chat_history(const std::string& decoded_results) {
-    return m_impl->update_chat_history(decoded_results);
+void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    return m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
