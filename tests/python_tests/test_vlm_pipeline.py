@@ -6,7 +6,7 @@ import openvino
 import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
-from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus
+from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus, StreamingStatus
 
 from utils.network import retry_request
 from utils.generation_config import get_beam_search, get_multinomial_all_parameters, get_greedy
@@ -328,3 +328,73 @@ def test_perf_metrics(cache):
     mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, cache):
+    callback_questions = [
+        '1+1=',
+        'Why is the Sun yellow?',
+        'What is the previous answer?'
+    ]
+
+    current_iter = 0
+    num_iters = 3
+    def streamer(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
+
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    ov_pipe.start_chat()
+    ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config)
+
+    generation_config.ignore_eos = True
+    ov_pipe.generate(callback_questions[1], generation_config=generation_config, streamer=streamer)
+    ov_pipe.generate(callback_questions[2], generation_config=generation_config)
+    ov_pipe.finish_chat()
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, cache):
+    callback_questions = [
+        'Why is the Sun yellow?',
+        '1+1=',
+    ]
+
+    current_iter = 0
+    num_iters = 3
+    def streamer(subword):
+        nonlocal current_iter
+        current_iter += 1
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.ignore_eos = True
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    images = []
+    for link in image_links_for_testing[1]:
+        images.append(get_image_by_link(link))
+
+    ov_pipe.start_chat()
+    ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config, streamer=streamer)
+    ov_pipe.generate(callback_questions[1], generation_config=generation_config)
+    ov_pipe.finish_chat()

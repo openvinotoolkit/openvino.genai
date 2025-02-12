@@ -47,14 +47,14 @@ public:
     // get reflection of tokens contained in the kv cache
     KVCacheState& get_kv_cache_state();
 
-    // returns amount of elements, which need to remove from the end of the KV cache
-    size_t get_num_tokens_to_remove_from_hist() const;
+    // returns true, if we need to remove full kv cache, in that case it's needed to reset it instead of manually updating
+    bool should_reset_kv_cache() const;
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
 
     // adds currently generated text to chat history
-    void update_chat_history(const std::string& decoded_results);
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
