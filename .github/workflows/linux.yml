@@ -57,9 +57,9 @@ jobs:
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
-        repository: 'luo-cheng2021/openvino'
+        repository: 'openvinotoolkit/openvino'
         path: 'openvino'
-        ref: 'a80957aadd928661a320be3b4e0ecebf392a8c00'
+        ref: ${{ env.OV_BRANCH }}
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
@@ -261,7 +261,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ openvino_download, genai_build_cmake, genai_build_wheel ]
+    needs: [ openvino_download, genai_build_wheel ]
     timeout-minutes: 60
     strategy:
       fail-fast: false
