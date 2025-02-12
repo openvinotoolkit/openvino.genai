@@ -172,7 +172,7 @@ def test_chat_scenario_several_chats_in_series():
 
     generation_config_kwargs, _ = chat_intpus[0]
     ov_generation_config = GenerationConfig(**generation_config_kwargs)
-    hf_generation_config = convert_to_hf(opt_model.generation_config, ov_generation_config)
+    hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     for i in range(2):
         chat_history_hf = []
