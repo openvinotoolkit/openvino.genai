@@ -19,21 +19,16 @@ if(NOT TARGET gtest)
   endforeach()
 endif()
 
-set(TEST_TARGET_NAME "tests_continuous_batching")
 file(GLOB tests_src "*.cpp")
-file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/cache_eviction.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sampler.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/*.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/prompt_lookup/*.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/paged_attention_transformations.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching*.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/icontinuous_batching.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/lora_helper.cpp")
 
-add_executable(${TEST_TARGET_NAME} ${tests_src})
+set(TEST_TARGET_NAME "tests_continuous_batching")
 
-target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::genai gtest_main gmock_main)
-target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src")
-target_sources(${TEST_TARGET_NAME} PRIVATE ${src_files})
+add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
+
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
+target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
+                                                       $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:4207,4286)
+endif()

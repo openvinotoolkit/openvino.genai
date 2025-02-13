@@ -740,6 +740,76 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
+  cpp-encrypted_model_causal_lm-ubuntu:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - name: Run
+        env:
+          PYTHONPATH: "./build"
+        run: |
+          source ./ov/setupvars.sh
+          timeout 30s ./build/samples/cpp/text_generation/encrypted_model_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?"
+
+  cpp-benchmark_genai-ubuntu:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - name: Run
+        env:
+          PYTHONPATH: "./build"
+        run: |
+          source ./ov/setupvars.sh
+          timeout 60s ./build/samples/cpp/text_generation/benchmark_genai -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" --nw 2 -n 3 --mt 50 -d CPU
+
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
     steps:
