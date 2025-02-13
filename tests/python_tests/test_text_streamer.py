@@ -13,7 +13,7 @@ tokenizer_model_ids = [
     # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
 ]
 
-# Chekc that fix for CVS-157216 works.
+# Check that fix for CVS-157216 works.
 # String with apostrophe to check "meta-llama/Meta-Llama-3-8B-Instruct".
 # If we decode without delay then we would get  "' " and then "'Set", note that space is removed.
 # To fix this we introduced delay, this test checks that it works fine

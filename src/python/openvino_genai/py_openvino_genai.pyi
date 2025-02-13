@@ -1706,7 +1706,7 @@ class Text2ImagePipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
-class TextStreamer:
+class TextStreamer(StreamerBase):
     """
     
     TextStreamer is used to decode tokens into text and call a user-defined callback function.
@@ -1715,11 +1715,11 @@ class TextStreamer:
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
     
     """
-    def __init__(self, tokenizer: ..., callback: typing.Callable[[str], bool | StreamingStatus]) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: typing.Callable[[str], bool | StreamingStatus]) -> None:
         ...
     def end(self) -> None:
         ...
-    def write(self, arg0: int) -> StreamingStatus:
+    def write(self, token: int) -> StreamingStatus:
         ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
