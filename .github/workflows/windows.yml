@@ -455,7 +455,7 @@ jobs:
 
       - name: Test whisper_speech_recognition
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           & "${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition.exe" "whisper-tiny" "how_are_you_doing_today.wav"
         working-directory: ${{ env.MODELS_DIR }}
 
