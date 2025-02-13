@@ -6,9 +6,9 @@
 #include <thread>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "synchronized_queue.hpp"
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
 
 namespace ov {
