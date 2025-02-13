@@ -3,6 +3,7 @@ import numpy as np
 from transformers import AutoTokenizer
 from openvino_genai import Tokenizer, TextStreamer
 from utils.hugging_face import convert_and_save_tokenizer
+import sys
 
 
 tokenizer_model_ids = [
@@ -27,25 +28,26 @@ Sub PrintFiles()
 'Get all files in the folder
     folder.Files.Clear
 """
-
-prompts = [
-    # '1+1=',
+eng_prompts = [
     'What is the previous answer?',
     'Why is the Sun yellow?',
     'What was my first question?',
+    "Multiline\nstring!\nWow!",
+    str_with_apostrophe,
+]
+unicode_prompts = [
     "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
-    "Multiline\nstring!\nWow!",
     "\n\n\n\t\t   A    lot\t\tof\twhitespaces\n!\n\n\n\t\n\n",
     "Тестовая строка!",
     "Tester, la chaîne...",
     "سلسلة الاختبار",
     "Сынақ жолы á",
-    str_with_apostrophe,
 ]
+
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
 @pytest.mark.precommit
-@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_text_prompts(tmp_path, prompt, model_id):
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
@@ -54,6 +56,8 @@ def test_text_prompts(tmp_path, prompt, model_id):
     ov_tokenizer = Tokenizer(tmp_path)
     if prompt == str_with_apostrophe and model_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0":
         pytest.skip(reason="This test is skipped because of the specific behaviour of TinyLlama CVS-162362. It's not a bug HF behaves the same.")
+    if sys.platform.startswith('win') and prompt in unicode_prompts:
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
     tokens = ov_tokenizer.encode(prompt=prompt).input_ids.data[0].tolist()
     streamer = TextStreamer(ov_tokenizer, lambda x: accumulated.append(x))
     accumulated = []
