@@ -7,6 +7,7 @@ import math
 
 from pathlib import Path
 from shutil import rmtree
+from typing import Dict
 
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model
 
@@ -370,6 +371,7 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 
     generation_config = GenerationConfig()
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
+    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
     it_cnt = 0
     def py_streamer(py_str: str):
@@ -378,9 +380,12 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
         return False
 
     _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
+    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
+
+    assert it_cnt > 0
 
     assert it_cnt > 0
 
@@ -403,8 +408,11 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
         return False
 
     _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
+    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
+
+    assert it_cnt == 0
 
     assert it_cnt == 0

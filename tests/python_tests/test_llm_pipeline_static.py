@@ -31,7 +31,6 @@ common_config = {
                       'PREFILL_CONFIG': { },
                       'GENERATE_CONFIG': { }
                 } | get_default_llm_properties()
-                } | get_default_llm_properties()
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
