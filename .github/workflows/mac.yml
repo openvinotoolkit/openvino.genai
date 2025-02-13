@@ -19,8 +19,6 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '11.0'
   PYTHON_VERSION: '3.10'
   TARGET_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
-  CMAKE_CXX_COMPILER_LAUNCHER: ccache
-  CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   
 jobs:
@@ -63,6 +61,8 @@ jobs:
     runs-on: macos-13
     env:
       CMAKE_GENERATOR: Ninja
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
       CCACHE_DIR: ${{ github.workspace }}/ccache
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -133,6 +133,8 @@ jobs:
     runs-on: macos-13
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
