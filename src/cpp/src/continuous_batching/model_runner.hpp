@@ -245,6 +245,15 @@ public:
                 }
 
                 size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+                size_t num_tokens_in_last_block = expected_kv_cache_size % m_block_size;
+                if (num_tokens_in_last_block == 0 && expected_kv_cache_size > m_block_size) {
+                    num_tokens_in_last_block = m_block_size;
+                }
+
+                if (!sequence_group->can_generate_tokens()) {
+                    expected_kv_cache_size = m_block_size + num_tokens_in_last_block; // A-shape
+                }
+
                 past_lens_data[0] = expected_kv_cache_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
@@ -473,7 +482,37 @@ private:
             m_request.get_tensor(name).set_shape({total_num_blocks});
         }
 
-        _fill_indices_from_block_tables(tensor_names, sequence_groups, scheduler_output, {});
+        std::vector<std::map<size_t, std::vector<size_t>>> seq_id_to_select_logical_idx_map(m_num_decoder_layers);
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        for (size_t layer_idx = 0; layer_idx < m_num_decoder_layers; layer_idx++) {
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+                size_t num_running_sequences = running_sequences.size();
+                for (size_t i = 0; i < num_running_sequences; ++i) {
+                    Sequence::CPtr sequence = running_sequences[i];
+                    size_t num_blocks = sequence_group->get_num_logical_blocks();
+                    size_t seq_id = sequence->get_id();
+                    if (!sequence_group->can_generate_tokens()) {
+                        if (num_blocks > 1) {
+                            seq_id_to_select_logical_idx_map[layer_idx][seq_id] = {0, num_blocks - 1}; // A-shape
+                        }
+                        else {
+                            seq_id_to_select_logical_idx_map[layer_idx][seq_id] = {0}; // A-shape
+                        }
+                    }
+                    else
+                    {
+                        auto& vec = seq_id_to_select_logical_idx_map[layer_idx][seq_id];
+                        vec.resize(num_blocks);
+                        std::iota(vec.begin(), vec.end(), 0);
+                    }
+                }
+            }
+        }
+
+        _fill_indices_from_block_tables(tensor_names, sequence_groups, scheduler_output, seq_id_to_select_logical_idx_map);
     }
 
     void _set_cache_rotation_coefficients(const std::vector<SequenceGroup::Ptr>& sequence_groups,
