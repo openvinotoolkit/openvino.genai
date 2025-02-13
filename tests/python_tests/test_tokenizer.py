@@ -5,6 +5,9 @@ import os
 import sys
 import pytest
 import numpy as np
+import dataclasses
+import openvino
+import typing
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
 from openvino_genai import Tokenizer
@@ -94,7 +97,7 @@ def get_chat_templates():
         "BramVanroy/Llama-2-13b-chat-dutch"
     }
 
-    from tokenizer_configs import get_tokenizer_configs
+    from data.tokenizer_configs import get_tokenizer_configs
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
@@ -444,3 +447,68 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(model
     if 'eos_token' in token_str_int_map:
         assert tok.get_eos_token_id() == token_str_int_map['eos_token']
 
+
+@dataclasses.dataclass(frozen=True)
+class ChatTemplates:
+    reference: typing.Optional[str]
+    rt_simplified: typing.Optional[str]
+    rt_template: typing.Optional[str]
+    chat_template_json: typing.Optional[str]
+    processor_config_json: typing.Optional[str]
+    tokenizer_config_json: typing.Optional[str]
+
+
+def generate_tokenizer(tmp_path, chat_templates):
+    input_ids = openvino.op.Constant(openvino.Type.i64, openvino.Shape([0, 0]), []).output(0)
+    input_ids.get_tensor().set_names({"input_ids"})
+    attention_mask = openvino.op.Constant(openvino.Type.i64, openvino.Shape([0, 0]), []).output(0)
+    attention_mask.get_tensor().set_names({"attention_mask"})
+    model = openvino.Model(
+        [openvino.op.Result(input_ids), openvino.op.Result(attention_mask)],
+        [openvino.op.Parameter(openvino.Type.string, openvino.Shape([1]))]
+    )
+    if chat_templates.rt_simplified is not None:
+        model.set_rt_info(chat_templates.rt_simplified, "simplified_chat_template")
+    if chat_templates.rt_template is not None:
+        model.set_rt_info(chat_templates.rt_template, "chat_template")
+    if chat_templates.chat_template_json is not None:
+        with open(tmp_path / "chat_template.json", "w") as file:
+            json.dump({"chat_template": chat_templates.chat_template_json}, file)
+    if chat_templates.processor_config_json is not None:
+        with open(tmp_path / "processor_config.json", "w") as file:
+            json.dump({"chat_template": chat_templates.processor_config_json}, file)
+    if chat_templates.tokenizer_config_json is not None:
+        with open(tmp_path / "tokenizer_config.json", "w") as file:
+            json.dump({"chat_template": chat_templates.tokenizer_config_json}, file)
+    openvino.save_model(model, tmp_path / "openvino_tokenizer.xml")
+    return Tokenizer(tmp_path)
+
+
+QWEN2_VL_2B = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
+
+
+SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_set_special_runtime_template(tmp_path):
+    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None, None))
+    tokenizer.chat_template = QWEN2_VL_2B
+    assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("chat_templates", [
+    ChatTemplates("correct template", "correct template", "", "", "", ""),
+    ChatTemplates("correct template", None, "correct template", "", "", ""),
+    ChatTemplates("correct template", None, None, "correct template", "", ""),
+    ChatTemplates("correct template", None, None, None, "correct template", ""),
+    ChatTemplates("correct template", None, None, None, None, "correct template"),
+    ChatTemplates(SIMPLIFIED_QWEN2_VL_2B, "", QWEN2_VL_2B, "", "", ""),
+])
+def test_template_priorities(tmp_path, chat_templates):
+    generate_tokenizer(tmp_path, chat_templates)
+    tokenizer = generate_tokenizer(tmp_path, chat_templates)
+    assert tokenizer.chat_template == chat_templates.reference
