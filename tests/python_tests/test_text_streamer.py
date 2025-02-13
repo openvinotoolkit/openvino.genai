@@ -33,26 +33,31 @@ eng_prompts = [
     'Why is the Sun yellow?',
     'What was my first question?',
     "Multiline\nstring!\nWow!",
+    "\n\n\n\t\t   A    lot\t\tof\twhitespaces\n!\n\n\n\t\n\n",
     str_with_apostrophe,
 ]
-unicode_prompts = [
+
+# tmp_path fixture is created with the use of prompt name.
+# On win it causes issues, this is done to escape Win limitation on Unicode tmp path.
+unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
+    "Multiline\nstring!\nWow!",
     "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
-    "\n\n\n\t\t   A    lot\t\tof\twhitespaces\n!\n\n\n\t\n\n",
     "Тестовая строка!",
     "Tester, la chaîne...",
     "سلسلة الاختبار",
     "Сынақ жолы á",
-]
+])]
 
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
 @pytest.mark.precommit
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_text_prompts(tmp_path, prompt, model_id):
+    prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
+
     if prompt == str_with_apostrophe and model_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0":
         pytest.skip(reason="This test is skipped because of the specific behaviour of TinyLlama CVS-162362. It's not a bug HF behaves the same.")
-    if sys.platform.startswith('win') and prompt in unicode_prompts:
-        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+    
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True)
