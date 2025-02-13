@@ -1,0 +1,43 @@
+.installation {
+    background: none;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 24px;
+}
+
+.installationOptions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+}
+
+.installationOptionsItem{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #E9E9E9;
+    font-family: intelOne, Helvetica, Arial, sans-serif;
+    font-weight: 500;
+    height: 64px;
+    width: 280px;
+    gap: 16px;
+}
+
+.installationTitle {
+    font-size: 24px;
+    font-family: intelOne, Helvetica, Arial, sans-serif;
+    line-height: 32px;
+    font-weight: 500;
+    margin: 0;
+}
+
+.installationDescription {
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 400;
+    margin: 0 auto;
+    text-align: center;
+}

@@ -1,0 +1,69 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.banner {
+  padding-top: 5rem;
+  padding-bottom: 1.8rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background-color: transparent;
+}
+
+section {
+  background-color: var(--genai-color-section-bg);
+  display: flex;
+}
+
+.titleContainer {
+  margin-bottom: 1.5rem;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.genAITitle {
+  font-family: intelOne, Helvetica, Arial, sans-serif;
+  font-size: 64px;
+  background: linear-gradient(101deg, #91FFED 0.16%, #3094FF 36.93%, #B57CFF 73.71%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 500;
+  filter: drop-shadow(2px 2px 2px rgba(23, 20, 98, 0.86));
+}
+
+.subTitle {
+  font-size: 24px;
+  color: var(--genai-color-text-white);
+  margin-bottom: 1.5rem;
+}
+
+.description {
+  font-size: 16px;
+  width: 500px;
+  text-align: center;
+  color: var(--genai-color-text-white);
+  margin: 0 auto;
+}
+
+.mainContainer {
+  background-image: url("../../static/img/background.webp");
+  background-size: cover;
+  background-position: center;
+  height: 530px;
+}
+
+.contentContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 52px;
+  padding: 80px 172px;
+}

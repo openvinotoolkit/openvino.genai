@@ -1,0 +1,26 @@
+import CodeBlock from '@theme/CodeBlock';
+import { CodeExample } from '@site/src/components/CodeExample/code-example';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+
+pipe = ov_genai.LLMPipeline(model_path, "${props.device || 'CPU'}")
+print(pipe.generate("What is OpenVINO?", max_new_tokens=100))
+`}
+</CodeBlock>
+
+{/* 
+<CodeExample language="python">
+{`import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(model_path, "${props.device}")
+print(pipe.generate("What is OpenVINO?", max_length=200))
+`}
+</CodeExample>
+ 
+
+```python
+import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(model_path, "{props.device}")
+print(pipe.generate("What is OpenVINO?", max_length=200))
+```
+*/}

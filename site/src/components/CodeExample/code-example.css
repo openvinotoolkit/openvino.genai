@@ -1,0 +1,24 @@
+.token.macro.property.directive-hash {
+    color: var(--genai-color-text-black);
+}
+
+.token.macro.property.directive.keyword, .token.keyword {
+    color: #d73a49;
+}
+
+.token.macro.property.string, .token.string {
+    color: var(--genai-color-classic-blue);
+}
+
+.token.function {
+    color: #6300d1;
+}
+
+pre {
+    margin: 0 !important;
+    background-color: var(--genai-color-white) !important;
+
+    span {
+        background-color: var(--genai-color-white) !important;
+    }
+}

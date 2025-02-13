@@ -1,0 +1,28 @@
+.features {
+  display: flex;
+  align-items: center;
+  padding: 2rem 0;
+  width: 100%;
+  background-color: transparent !important;
+}
+
+.featuresList {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.25rem;
+}
+
+.featureHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+}
+
+.featureHeading {
+  margin: 0;
+  color: var(--genai-color-text-white);
+  font-weight: 500;
+  font-size: 14px;
+}
