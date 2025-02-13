@@ -679,7 +679,7 @@ public:
      * @param num_blocks The number of KV cache blocks to be allocated.
      * @param prompt_ids Raw token values of the prompt for this sequence. Required if prefix caching is enabled.
      */
-    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t size = 0) {
+    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
         OPENVINO_ASSERT(!m_enable_prefix_caching || size > 0, "prompt_ids should be set for hash calculation.");
 
