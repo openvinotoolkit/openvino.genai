@@ -337,10 +337,8 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-          - name: 'VLM'
-            cmd: 'tests/python_tests/test_vlm_pipeline.py'
-          - name: 'LLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_vlm_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+          - name: 'LLM && VLM'
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
     defaults:
       run:
         shell: pwsh
