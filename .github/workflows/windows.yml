@@ -56,7 +56,7 @@ jobs:
       matrix:
         build_type: [Release, Debug]
     needs: [ openvino_download ]
-    timeout-minutes: 60
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
@@ -157,7 +157,7 @@ jobs:
   genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
-    timeout-minutes: 25
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
