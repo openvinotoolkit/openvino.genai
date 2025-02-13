@@ -365,7 +365,7 @@ jobs:
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF `
             -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config Release --parallel --verbose
-          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}/genai_js_package
 
       - name: Upload Node.js bindings Build Package
         if: always()
@@ -531,7 +531,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_nodejs_bindings}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_nodejs_bindings}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -544,10 +544,12 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           Get-ChildItem ${{ env.INSTALL_DIR }}
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/genai_nodejs_bindings bin
-          npm install
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/genai_js_package bin
+          Get-ChildItem ./bin
+          npm install --verbose
           Remove-Item -Recurse -Force node_modules/openvino-node/bin
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+          Get-ChildItem node_modules/openvino-node/bin
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
@@ -556,9 +558,10 @@ jobs:
       - name: Install genai-node samples dependencies
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
-          npm install
+          npm install --verbose
           Remove-Item -Recurse -Force node_modules/openvino-node/bin
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+          Get-ChildItem node_modules/openvino-node/bin
 
       - name: Run samples tests
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation

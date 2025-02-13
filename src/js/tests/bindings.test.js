@@ -1,4 +1,4 @@
-import addon from '../lib/bindings.cjs';
+import { addon } from '../lib/module.js';
 
 import assert from 'node:assert';
 import { describe, it, before, after } from 'node:test';
