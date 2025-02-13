@@ -30,5 +30,5 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_D
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:LNK4207,LNK4286)
+  target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:4207,4286)
 endif()
