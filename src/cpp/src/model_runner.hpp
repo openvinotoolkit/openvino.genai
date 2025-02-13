@@ -335,6 +335,7 @@ public:
 
         _reset_cache_rotation_coefficients();
 
+        // return logits
         return m_request.get_tensor("logits");
     }
 
