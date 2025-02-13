@@ -768,7 +768,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-      - name: Compare
+      - name: Run
         env:
           PYTHONPATH: "./build"
         run: |
@@ -803,12 +803,12 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-      - name: Compare
+      - name: Run
         env:
           PYTHONPATH: "./build"
         run: |
           source ./ov/setupvars.sh
-          timeout 30s ./build/samples/cpp/text_generation/benchmark_genai -m ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?" -p "Why is the sun yellow?" --nw 2 -n 3 --mt 100 -d CPU
+          timeout 30s ./build/samples/cpp/text_generation/benchmark_genai -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" --nw 2 -n 3 --mt 100 -d CPU
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
