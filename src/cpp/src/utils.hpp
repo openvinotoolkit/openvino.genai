@@ -111,9 +111,6 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core singleton_core();
 
-template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value);
-
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens);
 
 size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);

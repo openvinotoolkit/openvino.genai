@@ -116,4 +116,34 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     return decoded;
 }
+
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
+    const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
+    const GenerationHandle& handle
+) {
+    if (!streamer_ptr->has_callback() || !handle->can_read()) {
+        return;
+    }
+
+    const auto streaming_status = streamer_ptr->get_status();
+
+    if (streaming_status == StreamingStatus::CANCEL) {
+        handle->cancel();
+        return;
+    }
+
+    if (streaming_status == StreamingStatus::STOP) {
+        handle->stop();
+        return;
+    }
+
+    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
+    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+    if (generation_outputs.empty()) {
+        return;
+    }
+
+    const auto tokens = generation_outputs.begin()->second.generated_ids;
+    streamer_ptr->write(tokens);
+}
 }
