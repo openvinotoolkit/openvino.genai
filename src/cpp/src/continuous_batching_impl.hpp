@@ -7,8 +7,15 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "cache_eviction.hpp"
+#include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
+
+
+enum class ModelInputType {
+    TOKENS,
+    EMBEDDINGS
+};
 
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
@@ -48,6 +55,21 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
+
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    
+    // A model to compute token embeddings.
+    // Input shape: [N, conversation length].
+    // Output shape: [1, conversation length, hidden_size].
+    EmbeddingsModel m_embedding;
+
+    ModelInputType m_model_input_type = ModelInputType::TOKENS;
+
+    // Axis num in kv cache from m_language model, which contains information about history len
+    size_t m_kv_cache_seq_length_axis = 2;
+
+    size_t m_history_size = 0;
+
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
@@ -103,6 +125,15 @@ public:
                            const ov::AnyMap& properties,
                            const ov::genai::GenerationConfig& generation_config,
                            bool is_validation_mode_enabled = false);
+
+    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
+                           std::shared_ptr<InputsEmbedder> inputs_embedder,
+                           const Tokenizer& tokenizer,
+                           const SchedulerConfig& scheduler_config,
+                           const std::string& device,
+                           const ov::AnyMap& properties,
+                           const ov::genai::GenerationConfig& generation_config,
+                           bool is_validation_mode_enabled = false);
     
     virtual ~ContinuousBatchingImpl();
 
@@ -120,6 +151,14 @@ public:
 
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer) override;
+
+    
+    std::vector<GenerationResult>
+    generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
 

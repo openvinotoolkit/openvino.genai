@@ -92,6 +92,13 @@ public:
              std::vector<GenerationConfig> sampling_params,
              const StreamerVariant& streamer);
 
+    virtual std::vector<GenerationResult>
+    generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& rgbs,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer) = 0;
+
     /**
      * Starts chat with a given system prompt
      * 

@@ -8,6 +8,7 @@
 
 #include <openvino/runtime/infer_request.hpp>
 
+#include "visual_language/inputs_embedder.hpp"
 #include "debug_utils.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
@@ -39,6 +40,9 @@ class ModelRunner {
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
     ov::Tensor m_cache_rotation_trig_lut;
+
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    bool m_use_embeddings;
 
 public:
     /**
@@ -75,6 +79,11 @@ public:
         return m_request;
     }
 
+    void set_inputs_embedder(std::shared_ptr<InputsEmbedder> embedder) {
+        m_use_embeddings = true;
+        m_inputs_embedder = embedder;
+    }
+
     /**
      * @return A map of sequence IDs to vectors of ov::Tensor per-token attention scores. Each vector element is associated with its own
      * decoder layer, in order of their execution in the model. Each ov::Tensor has a shape of {N_k}, where N_k is the length of
@@ -109,6 +118,7 @@ public:
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
         size_t embeds_len = 0;
+        size_t num_generated_ids = 0;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::VLM) {
@@ -126,11 +136,14 @@ public:
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
             total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
+            for (auto seq: sequence_group->get_running_sequences()) {
+                num_generated_ids += seq->get_generated_len();
+            }
         }
 
         ov::Tensor
             input_ids(ov::element::i64, {total_num_tokens}),
-            inputs_embeds(ov::element::f32, {total_num_tokens, 1, embeds_len}),
+            inputs_embeds(ov::element::f32, {total_num_tokens, embeds_len}),
             position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
@@ -138,6 +151,9 @@ public:
             // block_indices are handled in a special fashion below
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             max_context_len(ov::element::i32, {});
+        
+        ov::Tensor generated_ids_embeds;
+        float *generated_ids_embeds_data;
 
         max_context_len.data<int32_t>()[0] = max_context_len_val;
 
@@ -146,7 +162,29 @@ public:
         int64_t *input_ids_data;
         
         if (sequence_group_type == SequenceGroupType::VLM) {
+            OPENVINO_ASSERT(m_use_embeddings, "Got sequence group with embeddings, but inputs embedder wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
+
+            ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids});
+            int64_t *generated_ids_data = generated_ids.data<int64_t>();
+            size_t pos = 0;
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                for (auto seq: sequence_group->get_running_sequences()) {
+                    auto generated_ids = seq->get_generated_ids();
+                    for (size_t token_idx = 0; token_idx < generated_ids.size(); token_idx++) {
+                        generated_ids_data[pos] = generated_ids[token_idx];
+                        pos++;
+                    }
+                }
+            }
+            if (pos > 0) {
+                auto embedder = m_inputs_embedder->get_embedding_model();
+                generated_ids_embeds = embedder.infer(generated_ids);
+                generated_ids_embeds_data = generated_ids_embeds.data<float>();
+            }
+
         } else if (sequence_group_type == SequenceGroupType::LLM) {
             input_ids_data = input_ids.data<int64_t>();
         }
@@ -197,10 +235,11 @@ public:
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
                     } else if (sequence_group_type == SequenceGroupType::VLM) {
+                        auto embeds_pos = 0;
                         for (size_t i = 0; i < embeds_len; i++) {
                             inputs_embeds_data[token_id * embeds_len + i] = position_id < prompt_len ?
                                 sequence_group->get_input_embeds()[position_id][i] :
-                                sequence->get_generated_ids()[position_id - prompt_len]; // Fix this
+                                generated_ids_embeds_data[embeds_pos++];
                         }
                     } else {
                         OPENVINO_THROW("Not implemented.");
@@ -298,10 +337,7 @@ public:
 
         _reset_cache_rotation_coefficients();
 
-        // return logits
-        auto out_tensor = m_request.get_tensor("logits");
-        print_tensor("logits", out_tensor);
-        return out_tensor;
+        return m_request.get_tensor("logits");
     }
 
 private:

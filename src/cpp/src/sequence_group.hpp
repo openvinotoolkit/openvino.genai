@@ -552,7 +552,7 @@ public:
     }
 
     const TokenIds& get_prompt_ids() const {
-        OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::LLM);
+        //OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::LLM);
         return m_prompt_ids;
     }
 

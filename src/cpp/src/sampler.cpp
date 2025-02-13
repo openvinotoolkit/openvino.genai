@@ -763,7 +763,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
-        // TODO: Fix for VLM
         if (!m_logit_processors.count(request_id)) {
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
         }
