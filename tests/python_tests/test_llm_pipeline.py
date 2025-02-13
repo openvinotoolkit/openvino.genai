@@ -1,25 +1,26 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import openvino_genai as ov_genai
-from openvino_genai import GenerationConfig
+
 import pytest
-from typing import Union, List, Dict, Optional
-import numpy as np
-import openvino as ov
-import sys
-from pathlib import Path
 import torch
+import os
+import json
+import numpy as np
+from pathlib import Path
+from typing import Tuple, List, Dict
+
+import openvino as ov
+import openvino_genai as ov_genai
 
 from common import run_llm_pipeline_with_ref
-from ov_genai_test_utils import (
-    get_models_list,
-    read_model,
-    load_genai_pipe_with_configs,
-    get_chat_models_list,
-    model_tmp_path,
-)
-from utils.hugging_face import generation_config_to_hf
+
+from utils.constants import get_default_llm_properties
+from utils.hugging_face import generation_config_to_hf, download_and_convert_model
+from utils.tokenizers import model_tmp_path, delete_rt_info
+from utils.ov_genai_pipelines import create_ov_pipeline
+from data.models import get_models_list, get_chat_models_list
+
 #
 # e2e work
 #
@@ -47,9 +48,12 @@ input_tensors_list = [
 @pytest.mark.nightly
 def test_encoded_inputs(model_descr, inputs):
     device = 'CPU'
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
 
-    ov_generation_config = GenerationConfig(max_new_tokens=20)
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     input_ids, attention_mask = inputs
@@ -92,7 +96,10 @@ def test_batch_string_inputs(model_descr, generation_config_dict, prompts):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_size_switch():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    model_id, tmp_path = ('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3'))
+    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
+
     ov_pipe.generate(["a"], max_new_tokens=2)
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
@@ -101,7 +108,10 @@ def test_batch_size_switch():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_empty_encoded_inputs_throw():
-    ov_pipe = read_model(('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')))[4]
+    model_id, tmp_path = ('katuni4ka/tiny-random-phi3', Path('tiny-random-phi3'))
+    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
+
     with pytest.raises(RuntimeError):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
@@ -130,26 +140,28 @@ def test_chat_scenario(model_descr, intpus):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
 
-    generation_config_kwargs, system_massage = intpus
+    generation_config_kwargs, system_message = intpus
 
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
-    ov_pipe.start_chat(system_massage)
-    chat_history_hf.append({"role": "system", "content": system_massage})
-    chat_history_ov.append({"role": "system", "content": system_massage})
+    ov_pipe.start_chat(system_message)
+    chat_history_hf.append({"role": "system", "content": system_message})
+    chat_history_ov.append({"role": "system", "content": system_message})
     for prompt in questions:
         chat_history_hf.append({'role': 'user', 'content': prompt})
         chat_history_ov.append({'role': 'user', 'content': prompt})
 
-        chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
-        tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+        chat_prompt = hf_tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+        tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         prompt_len = tokenized['input_ids'].numel()
 
         answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
-        answer_str = tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
+        answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
         answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
@@ -168,10 +180,12 @@ def test_chat_scenario(model_descr, intpus):
 @pytest.mark.nightly
 def test_chat_scenario_several_chats_in_series():
     model_descr = get_chat_models_list()[0]
-    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1]))
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_intpus[0]
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     for i in range(2):
@@ -182,14 +196,13 @@ def test_chat_scenario_several_chats_in_series():
             chat_history_hf.append({'role': 'user', 'content': prompt})
             chat_history_ov.append({'role': 'user', 'content': prompt})
 
-            chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
-            tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+            chat_prompt = hf_tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+            tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
             prompt_len = tokenized['input_ids'].numel()
 
             answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
-            answer_str = tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
+            answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({'role': 'assistant', 'content': answer_str})
-
             answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
             chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
@@ -201,19 +214,6 @@ def test_chat_scenario_several_chats_in_series():
 
         assert chat_history_ov == chat_history_hf
 
-
-@pytest.mark.precommit
-@pytest.mark.nightly
-def test_chat_scenario_several_start():
-    ov_pipe = read_model(get_chat_models_list()[0])[4]
-
-    generation_config_kwargs, _ = chat_intpus[0]
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
-
-    ov_pipe.start_chat()
-    ov_pipe.start_chat()
-    ov_pipe.generate(questions[0], generation_config=ov_generation_config)
-    ov_pipe.finish_chat()
 
 #
 # Streaming with callback
@@ -232,7 +232,9 @@ def user_defined_status_callback(subword):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_one_string(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     ov_pipe.generate('table is made of', generation_config, callback)
@@ -242,7 +244,9 @@ def test_callback_one_string(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_batch_throws(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), callback)
 
@@ -251,8 +255,10 @@ def test_callback_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
-    pipe = read_model(get_models_list()[0])[4]
-    pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
+    ov_pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
@@ -265,7 +271,9 @@ def test_callback_decoding_metallama(model_descr, callback):
     prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
     if model_descr[0] != 'meta-llama/Meta-Llama-3-8B-Instruct':
         pytest.skip()
-    ov_pipe = read_model(model_descr)[4]
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     ov_pipe.generate(prompt, max_new_tokens=300, streamer=callback)
 
 
@@ -273,15 +281,19 @@ def test_callback_decoding_metallama(model_descr, callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_batch_throws(callback):
-    pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
-        pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
+        ov_pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_terminate_by_bool():
-    pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
 
     current_iter = 0
     num_iters = 10
@@ -291,12 +303,12 @@ def test_callback_terminate_by_bool():
         return current_iter == num_iters
 
     max_new_tokens = 100
-    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
     inputs_ov = ov.Tensor(input_ids)
-    ov_output = pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
+    ov_output = ov_pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
 
     assert len(ov_output.tokens[0]) < max_new_tokens
 
@@ -304,7 +316,9 @@ def test_callback_terminate_by_bool():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_terminate_by_status():
-    pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
 
     current_iter = 0
     num_iters = 10
@@ -314,12 +328,12 @@ def test_callback_terminate_by_status():
         return ov_genai.StreamingStatus.STOP if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
     max_new_tokens = 100
-    ov_generation_config = GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=max_new_tokens, ignore_eos=True)
 
     # without attention mask
     input_ids, _ = input_tensors_list[0]
     inputs_ov = ov.Tensor(input_ids)
-    ov_output = pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
+    ov_output = ov_pipe.generate(inputs_ov, ov_generation_config, streamer=callback)
 
     assert len(ov_output.tokens[0]) < max_new_tokens
 
@@ -340,9 +354,12 @@ def test_chat_scenario_callback_cancel(model_descr):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, path, tokenizer, opt_model, ov_pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    model_id, tmp_path = model_descr
+    tmp_path = tmp_path / '_test_chat'
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
 
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     
     current_iter = 0
@@ -358,12 +375,12 @@ def test_chat_scenario_callback_cancel(model_descr):
             chat_history_hf.append({'role': 'user', 'content': prompt})
             chat_history_ov.append({'role': 'user', 'content': prompt})
 
-            chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
-            tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+            chat_prompt = hf_tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+            tokenized = hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
             prompt_len = tokenized['input_ids'].numel()
 
             answer = opt_model.generate(**tokenized, generation_config=hf_generation_config).sequences[0]
-            answer_str = tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
+            answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
             answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
@@ -428,7 +445,9 @@ class PrinterStatus(ov_genai.StreamerBase):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_one_string(streamer_base):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     printer = streamer_base(ov_pipe.get_tokenizer())
@@ -438,7 +457,9 @@ def test_streamer_one_string(streamer_base):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_batch_throws():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
@@ -447,7 +468,9 @@ def test_streamer_batch_throws():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_kwargs_one_string():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
@@ -455,7 +478,9 @@ def test_streamer_kwargs_one_string():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_kwargs_batch_throws():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate('', num_beams=2, streamer=printer)
@@ -465,7 +490,9 @@ def test_streamer_kwargs_batch_throws():
 @pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     ten_tokens = ov_pipe.get_generation_config()
     ten_tokens.max_new_tokens = 10
     ov_pipe('talbe is made of', ten_tokens, callback)
@@ -475,7 +502,9 @@ def test_operator_with_callback_one_string(callback):
 @pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_throws(callback):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe(['1', '2'], ov_pipe.get_generation_config(), callback)
 
@@ -484,7 +513,9 @@ def test_operator_with_callback_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_one_string(streamer_base):
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
@@ -492,7 +523,9 @@ def test_operator_with_streamer_kwargs_one_string(streamer_base):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_throws():
-    ov_pipe = read_model(get_models_list()[0])[4]
+    model_id, tmp_path = get_models_list()[0]
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe('', num_beams=2, streamer=printer)
@@ -501,13 +534,33 @@ def test_operator_with_streamer_kwargs_batch_throws():
 # Tests on generation configs handling
 #
 
+
+def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
+    # Load LLMPipeline where all configs are cleared.
+    # remove existing jsons from previous tests
+    for json_file in temp_path.glob("*.json"):
+        json_file.unlink()
+    delete_rt_info(configs, temp_path)
+
+    for config_json, config_name in configs:
+        with (temp_path / config_name).open('w') as f:
+            json.dump(config_json, f)
+
+    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
+
+    for _, config_name in configs:
+        os.remove(temp_path / config_name)
+
+    return ov_pipe
+
+
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     model_id, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
 
-    config = ov_genai.GenerationConfig()
+    config = ov_genai.ov_genai.GenerationConfig()
     config.do_sample = True  # no eos_token_id but it's loaded from config.json
     ov_pipe.set_generation_config(config)
 
@@ -517,8 +570,9 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_pipeline_validates_generation_config():
-    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    model_id, tmp_path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     invalid_generation_config = dict(num_beam_groups=3, num_beams=15, do_sample=True) # beam sample is not supported
     with pytest.raises(RuntimeError):
         ov_pipe.generate("dummy prompt", **invalid_generation_config)
@@ -532,8 +586,9 @@ def test_pipeline_validates_generation_config():
 def test_unicode_pybind_decoding_one_string():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    model_id, tmp_path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str[-1]
 
@@ -543,8 +598,9 @@ def test_unicode_pybind_decoding_one_string():
 def test_unicode_pybind_decoding_batched():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    model_id, tmp_path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
@@ -554,8 +610,9 @@ def test_unicode_pybind_decoding_batched():
 def test_unicode_pybind_decoding_one_string_streamer():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
-    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
-    ov_pipe = read_model((model_id, path))[4]
+    model_id, tmp_path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     res_str = []
     ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
@@ -565,7 +622,9 @@ def test_unicode_pybind_decoding_one_string_streamer():
 #
 
 def run_perf_metrics_collection(model_descr, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
-    model_id, path, hf_tokenizer, opt_model, ov_pipe = read_model(model_descr)
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    ov_pipe = create_ov_pipeline(models_path)
     return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
 
 

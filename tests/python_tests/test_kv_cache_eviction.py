@@ -1,25 +1,22 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-from dataclasses import dataclass
-from pathlib import Path
-import sys
-from typing import Dict, List, Optional
 
+import sys
 import datasets
 import pytest
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
 from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
-
 from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult, GenerationConfig, CacheEvictionConfig, AggregationMode
-
 from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
 from common import TESTS_ROOT, run_cb_pipeline_with_ref
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
-
 from utils.constants import get_default_llm_properties
 
 
@@ -47,6 +44,7 @@ class ConvertedModel:
 @pytest.fixture(scope='module')
 def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties())
     model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties())
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
@@ -127,6 +125,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
     models_path = converted_model.models_path
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
 
@@ -240,6 +240,8 @@ def test_optimized_generation_longbench(qwen2_converted_model, device, test_stru
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
 
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
 
