@@ -60,9 +60,8 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb
     env:
-      OV_REPO: ${{ github.workspace }}\src\ov
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
       SRC_DIR: ${{ github.workspace }}\src\genai
@@ -75,15 +74,6 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-
-      - name: Clone Openvino
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'openvinotoolkit/openvino'
-          path: ${{ env.OV_REPO }}
-          ref: ${{ env.TARGET_BRANCH }}
-          sparse-checkout: |
-            install_build_dependencies.sh
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -171,9 +161,8 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb
     env:
-      OV_REPO: ${{ github.workspace }}\src\ov
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
@@ -187,15 +176,6 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-
-      - name: Clone Openvino
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'openvinotoolkit/openvino'
-          path: ${{ env.OV_REPO }}
-          ref: ${{ env.TARGET_BRANCH }}
-          sparse-checkout: |
-            install_build_dependencies.sh
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -285,7 +265,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
@@ -337,12 +317,14 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
+          - name: 'Cacheopt E2E'
+            cmd: 'tests/python_tests/test_kv_cache_eviction.py'
           - name: 'LLM && VLM'
             cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: aks-win-8-cores-16gb
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -392,7 +374,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: aks-win-4-cores-8gb
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
