@@ -21,7 +21,7 @@ You can download example audio file: https://storage.openvinotoolkit.org/models_
 
 ## Run
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
 
