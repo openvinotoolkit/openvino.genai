@@ -37,6 +37,8 @@ ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& co
             streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
+        } else if (any_val.is<std::function<ov::genai::StreamingStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<ov::genai::StreamingStatus(std::string)>>();
         }
     }
     return streamer;
@@ -76,6 +78,9 @@ public:
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
+        // If stop_token_ids were not provided, take value from default m_generation_config
+        if (config.stop_token_ids.empty())
+            config.stop_token_ids = m_generation_config.stop_token_ids;
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
             config.set_eos_token_id(m_generation_config.eos_token_id);
@@ -87,6 +92,8 @@ public:
         } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
             streamer_ptr = *streamer_obj;
         } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
+        }  else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
             streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
         }
 
@@ -145,6 +152,8 @@ private:
 std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(*streamer_obj)};
+    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
     } else {
         auto callback = std::get<std::function<bool(std::string)>>(func);
         return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
@@ -196,7 +205,12 @@ ov::genai::Tokenizer ov::genai::WhisperPipeline::get_tokenizer() {
 
 void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationConfig& config) {
     int64_t default_eos_token_id = m_impl->m_generation_config.eos_token_id;
+    auto default_stop_token_ids = m_impl->m_generation_config.stop_token_ids;
     m_impl->m_generation_config = config;
+
+    // If stop_token_ids were not provided, take value from default config
+    if (config.stop_token_ids.empty())
+        m_impl->m_generation_config.stop_token_ids = default_stop_token_ids;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
         m_impl->m_generation_config.set_eos_token_id(default_eos_token_id);

@@ -23,6 +23,7 @@ using ov::genai::EncodedResults;
 using ov::genai::StreamerBase;
 using ov::genai::StringInputs;
 using ov::genai::get_version;
+using ov::genai::StreamingStatus;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -66,10 +67,18 @@ auto streamer_base_docstring =  R"(
 
 class ConstructableStreamer: public StreamerBase {
     bool put(int64_t token) override {
-        PYBIND11_OVERRIDE_PURE(
+        PYBIND11_OVERRIDE(
             bool,  // Return type
             StreamerBase,  // Parent class
             put,  // Name of function in C++ (must match Python name)
+            token  // Argument(s)
+        );
+    }
+    StreamingStatus write(int64_t token) override {
+        PYBIND11_OVERRIDE(
+            StreamingStatus,  // Return type
+            StreamerBase,  // Parent class
+            write,  // Name of function in C++ (must match Python name)
             token  // Argument(s)
         );
     }
@@ -113,10 +122,19 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("scores", &EncodedResults::scores)
         .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
 
-    py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
+    py::enum_<ov::genai::StreamingStatus>(m, "StreamingStatus")
+        .value("RUNNING", ov::genai::StreamingStatus::RUNNING)
+        .value("CANCEL", ov::genai::StreamingStatus::CANCEL)
+        .value("STOP", ov::genai::StreamingStatus::STOP);
+
+    auto streamer = py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
-        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"))
+        .def("write", &StreamerBase::write, "Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled", py::arg("token"))
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
+
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    streamer.def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"));
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     init_tokenizer(m);
     init_lora_adapter(m);

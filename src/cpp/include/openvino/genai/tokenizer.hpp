@@ -23,7 +23,22 @@ struct TokenizedInputs {
 };
 
 /**
-* @brief class is used to encode prompts and decode resulting tokens
+ * @brief The class is used to encode prompts and decode resulting tokens
+ *
+ * Chat tempalte is initialized from sources in the following order
+ * overriding the previos value:
+ * 1. chat_template entry from tokenizer_config.json
+ * 2. chat_template entry from processor_config.json
+ * 3. chat_template entry from chat_template.json
+ * 4. chat_tempalte entry from rt_info section of ov::Model
+ * 5. If the tempalte is known to be not supported by GenAI, it's
+ *     replaced with a simplified supported version.
+ * 6. Patch chat_tempalte replacing not supported instructions with
+ *     eqvivalents.
+ * 7. If the template was not in the list of not supported GenAI
+ *     templates from (5), it's blindly replaced with
+ *     simplified_chat_template entry from rt_info section of
+ *     ov::Model if the entry exists.
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
@@ -107,7 +122,7 @@ public:
     /**
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {"add_special_tokens", false}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
@@ -115,7 +130,7 @@ public:
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {"add_special_tokens", false}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
@@ -125,7 +140,9 @@ public:
     /**
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
-    * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
+    * @param add_special_tokens whether to add special tokens
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
+    * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -136,7 +153,9 @@ public:
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
-    * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
+    * @param add_special_tokens whether to add special tokens
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
+    * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -243,6 +262,7 @@ private:
 
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
+static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
 
 }  // namespace genai
 }  // namespace ov

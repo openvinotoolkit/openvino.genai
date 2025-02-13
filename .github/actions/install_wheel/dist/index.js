@@ -11815,6 +11815,14 @@ const { isUint8Array, isArrayBuffer } = __nccwpck_require__(8253)
 const { File: UndiciFile } = __nccwpck_require__(3041)
 const { parseMIMEType, serializeAMimeType } = __nccwpck_require__(4322)
 
+let random
+try {
+  const crypto = __nccwpck_require__(7598)
+  random = (max) => crypto.randomInt(0, max)
+} catch {
+  random = (max) => Math.floor(Math.random(max))
+}
+
 let ReadableStream = globalThis.ReadableStream
 
 /** @type {globalThis['File']} */
@@ -11900,7 +11908,7 @@ function extractBody (object, keepalive = false) {
     // Set source to a copy of the bytes held by object.
     source = new Uint8Array(object.buffer.slice(object.byteOffset, object.byteOffset + object.byteLength))
   } else if (util.isFormDataLike(object)) {
-    const boundary = `----formdata-undici-0${`${Math.floor(Math.random() * 1e11)}`.padStart(11, '0')}`
+    const boundary = `----formdata-undici-0${`${random(1e11)}`.padStart(11, '0')}`
     const prefix = `--${boundary}\r\nContent-Disposition: form-data`
 
     /*! formdata-polyfill. MIT License. Jimmy Wärting <https://jimmy.warting.se/opensource> */
@@ -26019,6 +26027,14 @@ module.exports = require("net");
 
 /***/ }),
 
+/***/ 7598:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:crypto");
+
+/***/ }),
+
 /***/ 8474:
 /***/ ((module) => {
 
@@ -30043,7 +30059,7 @@ class LRUCache {
     }
     /**
      * Return an array of [key, {@link LRUCache.Entry}] tuples which can be
-     * passed to {@link LRLUCache#load}.
+     * passed to {@link LRUCache#load}.
      *
      * The `start` fields are calculated relative to a portable `Date.now()`
      * timestamp, even if `performance.now()` is available.
@@ -33996,6 +34012,8 @@ class PathBase {
     /**
      * Deprecated alias for Dirent['parentPath'] Somewhat counterintuitively,
      * this property refers to the *parent* path, not the path object itself.
+     *
+     * @deprecated
      */
     get path() {
         return this.parentPath;
@@ -35756,16 +35774,45 @@ const util = __nccwpck_require__(9023);
 
 const execAsync = util.promisify(exec);
 
+async function getPythonVersion() {
+  const { stdout } = await execAsync('python --version');
+  const versionMatch = stdout.match(/Python (\d+)\.(\d+)\.(\d+)/);
+  if (versionMatch) {
+    return {
+      major: versionMatch[1],
+      minor: versionMatch[2],
+      patch: versionMatch[3]
+    };
+  } else {
+    throw new Error('Unable to detect Python version');
+  }
+}
+
 async function installPackages(packages, localWheelDir, requirementsFiles) {
+  core.debug(`Packages to install: ${packages}`);
+  core.debug(`Local wheel directory: ${localWheelDir}`);
+  core.debug(`Requirements files: ${requirementsFiles}`);
+
+  const pythonVersion = await getPythonVersion();
+  core.debug(`Detected Python version: ${JSON.stringify(pythonVersion)}`);
+
   // Resolve local wheels
   const localWheels = {};
   if (localWheelDir) {
-    const wheels = glob.sync(path.join(localWheelDir, '*.whl'));
+    const wheels = glob.sync(path.posix.join(localWheelDir, '*.whl'));
+    core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
-      localWheels[packageName] = whl;
+      const wheelPythonVersion = path.basename(whl).match(/cp(\d{2,3})/);
+      if (
+        !wheelPythonVersion ||
+        wheelPythonVersion[1] === `${pythonVersion.major}${pythonVersion.minor}`
+      ) {
+        localWheels[packageName] = whl;
+      }
     }
   }
+  core.debug(`Resolved local wheels: ${JSON.stringify(localWheels)}`);
 
   // Collect wheel paths
   const wheelPaths = [];
@@ -35779,16 +35826,19 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
       return;
     }
   }
+  core.debug(`Collected wheel paths: ${wheelPaths}`);
 
   // Collect requirements files
   const requirementsArgs = requirementsFiles.map(reqFile => `-r ${reqFile}`);
+  core.debug(`Requirements arguments: ${requirementsArgs}`);
 
   // Install all wheels and requirements in one command
   const installArgs = [...wheelPaths, ...requirementsArgs];
   if (installArgs.length > 0) {
+    core.debug(`Installing packages with arguments: ${installArgs.join(' ')}`);
     console.log(`Installing packages: ${installArgs.join(' ')}`);
     const { stdout, stderr } = await execAsync(
-      `pip install ${installArgs.join(' ')}`,
+      `python -m pip install ${installArgs.join(' ')}`,
       {
         stdio: 'inherit'
       }
@@ -35804,8 +35854,14 @@ async function run() {
     const localWheelDir = core.getInput('local_wheel_dir') || null;
     const requirementsInput = core.getInput('requirements_files') || '';
     const packages = packagesInput.split(';');
-    const requirementsFiles = requirementsInput.split(';').filter(Boolean);
-    await installPackages(packages, localWheelDir, requirementsFiles);
+    const requirementsFiles = requirementsInput
+      .split(';')
+      .filter(Boolean)
+      .map(reqFile => path.normalize(reqFile));
+    const normalizedLocalWheelDir = localWheelDir
+      ? path.normalize(localWheelDir)
+      : null;
+    await installPackages(packages, normalizedLocalWheelDir, requirementsFiles);
   } catch (error) {
     core.setFailed(error.message);
   }

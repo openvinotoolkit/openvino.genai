@@ -9,20 +9,28 @@
 namespace ov {
 namespace genai {
 
-class TextCallbackStreamer: public StreamerBase {
+using CallbackTypeVariant = std::variant<bool, StreamingStatus>;
+
+class TextCallbackStreamer : public StreamerBase {
+    StreamingStatus set_streaming_status(CallbackTypeVariant callback_status);
+
 public:
-    bool put(int64_t token) override;
+    StreamingStatus write(int64_t token) override;
+
     void end() override;
 
-    TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback);
-
-    std::function<bool(std::string)> on_finalized_subword_callback = [](std::string words)->bool { return false; };
+    TextCallbackStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback);
 
 protected:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
     size_t m_printed_len = 0;
+
+private:
+    std::function<CallbackTypeVariant(std::string)> m_on_finalized_subword_callback = [](std::string words) -> bool {
+        return false;
+    };
 };
 
 }  // namespace genai

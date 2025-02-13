@@ -89,7 +89,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto decode_start = std::chrono::steady_clock::now();
             generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
             raw_counters.detokenization_durations.emplace_back(std::chrono::steady_clock::now() - decode_start);
-            if (m_is_chat_conversation && 0 == idx) {
+            if (m_is_chat_conversation && 0 == idx && res.m_status != ov::genai::GenerationStatus::CANCEL) {
                 m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
             }
         }
@@ -110,6 +110,40 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         });
     }
 
+    // if streaming was cancelled, prompt/answer of current step shouldn't be presented in history, so let's remove prompt from history
+    if (m_is_chat_conversation && encoded[0].m_status == ov::genai::GenerationStatus::CANCEL)
+        m_history.pop_back();
+
     return decoded;
+}
+
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
+    const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
+    const GenerationHandle& handle
+) {
+    if (!streamer_ptr->has_callback() || !handle->can_read()) {
+        return;
+    }
+
+    const auto streaming_status = streamer_ptr->get_status();
+
+    if (streaming_status == StreamingStatus::CANCEL) {
+        handle->cancel();
+        return;
+    }
+
+    if (streaming_status == StreamingStatus::STOP) {
+        handle->stop();
+        return;
+    }
+
+    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
+    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+    if (generation_outputs.empty()) {
+        return;
+    }
+
+    const auto tokens = generation_outputs.begin()->second.generated_ids;
+    streamer_ptr->write(tokens);
 }
 }
