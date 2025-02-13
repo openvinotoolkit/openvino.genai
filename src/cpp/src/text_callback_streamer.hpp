@@ -11,10 +11,8 @@ namespace genai {
 
 using CallbackTypeVariant = std::variant<bool, StreamingStatus>;
 
-class TextCallbackStreamer: public StreamerBase {
+class TextCallbackStreamer : public StreamerBase {
     StreamingStatus set_streaming_status(CallbackTypeVariant callback_status);
-
-    std::function<CallbackTypeVariant(std::string)> on_finalized_subword_callback = [](std::string words)->bool { return false; };
 
 public:
     StreamingStatus write(int64_t token) override;
@@ -28,6 +26,11 @@ protected:
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
     size_t m_printed_len = 0;
+
+private:
+    std::function<CallbackTypeVariant(std::string)> m_on_finalized_subword_callback = [](std::string words) -> bool {
+        return false;
+    };
 };
 
 }  // namespace genai
