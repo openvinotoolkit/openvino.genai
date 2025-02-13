@@ -23,8 +23,8 @@ enum class SequenceStatus {
 };
 
 enum class SequenceGroupType {
-    LLM,
-    VLM
+    TOKENS,
+    EMBEDDINGS
 };
 
 using TokenIds = std::vector<int64_t>;
@@ -265,7 +265,7 @@ public:
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
             std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
-            m_sequence_group_type = SequenceGroupType::LLM;
+            m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
             auto embeds_len = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
@@ -273,7 +273,7 @@ public:
                 m_input_embeds[i].resize(embeds_len);
               std::copy_n(input_ids.data<float>() + i * embeds_len, embeds_len, m_input_embeds[i].begin());
             }
-            m_sequence_group_type = SequenceGroupType::VLM;
+            m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }
         else {
             OPENVINO_THROW("Unknown tensor format.");
@@ -298,10 +298,10 @@ public:
     }
 
     size_t get_prompt_len() const {
-        if (m_sequence_group_type == SequenceGroupType::VLM) {
+        if (m_sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             return m_input_embeds.size();
         }
-        else if (m_sequence_group_type == SequenceGroupType::LLM) {
+        else if (m_sequence_group_type == SequenceGroupType::TOKENS) {
             return m_prompt_ids.size();
         }
         else {
@@ -552,13 +552,18 @@ public:
     }
 
     const TokenIds& get_prompt_ids() const {
-        //OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::LLM);
         return m_prompt_ids;
     }
 
     const std::vector<std::vector<float>>& get_input_embeds() const {
-        OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::VLM);
+        OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
         return m_input_embeds;
+    }
+
+    size_t get_hidden_size() const {
+        OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(m_input_embeds.size() > 0, "Embeddings should be set to get hidden size.");
+        return m_input_embeds[0].size();
     }
 
     void append_prompt_log_prob(float log_prob) {

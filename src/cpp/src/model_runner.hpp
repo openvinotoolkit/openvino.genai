@@ -117,14 +117,12 @@ public:
         size_t batch_size_in_sequences = 0;
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
-        size_t embeds_len = 0;
+        size_t hidden_size = 0;
         size_t num_generated_ids = 0;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
-        if (sequence_group_type == SequenceGroupType::VLM) {
-            if (sequence_groups[0]->get_input_embeds().size() > 0)  {
-                embeds_len = sequence_groups[0]->get_input_embeds()[0].size();
-            }
+        if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+            hidden_size = sequence_groups[0]->get_hidden_size();
         }
 
         // compute aggregated values
@@ -143,7 +141,7 @@ public:
 
         ov::Tensor
             input_ids(ov::element::i64, {total_num_tokens}),
-            inputs_embeds(ov::element::f32, {total_num_tokens, embeds_len}),
+            inputs_embeds(ov::element::f32, {total_num_tokens, hidden_size}),
             position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
@@ -161,7 +159,7 @@ public:
         float *inputs_embeds_data;
         int64_t *input_ids_data;
         
-        if (sequence_group_type == SequenceGroupType::VLM) {
+        if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             OPENVINO_ASSERT(m_use_embeddings, "Got sequence group with embeddings, but inputs embedder wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
 
@@ -185,7 +183,7 @@ public:
                 generated_ids_embeds_data = generated_ids_embeds.data<float>();
             }
 
-        } else if (sequence_group_type == SequenceGroupType::LLM) {
+        } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
         }
 
@@ -230,14 +228,14 @@ public:
                 Sequence::CPtr sequence = running_sequences[seq_id];
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
-                    if (sequence_group_type == SequenceGroupType::LLM) {
+                    if (sequence_group_type == SequenceGroupType::TOKENS) {
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                    } else if (sequence_group_type == SequenceGroupType::VLM) {
-                        auto embeds_pos = position_id > prompt_len ? embeds_len * (position_id - prompt_len) : 0;
-                        for (size_t i = 0; i < embeds_len; i++) {
-                            inputs_embeds_data[token_id * embeds_len + i] = position_id < prompt_len ?
+                    } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                        auto embeds_pos = position_id > prompt_len ? hidden_size * (position_id - prompt_len) : 0;
+                        for (size_t i = 0; i < hidden_size; i++) {
+                            inputs_embeds_data[token_id * hidden_size + i] = position_id < prompt_len ?
                                 sequence_group->get_input_embeds()[position_id][i] :
                                 generated_ids_embeds_data[embeds_pos++];
                         }
@@ -272,10 +270,10 @@ public:
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
 
                 // apply strides to shift to a next sequence
-                if (sequence_group_type == SequenceGroupType::LLM) {
+                if (sequence_group_type == SequenceGroupType::TOKENS) {
                     input_ids_data += num_scheduled_tokens;
-                } else if (sequence_group_type == SequenceGroupType::VLM) {
-                    inputs_embeds_data += num_scheduled_tokens * embeds_len;
+                } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                    inputs_embeds_data += num_scheduled_tokens * hidden_size;
                 }
 
                 position_ids_data += num_scheduled_tokens;
@@ -286,10 +284,10 @@ public:
             sequence_group->set_output_seq_len(matmul_gathering_is_available ? output_seq_len : num_scheduled_tokens);
         }
 
-        if (sequence_group_type == SequenceGroupType::LLM) {
+        if (sequence_group_type == SequenceGroupType::TOKENS) {
             m_request.set_tensor("input_ids", input_ids);
         }
-        else if (sequence_group_type == SequenceGroupType::VLM) {
+        else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             m_request.set_tensor("inputs_embeds", inputs_embeds);
         }
 
