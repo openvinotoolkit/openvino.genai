@@ -18,8 +18,10 @@
 namespace ov {
 namespace genai {
 
-// Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
-using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
+// Return flag corresponds whether generation should be stopped. It could be:
+// ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last propmt and answer from history
+// *DEPRECATED* bool flag, false means continue generation, true means stop. Please, use `ov::genai::StreamingStatus` instead.
+using StreamerVariant = std::variant<std::function<bool(std::string)>, std::function<StreamingStatus(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
@@ -177,6 +179,8 @@ public:
     * @param generation_config optional GenerationConfig
     * @param streamer optional streamer
     * @return DecodedResults decoded resulting text
+    * chat_template will be applied to the prompt, run pipe.get_tokenizer().set_chat_template(custom_chat_template) to update it.
+    * To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     */
     DecodedResults generate(
         StringInputs inputs,
@@ -191,6 +195,8 @@ public:
     * @param inputs input prompt or a vector of prompts
     * @param properties properties
     * @return DecodedResults decoded resulting text
+    * chat_template will be applied to the prompt, run pipe.get_tokenizer().set_chat_template(custom_chat_template) to update it.
+    * To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
     */
     template <typename... Properties>
     util::EnableIfAllStringAny<DecodedResults, Properties...> generate(

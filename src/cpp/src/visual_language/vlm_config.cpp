@@ -19,6 +19,9 @@ ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
+    if (parsed.contains("vision_config")) {
+        read_json_param(parsed.at("vision_config"), "patch_size", vision_config_patch_size);
+    }
     // phi3_v
     if (parsed.contains("sub_GN")) {
         sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
