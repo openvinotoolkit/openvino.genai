@@ -366,7 +366,8 @@ def get_image_text_prompt(args):
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
                 if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    vlm_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), vlm_file['media'].replace('./', '')) if not vlm_file["media"].startswith("https://") else vlm_file["media"]
+                    vlm_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), vlm_file['media'].replace('./', '')) \
+                                         if not vlm_file["media"].startswith("https://") else vlm_file["media"]
                 vlm_file_list.append(vlm_file)
     else:
         vlm_file_list.append(output_data_list)
