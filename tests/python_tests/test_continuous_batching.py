@@ -371,24 +371,17 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 
     generation_config = GenerationConfig()
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
-    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
     it_cnt = 0
-    it_cnt = 0
     def py_streamer(py_str: str):
-        nonlocal it_cnt
-        it_cnt += 1
         nonlocal it_cnt
         it_cnt += 1
         return False
 
     _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
-
-    assert it_cnt > 0
 
     assert it_cnt > 0
 
@@ -405,21 +398,14 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
     it_cnt = 0
-    it_cnt = 0
     def py_streamer(py_str: str):
         nonlocal it_cnt
         it_cnt += 1
         return False
-        nonlocal it_cnt
-        it_cnt += 1
-        return False
 
-    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
     _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
-
-    assert it_cnt == 0
 
     assert it_cnt == 0

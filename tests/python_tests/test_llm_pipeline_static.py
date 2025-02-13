@@ -230,7 +230,6 @@ def test_chat_generation():
     _, _, model_path = download_and_convert_model(model_id, tmp_path)
 
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
-    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')

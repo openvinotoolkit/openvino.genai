@@ -21,7 +21,6 @@ def get_ov_model(model_id, cache):
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
     model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
     if processor.tokenizer.chat_template is not None:
         processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
