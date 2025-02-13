@@ -94,7 +94,7 @@ def get_chat_templates():
         "BramVanroy/Llama-2-13b-chat-dutch"
     }
 
-    from tokenizer_configs import get_tokenizer_configs
+    from data.tokenizer_configs import get_tokenizer_configs
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
