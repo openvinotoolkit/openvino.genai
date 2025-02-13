@@ -4,7 +4,6 @@
 import os
 import time
 import datetime
-from pathlib import Path
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils

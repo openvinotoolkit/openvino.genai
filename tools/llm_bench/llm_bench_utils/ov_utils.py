@@ -604,6 +604,7 @@ def create_image_text_gen_model(model_path, device, **kwargs):
             except Exception as exp:
                 log.warning(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                    f"GenAI pipeline loading failed with following error: {exp}"
                     "Benchmark will be switched to Optimum Intel pipeline realization"
                 )
 
