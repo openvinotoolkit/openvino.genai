@@ -235,7 +235,7 @@ public:
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
                     } else if (sequence_group_type == SequenceGroupType::VLM) {
-                        auto embeds_pos = 0;
+                        auto embeds_pos = position_id > prompt_len ? embeds_len * (position_id - prompt_len) : 0;
                         for (size_t i = 0; i < embeds_len; i++) {
                             inputs_embeds_data[token_id * embeds_len + i] = position_id < prompt_len ?
                                 sequence_group->get_input_embeds()[position_id][i] :
