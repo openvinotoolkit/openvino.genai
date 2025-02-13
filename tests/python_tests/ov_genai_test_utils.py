@@ -136,42 +136,6 @@ def model_tmp_path(tmpdir_factory):
     yield model_id, Path(temp_path)
 
 
-@pytest.fixture(scope="module")
-def model_tokenizers_tmp_path(tmpdir_factory):
-    model_id, models_path, _, _, _ = read_model(get_models_list()[0])
-    temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
-
-    # If tokens were not found in IR, it fallback to reading from config.
-    # There was no easy way to add tokens to IR in tests, so we remove them
-    # and set tokens in configs and to check if they are read and validated correctly.
-    import openvino as ov
-
-    core = ov.Core()
-
-    # copy openvino converted model and tokenizers
-    for pattern in ['*.xml', '*.bin']:
-        for src_file in models_path.glob(pattern):
-
-            # Update files if they are openvino_tokenizer.xml or openvino_detokenizer.xml
-            if src_file.name in ['openvino_tokenizer.xml', 'openvino_detokenizer.xml']:
-                if src_file.exists():
-                    # Load the XML content
-                    ov_model = core.read_model(src_file)
-                    # Add empty rt_info so that tokens will be read from config instead of IR
-                    ov_model.set_rt_info("pad_token_id", "")
-                    ov_model.set_rt_info("eos_token_id", "")
-                    ov_model.set_rt_info("chat_template", "")
-                    ov.save_model(ov_model, str(temp_path / src_file.name))
-
-            if src_file in ['openvino_tokenizer.bin', 'openvino_detokenizer.bin']:
-                continue
-
-            if src_file.is_file():
-                shutil.copy(src_file, temp_path / src_file.name)
-
-    yield model_id, Path(temp_path)
-
-
 def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     # Load LLMPipeline where all configs are cleared.
     # remove existing jsons from previous tests
