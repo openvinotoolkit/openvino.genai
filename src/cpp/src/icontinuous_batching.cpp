@@ -5,6 +5,10 @@
 
 namespace ov::genai {
 
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::~IContinuousBatchingPipeline() {
+    m_tokenizer = {};
+}
+
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
 }

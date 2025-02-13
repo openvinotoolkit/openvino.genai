@@ -122,9 +122,17 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
+    // manually release all blocks, which can re-initialize OpenVINO plugins during destruction
+    m_sampler.reset();
+    m_adapter_controller.reset();
+    m_model_runner.reset();
+
     if (m_scheduler) {
         m_scheduler->release();
+        m_scheduler.reset();
     }
+
+    utils::release_core_plugin(m_device);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
@@ -140,8 +148,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
+    m_device = device;
     ov::AnyMap mutable_properties = properties;
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
@@ -155,6 +162,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     apply_kv_cache_precision(model, device, mutable_properties);
 
     // apply LoRA
+    ov::Core core = utils::singleton_core();
+    ov::CompiledModel compiled_model;
     if (auto filtered_properties = extract_adapters_from_properties(mutable_properties, &m_generation_config.adapters)) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
