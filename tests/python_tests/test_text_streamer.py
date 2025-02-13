@@ -49,15 +49,15 @@ unicode_prompts = [
 @pytest.mark.precommit
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_text_prompts(tmp_path, prompt, model_id):
+    if prompt == str_with_apostrophe and model_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0":
+        pytest.skip(reason="This test is skipped because of the specific behaviour of TinyLlama CVS-162362. It's not a bug HF behaves the same.")
+    if sys.platform.startswith('win') and prompt in unicode_prompts:
+        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True)
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
-    if prompt == str_with_apostrophe and model_id == "TinyLlama/TinyLlama-1.1B-Chat-v1.0":
-        pytest.skip(reason="This test is skipped because of the specific behaviour of TinyLlama CVS-162362. It's not a bug HF behaves the same.")
-    if sys.platform.startswith('win') and prompt in unicode_prompts:
-        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
     tokens = ov_tokenizer.encode(prompt=prompt).input_ids.data[0].tolist()
     streamer = TextStreamer(ov_tokenizer, lambda x: accumulated.append(x))
     accumulated = []
