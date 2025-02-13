@@ -184,7 +184,7 @@ def test_chat_scenario_several_chats_in_series():
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_intpus[0]
-    ov_generation_config = GenerationConfig(**generation_config_kwargs)
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
     for i in range(2):
@@ -560,7 +560,7 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     model_id, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
 
-    config = ov_genai.ov_genai.GenerationConfig()
+    config = ov_genai.GenerationConfig()
     config.do_sample = True  # no eos_token_id but it's loaded from config.json
     ov_pipe.set_generation_config(config)
 

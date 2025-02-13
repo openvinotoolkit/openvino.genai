@@ -371,7 +371,6 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 
     generation_config = GenerationConfig()
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
-    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
     it_cnt = 0
     def py_streamer(py_str: str):
@@ -384,8 +383,6 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
 
     del pipe
     rmtree(models_path)
-
-    assert it_cnt > 0
 
     assert it_cnt > 0
 
@@ -412,7 +409,5 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
 
     del pipe
     rmtree(models_path)
-
-    assert it_cnt == 0
 
     assert it_cnt == 0
