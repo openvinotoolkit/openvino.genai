@@ -171,9 +171,12 @@ if(CPACK_GENERATOR STREQUAL "NPM")
 
     # setting RPATH / LC_RPATH depending on platform
     if(LINUX)
-        # to find libopenvino.so in the same folder
+        # to find libopenvino_genai.so in the same folder
         set(rpaths "$ORIGIN")
+        # to find libopenvino.so when installing from npm
         list(APPEND rpaths "$ORIGIN/../../openvino-node/bin")
+        # to find libopenvino.so when installing from source
+        list(APPEND rpaths "$ORIGIN/../node_modules/openvino-node/bin")
     elseif(APPLE)
         # to find libopenvino.dylib in the same folder
         set(rpaths "@loader_path")
