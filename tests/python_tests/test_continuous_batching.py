@@ -379,7 +379,6 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
         return False
 
     _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
@@ -404,7 +403,6 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
         it_cnt += 1
         return False
 
-    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
     _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe

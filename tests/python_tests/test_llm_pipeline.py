@@ -214,6 +214,20 @@ def test_chat_scenario_several_chats_in_series():
 
         assert chat_history_ov == chat_history_hf
 
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_chat_scenario_several_start():
+    model_id, tmp_dir = get_chat_models_list()[0]
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id, tmp_dir)
+    ov_pipe = create_ov_pipeline(models_path)
+
+    generation_config_kwargs, _ = chat_intpus[0]
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
+
+    ov_pipe.start_chat()
+    ov_pipe.start_chat()
+    ov_pipe.generate(questions[0], generation_config=ov_generation_config)
+    ov_pipe.finish_chat()
 
 #
 # Streaming with callback
