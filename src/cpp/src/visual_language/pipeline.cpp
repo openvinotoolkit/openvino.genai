@@ -11,6 +11,8 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
+#include "visual_language/pipeline_base.hpp"
+#include "visual_language/continuous_batching_adapter.hpp"
 
 #include "sampler.hpp"
 #include "text_callback_streamer.hpp"
@@ -20,36 +22,8 @@
 
 using namespace ov::genai;
 
-namespace {
 
-} // namespace
-
-namespace ov::genai {
-
-const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
-    auto it = models_map.find(key);
-    if (it != models_map.end()) {
-        return it->second;
-    }
-    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
-}
-
-// TODO: move to utils
-std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    } else if (default_config.has_value()) {
-        scheduler_config = *default_config;
-    }
-    return {plugin_config, scheduler_config};
-};
-
-class ov::genai::VLMPipeline::VLMPipelineBase {
-public:
+class ov::genai::VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A config to follow for LLM input construction.
     VLMConfig m_vlm_config;
     // A config to follow for text generation.
@@ -70,14 +44,12 @@ public:
     bool m_is_chat_conversation;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    // Load pipeline time
-    float m_load_time_ms = 0;
     // Axis num in kv cache from m_language model, which contains information about history len
     size_t m_kv_cache_seq_length_axis = 2;
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
-
-    VLMPipelineBase(
+public:
+    VLMPipelineImpl(
         const std::filesystem::path& models_dir,
         const std::string& device,
         const ov::AnyMap& properties
@@ -119,14 +91,15 @@ public:
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
 
-    VLMPipelineBase(
+    
+    VLMPipelineImpl(
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
-    ) :
+    )  :
         m_vlm_config{
             utils::from_config_json_if_exists<VLMConfig>(
                 config_dir_path, "config.json"
@@ -156,111 +129,6 @@ public:
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
-
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& rgbs,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const ov::AnyMap& config_map
-    ) {
-        auto image = config_map.find(ov::genai::image.name());
-        auto images = config_map.find(ov::genai::images.name());
-        OPENVINO_ASSERT(
-            config_map.end() == image || config_map.end() == images,
-            "Only one property can be set: image of images."
-        );
-        std::vector<ov::Tensor> rgbs;
-        if (config_map.end() != image) {
-            rgbs = {image->second.as<ov::Tensor>()};
-        } if (config_map.end() != images) {
-            rgbs = images->second.as<std::vector<ov::Tensor>>();
-        }
-
-        ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
-        GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
-        config.update_generation_config(config_map);
-
-        return generate(
-            prompt,
-            rgbs,
-            config,
-            utils::get_streamer_from_map(config_map)
-        );
-    }
-
-    void start_chat(const std::string& system_message) {
-        m_is_chat_conversation = true;
-        bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
-        if (have_state) {
-            // Resetting state may be slow.
-            m_language.reset_state();
-            // Since if is already introduced, move all resetting here.
-            m_language.get_tensor("attention_mask").set_shape({0, 0});
-        }
-        m_inputs_embedder->start_chat(system_message);
-    }
-
-    void finish_chat() {
-        m_is_chat_conversation = false;
-        // Resetting state may be slow.
-        m_language.reset_state();
-        m_language.get_tensor("attention_mask").set_shape({0, 0});
-        // clear all chat history
-        m_inputs_embedder->finish_chat();
-    }
-
-    Tokenizer get_tokenizer() const {
-        return m_tokenizer;
-    }
-
-    void set_chat_template(const std::string& new_template) {
-        OPENVINO_ASSERT(!m_is_chat_conversation, "Chat template cannot be changed once start_chat() is called. Please, finish current chat via finish_chat()");
-        m_tokenizer.set_chat_template(new_template);
-    }
-
-    GenerationConfig get_generation_config() const {
-        return m_generation_config;
-    }
-
-    void set_generation_config(const GenerationConfig& new_config) {
-        int64_t default_eos_token_id = m_generation_config.eos_token_id;
-        auto default_stop_token_ids = m_generation_config.stop_token_ids;
-        m_generation_config = new_config;
-
-        // If stop_token_ids were not provided, take value from default config
-        if (m_generation_config.stop_token_ids.empty())
-            m_generation_config.stop_token_ids = default_stop_token_ids;
-        // if eos_token_id was not provided in config forward from default config
-        if (m_generation_config.eos_token_id == -1)
-            m_generation_config.set_eos_token_id(default_eos_token_id);
-
-        m_generation_config.validate();
-    }
-};
-
-
-
-class ov::genai::VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
-public:
-    VLMPipelineImpl(
-        const std::filesystem::path& models_dir,
-        const std::string& device,
-        const ov::AnyMap& properties
-    ) : VLMPipelineBase{models_dir, device, properties} {};
-
-    VLMPipelineImpl(
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config
-    ) : VLMPipelineBase{models_map, tokenizer, config_dir_path, device, properties, generation_config} {};
 
     VLMDecodedResults generate(
         const std::string& prompt,
@@ -354,7 +222,7 @@ public:
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
         decoded.perf_metrics.num_input_tokens = prompt_ids.get_size();
-        decoded.perf_metrics.load_time = m_load_time_ms;
+        decoded.perf_metrics.load_time = this->get_load_time();
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
@@ -373,59 +241,55 @@ public:
         return decoded;
     }
 
-};
-
-
-class ov::genai::VLMPipeline::VLMContinuousBatchingAdapter : public ov::genai::VLMPipeline::VLMPipelineBase {
-public:
-    ContinuousBatchingPipeline m_impl;
-
-    VLMContinuousBatchingAdapter(
-        const std::filesystem::path& models_dir,
-        const SchedulerConfig& scheduler_config,
-        const std::string& device,
-        const ov::AnyMap& properties
-    ): VLMPipelineBase{models_dir, device, properties}, m_impl{
-        models_dir / "openvino_language_model.xml", 
-        scheduler_config, 
-        device, 
-        properties} { }
-
-    VLMContinuousBatchingAdapter(
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer,
-        const std::filesystem::path& config_dir_path,
-        const SchedulerConfig& scheduler_config,
-        const std::string& device,
-        const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config
-    ): VLMPipelineBase{models_map, tokenizer, config_dir_path, device, properties, generation_config}, 
-    m_impl{
-        "./", //TODO: fix this
-        tokenizer,
-        scheduler_config,
-        device,
-        properties} 
-    {
-    }
-
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& rgbs,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) override {
-
-        auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
-
-        auto decode_start_time = std::chrono::steady_clock::now();
-        VLMDecodedResults decoded;
-        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-            decoded.texts.push_back(result.m_generation_ids.at(idx));
-            decoded.scores.push_back(result.m_scores.at(idx));
+    void start_chat(const std::string& system_message) override {
+        m_is_chat_conversation = true;
+        bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
+        if (have_state) {
+            // Resetting state may be slow.
+            m_language.reset_state();
+            // Since if is already introduced, move all resetting here.
+            m_language.get_tensor("attention_mask").set_shape({0, 0});
         }
-        return decoded;
+        m_inputs_embedder->start_chat(system_message);
     }
+
+    void finish_chat() override {
+        m_is_chat_conversation = false;
+        // Resetting state may be slow.
+        m_language.reset_state();
+        m_language.get_tensor("attention_mask").set_shape({0, 0});
+        // clear all chat history
+        m_inputs_embedder->finish_chat();
+    }
+
+    Tokenizer get_tokenizer() const override {
+        return m_tokenizer;
+    }
+
+    void set_chat_template(const std::string& new_template) override {
+        OPENVINO_ASSERT(!m_is_chat_conversation, "Chat template cannot be changed once start_chat() is called. Please, finish current chat via finish_chat()");
+        m_tokenizer.set_chat_template(new_template);
+    }
+
+    GenerationConfig get_generation_config() const override {
+        return m_generation_config;
+    }
+
+    void set_generation_config(const GenerationConfig& new_config) override {
+        int64_t default_eos_token_id = m_generation_config.eos_token_id;
+        auto default_stop_token_ids = m_generation_config.stop_token_ids;
+        m_generation_config = new_config;
+
+        // If stop_token_ids were not provided, take value from default config
+        if (m_generation_config.stop_token_ids.empty())
+            m_generation_config.stop_token_ids = default_stop_token_ids;
+        // if eos_token_id was not provided in config forward from default config
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.set_eos_token_id(default_eos_token_id);
+
+        m_generation_config.validate();
+    }
+
 };
 
 VLMPipeline::VLMPipeline(
@@ -445,7 +309,7 @@ VLMPipeline::VLMPipeline(
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     }
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+    m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
 
 VLMPipeline::VLMPipeline(
@@ -467,7 +331,7 @@ VLMPipeline::VLMPipeline(
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+    m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
 
 ov::genai::VLMPipeline::~VLMPipeline() = default;
@@ -519,6 +383,4 @@ GenerationConfig VLMPipeline::get_generation_config() const {
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_pimpl->set_generation_config(new_config);
-}
-
 }
