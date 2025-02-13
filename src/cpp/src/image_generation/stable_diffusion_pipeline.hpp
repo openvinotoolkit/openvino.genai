@@ -213,7 +213,7 @@ public:
         }
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor, float> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
         std::vector<int64_t> timesteps = m_scheduler->get_timesteps();
         OPENVINO_ASSERT(!timesteps.empty(), "Timesteps are not computed yet");
         int64_t latent_timestep = timesteps.front();
@@ -226,6 +226,7 @@ public:
         ov::Shape latent_shape{generation_config.num_images_per_prompt, m_vae->get_config().latent_channels,
                                generation_config.height / vae_scale_factor, generation_config.width / vae_scale_factor};
         ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latent, noise;
+        float encoder_duration = 0.0f;
 
         if (initial_image) {
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
@@ -236,11 +237,11 @@ public:
             // - inpainting with strength < 1.0
             // - inpainting with non-specialized model
             if (!is_strength_max || return_image_latent) {
-                // auto encode_start = std::chrono::steady_clock::now();
+                auto encode_start = std::chrono::steady_clock::now();
                 image_latent = m_vae->encode(proccesed_image, generation_config.generator);
-                // m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                //                                                     std::chrono::steady_clock::now() - encode_start)
-                //                                                     .count();
+                encoder_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::steady_clock::now() - encode_start)
+                                       .count();
                 // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with
                 // image_latent
                 if (!is_strength_max) {
@@ -264,7 +265,7 @@ public:
                 latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
         }
 
-        return std::make_tuple(latent, proccesed_image, image_latent, noise);
+        return std::make_tuple(latent, proccesed_image, image_latent, noise, encoder_duration);
     }
 
     std::tuple<ov::Tensor, ov::Tensor> prepare_mask_latents(ov::Tensor mask_image, ov::Tensor processed_image, const ImageGenerationConfig& generation_config) {
@@ -298,10 +299,10 @@ public:
             }
 
             // encode masked image to latent scape
-            // auto encode_start = std::chrono::steady_clock::now();
+            auto encode_start = std::chrono::steady_clock::now();
             masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
-            // m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
-            //     std::chrono::steady_clock::now() - encode_start).count();
+            m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - encode_start).count();
             masked_image_latent = numpy_utils::repeat(masked_image_latent, generation_config.num_images_per_prompt * batch_size_multiplier);
         }
 
@@ -354,7 +355,9 @@ public:
 
         // preparate initial / image latents
         ov::Tensor latent, processed_image, image_latent, noise;
-        std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
+        float encoder_duration;
+        std::tie(latent, processed_image, image_latent, noise, encoder_duration) = prepare_latents(initial_image, generation_config);
+        m_perf_metrics.vae_encoder_inference_duration = encoder_duration;
 
         // prepare mask latents
         ov::Tensor mask, masked_image_latent;

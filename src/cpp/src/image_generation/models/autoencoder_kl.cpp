@@ -248,6 +248,7 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
 
 ov::Tensor AutoencoderKL::decode(ov::Tensor latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
+
     m_decoder_request.set_input_tensor(latent);
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();

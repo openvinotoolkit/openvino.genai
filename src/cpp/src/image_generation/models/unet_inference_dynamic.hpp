@@ -28,12 +28,12 @@ public:
         adapter_controller.apply(m_request, adapters);
     }
 
-    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override
-    {
+    virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first. Cannot infer non-compiled model");
 
         m_request.set_tensor("sample", sample);
         m_request.set_tensor("timestep", timestep);
+
         m_request.infer();
 
         return m_request.get_output_tensor();
