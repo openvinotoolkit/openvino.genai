@@ -21,6 +21,7 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
+  NUMBA_CACHE_DIR: ${{ github.workspace }}/src/.NUMBA_CACHE_DIR
 
 jobs:
   openvino_download:
@@ -398,7 +399,6 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
-      NUMBA_CACHE_DIR: ${{ github.workspace }}/src/.NUMBA_CACHE_DIR
 
     steps:
       - name: Clone openvino.genai
@@ -442,9 +442,7 @@ jobs:
       - name: Test whisper_speech_recognition.py
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 1
-        run: |
-          $env:NUMBA_CACHE_DIR &
-          python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        run: python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
 
       - name: C++ Tests Prerequisites

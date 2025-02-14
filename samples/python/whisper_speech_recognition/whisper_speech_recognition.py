@@ -4,12 +4,18 @@
 
 import argparse
 import openvino_genai
-import librosa
+
+# import librosa
+from scipy.io import wavfile
+import numpy as np
 
 
 def read_wav(filepath):
-    raw_speech, samplerate = librosa.load(filepath, sr=16000)
-    return raw_speech.tolist()
+    # raw_speech, samplerate = librosa.load(filepath, sr=16000)
+    # return raw_speech.tolist()
+    samplerate, data = wavfile.read(filepath)
+    norm_arr = (data - np.min(data)) / (np.max(data) - np.min(data))
+    return norm_arr.tolist()
 
 
 def main():
@@ -18,27 +24,27 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
+    device = "CPU"  # GPU, NPU can be used as well
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
+
+    config = pipe.get_generation_config()
+    config.max_new_tokens = 100  # increase this based on your speech length
+    # 'task' and 'language' parameters are supported for multilingual models only
+    config.language = "<|en|>"  # can switch to <|zh|> for Chinese language
+    config.task = "transcribe"
+    config.return_timestamps = True
+
+    # Pipeline expects normalized audio with Sample Rate of 16kHz
     raw_speech = read_wav(args.wav_file_path)
+    result = pipe.generate(raw_speech, config)
 
-    # device = "CPU"  # GPU, NPU can be used as well
-    # pipe = openvino_genai.WhisperPipeline(args.model_dir, device)
+    print(result)
 
-    # config = pipe.get_generation_config()
-    # config.max_new_tokens = 100  # increase this based on your speech length
-    # # 'task' and 'language' parameters are supported for multilingual models only
-    # config.language = "<|en|>"  # can switch to <|zh|> for Chinese language
-    # config.task = "transcribe"
-    # config.return_timestamps = True
-
-    # # Pipeline expects normalized audio with Sample Rate of 16kHz
-    # raw_speech = read_wav(args.wav_file_path)
-    # result = pipe.generate(raw_speech, config)
-
-    # print(result)
-
-    # if result.chunks:
-    #     for chunk in result.chunks:
-    #         print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
+    if result.chunks:
+        for chunk in result.chunks:
+            print(
+                f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}"
+            )
 
 
 if "__main__" == __name__:
