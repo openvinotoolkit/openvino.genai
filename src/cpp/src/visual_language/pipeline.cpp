@@ -185,7 +185,7 @@ public:
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_input_embeddings(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
