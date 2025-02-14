@@ -1,7 +1,7 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline
+from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase
 
 import pytest
 import platform
@@ -191,9 +191,9 @@ def test_terminate_by_sampler():
     current_iter = 0
     num_iters = 10
 
-    class TestStreamer(ov_genai.StreamerBase):
+    class TestStreamer(StreamerBase):
         def __init__(self):
-            ov_genai.StreamerBase.__init__(self)
+            StreamerBase.__init__(self)
         def put(self, token_id):
             nonlocal current_iter
             current_iter += 1

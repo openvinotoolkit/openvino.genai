@@ -257,7 +257,7 @@ def test_callback_one_string(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_batch_throws(callback):
-    models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model()
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), callback)
@@ -361,7 +361,8 @@ def test_chat_scenario_callback_cancel(model_descr):
     chat_history_hf = []
     chat_history_ov = []
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_descr)
+    model_id, tmp_path = model_descr
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
