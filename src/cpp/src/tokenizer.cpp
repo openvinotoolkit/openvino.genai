@@ -132,9 +132,6 @@ namespace genai {
 
 class Tokenizer::TokenizerImpl {
 public:
-    ov::CompiledModel m_tokenizer;
-    ov::CompiledModel m_detokenizer;
-
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
 
@@ -490,7 +487,7 @@ public:
     }
 
     std::string decode(std::vector<int64_t> tokens, const ov::AnyMap& detokenization_params = {}) {
-        OPENVINO_ASSERT(m_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+        OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
@@ -502,7 +499,7 @@ public:
     }
 
     std::vector<std::string> decode(ov::Tensor tokens, const ov::AnyMap& detokenization_params = {}) {
-        OPENVINO_ASSERT(m_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+        OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
         OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
         OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
@@ -518,7 +515,7 @@ public:
     }
 
     std::vector<std::string> decode(std::vector<std::vector<int64_t>> lines, const ov::AnyMap& detokenization_params = {}) {
-        OPENVINO_ASSERT(m_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+        OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
         auto compare_lengths = [](const std::vector<int64_t>& a, const std::vector<int64_t>& b) {
             return a.size() < b.size();
