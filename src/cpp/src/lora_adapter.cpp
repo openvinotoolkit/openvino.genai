@@ -881,7 +881,7 @@ public:
         return *tensors;
     }
 
-    bool eq(const AdapterImpl* other) const {
+    bool eq(const AdapterImpl* other) const override {
         if(auto other_casted = dynamic_cast<const DerivedAdapterImpl<Derivation>*>(other)) {
             return origin.get() == other_casted->origin.get() && derivation == other_casted->derivation;
         }
