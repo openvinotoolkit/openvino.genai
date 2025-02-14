@@ -273,7 +273,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        shell: pwsh
+        shell: bash
     runs-on: macos-13
 
     env:
@@ -295,6 +295,9 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Install build dependencies
+        run: brew install coreutils
 
       - name: Build GenAI Node.js bindings
         run: |

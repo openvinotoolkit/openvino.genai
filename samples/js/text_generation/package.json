@@ -11,5 +11,8 @@
   },
   "scripts": {
     "test": "node tests/usage.test.js"
+  },
+  "dependencies": {
+    "openvino-node": "^2025.0.0"
   }
 }
