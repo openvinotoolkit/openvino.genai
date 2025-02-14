@@ -47,6 +47,8 @@
   --genai-color-section-bg: #f8f8f8;
 
   --ifm-link-color: var(--genai-color-classic-blue);
+
+  --search-local-input-active-border-color: var(--genai-color-white);
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -87,7 +89,6 @@ a {
 
 .navbar__items {
   margin-left: 50px;
-  color: var(--genai-color-text-white);
 }
 
 .navbar__items--right > a:first-child {
