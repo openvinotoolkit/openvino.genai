@@ -67,14 +67,13 @@ def test_stop_strings(tmp_path, generation_config, model_id):
     'What is OpenVINO?',
     'table is made of', 
     'The Sun is yellow because', 
-    '你好！ 你好嗎？',
+    '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
 @pytest.mark.parametrize("use_cb", [True, False])
 def test_greedy(tmp_path, generation_config, prompt, use_cb):
     model_id : str = "katuni4ka/tiny-random-phi3"
-    if sys.platform.startswith('win') and prompt.startswith('你'):
-        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+    prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     run_llm_pipeline_with_ref(model_id=model_id, 
                             prompts=[prompt], 
