@@ -47,10 +47,18 @@ protected:
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
     // True if chat template should be applied for non-chat scenario
     bool m_apply_chat_template = true;
+    // Size of inputs_embeds tesnor
+    size_t m_inputs_embeds_size = 0;
 
     std::set<int64_t> m_stop_token_ids;
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
+
+    ov::Tensor get_input_embeddings(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+        ov::Tensor inputs_embeds = get_inputs_embeds(prompt, images, metrics);
+        m_inputs_embeds_size = inputs_embeds.get_shape().at(1);
+        return inputs_embeds;
+    }
 
     virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
         ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
@@ -82,7 +90,7 @@ public:
         m_stop_token_ids = stop_token_ids;
     }
 
-    virtual void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len, size_t inputs_embeds_size) {
+    virtual void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len) {
         if (is_beam_search) {
             m_kv_history_manager.trusted_history_length = m_tokenized_history.size();
             m_kv_history_manager.num_tokens_to_remove_from_kv_cache = last_answer_len;
@@ -94,7 +102,7 @@ public:
 
         if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
             // let's remove last answer and prompt
-            m_kv_history_manager.num_tokens_to_remove_from_kv_cache = inputs_embeds_size + last_answer_len;
+            m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_inputs_embeds_size + last_answer_len;
             m_tokenized_history = std::move(m_prev_tokenized_history);
             m_kv_history_manager.reset_kv_cache = m_tokenized_history.empty();
         } else {
@@ -128,6 +136,8 @@ public:
         if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
             // If chat generation process was cancelled by user, let's rollback to previous state of history
             m_history.pop_back();
+            constexpr bool add_generation_prompt = true;
+            m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         } else {
             // Tail of chat template is missing in KV cache.
             // Find the tail to concatenate it with the next input prompt.
@@ -1509,6 +1519,7 @@ public:
     ov::InferRequest m_hd_feature_transformer;
     ov::InferRequest m_vision_projection;
     std::vector<size_t> m_tokens_per_images;
+    std::vector<size_t> m_image_per_generation;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1523,12 +1534,15 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::vector<ov::Tensor> images_features_proj;
         std::stringstream images_prompt;
+        size_t image_per_generation = 0;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             images_features_proj.push_back(phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
             m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
             images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";
+            image_per_generation++;
         }
+        m_image_per_generation.push_back(image_per_generation);
         images_prompt << prompt;
         std::vector<ov::Tensor> new_chat_tokens;
         std::vector<ov::Tensor> prev_chat_tokens;
@@ -1549,7 +1563,7 @@ public:
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
         ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
-        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_images);
+        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, {m_tokens_per_images.begin(), m_tokens_per_images.end() - m_image_per_generation.back()});
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
         // if <|image_i|> tag is in the begining, it doesn't split tokes into separate sequences and tokens.size() == images_features_proj.size().
@@ -1612,10 +1626,11 @@ public:
         m_tokens_per_images.clear();
     }
 
-    virtual void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len, size_t full_len) {
-        IInputsEmbedder::update_tokenized_history(generation_finish_info, is_beam_search, last_answer_len, full_len);
-        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL)
-            m_tokens_per_images.clear();
+    virtual void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len) {
+        IInputsEmbedder::update_tokenized_history(generation_finish_info, is_beam_search, last_answer_len);
+        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
+            m_tokens_per_images.erase(m_tokens_per_images.end() - m_image_per_generation.back(), m_tokens_per_images.end());
+        }
     }
 };
 
@@ -1709,7 +1724,6 @@ public:
         if (images.empty()) {
             return text_embeds;
         }
-
         return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, image_embeds, images_grid_thw, image_pad_token_id);
     }
 
@@ -2065,6 +2079,10 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
+ov::Tensor InputsEmbedder::get_input_embeddings(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    return m_impl->get_input_embeddings(prompt, images, metrics);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
@@ -2081,8 +2099,8 @@ std::vector<int64_t> InputsEmbedder::get_tokenized_history() const {
     return m_impl->get_tokenized_history();
 }
 
-void InputsEmbedder::update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len, size_t inputs_embeds_size) {
-    return m_impl->update_tokenized_history(generation_finish_info, is_beam_search, last_answer_len, inputs_embeds_size);
+void InputsEmbedder::update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len) {
+    return m_impl->update_tokenized_history(generation_finish_info, is_beam_search, last_answer_len);
 }
 
 size_t InputsEmbedder::get_num_tokens_to_remove_from_hist() const {

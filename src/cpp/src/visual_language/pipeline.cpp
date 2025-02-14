@@ -170,15 +170,12 @@ public:
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
 
-        // keep it in case of generation will be canceled
-        auto prev_tokenized_history = m_inputs_embedder->get_tokenized_history();
-
         m_inputs_embedder->set_stop_token_ids(generation_config.stop_token_ids);
 
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+        ov::Tensor inputs_embeds = m_inputs_embedder->get_input_embeddings(prompt, rgbs, perf_metrics);
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
         auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
@@ -186,8 +183,6 @@ public:
             m_language.reset_state();
         else
             ov::genai::utils::trim_kv_cache(m_language, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
-
-        size_t attention_mask_size = m_language.get_tensor("attention_mask").get_shape().at(1);
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
@@ -234,7 +229,7 @@ public:
         }
         auto decode_end_time = std::chrono::steady_clock::now();
 
-        m_inputs_embedder->update_tokenized_history(finish_info, generation_config.is_beam_search(), m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size), inputs_embeds_size);
+        m_inputs_embedder->update_tokenized_history(finish_info, generation_config.is_beam_search(), m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)

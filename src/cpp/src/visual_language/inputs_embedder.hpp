@@ -35,6 +35,9 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
+    // computes input embedding for prompt and multiple images and saves input_embeddings size
+    ov::Tensor get_input_embeddings(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
+
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
@@ -50,7 +53,7 @@ public:
     std::vector<int64_t> get_tokenized_history() const;
 
     // add new results to tokenized history
-    void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len, size_t inputs_embeds_size);
+    void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len);
 
     // returns amount of elements, which need to remove from the end of the KV cache
     size_t get_num_tokens_to_remove_from_hist() const;

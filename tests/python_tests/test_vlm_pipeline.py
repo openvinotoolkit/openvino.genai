@@ -189,7 +189,8 @@ def test_perf_metrics(cache):
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, cache):
+@pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, iteration_images, cache):
     callback_questions = [
         '1+1=',
         'Why is the Sun yellow?',
@@ -211,22 +212,34 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, cache):
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
     images = []
-    for link in image_links_for_testing[1]:
+    for link in iteration_images:
         images.append(get_image_by_link(link))
 
+    results_with_cancel = ""
     ov_pipe.start_chat()
-    ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config)
+    results_with_cancel += ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config).texts[0]
 
     generation_config.ignore_eos = True
-    ov_pipe.generate(callback_questions[1], generation_config=generation_config, streamer=streamer)
-    ov_pipe.generate(callback_questions[2], generation_config=generation_config)
+    ov_pipe.generate(callback_questions[1], images=images, generation_config=generation_config, streamer=streamer)
+    results_with_cancel += ov_pipe.generate(callback_questions[2], images=images, generation_config=generation_config).texts[0]
     ov_pipe.finish_chat()
+    
+    results = ""
+    ov_pipe.start_chat()
+    results += ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config).texts[0]
+
+    generation_config.ignore_eos = True
+    results += ov_pipe.generate(callback_questions[2], images=images, generation_config=generation_config).texts[0]
+    ov_pipe.finish_chat()
+
+    assert(results_with_cancel == results)
 
 
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", model_ids)
-def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, cache):
+@pytest.mark.parametrize("iteration_images", [image_links_for_testing[1], []])
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, iteration_images, cache):
     callback_questions = [
         'Why is the Sun yellow?',
         '1+1=',
@@ -247,10 +260,43 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, cache):
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
     images = []
-    for link in image_links_for_testing[1]:
+    for link in iteration_images:
         images.append(get_image_by_link(link))
 
     ov_pipe.start_chat()
-    ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config, streamer=streamer)
-    ov_pipe.generate(callback_questions[1], generation_config=generation_config)
+    res_first = ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config, streamer=streamer).texts[0]
+    current_iter = 0
+    res_second = ov_pipe.generate(callback_questions[0], images=images, generation_config=generation_config, streamer=streamer).texts[0]
     ov_pipe.finish_chat()
+    
+    assert(res_first == res_second)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+@pytest.mark.parametrize("iteration_images", [[[], image_links_for_testing[1]], [image_links_for_testing[1], image_links_for_testing[1]], [[], image_links_for_testing[1], []]])
+def test_vlm_pipeline_chat_image_combination(model_id, iteration_images, cache):
+    def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
+        return False
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    for images_links in iteration_images:
+        ov_pipe.start_chat()
+
+        images = []
+        for link in images_links:
+            images.append(get_image_by_link(link))
+
+        result_from_streamer = []
+        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        assert res.texts[0] == ''.join(result_from_streamer)
+
+        ov_pipe.finish_chat()
