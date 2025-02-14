@@ -17,6 +17,13 @@ Build OpenVINO™ GenAI JavaScript Bindings from sources following the [instruct
 
 ### Using the package from your project
 
+Since the OpenVINO GenAI NodeJS package depends on the OpenVINO NodeJS package, these packages must be of the same version.
+If you intend to use one of the released versions, please check and install the correct version of the `openvino-node` package in your project.
+If you want to use an unstable version of the OpenVINO GenAI NodeJS package, you will also need to build and use OpenVINO™ JavaScript Bindings from source
+following the [instructions](https://github.com/openvinotoolkit/openvino/blob/master/src/bindings/js/docs/README.md#build) to use it correctly.
+
+Then you can use OpenVINO™ GenAI JavaScript Bindings in one of the following ways:
+
 #### Option 1 - using npm:
 
 To use this package locally use `npm link` in `src/js/` directory
@@ -30,9 +37,7 @@ Add the `genai-node` package manually by specifying the path to the `src/js/` di
 "genai-node": "file:*path-to-current-directory*"
 ```
 
-### Installation verification
-
-Run a simple NodeJS script:
-```nodejs
-const { Pipeline } = require('genai-node');
+### Verify the installation:
+```sh
+node -e "const { Pipeline } = require('genai-node'); console.log(Pipeline);"
 ```

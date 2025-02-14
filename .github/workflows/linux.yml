@@ -460,6 +460,11 @@ jobs:
           path: ${{ env.BUILD_DIR }}/genai_nodejs_bindings.tar.gz
           if-no-files-found: 'error'
 
+      # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
+      # First we need to put the binaries for GenAI in the bin directory. Then we emulate
+      # the installation of the openvino-node package from NPM. The latest release of the
+      # openvino-node package is installed, and we need to update the binaries in the
+      # node_modules/openvino-node/bin directory to work correctly with GenAI
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
