@@ -7,6 +7,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -106,7 +107,13 @@ FluxTransformer2DModel& FluxTransformer2DModel::reshape(int batch_size,
 
 FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+    }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Flux Transformer 2D model");
     m_request = compiled_model.create_infer_request();
     // release the original model
@@ -118,6 +125,13 @@ FluxTransformer2DModel& FluxTransformer2DModel::compile(const std::string& devic
 void FluxTransformer2DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
+}
+
+void FluxTransformer2DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    if(adapters) {
+        m_adapter_controller.apply(m_request, *adapters);
+    }
 }
 
 ov::Tensor FluxTransformer2DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {

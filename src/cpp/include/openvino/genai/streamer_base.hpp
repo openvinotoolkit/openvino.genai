@@ -33,7 +33,9 @@ public:
     /// @brief write is called every time new token is decoded
     /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
     virtual StreamingStatus write(int64_t token) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
         return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+        OPENVINO_SUPPRESS_DEPRECATED_END
     };
 
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one

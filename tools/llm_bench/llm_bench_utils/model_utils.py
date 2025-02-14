@@ -210,6 +210,7 @@ def get_use_case(model_name_or_path):
         raise RuntimeError('==Failure FOUND==: no use_case found')
     else:
         log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
+    return case, model_name
 
 
 def get_model_name(model_name_or_path):

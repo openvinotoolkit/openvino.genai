@@ -276,7 +276,7 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <td>Supported</td>
       <td>Supported</td>
       <td>Supported</td>
-      <td>Not supported</td>
+      <td>Partially Supported</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"><code>black-forest-labs/FLUX.1-schnell</code></a></li>
