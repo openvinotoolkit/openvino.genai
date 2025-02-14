@@ -10,10 +10,19 @@ def print_one_generate(metrics, prefix, idx):
     prefix_idx = "[" + prefix + "-" + str(idx) + "]"
     print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration()} ms, total infer time: {metrics.get_inference_total_duration()} ms\n")
     print(f"{prefix_idx} encoder infer time: {metrics.get_encoder_infer_duration()} ms\n")
+    first_iter_time = 0.0
+    other_iter_avg_time = 0.0
+    first_infer_time = 0.0
+    other_infer_avg_time = 0.0
+    metrics.get_iteration_duration(first_iter_time, other_iter_avg_time)
     if not metrics.raw_metrics.transformer_inference_durations:
-        print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.transformer_inference_durations)}, total iteration time: {metrics.get_iteration_duration()} ms, total infer time: {metrics.get_transformer_infer_duration()} ms\n")
+        metrics.get_transformer_infer_duration(first_infer_time, other_infer_avg_time)
+        print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time} ms, other iteration avg time: {other_iter_avg_time} ms\n")
+        print(f"{prefix_idx} transformer inference num: {len(metrics.raw_metrics.transformer_inference_durations)}, first inference time: {first_infer_time} ms, other inference avg time: {other_infer_avg_time} ms\n")
     else:
-        print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.unet_inference_durations)}, total iteration time: {metrics.get_iteration_duration()} ms, total infer time: {metrics.get_unet_infer_duration()} ms\n")
+        metrics.get_unet_infer_duration(first_infer_time, other_infer_avg_time)
+        print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time} ms, other iteration avg time: {other_iter_avg_time} ms\n")
+        print(f"{prefix_idx} unet inference num: {len(metrics.raw_metrics.unet_inference_durations)}, first inference time: {first_infer_time} ms, other inference avg time: {other_infer_avg_time} ms\n")
     print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration} ms\n")
     
 def print_statistic(warmup_metrics, iter_metrics):
@@ -58,7 +67,7 @@ def print_statistic(warmup_metrics, iter_metrics):
     print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean} ms, infer avg time: {inference_mean} ms, total encoder infer avg time: {encoder_mean} ms, decoder infer avg time: {decoder_mean} ms\n")
 
 def text2image(args):
-    prompt = [args.prompt]
+    prompt = args.prompt
     models_path = args.model
     device = args.device
     num_warmup = args.num_warmup
@@ -98,7 +107,7 @@ def read_image(path: str) -> openvino.Tensor:
     return openvino.Tensor(image_data)
 
 def image2image(args):
-    prompt = [args.prompt]
+    prompt = args.prompt
     models_path = args.model
     device = args.device
     num_warmup = args.num_warmup
@@ -131,7 +140,7 @@ def image2image(args):
     print_statistic(warmup_metrics, iter_metrics)
 
 def inpainting(args):
-    prompt = [args.prompt]
+    prompt = args.prompt
     models_path = args.model
     device = args.device
     num_warmup = args.num_warmup

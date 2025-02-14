@@ -17,15 +17,26 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
               << " ms, total infer time:" << metrics.get_all_infer_duration()
               << " ms" << std::endl;
     std::cout << prefix_idx << " encoder infer time: " << metrics.get_encoder_infer_duration() << " ms"<< std::endl;
+    float first_iter_time, other_iter_avg_time;
+    float first_infer_time, other_infer_avg_time;
+    metrics.get_iteration_duration(first_iter_time, other_iter_avg_time);
     if (!metrics.raw_metrics.transformer_inference_durations.empty()) {
+        metrics.get_transformer_infer_duration(first_infer_time, other_infer_avg_time);
+        std::cout << prefix_idx << " transformer iteration num:" << metrics.raw_metrics.iteration_durations.size()
+                  << ", first iteration time:" << first_iter_time
+                  << " ms, other iteration avg time:" << other_iter_avg_time << " ms" << std::endl;
         std::cout << prefix_idx
-                  << " transformer iteration num:" << metrics.raw_metrics.transformer_inference_durations.size()
-                  << ", total iteration time:" << metrics.get_iteration_duration()
-                  << " ms, total infer time:" << metrics.get_transformer_infer_duration() << " ms" << std::endl;
+                  << "transformer inference num:" << metrics.raw_metrics.transformer_inference_durations.size()
+                  << ", first inference time:" << first_infer_time
+                  << " ms, other inference avg time:" << other_infer_avg_time << " ms" << std::endl;
     } else {
-        std::cout << prefix_idx << " unet iteration num:" << metrics.raw_metrics.unet_inference_durations.size()
-                  << ", total iteration time:" << metrics.get_iteration_duration()
-                  << " ms, total infer time:" << metrics.get_unet_infer_duration() << " ms" << std::endl;
+        metrics.get_unet_infer_duration(first_infer_time, other_infer_avg_time);
+        std::cout << prefix_idx << " unet iteration num:" << metrics.raw_metrics.iteration_durations.size()
+                  << ", first iteration time:" << first_iter_time
+                  << " ms, other iteration avg time:" << other_iter_avg_time << " ms" << std::endl;
+        std::cout << prefix_idx << "unet inference num:" << metrics.raw_metrics.unet_inference_durations.size()
+                  << ", first inference time:" << first_infer_time
+                  << " ms, other inference avg time:" << other_infer_avg_time << " ms" << std::endl;
     }
     std::cout << prefix_idx << " vae decoder infer time:" << metrics.vae_decoder_inference_duration << " ms"
               << std::endl;

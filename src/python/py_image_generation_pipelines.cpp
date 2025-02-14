@@ -89,22 +89,37 @@ auto image_generation_perf_metrics_docstring = R"(
     Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
     If mean and std were already calculated, getters return cached values.
 
+    :param get_encoder_infer_duration: Returns the inference duration of all encoders in milliseconds.
+    :type get_encoder_infer_duration: float
+
+    :param get_decoder_infer_duration: Returns the inference duration of vae decoder in milliseconds.
+    :type get_decoder_infer_duration: float
+
     :param get_load_time: Returns the load time in milliseconds.
     :type get_load_time: float
 
     :param get_generate_duration: Returns the generate duration in milliseconds.
     :type get_generate_duration: float
 
-    :param get_inference_total_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
-    :type get_inference_total_duration: float
+    :param get_all_infer_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
+    :type get_all_infer_duration: float
 
-    :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
-    :type get_iteration_duration: MeanStdPair
+    :param get_iteration_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
+    :type get_iteration_meanstd: float
 
-    :param unet_inference_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
-    :type unet_inference_duration: MeanStdPair
+    :param get_iteration_meanstd: Returns the mean and standard deviation of one generation iteration in milliseconds.
+    :type get_iteration_meanstd: MeanStdPair
 
-    :param get_transformer_inference_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
+    :param get_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+    :type get_iteration_meanstd: float
+
+    :param get_unet_infer_meanstd: Returns the mean and standard deviation of one unet inference in milliseconds.
+    :type get_unet_inference_duration: MeanStdPair
+
+    :param get_transformer_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+    :type get_transformer_infer_duration: float
+
+    :param get_transformer_infer_meanstd: Returns the mean and standard deviation of one transformer inference in milliseconds.
     :type get_transformer_inference_duration: MeanStdPair
 
     :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
@@ -315,11 +330,11 @@ void init_image_generation_pipelines(py::module_& m) {
         .def("get_decoder_infer_duration", &ImageGenerationPerfMetrics::get_decoder_infer_duration)
         .def("get_load_time", &ImageGenerationPerfMetrics::get_load_time)
         .def("get_generate_duration", &ImageGenerationPerfMetrics::get_generate_duration)
-        .def("get_iteration_duration", &ImageGenerationPerfMetrics::get_iteration_duration)
+        .def("get_iteration_duration", &ImageGenerationPerfMetrics::get_iteration_duration, py::arg("first_iter"), py::arg("other_iter_avg"))
         .def("get_iteration_meanstd", &ImageGenerationPerfMetrics::get_iteration_meanstd)
-        .def("get_transformer_infer_duration", &ImageGenerationPerfMetrics::get_transformer_infer_duration)
+        .def("get_transformer_infer_duration", &ImageGenerationPerfMetrics::get_transformer_infer_duration, py::arg("first_infer"), py::arg("other_infer_avg"))
         .def("get_transformer_infer_meanstd", &ImageGenerationPerfMetrics::get_transformer_infer_meanstd)
-        .def("get_unet_infer_duration", &ImageGenerationPerfMetrics::get_unet_infer_duration)
+        .def("get_unet_infer_duration", &ImageGenerationPerfMetrics::get_unet_infer_duration, py::arg("first_infer"), py::arg("other_infer_avg"))
         .def("get_unet_infer_meanstd", &ImageGenerationPerfMetrics::get_unet_infer_meanstd)
         .def_readonly("raw_metrics", &ImageGenerationPerfMetrics::raw_metrics);
 
