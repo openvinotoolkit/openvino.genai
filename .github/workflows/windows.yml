@@ -567,7 +567,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: npm test
         env:
-          MODEL_PATH: ./src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
+          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
 
   Overall_Status:
     name: ci/gha_overall_status_windows
