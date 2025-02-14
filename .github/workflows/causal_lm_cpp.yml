@@ -674,7 +674,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-chat_sample-ubuntu:
-    runs-on: ubuntu-24.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
