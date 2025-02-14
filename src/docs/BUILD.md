@@ -222,8 +222,7 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```sh
     python -m pip install .
     ```
-5. To verify the installation, run a simple Python script:
-    ```python
-    import openvino_genai
-    print(openvino_genai.__version__)
+5. Verify the installation:
+    ```sh
+    python -c "import openvino_genai; print(openvino_genai.__version__)"
     ```

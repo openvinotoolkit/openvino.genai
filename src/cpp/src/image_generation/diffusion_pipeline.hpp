@@ -8,6 +8,8 @@
 
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "lora_helper.hpp"
+#include "lora_names_mapping.hpp"
 
 #include "json_utils.hpp"
 namespace {
@@ -130,6 +132,10 @@ protected:
                 latent_data[j * channel_size + i] = (1.0f - mask_value) * noised_image_latent_data[j * channel_size + i] + mask_value * latent_data[j * channel_size + i];
             }
         }
+    }
+
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, diffusers_adapter_normalization);
     }
 
     PipelineType m_pipeline_type;
