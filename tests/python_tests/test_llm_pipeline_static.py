@@ -190,16 +190,22 @@ def test_terminate_by_sampler():
 
     current_iter = 0
     num_iters = 10
-    def callback(subword):
-        nonlocal current_iter
-        current_iter += 1
-        return current_iter == num_iters
+
+    class TestStreamer(ov_genai.StreamerBase):
+        def __init__(self):
+            ov_genai.StreamerBase.__init__(self)
+        def put(self, token_id):
+            nonlocal current_iter
+            current_iter += 1
+            return current_iter == num_iters
+        def end(self):
+            pass
 
     tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
 
-    pipe = LLMPipeline(model_path, "NPU", **common_config)
-    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=callback)
+    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=TestStreamer())
 
     assert len(encoded_results.tokens[0]) == num_iters
 
