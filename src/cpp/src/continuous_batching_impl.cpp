@@ -752,7 +752,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         }
         currently_processed_tokens += output_seq_len * num_running_sequences;
         // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
-        if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
+        if(sequence_group->get_sampling_parameters().get_max_new_tokens(sequence_group->get_prompt_len()) == 0) {
             sequence_group->notify_handle_echo_only();
         }
     }
