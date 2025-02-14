@@ -204,7 +204,7 @@ def test_terminate_by_sampler():
     tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
 
-    pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
+    pipe = LLMPipeline(model_path, "NPU", **common_config)
     encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=TestStreamer())
 
     assert len(encoded_results.tokens[0]) == num_iters
