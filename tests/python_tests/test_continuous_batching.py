@@ -162,8 +162,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     cb_pipe = create_ov_pipeline(models_path,
                                  pipeline_type=PipelineType.CONTINIOUS_BATCHING,
                                  device="CPU",
-                                 scheduler_config=scheduler_config,
-                                 ov_config=get_default_llm_properties())
+                                 scheduler_config=scheduler_config)
 
     # First run should return incomplete response
     output = cb_pipe.generate(["What is OpenVINO?"], [generation_config])

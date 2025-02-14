@@ -6,6 +6,8 @@ from pathlib import Path
 
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, LLMPipeline
 
+from utils.constants import get_default_llm_properties
+
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     if scheduler_params is None:
@@ -39,7 +41,7 @@ class PipelineType(Enum):
 def create_ov_pipeline(models_path: Path,
                        pipeline_type: PipelineType = PipelineType.STATEFUL,
                        device: str = "CPU",
-                       ov_config: dict = {},
+                       ov_config: dict = get_default_llm_properties(),
                        scheduler_config: SchedulerConfig = SchedulerConfig(),
                        draft_model: draft_model = None):
     if pipeline_type == PipelineType.STATEFUL:

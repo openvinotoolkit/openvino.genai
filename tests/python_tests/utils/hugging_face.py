@@ -3,7 +3,7 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
@@ -14,6 +14,7 @@ from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
 from utils.constants import get_default_llm_properties
+from data.models import get_model_id_example, get_model_tmp_path_example
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -187,11 +188,12 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str,
-                               tmp_path: Path,
+def download_and_convert_model(model_id: str = get_model_id_example(),
+                               tmp_path: Path = get_model_tmp_path_example(),
                                **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
     models_path : Path = tmp_path / dir_name
+
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_hugging_face_models(models_path)

@@ -109,9 +109,7 @@ prompts = [
 def test_encode(model_descr, prompt):
     model_id, tmp_path = model_descr
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     ov_tokenizer = ov_pipe.get_tokenizer()
 
@@ -144,9 +142,7 @@ encoded_prompts = [
 def test_decode(model_descr, encoded_prompt):
     model_id, tmp_path = model_descr
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     ov_tokenizer = ov_pipe.get_tokenizer()
     decoded_ov = ov_tokenizer.decode(encoded_prompt)
@@ -177,11 +173,8 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 
     # Will load openvino_model for tiny-random-phi as a placeholder
     # but indeed only Tokenizer and apply_chat_template will be tested.
-    model_id, tmp_path = get_models_list()[0]
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+    _, hf_tokenizer, models_path = download_and_convert_model()
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(conversation,
@@ -208,11 +201,8 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_set_chat_template():
-    model_id, tmp_path = get_models_list()[0]
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+    _, _, models_path = download_and_convert_model()
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     prompt = "how are you?"
     dummy_conversation = [
@@ -305,11 +295,8 @@ prompts = [
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
 def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
-    model_id, tmp_path = get_models_list()[0]
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+    _, hf_tokenizer, models_path = download_and_convert_model()
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     genai_tokenzier = ov_pipe.get_tokenizer()
 
