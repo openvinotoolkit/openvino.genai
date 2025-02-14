@@ -82,7 +82,7 @@ jobs:
             ./build/samples/cpp/text_generation/beam_search_causal_lm,
             python ./samples/python/text_generation/beam_search_causal_lm.py,
           ]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
@@ -674,7 +674,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-chat_sample-ubuntu:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
