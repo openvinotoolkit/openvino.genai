@@ -259,7 +259,13 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        size_t prompt_len = input_ids.get_shape()[1];
+        
+        size_t prompt_len;
+        if (input_ids.get_shape().size() > 1) {
+            prompt_len = input_ids.get_shape()[1];
+        } else {
+            prompt_len = input_ids.get_size();
+        }
         OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
 
         if (input_ids.get_element_type() == ov::element::i64) {
