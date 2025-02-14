@@ -60,7 +60,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
@@ -161,7 +161,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
@@ -270,7 +270,8 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb
+
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -328,7 +329,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-8-cores-16gb
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -378,7 +379,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
