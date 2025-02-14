@@ -2,6 +2,6 @@
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino_genai~=2025.1.0.0.dev
 # librosa==0.10.2.post1  # For Whisper
-scipy==1.15.1 # For Whisper
+scipy # For Whisper
 numpy<2.0.0; sys_platform == 'darwin'
 pillow==11.1.0  # Image processing for VLMs
