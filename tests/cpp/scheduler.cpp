@@ -9,6 +9,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
+#include "helper.hpp"
 
 using namespace ov::genai;
 
@@ -18,39 +19,14 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     });
     requests.erase(new_end, requests.end());
 }
-std::shared_ptr<ov::Model> get_model(ov::Core core, size_t num_layers) {
-    ov::NodeVector keys;
-    ov::NodeVector values;
-    ov::ParameterVector params;
-    ov::element::Type inference_precision = core.get_property("CPU", ov::hint::inference_precision);
-    ov::element::Type kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-
-    auto shape = ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()});
-    for (size_t i = 0; i < num_layers; i++) {
-        auto key = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
-        auto value = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, shape);
-        key->get_output_tensor(0).set_names({"key_cache." + std::to_string(i)});
-        value->get_output_tensor(0).set_names({"value_cache." + std::to_string(i)});
-        keys.push_back(key);
-        values.push_back(value);
-        params.push_back(key);
-        params.push_back(value);
-    }
-    const auto& concat1 = std::make_shared<ov::op::v0::Concat>(keys, 1);
-    const auto& concat2 = std::make_shared<ov::op::v0::Concat>(values, 1);
-    auto model = std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-    return std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-}
 
 std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_config) {
     ov::Core core = ov::Core();
     size_t num_decoder_layers = 12;
-    ov::InferRequest request = core.compile_model(get_model(core, num_decoder_layers)).create_infer_request();
-    size_t head_size = 64, head_size_u8 = head_size + 8;
-    std::vector<KVHeadConfig> kv_head_configs(num_decoder_layers, KVHeadConfig { 12, 12, head_size_u8, head_size_u8 });
-    ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
-    device_config.set_kv_head_configs(kv_head_configs);
-    return std::make_shared<CacheManager>(device_config, request, core);
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
+    const size_t head_size = 64;
+    std::vector<KVHeadConfig> kv_head_configs(num_decoder_layers, KVHeadConfig { 12, 12, head_size, head_size });
+    return std::make_shared<CacheManager>(request, kv_head_configs);
 }
 
 TEST(TestScheduler, general_test) {
@@ -137,6 +113,12 @@ TEST(TestScheduler, general_test) {
         // requests1[1] should be fully scheduled plus 1 slot for requests[0] for generate phase
         EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests[1]->get_context_len() + 1);
         EXPECT_EQ(out4.is_prompt, false);
+
+        for (auto& req : requests) {
+            for (auto& seq : req->get_sequences()) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
     }
 
 }
@@ -217,6 +199,12 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
 
     EXPECT_FALSE(out2.is_prompt);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, AppendSlotsSchedulerTest,
@@ -310,6 +298,12 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     EXPECT_EQ(block_table2[2]->get_index(), 0);
 
     EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousSchedulerConfigs, PartialPreemptionSchedulerTest ,
@@ -417,6 +411,12 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         EXPECT_EQ(scheduler.get_block_tables(*seqs[2])[0].size(), 1);
         EXPECT_EQ(scheduler.get_block_tables(*seqs[3])[0].size(), 1);
         EXPECT_EQ(scheduler.get_block_tables(*seqs[4])[0].size(), 1);
+
+        for (auto& req : new_requests) {
+            for (auto& seq : req->get_sequences()) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
     }
 }
 
@@ -516,6 +516,12 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         EXPECT_EQ(block_table2[2]->get_index(), 0);
 
         EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+        for (auto& req : requests) {
+            for (auto& seq : req->get_sequences()) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
     }
 }
 
@@ -579,6 +585,13 @@ TEST(TestScheduler, prefix_caching_test) {
 
             histrory_tokens.insert(histrory_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             histrory_tokens.insert(histrory_tokens.end(), generated_ids.begin(), generated_ids.end());
+
+            for (auto& seq : sequence_group->get_sequences()) {
+                if (seq->get_id() == idx0) {
+                    continue;
+                }
+                scheduler.free_sequence(seq->get_id());
+            }
         }
     }
 
@@ -779,6 +792,15 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     ASSERT_EQ(block_table2[0][2]->get_index(), 0);
 
     EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (seq->get_id() == idx0) {
+                continue;
+            }
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
@@ -864,6 +886,15 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     ASSERT_EQ(block_table2[0][2]->get_index(), 0);
 
     EXPECT_FALSE(scheduler.has_block_table(idx0));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (seq->get_id() == idx0) {
+                continue;
+            }
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }
 
 
@@ -971,4 +1002,12 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     const std::vector<size_t> ref_block_table2_after_recompute{4, 5, 0, 1, 2};  // should restore the old state before first eviction in terms of block count
     EXPECT_EQ(block_table2, ref_block_table2_after_recompute);
 
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (seq->get_id() == idx1) {
+                continue;
+            }
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
 }

@@ -105,6 +105,7 @@ USE_CASES = {
         "instruct-gpt",
         "granite",
         "granitemoe",
+        "gptj"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

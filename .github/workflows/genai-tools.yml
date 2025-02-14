@@ -141,9 +141,11 @@ jobs:
         run: |
           optimum-cli export openvino --model katuni4ka/tiny-random-llava ./ov_models/tiny-random-llava --task image-text-to-text --trust-remote-code
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" -ic 20 --optimum
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava  -pf ./tools/llm_bench/prompts/llava-1.5-7b.jsonl -ic 4 --optimum
       - name: Test katuni4ka/tiny-random-llava via GenAI
         run: |
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava --media https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --prompt "What is unusual on this image?" -ic 20
+          python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-llava  -pf ./tools/llm_bench/prompts/llava-1.5-7b.jsonl -ic 4
           rm -rf ./ov_models
 
   wwb:
@@ -187,7 +189,7 @@ jobs:
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install -r ${{ env.WWB_PATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          python -m pip install git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git@main
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |

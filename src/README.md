@@ -8,7 +8,7 @@ It hides the complexity of the generation process and minimizes the amount of co
 > **NOTE**: Please make sure that you are following the versions compatibility rules, refer to the [OpenVINO™ GenAI Dependencies](#openvino-genai-dependencies) for more information.
 
 The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
-To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
+To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html).
 
 To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](./docs/BUILD.md).
 
@@ -72,6 +72,8 @@ output:
 ```
 'it is made up of carbon atoms. The carbon atoms are arranged in a linear pattern, which gives the yellow color. The arrangement of carbon atoms in'
 ```
+
+>**Note**: The chat_template from tokenizer_config.json or from tokenizer/detokenizer model will be automatically applied to the prompt at the generation stage. If you want to disable it, you can do it by calling pipe.get_tokenizer().set_chat_template("").
 
 A simple chat in Python:
 ```python
@@ -170,8 +172,7 @@ int main(int argc, char* argv[]) {
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
-        // false means continue generation.
-        return false;
+        return ov::genai::StreamingStatus::RUNNING;
     };
     std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
 }
@@ -231,7 +232,7 @@ custom_streamer = CustomStreamer()
 
 pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
 ```
-For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/text_generation/README.md) sample.
+For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](../samples/python/text_generation/README.md) sample.
 
 
 Continuous batching with LLMPipeline:
@@ -395,6 +396,103 @@ print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
 For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
+
+### Tokenization
+
+OpenVINO™ GenAI provides a way to tokenize and detokenize text using the `ov::genai::Tokenizer` class. The `Tokenizer` is a high level abstraction over the OpenVINO Tokenizers library.
+
+It can be initialized from the path, in-memory IR representation or obtained from the `ov::genai::LLMPipeline` object.
+
+```cpp
+// Initialize from the path
+#include "openvino/genai/llm_pipeline.hpp"
+auto tokenizer = ov::genai::Tokenizer(models_path);
+
+// Get instance of Tokenizer from LLMPipeline.
+auto pipe = ov::genai::LLMPipeline pipe(models_path, "CPU");
+auto tokenzier = pipe.get_tokenizer();
+````
+
+```python
+import openvino_genai as ov_genai
+tokenizer = ov_genai.Tokenizer(models_path)
+
+# Or from LLMPipeline.
+pipe = ov_genai.LLMPipeline(models_path, "CPU")
+tokenizer = pipe.get_tokenizer()
+```
+
+`Tokenizer` has `encode` and `decode` methods which support the following arguments: `add_special_tokens`, `skip_special_tokens`, `pad_to_max_length`, `max_length` arguments.
+
+In order to disable adding special tokens do the followings, in C++:
+```cpp
+auto tokens = tokenizer.encode("The Sun is yellow because", ov::genai::add_special_tokens(false));
+```
+
+In Python:
+```python
+tokens = tokenizer.encode("The Sun is yellow because", add_special_tokens=False)
+```
+The `encode` method returns a `TokenizedInputs` object containing `input_ids` and `attention_mask`, both stored as ov::Tensor. Since ov::Tensor requires fixed-length sequences, padding is applied to match the longest sequence in a batch, ensuring a uniform shape. Also resulting sequence is truncated by `max_length`. If this value is not defined by used, it's is taken from the IR.
+
+Both padding and `max_length` can be controlled by the user. If `pad_to_max_length` is set to true, then instead of padding to the longest sequence it will be padded to the `max_length`.
+
+Below are example how padding can be controlled, in C++:
+```cpp
+#include "openvino/genai/llm_pipeline.hpp"
+auto tokenizer = ov::genai::Tokenizer(models_path);
+std::vector<std::string> prompts = {"The Sun is yellow because", "The"};
+
+// Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
+// Resulting shape is defined by length of the longest tokens sequence.
+// Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
+tokens = tokenizer.encode({"The Sun is yellow because", "The"})
+// or is equivalent to
+tokens = tokenizer.encode({"The Sun is yellow because", "The"}, ov::genai::pad_to_max_length(False))
+// out_shape: [2, 6]
+
+// Resulting tokens tensor will be padded to 1024.
+// Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
+tokens = tokenizer.encode({"The Sun is yellow because", 
+                           "The",
+                           std::string(2000, 'n')}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
+// out_shape: [3, 1024]
+
+// For single string prompts truncation and padding are also applied.
+tokens = tokenizer.encode({"The Sun is yellow because"}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
+// out_shape: [1, 128]
+```
+
+In Python:
+```python
+import openvino_genai as ov_genai
+
+tokenizer = ov_genai.Tokenizer(models_path)
+prompts = ["The Sun is yellow because", "The"]
+
+# Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
+# Resulting shape is defined by length of the longest tokens sequence.
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
+tokens = tokenizer.encode(["The Sun is yellow because", "The"])
+# or is equivalent to
+tokens = tokenizer.encode(["The Sun is yellow because", "The"], pad_to_max_length=False)
+print(tokens.input_ids.shape)
+# out_shape: [2, 6]
+
+# Resulting tokens tensor will be padded to 1024, sequences which exceed this length will be truncated.
+# Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
+tokens = tokenizer.encode(["The Sun is yellow because", 
+                           "The"
+                           "The longest string ever" * 2000], pad_to_max_length=True, max_length=1024)
+print(tokens.input_ids.shape)
+# out_shape: [3, 1024]
+
+# For single string prompts truncation and padding are also applied.
+tokens = tokenizer.encode("The Sun is yellow because", pad_to_max_length=True, max_length=128)
+print(tokens.input_ids.shape)
+# out_shape: [1, 128]
+
+```
 
 ## How It Works
 

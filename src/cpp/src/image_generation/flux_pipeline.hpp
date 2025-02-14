@@ -118,6 +118,13 @@ public:
             m_image_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, gray_scale_source);
             m_image_resizer = std::make_shared<ImageResizer>(device, ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
         }
+
+        if (m_pipeline_type == PipelineType::INPAINTING) {
+            bool do_normalize = false, do_binarize = true;
+            m_mask_processor_rgb = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, false);
+            m_mask_processor_gray = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, true);
+            m_mask_resizer = std::make_shared<ImageResizer>(device, ov::element::f32, "NCHW", ov::op::v11::Interpolate::InterpolateMode::NEAREST);
+        }
     }
 
     FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : FluxPipeline(pipeline_type) {
@@ -182,16 +189,18 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string t5_text_encoder = data["text_encoder_2"][1].get<std::string>();
         if (t5_text_encoder == "T5EncoderModel") {
-            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, properties);
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", t5_text_encoder, "' text encoder type");
         }
@@ -199,9 +208,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
@@ -211,13 +220,14 @@ public:
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "FluxTransformer2DModel") {
-            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, properties);
+            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     FluxPipeline(PipelineType pipeline_type,
@@ -256,10 +266,12 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
-        m_clip_text_encoder->compile(device, properties);
-        m_t5_text_encoder->compile(device, properties);
-        m_vae->compile(device, properties);
-        m_transformer->compile(device, properties);
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+        m_clip_text_encoder->compile(device, *updated_properties);
+        m_t5_text_encoder->compile(device, *updated_properties);
+        m_vae->compile(device, *updated_properties);
+        m_transformer->compile(device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -322,7 +334,7 @@ public:
                                num_channels_latents,
                                height,
                                width};
-        ov::Tensor latent(ov::element::f32, {}), proccesed_image, image_latents, noise;
+        ov::Tensor latent, noise, proccesed_image, image_latents;
 
         if (initial_image) {
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
@@ -330,8 +342,17 @@ public:
 
             image_latents = m_vae->encode(proccesed_image, generation_config.generator);
             noise = generation_config.generator->randn_tensor(latent_shape);
-            m_scheduler->scale_noise(image_latents, m_latent_timestep, noise);
-            latent = pack_latents(image_latents, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+
+            latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
+            image_latents.copy_to(latent);
+
+            m_scheduler->scale_noise(latent, m_latent_timestep, noise);
+            latent = pack_latents(latent, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+
+            if (m_pipeline_type == PipelineType::INPAINTING) {
+                noise = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+                image_latents = pack_latents(image_latents, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+            }
         } else {
             noise = generation_config.generator->randn_tensor(latent_shape);
             latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
@@ -341,7 +362,86 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        OPENVINO_THROW("LORA adapters are not implemented for FLUX pipeline yet");
+        if(adapters) {
+            if(auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            m_clip_text_encoder->set_adapters(adapters);
+            m_transformer->set_adapters(adapters);
+        }
+    }
+
+    std::tuple<ov::Tensor, ov::Tensor> prepare_mask_latents(ov::Tensor mask_image, ov::Tensor processed_image, const ImageGenerationConfig& generation_config) {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
+
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        ov::Shape target_shape = processed_image.get_shape();
+
+        // Prepare mask latent variables
+        ov::Tensor mask_condition = m_image_resizer->execute(mask_image, generation_config.height, generation_config.width);
+        std::shared_ptr<IImageProcessor> mask_processor = mask_condition.get_shape()[3] == 1 ? m_mask_processor_gray : m_mask_processor_rgb;
+        mask_condition = mask_processor->execute(mask_condition);
+
+        size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
+        size_t height = generation_config.height / vae_scale_factor;
+        size_t width = generation_config.width / vae_scale_factor;
+
+        // resize mask to shape of latent space
+        ov::Tensor mask = m_mask_resizer->execute(mask_condition, height, width);
+        mask = numpy_utils::repeat(mask, generation_config.num_images_per_prompt);
+
+        // Create masked image:
+        // masked_image = init_image * (mask_condition < 0.5)
+        ov::Tensor masked_image(ov::element::f32, processed_image.get_shape());
+        const float * mask_condition_data = mask_condition.data<const float>();
+        const float * processed_image_data = processed_image.data<const float>();
+        float * masked_image_data = masked_image.data<float>();
+        for (size_t i = 0, plane_size = mask_condition.get_shape()[2] * mask_condition.get_shape()[3]; i < mask_condition.get_size(); ++i) {
+            masked_image_data[i + 0 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 0 * plane_size] : 0.0f;
+            masked_image_data[i + 1 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 1 * plane_size] : 0.0f;
+            masked_image_data[i + 2 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 2 * plane_size] : 0.0f;
+        }
+
+        ov::Tensor masked_image_latent;
+        // TODO: support is_inpainting_model() == true
+        // masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
+        // // masked_image_latents = (masked_image_latents - self.vae.config.shift_factor) * self.vae.config.scaling_factor
+        // float * masked_image_latent_data = masked_image_latent.data<float>();
+        // for (size_t i = 0; i < masked_image_latent.get_size(); ++i) {
+        //     masked_image_latent_data[i] = (masked_image_latent_data[i] - m_vae->get_config().shift_factor) * m_vae->get_config().scaling_factor;
+        // }
+        // masked_image_latent = pack_latents(masked_image_latent, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+
+        // mask.repeat(1, num_channels_latents, 1, 1)
+        auto repeat_mask = [](const ov::Tensor& mask, size_t num_channels_latents) -> ov::Tensor {
+            const ov::Shape& mask_shape = mask.get_shape();
+            OPENVINO_ASSERT(mask_shape.size() == 4 && mask_shape[1] == 1, "Mask must have shape (batch_size, 1, height, width)");
+
+            size_t batch_size = mask_shape[0], height = mask_shape[2], width = mask_shape[3];
+            size_t spatial_size = height * width;
+
+            ov::Shape target_shape = {batch_size, num_channels_latents, height, width};
+            ov::Tensor repeated_mask(mask.get_element_type(), target_shape);
+
+            const float* src_data = mask.data<float>();
+            float* dst_data = repeated_mask.data<float>();
+
+            for (size_t b = 0; b < batch_size; ++b) {
+                const float* src_batch = src_data + b * spatial_size;  // Pointer to batch start
+                float* dst_batch = dst_data + b * num_channels_latents * spatial_size;
+
+                for (size_t c = 0; c < num_channels_latents; ++c) {
+                    std::memcpy(dst_batch + c * spatial_size, src_batch, spatial_size * sizeof(float));
+                }
+            }
+
+            return repeated_mask;
+        };
+
+        ov::Tensor repeated_mask = repeat_mask(mask, num_channels_latents);
+        ov::Tensor mask_packed = pack_latents(repeated_mask, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+
+        return std::make_tuple(mask_packed, masked_image_latent);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
@@ -368,6 +468,8 @@ public:
 
         check_inputs(m_custom_generation_config, initial_image);
 
+        set_lora_adapters(m_custom_generation_config.adapters);
+
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
         size_t image_seq_len = (m_custom_generation_config.height / vae_scale_factor / 2) *
@@ -380,13 +482,19 @@ public:
         std::vector<float> timesteps;
         if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
             timesteps = m_scheduler->get_float_timesteps();
-            m_latent_timestep = timesteps[0];
         } else {
             timesteps = get_timesteps(m_custom_generation_config.num_inference_steps, m_custom_generation_config.strength);
         }
+        m_latent_timestep = timesteps[0];
 
         ov::Tensor latents, processed_image, image_latent, noise;
         std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
+
+        // prepare mask latents
+        ov::Tensor mask, masked_image_latent;
+        if (m_pipeline_type == PipelineType::INPAINTING) {
+            std::tie(mask, masked_image_latent) = prepare_mask_latents(mask_image, processed_image, m_custom_generation_config);
+        }
 
         // 6. Denoising loop
         ov::Tensor timestep(ov::element::f32, {1});
@@ -400,13 +508,16 @@ public:
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
+            if (m_pipeline_type == PipelineType::INPAINTING) {
+                blend_latents(latents, image_latent, mask, noise, inference_step);
+            }
+
             if (callback && callback(inference_step, timesteps.size(), latents)) {
                 return ov::Tensor(ov::element::u8, {});
             }
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
-    
         return m_vae->decode(latents);
     }
 
@@ -486,6 +597,37 @@ private:
             OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
         }
+    }
+
+    void blend_latents(ov::Tensor latents,
+                       const ov::Tensor image_latent,
+                       const ov::Tensor mask,
+                       const ov::Tensor noise,
+                       size_t inference_step) override {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
+        OPENVINO_ASSERT(image_latent.get_shape() == latents.get_shape(),
+                        "Shapes for current", latents.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
+
+        ov::Tensor init_latents_proper(image_latent.get_element_type(), image_latent.get_shape());
+        image_latent.copy_to(init_latents_proper);
+
+        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        if (inference_step < timesteps.size() - 1) {
+            float noise_timestep = timesteps[inference_step + 1];
+            m_scheduler->scale_noise(init_latents_proper, noise_timestep, noise);
+        }
+
+        float * latents_data = latents.data<float>();
+        const float * mask_data = mask.data<float>();
+        const float * init_latents_proper_data = init_latents_proper.data<float>();
+        for (size_t i = 0; i < latents.get_size(); ++i) {
+            latents_data[i] = (1.0f - mask_data[i]) * init_latents_proper_data[i] + mask_data[i] * latents_data[i];
+        }
+    }
+
+    // Returns non-empty updated adapters iff they are required to be updated
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
 
     std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;

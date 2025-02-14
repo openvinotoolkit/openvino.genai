@@ -92,6 +92,7 @@ private:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
+    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
 };
 
 class StatelessLLMPipeline final : public LLMPipelineImplBase {
@@ -163,6 +164,7 @@ private:
 
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
+    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
 };
 
 }  // namespace static_llm

@@ -5,11 +5,10 @@
 
 namespace ov::genai {
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
-    ov::Core& core,
     const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
     const GenerationConfig& generation_config,
-    const DeviceConfig& device_config,
+    const std::vector<KVHeadConfig>& kv_cache_configs,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& plugin_config,
@@ -17,7 +16,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
-    initialize_pipeline(model, scheduler_config, plugin_config, device_config, core);
+    initialize_pipeline(model, scheduler_config, device, plugin_config, kv_cache_configs);
 }
 
 void
@@ -28,7 +27,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish
         }
     }
     m_sampler->clear_request_info(request->get_request_id());
-    request->set_generation_status(GenerationStatus::DROPPED_BY_HANDLE);
+    request->set_generation_status(GenerationStatus::STOP);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(int64_t request_id) {

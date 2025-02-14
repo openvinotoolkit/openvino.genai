@@ -843,7 +843,7 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
 
 ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
     if (height < factor || width < factor) {
-        OPENVINO_THROW("Height or width must be larger than factor");
+        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
     }
     if (std::max(height, width) / std::min(height, width) > 200) {
         OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");

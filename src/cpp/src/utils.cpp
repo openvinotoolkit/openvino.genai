@@ -3,6 +3,7 @@
 
 #include "utils.hpp"
 
+#include <variant>
 #include <fstream>
 #include <memory>
 
@@ -14,6 +15,8 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
+#include "openvino/genai/text_streamer.hpp"
+
 
 #include "sampler.hpp"
 
@@ -141,9 +144,30 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
         } else if (any_val.is<std::function<bool(std::string)>>()) {
             streamer = any_val.as<std::function<bool(std::string)>>();
+        } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
         }
     }
     return streamer;
+}
+
+std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
+    std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
+        [](std::monostate) -> std::shared_ptr<StreamerBase> {
+            return nullptr;
+        },
+        [](const std::shared_ptr<StreamerBase>& streamer) {
+            return streamer;
+        },
+        [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
+        },
+        [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+            return std::make_unique<TextStreamer>(tokenizer, streamer);
+        }
+    }, streamer);
+
+    return streamer_ptr;
 }
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
@@ -168,21 +192,6 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
     return extracted_config;
 }
-
-/**
- * scheduler_config is a separate config for continuous batching pipeline. 
- * This routine splits scheduler_config from plugin_config.
- */
-std::pair<ov::AnyMap, SchedulerConfig> split_scheduler_config(const ov::AnyMap& properties) {
-    ov::AnyMap plugin_config = properties;
-    auto it = plugin_config.find(ov::genai::scheduler_config.name());
-    SchedulerConfig scheduler_config;
-    if (it != plugin_config.end()) {
-        scheduler_config = it->second.as<SchedulerConfig>();
-        plugin_config.erase(it);
-    }
-    return {plugin_config, scheduler_config};
-};
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
@@ -273,23 +282,6 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
         model->add_parameters({indices});
     }
 }
-
-template <typename T>
-void read_rt_info(std::shared_ptr<ov::Model>& model, const char* name, T& value) {
-    if (!model)
-        return;
-    if (model->get_rt_info().count(name) == 0)
-        return;
-    auto str_value = model->get_rt_info().at(name).as<std::string>();
-    if constexpr (std::is_same<T, int64_t>::value) {
-        value = std::stoll(str_value);
-    } else if constexpr (std::is_same<T, std::string>::value) {
-        value = str_value;
-    }
-}
-
-template void read_rt_info<int64_t>(std::shared_ptr<ov::Model>&,  const char*, int64_t&);
-template void read_rt_info<std::string>(std::shared_ptr<ov::Model>&,  const char*, std::string&);
 
 ov::Core singleton_core() {
     static ov::Core core;

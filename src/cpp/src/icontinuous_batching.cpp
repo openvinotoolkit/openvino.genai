@@ -53,9 +53,21 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     } else {
         input_ids.reserve(prompts.size());
         timer.start();
-        for (const std::string& prompt : prompts) {
+        for (size_t i = 0; i < prompts.size(); i++) {
+            const std::string& prompt = prompts.at(i);
             const auto encode_start = std::chrono::steady_clock::now();
-            input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
+            ov::Tensor encoded_inputs;
+            if (sampling_params.at(i).apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+                constexpr bool add_generation_prompt = true;
+                auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                encoded_inputs = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+            } else {
+                // in case when chat_template was not found in tokenizer_config.json or set
+                std::string input_str(prompt);
+                encoded_inputs = m_tokenizer.encode(input_str, ov::genai::add_special_tokens(true)).input_ids;
+            }
+            input_ids.push_back(encoded_inputs);
             tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
         }
         timer.end();
@@ -77,7 +89,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto decode_start = std::chrono::steady_clock::now();
             generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
             raw_counters.detokenization_durations.emplace_back(std::chrono::steady_clock::now() - decode_start);
-            if (m_is_chat_conversation && 0 == idx) {
+            if (m_is_chat_conversation && 0 == idx && res.m_status != ov::genai::GenerationStatus::CANCEL) {
                 m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
             }
         }
@@ -98,6 +110,40 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         });
     }
 
+    // if streaming was cancelled, prompt/answer of current step shouldn't be presented in history, so let's remove prompt from history
+    if (m_is_chat_conversation && encoded[0].m_status == ov::genai::GenerationStatus::CANCEL)
+        m_history.pop_back();
+
     return decoded;
+}
+
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
+    const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
+    const GenerationHandle& handle
+) {
+    if (!streamer_ptr->has_callback() || !handle->can_read()) {
+        return;
+    }
+
+    const auto streaming_status = streamer_ptr->get_status();
+
+    if (streaming_status == StreamingStatus::CANCEL) {
+        handle->cancel();
+        return;
+    }
+
+    if (streaming_status == StreamingStatus::STOP) {
+        handle->stop();
+        return;
+    }
+
+    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
+    OPENVINO_ASSERT(generation_outputs.size() <= 1);
+    if (generation_outputs.empty()) {
+        return;
+    }
+
+    const auto tokens = generation_outputs.begin()->second.generated_ids;
+    streamer_ptr->write(tokens);
 }
 }

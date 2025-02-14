@@ -14,6 +14,10 @@
 namespace ov {
 namespace genai {
 
+WhisperGenerationConfig::WhisperGenerationConfig() {
+    apply_chat_template = false;
+}
+
 WhisperGenerationConfig::WhisperGenerationConfig(const std::filesystem::path& json_path)
     : GenerationConfig::GenerationConfig(json_path) {
     using ov::genai::utils::read_json_param;
@@ -38,6 +42,8 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::filesystem::path& js
     }
 
     read_json_param(data, "lang_to_id", lang_to_id);
+
+    apply_chat_template = false;
 }
 
 void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_map) {

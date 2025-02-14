@@ -3,6 +3,7 @@
 
 #include "openvino/op/constant.hpp"
 #include "openvino/pass/pass.hpp"
+#include "openvino/pass/matcher_pass.hpp"
 
 namespace ov {
 namespace genai {
@@ -32,9 +33,19 @@ namespace genai {
  *          |     CombineSegments     |
  *          +-------------------------+
 **/
-class MakeCombineSegmentsSatateful : public ov::pass::ModelPass {
+class MakeAddSpecialTokensSatateful : public ov::pass::ModelPass {
 public:
-    OPENVINO_MODEL_PASS_RTTI("MakeCombineSegmentsSatateful");
+    OPENVINO_MODEL_PASS_RTTI("MakeAddSpecialTokensSatateful");
+    bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
+};
+
+/** 
+ * @brief This pass modifies tokenizer ov::Model so that inputs to RaggedToDense, CombineSegments 
+ * become modifiable during runtime so that padding can be controlled.
+ */
+class MakePaddingSatateful : public ov::pass::ModelPass {
+public:
+    OPENVINO_MODEL_PASS_RTTI("MakePaddingSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
@@ -74,8 +85,10 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
-const std::string ADD_SPECIAL_TOKENS_VAR_ID = "add_special_tokens";
-const std::string SKIP_SPECIAL_TOKENS_VAR_ID = "skip_special_tokens";
+inline const std::string ADD_SPECIAL_TOKENS_VAR_ID = "add_special_tokens";
+inline const std::string SKIP_SPECIAL_TOKENS_VAR_ID = "skip_special_tokens";
+inline const std::string MAX_LENGTH_VAR_ID = "max_length";
+inline const std::string PAD_TO_LONGEST_VAR_ID = "PAD_TO_LONGEST";
 
 } // namespace genai
 } // namespace ov

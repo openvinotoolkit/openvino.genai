@@ -4,7 +4,10 @@ import pytest
 def pytest_make_parametrize_id(config, val, argname):
     if argname in ['prompt', 'prompts', 'batched_prompts']:
         # Print only first 1000 characters of long prompts.
-        return f'{val[:1000]}'
+        if isinstance(val, list):
+            return ', '.join([f'{v[:100]}' for v in val])
+        else:
+            return f'{val[:100]}'
     elif argname == 'model_descr':
         return f"{val[0]}"
     elif argname == 'chat_config':

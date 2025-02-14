@@ -37,6 +37,7 @@ protected:
     bool m_is_validation_mode_enabled = false;
 
     size_t m_num_decoder_layers = 0;
+    size_t m_block_size = 0;
 
     // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
     std::vector<ov::Tensor> m_rotation_deltas_stores;
@@ -58,10 +59,9 @@ protected:
 
     void initialize_pipeline(std::shared_ptr<ov::Model> model,
                              const SchedulerConfig& scheduler_config,
+                             const std::string& device,
                              const ov::AnyMap& plugin_config,
-                             const DeviceConfig& device_config,
-                             ov::Core& core);
-
+                             const std::vector<KVHeadConfig>& kv_cache_config);
 
     /**
      * Pulls requests from awaiting queue to running queue

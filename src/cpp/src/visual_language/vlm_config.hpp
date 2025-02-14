@@ -47,6 +47,7 @@ public:
 
     // llava_next specific config params
     std::vector<float> image_newline;
+    size_t vision_config_patch_size = 14;
 
     /// @brief A string token denoting start of image embeddings for InternVL2 model.
     std::string image_start_token = "<img>";

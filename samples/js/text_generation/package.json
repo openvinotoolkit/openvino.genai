@@ -1,0 +1,15 @@
+{
+  "name": "genai-node-demo",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "devDependencies": {
+    "genai-node": "../../../src/js/"
+  },
+  "engines": {
+    "node": ">=21.0.0"
+  },
+  "scripts": {
+    "test": "node tests/usage.test.js"
+  }
+}

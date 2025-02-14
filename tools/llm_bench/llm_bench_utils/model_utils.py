@@ -131,6 +131,7 @@ def analyze_args(args):
     model_args['output_dir'] = args.output_dir
     model_args['lora'] = args.lora
     model_args['lora_alphas'] = args.lora_alphas
+    model_args['lora_mode'] = args.lora_mode
     use_cb = args.use_cb or args.draft_model
     if args.device == "NPU" and use_cb:
         log.warning("Continious batching and Speculative Decoding are not supported for NPU device")
@@ -209,6 +210,7 @@ def get_use_case(model_name_or_path):
         raise RuntimeError('==Failure FOUND==: no use_case found')
     else:
         log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
+    return case, model_name
 
 
 def get_model_name(model_name_or_path):

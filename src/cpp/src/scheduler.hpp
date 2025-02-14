@@ -9,11 +9,11 @@
 
 #include "openvino/runtime/intel_gpu/properties.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "device_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
 #include "cache_manager.hpp"
 #include "timer.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -44,10 +44,10 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    explicit Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
-            m_cache_manager(cache_manager),
-            m_can_use_partial_preemption(can_use_partial_preemption),
-            m_config(config) {
+    Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
+        m_cache_manager(cache_manager),
+        m_can_use_partial_preemption(can_use_partial_preemption),
+        m_config(config) {
         m_block_manager = std::make_shared<BlockManager>(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers);
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
@@ -253,7 +253,7 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_dropped()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -316,7 +316,7 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_dropped()) {
+            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
@@ -395,7 +395,7 @@ private:
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             const bool recompute_evicted_sequences = sequence_group->get_num_processed_tokens() == 0 && !m_can_use_partial_preemption;
-            if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting() && !sequence_group->handle_dropped()) {
+            if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -462,12 +462,12 @@ private:
     }
 
     size_t _get_available_gpu_memory() {
-        auto device_config = m_cache_manager->get_device_config();
-        auto core = m_cache_manager->get_core();
-        auto device = device_config->get_device();
+        auto device = m_cache_manager->get_device();
         OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-        auto memory_statistics = core->get_property(device, ov::intel_gpu::memory_statistics);
-        auto device_type = core->get_property(device, ov::device::type);
+
+        ov::Core core = utils::singleton_core();
+        auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+        auto device_type = core.get_property(device, ov::device::type);
 
         // sum up all used device memory
         std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
@@ -487,7 +487,7 @@ private:
         used_device_mem *= used_memory_threshold;
 
         // total device memory in bytes
-        auto total_device_memory = core->get_property(device, ov::intel_gpu::device_total_mem_size);
+        auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
 
         return total_device_memory - used_device_mem;
     }
@@ -498,13 +498,13 @@ private:
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             auto gen_config = sequence_groups[idx]->get_sampling_parameters();
             seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
-            size_t blocks_num = std::ceil((float)seq_length / m_block_manager->get_block_size());
+            size_t blocks_num = std::ceil(static_cast<float>(seq_length) / m_block_manager->get_block_size());
             if (gen_config.is_beam_search()) {
                 blocks_num *= gen_config.num_beams;
             } else if (gen_config.is_multinomial()) {
                 blocks_num *= gen_config.num_return_sequences;
             }
-            blocks_sum  += blocks_num;
+            blocks_sum += blocks_num;
         }
         m_block_manager->increase_kv_blocks_number(blocks_sum);
         m_dynamic_memory_allocation = true;
@@ -514,32 +514,29 @@ private:
         if (!m_dynamic_memory_allocation) {
             return false;
         }
-        auto device_config = m_cache_manager->get_device_config();
-        auto device = device_config->get_device();
+        auto device = m_cache_manager->get_device();
         size_t current_num_of_kv_blocks = m_block_manager->get_total_number_of_kv_blocks();
         size_t new_blocks_num = current_num_of_kv_blocks * m_cache_growth_factor;
 
         if (device.find("GPU") == std::string::npos) {
             m_block_manager->increase_kv_blocks_number(new_blocks_num);
-        }
-        else {
-            size_t available_gpu_memory = _get_available_gpu_memory();
-            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * device_config->get_block_size_in_bytes();
+        } else {
+            const size_t available_gpu_memory = _get_available_gpu_memory();
+            const size_t block_size_in_bytes = m_cache_manager->get_block_size_in_bytes();
+            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
                 m_block_manager->increase_kv_blocks_number(new_blocks_num);
             } else {
-                size_t possible_blocks_to_add = available_gpu_memory / device_config->get_block_size_in_bytes();
+                size_t possible_blocks_to_add = available_gpu_memory / block_size_in_bytes;
                 if (possible_blocks_to_add > 0) {
                     m_block_manager->increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
-                }
-                else {
+                } else {
                     return false;
                 }
             }
         }
         return true;
     }
-
 };
 
 }

@@ -13,11 +13,10 @@ class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl :
 public:
     ContinuousBatchingForSpeculativeDecodingImpl() = default;
 
-    ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
-                                                 const std::shared_ptr<ov::Model>& model,
+    ContinuousBatchingForSpeculativeDecodingImpl(const std::shared_ptr<ov::Model>& model,
                                                  const Tokenizer& tokenizer,
                                                  const GenerationConfig& generation_config,
-                                                 const DeviceConfig& device_config,
+                                                 const std::vector<KVHeadConfig>& kv_cache_configs,
                                                  const SchedulerConfig& scheduler_config,
                                                  const std::string& device,
                                                  const ov::AnyMap& plugin_config,

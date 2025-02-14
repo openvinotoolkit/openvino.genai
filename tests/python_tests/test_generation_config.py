@@ -58,6 +58,8 @@ configs = [
     dict(max_new_tokens=1, assistant_confidence_threshold=0.5),
     dict(max_new_tokens=1, num_assistant_tokens=2),
     dict(max_new_tokens=1, num_assistant_tokens=2, max_ngram_size=2), # prompt lookup
+    dict(max_new_tokens=1, apply_chat_template=True),
+    dict(max_new_tokens=1, apply_chat_template=False),
 ]
 @pytest.mark.parametrize("generation_config_kwargs", configs)
 @pytest.mark.precommit
@@ -116,6 +118,20 @@ def test_invalid_generation_configs_throws(generation_config_kwargs):
 
     config = GenerationConfig()
     config.update_generation_config(**generation_config_kwargs)
+    with pytest.raises(RuntimeError):
+        config.validate()
+
+
+@pytest.mark.parametrize("fields", invalid_configs + [
+    dict(eos_token_id=1), # 'stop_token_ids' does not contain 'eos_token_id'
+    dict(eos_token_id=1, stop_token_ids={2}), # 'stop_token_ids' is not empty, but does not contain 'eos_token_id'
+])
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_invalid_fields_assinment_rises(fields):
+    config = GenerationConfig()
+    for key, val in fields.items():
+        setattr(config, key, val)
     with pytest.raises(RuntimeError):
         config.validate()
 
