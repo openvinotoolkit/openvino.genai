@@ -189,16 +189,18 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string t5_text_encoder = data["text_encoder_2"][1].get<std::string>();
         if (t5_text_encoder == "T5EncoderModel") {
-            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, properties);
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", t5_text_encoder, "' text encoder type");
         }
@@ -206,9 +208,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
@@ -218,13 +220,14 @@ public:
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "FluxTransformer2DModel") {
-            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, properties);
+            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     FluxPipeline(PipelineType pipeline_type,
@@ -263,10 +266,12 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
-        m_clip_text_encoder->compile(device, properties);
-        m_t5_text_encoder->compile(device, properties);
-        m_vae->compile(device, properties);
-        m_transformer->compile(device, properties);
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+        m_clip_text_encoder->compile(device, *updated_properties);
+        m_t5_text_encoder->compile(device, *updated_properties);
+        m_vae->compile(device, *updated_properties);
+        m_transformer->compile(device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -357,7 +362,13 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        OPENVINO_THROW("LORA adapters are not implemented for FLUX pipeline yet");
+        if(adapters) {
+            if(auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            m_clip_text_encoder->set_adapters(adapters);
+            m_transformer->set_adapters(adapters);
+        }
     }
 
     std::tuple<ov::Tensor, ov::Tensor> prepare_mask_latents(ov::Tensor mask_image, ov::Tensor processed_image, const ImageGenerationConfig& generation_config) {
@@ -456,6 +467,8 @@ public:
             compute_dim(m_custom_generation_config.width, initial_image, 2 /* assume NHWC */);
 
         check_inputs(m_custom_generation_config, initial_image);
+
+        set_lora_adapters(m_custom_generation_config.adapters);
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
@@ -610,6 +623,11 @@ private:
         for (size_t i = 0; i < latents.get_size(); ++i) {
             latents_data[i] = (1.0f - mask_data[i]) * init_latents_proper_data[i] + mask_data[i] * latents_data[i];
         }
+    }
+
+    // Returns non-empty updated adapters iff they are required to be updated
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
 
     std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
