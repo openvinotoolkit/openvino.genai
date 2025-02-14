@@ -5,12 +5,8 @@
 
 #include "openvino/core/visibility.hpp"
 
-#ifdef openvino_genai_STATIC
-#    define OPENVINO_GENAI_EXPORTS
+#ifdef openvino_genai_EXPORTS
+#    define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_EXPORTS
 #else
-#    ifdef openvino_genai_EXPORTS
-#        define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_EXPORTS
-#    else
-#        define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_IMPORTS
-#    endif  // openvino_genai_EXPORTS
-#endif
+#    define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_IMPORTS
+#endif  // openvino_genai_EXPORTS
