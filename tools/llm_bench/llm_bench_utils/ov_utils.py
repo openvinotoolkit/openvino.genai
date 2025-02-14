@@ -26,8 +26,6 @@ import openvino_genai as ov_genai
 import queue
 from transformers.generation.streamers import BaseStreamer
 
-GENAI_SUPPORTED_VLM = ["llava", "llava-next", "internvl-chat", "minicpmv"]
-
 
 def generate_simplified(self, *args, **kwargs):
     if len(args):
@@ -554,13 +552,13 @@ def get_vlm_processor(model_path):
     if model_type == "llava-qwen2":
         processor = AutoProcessor.from_pretrained(config.mm_vision_tower, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        preprocessors = {"processor": processor, "tokenizer": tokenizer}
+        preprocessors = {"processor": processor, "tokenizer": tokenizer, "config": config}
     elif model_type == "internvl_chat":
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
     else:
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-        preprocessors = {"processor": processor, "tokenizer": processor}
+        preprocessors = {"processor": processor, "tokenizer": processor, "config": config}
     return preprocessors
 
 
@@ -575,6 +573,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
     start = time.perf_counter()
     llm_pipe = openvino_genai.VLMPipeline(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
+    log.info("Selected OpenVINO GenAI for benchmarking")
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, processor_config, end - start, None, True
@@ -600,12 +599,12 @@ def create_image_text_gen_model(model_path, device, **kwargs):
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-            if model_config.model_type.replace("_", "-") in GENAI_SUPPORTED_VLM:
-                log.info("Selected OpenVINO GenAI for benchmarking")
+            try:
                 return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
-            else:
+            except Exception as exp:
                 log.warning(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                    f"GenAI pipeline loading failed with following error: {exp}"
                     "Benchmark will be switched to Optimum Intel pipeline realization"
                 )
 

@@ -19,31 +19,47 @@ configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.hpp.in"
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/version.cpp.in"
                "${CMAKE_CURRENT_BINARY_DIR}/version.cpp" @ONLY)
 
-# Library
+# Object library
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 set(TARGET_NAME openvino_genai)
+set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
-add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
-add_library(openvino::genai ALIAS ${TARGET_NAME})
+add_library(${TARGET_NAME_OBJ} OBJECT ${SOURCE_FILES})
 
 if(TARGET openvino_tokenizers)
-    add_dependencies(${TARGET_NAME} openvino_tokenizers)
+    add_dependencies(${TARGET_NAME_OBJ} openvino_tokenizers)
 endif()
 
-target_include_directories(${TARGET_NAME}
+target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-           "$<INSTALL_INTERFACE:runtime/include>"
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-target_include_directories(${TARGET_NAME} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
+target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
+
+target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json jinja2cpp)
+
+target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
+
+target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE openvino_genai_EXPORTS)
+
+set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Shared library
+
+add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
+add_library(openvino::genai ALIAS ${TARGET_NAME})
+
+target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
+                                                    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json jinja2cpp ${CMAKE_DL_LIBS})
 
-target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
+target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai

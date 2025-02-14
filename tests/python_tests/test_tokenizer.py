@@ -34,10 +34,6 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
             json.dump(config_json, f)
 
     ov_tokenizer = Tokenizer(temp_path)
-
-    for _, config_name in configs:
-        os.remove(temp_path / config_name)
-
     return ov_tokenizer
 
 
@@ -219,16 +215,19 @@ def test_set_chat_template():
     assert prompt == templated_prompt
 
 
-prompts = [
+eng_prompts = [
     '1+1=',
     'What is the previous answer?',
     'Why is the Sun yellow?',
     'What was my first question?',
     ['Why is the Sun yellow?'],
+    "Multiline\nstring\nWow!",
+]
+unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
     "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
-    "Multiline\nstring!\nWow!",
-]
+])]
+
 @pytest.mark.parametrize("model_id", [
     "katuni4ka/tiny-random-phi3",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -236,10 +235,9 @@ prompts = [
 ])
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_special_tokens(tmp_path, prompt, model_id):
-    if sys.platform.startswith('win') and isinstance(prompt, str) and (prompt.startswith('如') or prompt.endswith('ה')):
-        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+    prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
@@ -353,8 +351,7 @@ def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.skip(reason="CVS-158682 - RTInfo is not modified in tests for unknown reasons")
-def test_load_special_tokens_from_tokenizer_config_json(model_tokenizers_tmp_path):
+def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
     # special_tokens_map is not available
     # but tokenize_config.json exists
     # will load both string and integer representations
@@ -369,7 +366,7 @@ def test_load_special_tokens_from_tokenizer_config_json(model_tokenizers_tmp_pat
         "eos_token": "</s>",
     }
 
-    tok = load_genai_tokenizer_with_configs([(tok_config_json, "tokenizer_config.json")], model_tokenizers_tmp_path[1])
+    tok = load_genai_tokenizer_with_configs([(tok_config_json, "tokenizer_config.json")], model_tmp_path[1])
     assert tok.get_pad_token() == tok_config_json['pad_token']
     assert tok.get_bos_token() == tok_config_json['bos_token']
     assert tok.get_eos_token() == tok_config_json['eos_token']

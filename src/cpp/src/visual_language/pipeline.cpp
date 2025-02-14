@@ -7,13 +7,13 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
 
 #include "sampler.hpp"
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
