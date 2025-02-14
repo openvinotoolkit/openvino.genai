@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import argparse
 import os
 import json
 import logging as log
@@ -87,7 +86,6 @@ def analyze_args(args):
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
-    model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic

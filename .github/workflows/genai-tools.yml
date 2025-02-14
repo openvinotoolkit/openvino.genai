@@ -98,7 +98,7 @@ jobs:
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2/ -d cpu -n 1 --optimum -ic 10
       - name: Test Speculative Decoding via GenAI
         run: |
-          optimum-cli export openvino --model ./tiny-random-qwen2 --trust-remote-code --weight-format int8 ./ov_models/tiny-random-qwen2-int8
+          optimum-cli export openvino --model ./tiny-random-qwen2 --task text-generation-with-past --weight-format int8 ./ov_models/tiny-random-qwen2-int8
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2 --draft_model ./ov_models/tiny-random-qwen2-int8 -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --assistant_confidence_threshold 0.4 -ic 20
           python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-qwen2 --draft_model ./ov_models/tiny-random-qwen2-int8 -p "Why is the Sun yellow?" -d cpu --draft_device cpu -n 1 --num_assistant_tokens 5 -ic 20
           rm -rf ./tiny-random-qwen2
