@@ -245,6 +245,8 @@ def main():
                     framework = framework + '(' + ir_conversion_frontend + ')'
                 model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
             case, model_name = llm_bench_utils.model_utils.get_model_name(args.model)
+            if model_name is None:
+                model_name = llm_bench_utils.model_utils.get_model_name_with_model_id(args.model, model_name_or_id)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,

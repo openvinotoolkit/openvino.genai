@@ -225,6 +225,15 @@ def get_model_name(model_name_or_path):
     return None, None
 
 
+def get_model_name_with_model_id(model_name_or_path, model_id):
+    path = os.path.normpath(model_name_or_path)
+    model_names = path.split(os.sep)
+    for model_name in reversed(model_names):
+        if model_id in model_name.lower():
+            return model_name
+    return None
+
+
 def get_config(config):
     if Path(config).is_file():
         with open(config, 'r') as f:
