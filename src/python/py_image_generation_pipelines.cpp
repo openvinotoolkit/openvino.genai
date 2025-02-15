@@ -105,22 +105,22 @@ auto image_generation_perf_metrics_docstring = R"(
     :type get_all_infer_duration: float
 
     :param get_iteration_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
-    :type get_iteration_meanstd: float
+    :type get_iteration_duration: tuple
 
     :param get_iteration_meanstd: Returns the mean and standard deviation of one generation iteration in milliseconds.
     :type get_iteration_meanstd: MeanStdPair
 
     :param get_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
-    :type get_iteration_meanstd: float
+    :type get_unet_infer_duration: tuple
 
     :param get_unet_infer_meanstd: Returns the mean and standard deviation of one unet inference in milliseconds.
-    :type get_unet_inference_duration: MeanStdPair
+    :type get_unet_infer_meanstd: MeanStdPair
 
     :param get_transformer_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
-    :type get_transformer_infer_duration: float
+    :type get_transformer_infer_duration: tuple
 
     :param get_transformer_infer_meanstd: Returns the mean and standard deviation of one transformer inference in milliseconds.
-    :type get_transformer_inference_duration: MeanStdPair
+    :type get_transformer_infer_meanstd: MeanStdPair
 
     :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
     :type raw_metrics: RawImageGenerationPerfMetrics
@@ -330,11 +330,25 @@ void init_image_generation_pipelines(py::module_& m) {
         .def("get_decoder_infer_duration", &ImageGenerationPerfMetrics::get_decoder_infer_duration)
         .def("get_load_time", &ImageGenerationPerfMetrics::get_load_time)
         .def("get_generate_duration", &ImageGenerationPerfMetrics::get_generate_duration)
-        .def("get_iteration_duration", &ImageGenerationPerfMetrics::get_iteration_duration, py::arg("first_iter"), py::arg("other_iter_avg"))
+        .def("get_iteration_duration",
+             [](ImageGenerationPerfMetrics& self) -> py::tuple {
+                 float first_iter_time, other_iter_avg_time;
+                 self.get_iteration_duration(first_iter_time, other_iter_avg_time);
+                 return py::make_tuple(first_iter_time, other_iter_avg_time);
+             })
         .def("get_iteration_meanstd", &ImageGenerationPerfMetrics::get_iteration_meanstd)
-        .def("get_transformer_infer_duration", &ImageGenerationPerfMetrics::get_transformer_infer_duration, py::arg("first_infer"), py::arg("other_infer_avg"))
+        .def("get_transformer_infer_duration",
+             [](ImageGenerationPerfMetrics& self) -> py::tuple {
+                 float first_infer_time, other_infer_avg_time;
+                 self.get_transformer_infer_duration(first_infer_time, other_infer_avg_time);
+                 return py::make_tuple(first_infer_time, other_infer_avg_time);
+             })
         .def("get_transformer_infer_meanstd", &ImageGenerationPerfMetrics::get_transformer_infer_meanstd)
-        .def("get_unet_infer_duration", &ImageGenerationPerfMetrics::get_unet_infer_duration, py::arg("first_infer"), py::arg("other_infer_avg"))
+        .def("get_unet_infer_duration", [](ImageGenerationPerfMetrics& self) -> py::tuple {
+            float first_infer_time, other_infer_avg_time;
+            self.get_unet_infer_duration(first_infer_time, other_infer_avg_time);
+            return py::make_tuple(first_infer_time, other_infer_avg_time);
+        })
         .def("get_unet_infer_meanstd", &ImageGenerationPerfMetrics::get_unet_infer_meanstd)
         .def_readonly("raw_metrics", &ImageGenerationPerfMetrics::raw_metrics);
 

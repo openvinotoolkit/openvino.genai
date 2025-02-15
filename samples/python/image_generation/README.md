@@ -158,7 +158,7 @@ The usage of this sample is:
 python benchmark_image.py [OPTIONS]
 ```
 Options:
-- `-pt, --pipeline_type`: Pipeline type: text2image/image2image/inpainting.
+- `-t, --pipeline_type`: Pipeline type: text2image/image2image/inpainting.
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
@@ -175,32 +175,30 @@ Options:
 
 For example:
 
-`python benchmark_image.py -pt text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
+`python benchmark_image.py -t text2image -m dreamlike_anime_1_0_ov/FP16 -n 10 -d CPU`
 
 Performance output:
 
 ```
-[warmup-0] generate time: 4978.00 ms, total infer time:4967.62 ms, infer step num:20
-[warmup-0] encoder infer time: (text_encoder-195.93 ms) (text_encoder_2-145.52 ms)
-[warmup-0] unet total infer time:3920.33 ms, infer number:20
-[warmup-0] vae decoder infer time:705.84 ms, vae encoder infer time:0.00
+[warmup-0] generate time: 66005.00 ms, total infer time: 65993.44 ms
+[warmup-0] encoder infer time: 264.00 ms
+[warmup-0] unet iteration num: 20, first iteration time: 3471.94 ms, other iteration avg time: 3154.51 ms
+[warmup-0] unet inference num: 20, first inference time: 3471.44 ms, other inference avg time: 3154.00 ms
+[warmup-0] vae decoder infer time: 2332.00 ms
 
-[iter-0] generate time: 2651.00 ms, total infer time:2641.00 ms, infer step num:20
-[iter-0] encoder infer time: (text_encoder-4.70 ms) (text_encoder_2-15.66 ms)
-[iter-0] unet total infer time:2554.18 ms, infer number:20
-[iter-0] vae decoder infer time:66.47 ms, vae encoder infer time:0.00
+[iter-0] generate time: 65725.00 ms, total infer time: 65712.61 ms
+[iter-0] encoder infer time: 153.00 ms
+[iter-0] unet iteration num: 20, first iteration time: 3167.23 ms, other iteration avg time: 3165.03 ms
+[iter-0] unet inference num: 20, first inference time: 3166.56 ms, other inference avg time: 3164.53 ms
+[iter-0] vae decoder infer time: 2267.00 ms
 
-[iter-1] generate time: 2646.00 ms, total infer time:2635.66 ms, infer step num:20
-[iter-1] encoder infer time: (text_encoder-4.51 ms) (text_encoder_2-15.07 ms)
-[iter-1] unet total infer time:2549.76 ms, infer number:20
-[iter-1] vae decoder infer time:66.32 ms, vae encoder infer time:0.00
+[iter-1] generate time: 65715.00 ms, total infer time: 65704.02 ms
+[iter-1] encoder infer time: 146.00 ms
+[iter-1] unet iteration num: 20, first iteration time: 3185.16 ms, other iteration avg time: 3162.04 ms
+[iter-1] unet inference num: 20, first inference time: 3184.67 ms, other inference avg time: 3161.54 ms
+[iter-1] vae decoder infer time: 2304.00 ms
 
-[iter-2] generate time: 2644.00 ms, total infer time:2634.09 ms, infer step num:20
-[iter-2] encoder infer time: (text_encoder-4.51 ms) (text_encoder_2-15.02 ms)
-[iter-2] unet total infer time:2548.11 ms, infer number:20
-[iter-2] vae decoder infer time:66.45 ms, vae encoder infer time:0.00
-
-Test finish, load time: 10174.00 ms
-Warmup number:1, first generate warmup time:4978.00 ms, infer warmup time:4967.62 ms
-Generate iteration number:3, for one iteration, generate avg time: 2647.00 ms, infer avg time:2636.92 ms, total encoder infer avg time:19.82 ms, vae decoder infer avg time:66.41 ms
+Test finish, load time: 3604.00 ms
+Warmup number: 1, first generate warmup time: 66005.00 ms, infer warmup time: 65993.44 ms
+Generate iteration number: 2, for one iteration, generate avg time: 65720.00 ms, infer avg time: 65708.31 ms, total encoder infer avg time: 149.50 ms, decoder infer avg time: 2285.50 ms
 ```

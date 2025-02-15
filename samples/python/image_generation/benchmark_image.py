@@ -8,22 +8,22 @@ from PIL import Image
 
 def print_one_generate(metrics, prefix, idx):
     prefix_idx = "[" + prefix + "-" + str(idx) + "]"
-    print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration()} ms, total infer time: {metrics.get_inference_total_duration()} ms\n")
-    print(f"{prefix_idx} encoder infer time: {metrics.get_encoder_infer_duration()} ms\n")
+    print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration():.2f} ms, total infer time: {metrics.get_all_infer_duration():.2f} ms")
+    print(f"{prefix_idx} encoder infer time: {metrics.get_encoder_infer_duration():.2f} ms")
     first_iter_time = 0.0
     other_iter_avg_time = 0.0
     first_infer_time = 0.0
     other_infer_avg_time = 0.0
     metrics.get_iteration_duration(first_iter_time, other_iter_avg_time)
-    if not metrics.raw_metrics.transformer_inference_durations:
+    if len(metrics.raw_metrics.transformer_inference_durations) > 0:
         metrics.get_transformer_infer_duration(first_infer_time, other_infer_avg_time)
-        print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time} ms, other iteration avg time: {other_iter_avg_time} ms\n")
-        print(f"{prefix_idx} transformer inference num: {len(metrics.raw_metrics.transformer_inference_durations)}, first inference time: {first_infer_time} ms, other inference avg time: {other_infer_avg_time} ms\n")
+        print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
+        print(f"{prefix_idx} transformer inference num: {len(metrics.raw_metrics.transformer_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
     else:
         metrics.get_unet_infer_duration(first_infer_time, other_infer_avg_time)
-        print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time} ms, other iteration avg time: {other_iter_avg_time} ms\n")
-        print(f"{prefix_idx} unet inference num: {len(metrics.raw_metrics.unet_inference_durations)}, first inference time: {first_infer_time} ms, other inference avg time: {other_infer_avg_time} ms\n")
-    print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration} ms\n")
+        print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
+        print(f"{prefix_idx} unet inference num: {len(metrics.raw_metrics.unet_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
+    print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration:.2f} ms")
     
 def print_statistic(warmup_metrics, iter_metrics):
     generate_durations = []
@@ -62,9 +62,9 @@ def print_statistic(warmup_metrics, iter_metrics):
     if (len(decoder_durations) > 0):
         decoder_mean = decoder_mean / len(decoder_durations)
         
-    print(f"\nTest finish, load time: {load_time} ms\n")
-    print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup} ms, infer warmup time: {inference_warmup} ms\n")
-    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean} ms, infer avg time: {inference_mean} ms, total encoder infer avg time: {encoder_mean} ms, decoder infer avg time: {decoder_mean} ms\n")
+    print(f"\nTest finish, load time: {load_time:.2f} ms")
+    print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup:.2f} ms, infer warmup time: {inference_warmu:.2f} ms")
+    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean:.2f} ms, infer avg time: {inference_mean:.2f} ms, total encoder infer avg time: {encoder_mean:.2f} ms, decoder infer avg time: {decoder_mean:.2f} ms")
 
 def text2image(args):
     prompt = args.prompt
@@ -177,7 +177,7 @@ def inpainting(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")
-    parser.add_argument("-pt", "--pipeline_type", type=str, default="text2image", help="pipeline type: text2image/image2image/inpainting")
+    parser.add_argument("-t", "--pipeline_type", type=str, default="text2image", help="pipeline type: text2image/image2image/inpainting")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default="The Sky is blue because", help="Prompt")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
@@ -185,7 +185,7 @@ def main():
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
     parser.add_argument("-o", "--output_dir", type=str, default=".", help="Path to save output image")
     parser.add_argument("-is", "--num_inference_steps", type=int, default=20, help="The number of inference steps used to denoise initial noised latent to final image")
-    parser.add_argument("-ni", "--num_images_per_prompt", type=int, default=512, help="The number of images to generate per generate() call")
+    parser.add_argument("-ni", "--num_images_per_prompt", type=int, default=1, help="The number of images to generate per generate() call")
     parser.add_argument("-i", "--image", type=str, help="Image path")
     # special parameters of text2image pipeline
     parser.add_argument("-wh", "--width", type=int, default=512, help="The width of the resulting image")

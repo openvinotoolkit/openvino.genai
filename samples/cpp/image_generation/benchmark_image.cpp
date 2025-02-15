@@ -26,7 +26,7 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
                   << ", first iteration time:" << first_iter_time
                   << " ms, other iteration avg time:" << other_iter_avg_time << " ms" << std::endl;
         std::cout << prefix_idx
-                  << "transformer inference num:" << metrics.raw_metrics.transformer_inference_durations.size()
+                  << " transformer inference num:" << metrics.raw_metrics.transformer_inference_durations.size()
                   << ", first inference time:" << first_infer_time
                   << " ms, other inference avg time:" << other_infer_avg_time << " ms" << std::endl;
     } else {
@@ -34,7 +34,7 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
         std::cout << prefix_idx << " unet iteration num:" << metrics.raw_metrics.iteration_durations.size()
                   << ", first iteration time:" << first_iter_time
                   << " ms, other iteration avg time:" << other_iter_avg_time << " ms" << std::endl;
-        std::cout << prefix_idx << "unet inference num:" << metrics.raw_metrics.unet_inference_durations.size()
+        std::cout << prefix_idx << " unet inference num:" << metrics.raw_metrics.unet_inference_durations.size()
                   << ", first inference time:" << first_infer_time
                   << " ms, other inference avg time:" << other_infer_avg_time << " ms" << std::endl;
     }
@@ -208,7 +208,7 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     //common parameters
-    ("pt,pipeline_type", "pipeline type: text2image/image2image/inpainting", cxxopts::value<std::string>()->default_value("text2image"))
+    ("t,pipeline_type", "pipeline type: text2image/image2image/inpainting", cxxopts::value<std::string>()->default_value("text2image"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))

@@ -931,22 +931,22 @@ class ImageGenerationPerfMetrics:
         :type get_all_infer_duration: float
     
         :param get_iteration_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
-        :type get_iteration_meanstd: float
+        :type get_iteration_duration: tuple
     
         :param get_iteration_meanstd: Returns the mean and standard deviation of one generation iteration in milliseconds.
         :type get_iteration_meanstd: MeanStdPair
     
         :param get_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
-        :type get_iteration_meanstd: float
+        :type get_unet_infer_duration: tuple
     
         :param get_unet_infer_meanstd: Returns the mean and standard deviation of one unet inference in milliseconds.
-        :type get_unet_inference_duration: MeanStdPair
+        :type get_unet_infer_meanstd: MeanStdPair
     
         :param get_transformer_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
-        :type get_transformer_infer_duration: float
+        :type get_transformer_infer_duration: tuple
     
         :param get_transformer_infer_meanstd: Returns the mean and standard deviation of one transformer inference in milliseconds.
-        :type get_transformer_inference_duration: MeanStdPair
+        :type get_transformer_infer_meanstd: MeanStdPair
     
         :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawImageGenerationPerfMetrics
@@ -961,17 +961,17 @@ class ImageGenerationPerfMetrics:
         ...
     def get_generate_duration(self) -> float:
         ...
-    def get_iteration_duration(self, first_iter: float, other_iter_avg: float) -> None:
+    def get_iteration_duration(self) -> tuple:
         ...
     def get_iteration_meanstd(self) -> MeanStdPair:
         ...
     def get_load_time(self) -> float:
         ...
-    def get_transformer_infer_duration(self, first_infer: float, other_infer_avg: float) -> None:
+    def get_transformer_infer_duration(self) -> tuple:
         ...
     def get_transformer_infer_meanstd(self) -> MeanStdPair:
         ...
-    def get_unet_infer_duration(self, first_infer: float, other_infer_avg: float) -> None:
+    def get_unet_infer_duration(self) -> tuple:
         ...
     def get_unet_infer_meanstd(self) -> MeanStdPair:
         ...
