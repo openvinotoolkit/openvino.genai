@@ -25,8 +25,8 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 ## Sample Descriptions
 ### Common information
-Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
-Follow [build instruction](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md) to build GenAI samples
+Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
@@ -57,7 +57,7 @@ The following template can be used as a default, but it may not work properly wi
 #### NPU support
 
 NPU device is supported with some limitations. See [NPU inference of
-LLMs](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide/genai-guide-npu.html) documentation. In particular:
+LLMs](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) documentation. In particular:
 
 - Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
   For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
@@ -161,8 +161,8 @@ For more information how performance metrics are calculated please follow [perfo
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `--nw, --num_warmup` (default: `1`): Number of warmup iterations.
+- `--mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 

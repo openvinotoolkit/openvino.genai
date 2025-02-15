@@ -17,8 +17,10 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_cb_pipeline_with_ref, get_default_properties
-from utils_longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from common import TESTS_ROOT, run_cb_pipeline_with_ref
+from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+
+from utils.constants import get_default_llm_properties
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
@@ -45,7 +47,7 @@ class ConvertedModel:
 @pytest.fixture(scope='module')
 def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_properties())
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties())
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
@@ -115,6 +117,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     generation_config = GenerationConfig()  # expecting default greedy sampling
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = test_struct.max_new_tokens
+    generation_config.apply_chat_template = False
 
     scheduler_config_opt = get_scheduler_config(test_struct.num_kv_blocks)
     scheduler_config_opt.use_cache_eviction = test_struct.use_cache_eviction
@@ -124,8 +127,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
     scheduler_config_opt.enable_prefix_caching = enable_prefix_caching
 
     models_path = converted_model.models_path
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_properties())
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
 
     tokenizer = converted_model.tokenizer
 
@@ -237,8 +240,8 @@ def test_optimized_generation_longbench(qwen2_converted_model, device, test_stru
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
 
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_properties())
+    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
 
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset

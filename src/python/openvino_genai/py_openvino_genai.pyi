@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -96,9 +96,13 @@ class AdapterConfig:
         ...
     def get_adapters(self) -> list[Adapter]:
         ...
+    def get_adapters_and_alphas(self) -> list[tuple[Adapter, float]]:
+        ...
     def get_alpha(self, adapter: Adapter) -> float:
         ...
     def remove(self, adapter: Adapter) -> AdapterConfig:
+        ...
+    def set_adapters_and_alphas(self, adapters: list[tuple[Adapter, float]]) -> None:
         ...
     def set_alpha(self, adapter: Adapter, alpha: float) -> AdapterConfig:
         ...
@@ -1647,7 +1651,7 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> ...:
+    def write(self, token: int) -> StreamingStatus:
         """
         Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
@@ -1820,6 +1824,21 @@ class Text2ImagePipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class TextStreamer(StreamerBase):
+    """
+    
+    TextStreamer is used to decode tokens into text and call a user-defined callback function.
+    
+    tokenizer: Tokenizer object to decode tokens into text.
+    callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
+    
+    """
+    def __init__(self, tokenizer: Tokenizer, callback: typing.Callable[[str], bool | StreamingStatus]) -> None:
+        ...
+    def end(self) -> None:
+        ...
+    def write(self, token: int) -> StreamingStatus:
+        ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
     input_ids: openvino._pyopenvino.Tensor
@@ -1827,8 +1846,23 @@ class TokenizedInputs:
         ...
 class Tokenizer:
     """
-    openvino_genai.Tokenizer object is used to initialize Tokenizer
-               if it's located in a different path than the main model.
+    
+        The class is used to encode prompts and decode resulting tokens
+    
+        Chat tempalte is initialized from sources in the following order
+        overriding the previos value:
+        1. chat_template entry from tokenizer_config.json
+        2. chat_template entry from processor_config.json
+        3. chat_template entry from chat_template.json
+        4. chat_tempalte entry from rt_info section of openvino.Model
+        5. If the tempalte is known to be not supported by GenAI, it's
+            replaced with a simplified supported version.
+        6. Patch chat_tempalte replacing not supported instructions with
+            eqvivalents.
+        7. If the template was not in the list of not supported GenAI
+            templates from (5), it's blindly replaced with
+            simplified_chat_template entry from rt_info section of
+            openvino.Model if the entry exists.
     """
     chat_template: str
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:

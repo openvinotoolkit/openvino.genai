@@ -13,6 +13,29 @@
 
 #include "py_utils.hpp"
 
+namespace {
+
+constexpr char class_docstring[] = R"(
+    The class is used to encode prompts and decode resulting tokens
+
+    Chat tempalte is initialized from sources in the following order
+    overriding the previos value:
+    1. chat_template entry from tokenizer_config.json
+    2. chat_template entry from processor_config.json
+    3. chat_template entry from chat_template.json
+    4. chat_tempalte entry from rt_info section of openvino.Model
+    5. If the tempalte is known to be not supported by GenAI, it's
+        replaced with a simplified supported version.
+    6. Patch chat_tempalte replacing not supported instructions with
+        eqvivalents.
+    7. If the template was not in the list of not supported GenAI
+        templates from (5), it's blindly replaced with
+        simplified_chat_template entry from rt_info section of
+        openvino.Model if the entry exists.
+)";
+
+}  // namespace
+
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -26,9 +49,7 @@ void init_tokenizer(py::module_& m) {
         .def_readwrite("input_ids", &TokenizedInputs::input_ids)
         .def_readwrite("attention_mask", &TokenizedInputs::attention_mask);
 
-    py::class_<ov::genai::Tokenizer>(m, "Tokenizer",
-        R"(openvino_genai.Tokenizer object is used to initialize Tokenizer
-           if it's located in a different path than the main model.)")
+    py::class_<ov::genai::Tokenizer>(m, "Tokenizer", class_docstring)
 
         .def(py::init([](const std::filesystem::path& tokenizer_path, const std::map<std::string, py::object>& properties, const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());

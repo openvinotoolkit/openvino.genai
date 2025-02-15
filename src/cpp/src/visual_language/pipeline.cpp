@@ -7,13 +7,13 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
 
 #include "sampler.hpp"
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
@@ -155,9 +155,16 @@ public:
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+
+        if (!m_is_chat_conversation) {
+            m_language.reset_state();
+            m_language.get_tensor("attention_mask").set_shape({1, 0});
+        }
+
         // If stop_token_ids were not provided, take value from default m_generation_config
         if (generation_config.stop_token_ids.empty())
             generation_config.stop_token_ids = m_generation_config.stop_token_ids;
+
         // If eos_token_id was not provided, take value from default m_generation_config
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
@@ -224,12 +231,8 @@ public:
                                                     m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
-        if (m_is_chat_conversation) {
+        if (m_is_chat_conversation)
             m_inputs_embedder->update_chat_history(decoded_results);
-        } else {
-            m_language.reset_state();
-            m_language.get_tensor("attention_mask").set_shape({1, 0});
-        }
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
