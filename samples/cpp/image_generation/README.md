@@ -8,7 +8,7 @@ There are several sample files:
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
- - [`benchmark_text2image.cpp](./benchmark_text2image.cpp) demonstrates how to benchmark the text to image pipeline 
+ - [`benchmark_image.cpp](./benchmark_image.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
 
 Users can change the sample code and play with the following generation parameters:
 

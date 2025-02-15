@@ -274,13 +274,8 @@ public:
 
         // text_encoder_1_output - stores positive and negative pooled_prompt_embeds
         auto infer_start = std::chrono::steady_clock::now();
-        ov::Tensor text_encoder_1_output =
-            m_clip_text_encoder_1->infer(positive_prompt,
-                                         negative_prompt_1_str,
-                                         do_classifier_free_guidance(generation_config.guidance_scale));
-        auto infer_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start)
-                .count();
+        ov::Tensor text_encoder_1_output = m_clip_text_encoder_1->infer(positive_prompt, negative_prompt_1_str, do_classifier_free_guidance(generation_config.guidance_scale));
+        auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
         m_perf_metrics.encoder_inference_duration["text_encode"] = infer_duration;
 
         // text_encoder_1_hidden_state - stores positive and negative prompt_embeds
@@ -289,13 +284,8 @@ public:
 
         // text_encoder_2_output - stores positive and negative pooled_prompt_2_embeds
         infer_start = std::chrono::steady_clock::now();
-        ov::Tensor text_encoder_2_output =
-            m_clip_text_encoder_2->infer(prompt_2_str,
-                                         negative_prompt_2_str,
-                                         do_classifier_free_guidance(generation_config.guidance_scale));
-        infer_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start)
-                .count();
+        ov::Tensor text_encoder_2_output = m_clip_text_encoder_2->infer(prompt_2_str, negative_prompt_2_str, do_classifier_free_guidance(generation_config.guidance_scale));
+        infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
         m_perf_metrics.encoder_inference_duration["text_encode_2"] = infer_duration;
 
         // text_encoder_2_hidden_state - stores positive and negative prompt_2_embeds

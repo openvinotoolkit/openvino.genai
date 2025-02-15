@@ -8,7 +8,7 @@ There are several sample files:
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
- - [`benchmark_text2image.py`](./benchmark_text2image.py) demonstrates how to benchmark the text to image pipeline
+ - [`benchmark_image.py`](./benchmark_image.py) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
 
 Users can change the sample code and play with the following generation parameters:
 

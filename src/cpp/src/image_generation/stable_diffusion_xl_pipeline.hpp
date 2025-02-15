@@ -182,9 +182,7 @@ public:
 
         if (compute_negative_prompt) {
             auto infer_start = std::chrono::steady_clock::now();
-            add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt,
-                                                                         negative_prompt_1_str,
-                                                                         batch_size_multiplier > 1);
+            add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, batch_size_multiplier > 1);
             auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
             m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration;
             infer_start = std::chrono::steady_clock::now();
@@ -199,8 +197,7 @@ public:
             encoder_hidden_states = numpy_utils::concat(encoder_hidden_states_1, encoder_hidden_states_2, -1);
         } else {
             auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor add_text_embeds_positive =
-                m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, false);
+            ov::Tensor add_text_embeds_positive = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, false);
             auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
             m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration;
             infer_start = std::chrono::steady_clock::now();
