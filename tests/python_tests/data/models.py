@@ -69,10 +69,3 @@ def get_chat_models_list():
 
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
-
-
-def get_model_id_example():
-    return get_models_list()[0][0]
-
-def get_model_tmp_path_example():
-    return get_models_list()[0][1]

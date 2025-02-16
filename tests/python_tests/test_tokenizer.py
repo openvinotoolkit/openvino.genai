@@ -173,7 +173,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 
     # Will load openvino_model for tiny-random-phi as a placeholder
     # but indeed only Tokenizer and apply_chat_template will be tested.
-    _, hf_tokenizer, models_path = download_and_convert_model()
+    _, hf_tokenizer, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path=models_path)
 
 
@@ -201,7 +201,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_set_chat_template():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path=models_path)
 
     prompt = "how are you?"
@@ -297,7 +297,7 @@ prompts = [
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
 def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
-    _, hf_tokenizer, models_path = download_and_convert_model()
+    _, hf_tokenizer, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path=models_path)
 
     genai_tokenzier = ov_pipe.get_tokenizer()

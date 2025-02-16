@@ -17,7 +17,7 @@ from common import run_llm_pipeline_with_ref
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
-from utils.tokenizers import model_tmp_path, delete_rt_info
+from utils.tokenizers import delete_rt_info
 from utils.ov_genai_pipelines import create_ov_pipeline
 from data.models import get_models_list, get_chat_models_list
 
@@ -246,7 +246,7 @@ def user_defined_status_callback(subword):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_one_string(callback):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
@@ -257,7 +257,7 @@ def test_callback_one_string(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_batch_throws(callback):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), callback)
@@ -267,7 +267,7 @@ def test_callback_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     ov_pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
@@ -291,7 +291,7 @@ def test_callback_decoding_metallama(model_descr, callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_kwargs_batch_throws(callback):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
@@ -300,7 +300,7 @@ def test_callback_kwargs_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_terminate_by_bool():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
 
     current_iter = 0
@@ -324,7 +324,7 @@ def test_callback_terminate_by_bool():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_callback_terminate_by_status():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
 
     current_iter = 0
@@ -451,7 +451,7 @@ class PrinterStatus(ov_genai.StreamerBase):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_one_string(streamer_base):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
@@ -462,7 +462,7 @@ def test_streamer_one_string(streamer_base):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_batch_throws():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
@@ -472,7 +472,7 @@ def test_streamer_batch_throws():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_kwargs_one_string():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
@@ -481,7 +481,7 @@ def test_streamer_kwargs_one_string():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_streamer_kwargs_batch_throws():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
@@ -492,7 +492,7 @@ def test_streamer_kwargs_batch_throws():
 @pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     ten_tokens = ov_pipe.get_generation_config()
     ten_tokens.max_new_tokens = 10
@@ -503,7 +503,7 @@ def test_operator_with_callback_one_string(callback):
 @pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_throws(callback):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe(['1', '2'], ov_pipe.get_generation_config(), callback)
@@ -513,7 +513,7 @@ def test_operator_with_callback_batch_throws(callback):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_one_string(streamer_base):
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
@@ -522,7 +522,7 @@ def test_operator_with_streamer_kwargs_one_string(streamer_base):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_throws():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
@@ -568,7 +568,7 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_pipeline_validates_generation_config():
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     invalid_generation_config = dict(num_beam_groups=3, num_beams=15, do_sample=True) # beam sample is not supported
     with pytest.raises(RuntimeError):
@@ -583,7 +583,7 @@ def test_pipeline_validates_generation_config():
 def test_unicode_pybind_decoding_one_string():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str[-1]
@@ -594,7 +594,7 @@ def test_unicode_pybind_decoding_one_string():
 def test_unicode_pybind_decoding_batched():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
@@ -605,7 +605,7 @@ def test_unicode_pybind_decoding_batched():
 def test_unicode_pybind_decoding_one_string_streamer():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
-    _, _, models_path = download_and_convert_model()
+    _, _, models_path = download_and_convert_model(get_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
     res_str = []
     ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))

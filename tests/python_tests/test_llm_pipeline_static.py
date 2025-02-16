@@ -50,7 +50,7 @@ generation_configs = [
 @pytest.mark.parametrize("generation_config", generation_configs)
 def test_generation_compare_with_stateful(generation_config):
     prompt = 'What is OpenVINO?'
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
 
     stateful_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
@@ -78,7 +78,7 @@ def test_multinomial_sampling(generation_config):
     # variations in raw logits. Therefore, there is no reliable reference for validation,
     # so only ensure that no exceptions are raised.
     prompt = 'What is OpenVINO?'
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     static_pipe = LLMPipeline(model_path, "NPU", **common_config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
@@ -86,7 +86,7 @@ def test_multinomial_sampling(generation_config):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_length_properties_set_no_exception():
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
@@ -103,7 +103,7 @@ pipeline_configs = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_invalid_length_properties_raise_error(pipeline_config):
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     pipeline_config |= common_config
     with pytest.raises(RuntimeError):
         pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
@@ -112,7 +112,7 @@ def test_invalid_length_properties_raise_error(pipeline_config):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_one_no_exception():
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     prompt = 'The Sun is yellow because'
     static_pipe = LLMPipeline(model_path, "NPU", **common_config)
     # Check it doesn't throw any exception when batch of size 1 is provided
@@ -123,7 +123,7 @@ def test_batch_one_no_exception():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_batch_raise_error():
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     prompt = 'The Sun is yellow because'
     pipe = LLMPipeline(model_path, "NPU", **common_config)
     with pytest.raises(RuntimeError):
@@ -140,7 +140,7 @@ generation_configs = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_unsupported_sampling_raise_error(generation_config):
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     prompt = 'What is OpenVINO?'
 
     pipe = LLMPipeline(model_path, "NPU", **common_config)
@@ -151,7 +151,7 @@ def test_unsupported_sampling_raise_error(generation_config):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_terminate_by_max_number_of_tokens():
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     prompt = 'The Sun is yellow because'
     num_tokens = 128
 
@@ -166,7 +166,7 @@ def test_terminate_by_max_number_of_tokens():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_terminate_by_out_of_memory():
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= common_config
@@ -185,7 +185,7 @@ def test_terminate_by_out_of_memory():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_terminate_by_sampler():
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
     prompt = 'The Sun is yellow because'
 
     current_iter = 0
@@ -222,7 +222,7 @@ def test_chat_generation():
         'What was my first question?'
     ]
 
-    _, _, model_path = download_and_convert_model()
+    _, _, model_path = download_and_convert_model(get_models_list()[0])
 
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)

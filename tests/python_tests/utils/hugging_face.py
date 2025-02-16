@@ -14,7 +14,6 @@ from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
 from utils.constants import get_default_llm_properties
-from data.models import get_model_id_example, get_model_tmp_path_example
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -188,17 +187,22 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str = get_model_id_example(),
-                               tmp_path: Path = get_model_tmp_path_example(),
+def download_and_convert_model(model_id: str | Tuple,
+                               tmp_path: Path = Path("."),
                                **tokenizer_kwargs):
-    dir_name = str(model_id).replace(sep, "_")
-    models_path : Path = tmp_path / dir_name
+    _model_id = model_id
+    _tmp_path = tmp_path
+    if isinstance(model_id, Tuple):
+        _model_id, _tmp_path = model_id
+
+    dir_name = str(_model_id).replace(sep, "_")
+    models_path : Path = _tmp_path / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_hugging_face_models(models_path)
     else:
-        opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+        opt_model, hf_tokenizer = get_hugging_face_models(_model_id)
         convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:
