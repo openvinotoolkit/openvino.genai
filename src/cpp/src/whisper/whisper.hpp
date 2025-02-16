@@ -9,6 +9,7 @@
 #include "models/decoder.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "sampler.hpp"
 #include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
@@ -35,7 +36,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        ov::InferRequest& encoder,
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<ChunkStreamerBase> streamer);
+                                       const std::shared_ptr<ChunkStreamerBase> streamer,
+                                       Sampler& sampler);
 
 }  // namespace genai
 }  // namespace ov

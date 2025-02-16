@@ -31,8 +31,8 @@ huggingface-cli login
    
 The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
 - Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
-- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html).
-- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html).
+- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2025/openvino-workflow/model-optimization-guide/weight-compression.html).
+- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html).
 
 **Usage:**
 

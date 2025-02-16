@@ -3,3 +3,10 @@
 #
 
 option(ENABLE_PYTHON "Enable Python API build" ON)
+option(ENABLE_JS "Enable JS API build" OFF)
+option(ENABLE_SAMPLES "Enable samples build" ON)
+
+# Disable building samples for NPM package
+if(CPACK_GENERATOR STREQUAL "NPM")
+    set(ENABLE_SAMPLES OFF)
+endif()

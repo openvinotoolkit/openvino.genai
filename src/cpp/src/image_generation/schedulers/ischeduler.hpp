@@ -43,6 +43,16 @@ public:
     virtual std::vector<float> get_float_timesteps() const {
         OPENVINO_THROW("Scheduler doesn't support float timesteps");
     }
+
+    virtual void scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) {
+        OPENVINO_THROW("Scheduler doesn't support `scale_noise` method");
+    }
+
+    virtual void set_begin_index(size_t begin_index) {};
+
+    virtual size_t get_begin_index() {
+        OPENVINO_THROW("Scheduler doesn't support `get_begin_index` method");
+    }
 };
 
 } // namespace genai

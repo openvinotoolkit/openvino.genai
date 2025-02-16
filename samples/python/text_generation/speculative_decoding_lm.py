@@ -5,13 +5,11 @@
 import argparse
 import openvino_genai
 import queue
-import threading
 
-def streamer(subword): 
-        print(subword, end='', flush=True) 
-        # Return flag corresponds whether generation should be stopped. 
-        # False means continue generation. 
-        return False
+def streamer(subword):
+    print(subword, end='', flush=True)
+    # Return flag corresponds whether generation should be stopped. 
+    return openvino_genai.StreamingStatus.RUNNING
 
 def main():
     parser = argparse.ArgumentParser()

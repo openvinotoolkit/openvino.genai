@@ -22,10 +22,11 @@
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "openvino/core/parallel.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
-#include "text_callback_streamer.hpp"
+
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -658,10 +659,11 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
                              ov::genai::GenerationHandle& handle) {
     if (streamer_ptr && handle->can_read()) {
-        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->back();
+        std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
-            if (streamer_ptr->put(gen_token)) {
-                handle->drop();
+            auto streaming_status = streamer_ptr->write(gen_token);
+            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                 break;
             }
         }
@@ -698,12 +700,13 @@ StatefulLLMPipeline::StatefulLLMPipeline(
                         utils::from_config_json_if_exists(models_path)),
     m_sampler(m_tokenizer) {
     ov::AnyMap properties = config;
-    const auto use_blob = pop_or_default(properties, "USE_BLOB", false);
-    if (use_blob) {
-        auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
-        if (blob_path.empty()) {
-            blob_path = (models_path / "openvino_model.blob").string();
-        }
+
+    auto blob_path = pop_or_default(properties, "BLOB_PATH", std::string{});
+    const auto export_blob = pop_or_default(properties, "EXPORT_BLOB", false);
+
+    bool do_import = (!blob_path.empty() && !export_blob);
+
+    if (do_import) {
         if (!std::filesystem::exists(blob_path)) {
             OPENVINO_THROW("Blob file is not found at: " + blob_path);
         }
@@ -721,6 +724,25 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
         ov::AnyMap properties = config;
         auto compiled = setupAndCompileModel(model, model_desc, properties);
+        // Also export compiled model if required
+        if (export_blob) {
+            if (blob_path.empty()) {
+                blob_path = (models_path / "openvino_model.blob").string();
+            }
+            // Check the path is full
+            const int EXT_SIZE = 5; // ".blob"
+            if (blob_path.size() < EXT_SIZE) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            if (strncmp(".blob", &blob_path[blob_path.size() - EXT_SIZE], EXT_SIZE) != 0) {
+                OPENVINO_THROW("Please provide a full path to blob file in BLOB_PATH: " + blob_path);
+            }
+            std::ofstream fout(blob_path, std::ios::out | std::ios::binary);
+            if (!fout.is_open()) {
+                OPENVINO_THROW("Blob file can't be exported to: " + blob_path);
+            }
+            compiled->export_model(fout);
+        }
         m_request = compiled->create_infer_request();
         m_sampler.set_seed(m_generation_config.rng_seed);
     }
@@ -807,7 +829,15 @@ DecodedResults StatefulLLMPipeline::generate(
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
-        tokenized_input = m_tokenizer.encode(prompt);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+        } else {
+            // in case when chat_template was not found in tokenizer_config.json or set
+            tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+        }
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
@@ -819,7 +849,11 @@ DecodedResults StatefulLLMPipeline::generate(
 
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
-        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        if (m_chat_generation_finish_status == GenerationStatus::CANCEL)
+            // If chat generation process was cancelled by user, let's rollback to previous state of history
+            m_history.pop_back();
+        else
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
 
     // generate_durations
@@ -857,19 +891,15 @@ EncodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (config.stop_token_ids.empty())
+        config.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
-    std::shared_ptr<StreamerBase> streamer_ptr;
-    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-        streamer_ptr = nullptr;
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
-        streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
-    }
+    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
         "Currently only greedy and multinomial decoding are supported");
@@ -920,8 +950,8 @@ EncodedResults StatefulLLMPipeline::generate(
 
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
@@ -936,7 +966,7 @@ EncodedResults StatefulLLMPipeline::generate(
     m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
     m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
 
-    while (sequence_group->is_running() && !sequence_group->handle_dropped()) {
+    while (sequence_group->is_running() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         // KV Cache is full, no further generation is possible
         if (position_ids_data + 1 == m_kvcache_total) {
             sequence_group->set_out_of_memory();
@@ -972,6 +1002,7 @@ EncodedResults StatefulLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
     auto stop_time = std::chrono::steady_clock::now();
@@ -1274,7 +1305,15 @@ DecodedResults StatelessLLMPipeline::generate(
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
-        tokenized_input = m_tokenizer.encode(prompt);
+        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+            constexpr bool add_generation_prompt = true;
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
+        } else {
+            // in case when chat_template was not found in tokenizer_config.json or set
+            tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
+        }
     }
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
@@ -1286,7 +1325,11 @@ DecodedResults StatelessLLMPipeline::generate(
 
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
-        m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        if (m_chat_generation_finish_status == GenerationStatus::CANCEL)
+            // If chat generation process was cancelled by user, let's rollback to previous state of history
+            m_history.pop_back();
+        else
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
     // generate_durations
     decoded_results.perf_metrics = encoded_results.perf_metrics;
@@ -1326,19 +1369,15 @@ EncodedResults StatelessLLMPipeline::generate(
     }
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (config.stop_token_ids.empty())
+        config.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
-    std::shared_ptr<StreamerBase> streamer_ptr;
-    if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-        streamer_ptr = nullptr;
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
-        streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
-    }
+    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     if (!config.is_greedy_decoding() && !config.is_multinomial()) {
         OPENVINO_THROW("Currently only greedy and multinomial decoding are supported");
@@ -1392,8 +1431,8 @@ EncodedResults StatelessLLMPipeline::generate(
     //       Retrive only useful logits and work only with them here.
     auto sequence_group = std::make_shared<SequenceGroup>(
         0 /* request_id */, padded_input_ids, config, 1 /* block_size */);
-    sequence_group->update_processed_tokens_num(m_kvcache_desc.max_prompt_size - output_sequence_len);
-    sequence_group->schedule_tokens(output_sequence_len);
+    sequence_group->schedule_tokens(m_kvcache_desc.max_prompt_size);
+    sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
@@ -1441,7 +1480,7 @@ EncodedResults StatelessLLMPipeline::generate(
     std::fill(attention_mask_data, attention_mask_data + m_kvcache_desc.num_stored_tokens - 1u, 1u);
     attention_mask_data[m_kvcache_desc.total_size - 1] = 1u;
 
-    while (sequence_group->is_running() && !sequence_group->handle_dropped()) {
+    while (sequence_group->is_running() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         sequence_group->schedule_tokens(1);
         const auto running_sequences = sequence_group->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() == 1u);
@@ -1460,7 +1499,7 @@ EncodedResults StatelessLLMPipeline::generate(
             {sequence_group}, m_kvcache_request.get_tensor("logits"));
         stream_generated_tokens(streamer_ptr, handle);
 
-        if (sequence_group->handle_dropped())
+        if (sequence_group->handle_stopped() || sequence_group->handle_cancelled())
             break;
 
         // NB: KV-cache is full, further generation is impossible
@@ -1493,6 +1532,7 @@ EncodedResults StatelessLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
     auto stop_time = std::chrono::steady_clock::now();

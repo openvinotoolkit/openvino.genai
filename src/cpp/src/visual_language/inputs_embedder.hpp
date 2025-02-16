@@ -43,6 +43,8 @@ public:
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
+    void set_stop_token_ids(const std::set<int64_t>& stop_token_ids);
+
     // returns tokenized chat history
     std::vector<int64_t> get_tokenized_history() const;
 
@@ -58,6 +60,9 @@ public:
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results);
 
+    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
+    void set_apply_chat_template_status(bool apply_chat_template);
+
     // finishes chat and clears a chat history 
     void finish_chat();
 private:
@@ -68,6 +73,7 @@ private:
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderLLaVANext;
     friend class InputsEmbedderInternVLChat;
+    friend class InputsEmbedderPhi3V;
     friend class InputsEmbedderQwen2VL;
 };
 

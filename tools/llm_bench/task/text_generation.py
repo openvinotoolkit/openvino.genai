@@ -207,6 +207,19 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
+    enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
+    if enable_prompt_permutations:
+        log.warning(
+            "Enabled input prompt permutations. It means that generation results can be vary on different steps. "
+            "If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behavior"
+        )
+        from openvino_genai import TokenizedInputs
+        import openvino as ov
+
+        input_ids = input_data.input_ids.data
+        input_ids[:, 0] = num + 1
+        attention_mask = input_data.attention_mask
+        input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     num_input_tokens = input_data.input_ids.shape[1]
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
@@ -217,9 +230,12 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         log.info(out_str)
     gen_config = model.get_generation_config()
     gen_config.max_new_tokens = max_gen_tokens
+    gen_config.ignore_eos = True
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get('num_assistant_tokens', None):
@@ -325,7 +341,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
+    if num > 0 and not enable_prompt_permutations:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
@@ -366,6 +382,22 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    gen_config.ignore_eos = True
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
+    enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
+    if enable_prompt_permutations:
+        log.warning(
+            "Enabled input prompt permutations. It means that generation results can be vary on different steps. "
+            "If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behavior"
+        )
+        from openvino_genai import TokenizedInputs
+        import openvino as ov
+
+        input_ids = input_data.input_ids.data
+        input_ids[:, 0] = num + 1
+        attention_mask = input_data.attention_mask
+        input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get("num_assistant_tokens", None):
@@ -439,7 +471,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
+    if num > 0 and not enable_prompt_permutations:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "

@@ -4,7 +4,6 @@
 import os
 import time
 import datetime
-from pathlib import Path
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
@@ -35,6 +34,7 @@ def run_visual_language_generation_optimum(
         args["batch_size"] = 1
     images = []
     prompts = []
+    inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
             images.append(load_image(input_data["media"]))
@@ -44,7 +44,7 @@ def run_visual_language_generation_optimum(
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
-    input_data = model.preprocess_inputs(text=prompts[0], image=images[0], **processor)
+    input_data = model.preprocess_inputs(text=prompts[0], image=images[0] if images else None, **processor)
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     # Remove `token_type_ids` from inputs
@@ -194,6 +194,7 @@ def run_visual_language_generation_genai(
         args["batch_size"] = 1
     images = []
     prompts = []
+    inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
     for input_data in inputs:
         if "media" in input_data:
             images.append(load_image_genai(input_data["media"]))
@@ -211,8 +212,14 @@ def run_visual_language_generation_genai(
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    gen_config.ignore_eos = True
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
+    kwargs = {}
+    if len(images) >= 1:
+        kwargs["images"] = images[0]
     start = time.perf_counter()
-    generation_result = model.generate(prompts[0], images=images[0], generation_config=gen_config)
+    generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
@@ -359,8 +366,10 @@ def get_image_text_prompt(args):
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
                 if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    vlm_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), vlm_file['media'].replace('./', ''))
-                    vlm_file['media'] = Path(vlm_file['media'])
+                    media_path = vlm_file["media"]
+                    if not (media_path.startswith("http://") or media_path.startswith("https://")):
+                        media_path = os.path.join(os.path.dirname(args['prompt_file'][0]), media_path.replace("./", ""))
+                    vlm_file['media'] = media_path
                 vlm_file_list.append(vlm_file)
     else:
         vlm_file_list.append(output_data_list)

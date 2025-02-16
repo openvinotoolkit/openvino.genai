@@ -42,13 +42,19 @@ public:
 
     void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const override;
 
+    void scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) override;
+
     float calculate_shift(size_t image_seq_len) override;
+
+    void set_begin_index(size_t begin_index) override;
+
+    size_t get_begin_index() override;
 
 private:
     Config m_config;
 
     std::vector<float> m_sigmas;
-    std::vector<float> m_timesteps;
+    std::vector<float> m_timesteps, m_schedule_timesteps;
 
     float m_sigma_min, m_sigma_max;
     size_t m_step_index, m_begin_index;
@@ -56,6 +62,7 @@ private:
 
     void init_step_index();
     double sigma_to_t(double simga);
+    size_t _index_for_timestep(float timestep);
 };
 
 } // namespace genai

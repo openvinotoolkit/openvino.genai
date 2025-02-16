@@ -47,6 +47,7 @@ public:
 
     // llava_next specific config params
     std::vector<float> image_newline;
+    size_t vision_config_patch_size = 14;
 
     /// @brief A string token denoting start of image embeddings for InternVL2 model.
     std::string image_start_token = "<img>";
@@ -54,6 +55,9 @@ public:
     std::string image_context_token = "<IMG_CONTEXT>";
     /// @brief A string token denoting end of image embeddings for InternVL2 model.
     std::string image_end_token = "</img>";
+    /// @brief phi3_v new line token embedding to separate images.
+    std::vector<float> sub_GN = std::vector(4096, 0.0f);
+    std::vector<float> glb_GN = std::vector(4096, 0.0f);
     
     /// @brief A string token denoting start of vision embeddings for Qwen2VL model.
     std::string vision_start_token = "<|vision_start|>";

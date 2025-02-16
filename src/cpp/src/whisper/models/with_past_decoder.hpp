@@ -14,19 +14,20 @@ public:
                            const std::string& device,
                            const ov::AnyMap& properties);
 
-    std::pair<int64_t, float> detect_language(const ov::Tensor& encoder_hidden_state,
-                                              const int64_t decoder_start_token_id) override;
+    void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) override;
 
-    std::pair<ov::Tensor, float> decode(const ov::Tensor& encoder_hidden_state,
-                                        const std::vector<int64_t>& input_ids,
-                                        const size_t cache_position) override;
+    Tensor wait() override;
 
     void reset_state() override;
 
 private:
     ov::InferRequest m_request_decoder;
     ov::InferRequest m_request_decoder_with_past;
-    bool m_decoder_with_past_kv_value_set = false;
+    size_t m_cache_position = 0;
+    bool m_initial_past_key_value_set = false;
+    bool m_past_key_value_linked = false;
+
+    void _set_past_key_value(const Tensor& beam_idx);
 };
 
 }  // namespace ov::genai

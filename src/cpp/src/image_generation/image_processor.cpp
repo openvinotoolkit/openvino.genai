@@ -32,6 +32,7 @@ IImageProcessor::IImageProcessor(const std::string& device) :
 }
 
 ov::Tensor IImageProcessor::execute(ov::Tensor image) {
+    OPENVINO_ASSERT(m_request, "ImageProcessor model must be compiled first. Cannot infer non-compiled model");
     m_request.set_input_tensor(image);
     m_request.infer();
     return m_request.get_output_tensor();
@@ -124,6 +125,7 @@ ImageResizer::ImageResizer(const std::string& device, ov::element::Type type, ov
 }
 
 ov::Tensor ImageResizer::execute(ov::Tensor image, int64_t dst_height, int64_t dst_width) {
+    OPENVINO_ASSERT(m_request, "ImageResizer model must be compiled first. Cannot infer non-compiled model");
     ov::Tensor target_spatial_tensor(ov::element::i64, ov::Shape{2});
     target_spatial_tensor.data<int64_t>()[0] = dst_height;
     target_spatial_tensor.data<int64_t>()[1] = dst_width;

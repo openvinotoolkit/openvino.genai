@@ -17,6 +17,8 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
                                 size_t offset,
                                 std::vector<std::pair<size_t, size_t>>& ranges);
 
+int64_t argmax(const ov::Tensor& logits, const size_t batch_idx);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

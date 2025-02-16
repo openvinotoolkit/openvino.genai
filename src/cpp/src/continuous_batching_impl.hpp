@@ -31,10 +31,24 @@ protected:
 
     // for perf metrics
     float m_load_time_ms = 0.0f;
-    size_t m_batch_size = 0; // stored number of scheduled sequences on last step
+    size_t m_batch_size = 0; // stored number of processed tokens on last step
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
+
+    size_t m_num_decoder_layers = 0;
+    size_t m_block_size = 0;
+
+    // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
+    std::vector<ov::Tensor> m_rotation_deltas_stores;
+
+    std::map<size_t, std::vector<std::set<size_t>>> m_previous_evicted_block_logical_indices_per_sequence;
+    std::map<size_t, size_t> m_previous_num_blocks_before_eviction_per_sequence;
+
+    std::vector<std::map<size_t, std::vector<size_t>>> m_current_step_rotated_block_indices_per_sequence;
+    std::vector<ov::Tensor> m_current_step_rotation_deltas;
+
+    std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
@@ -45,9 +59,9 @@ protected:
 
     void initialize_pipeline(std::shared_ptr<ov::Model> model,
                              const SchedulerConfig& scheduler_config,
+                             const std::string& device,
                              const ov::AnyMap& plugin_config,
-                             const DeviceConfig& device_config,
-                             ov::Core& core);
+                             const std::vector<KVHeadConfig>& kv_cache_config);
 
     /**
      * Pulls requests from awaiting queue to running queue
@@ -77,6 +91,7 @@ protected:
 
     void _register_step_cache_usage(float step_cache_usage);
     float _get_current_running_average_cache_usage() const;
+    void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
 
     virtual void drop_requests();
 
@@ -113,5 +128,4 @@ public:
      */
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 };
-
 } // namespace ov::genai

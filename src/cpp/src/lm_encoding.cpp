@@ -13,11 +13,15 @@
 #include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/streamer_base.hpp"
 
+namespace {
 
-namespace ov {
-namespace genai {
-
+/**
+ * Set position ids tensor data for next token inference based on provided attention mask
+ * Supports multi batch
+ * Supports sparse attention_mask
+ */
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
@@ -65,9 +69,12 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
         attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
     }
 }
+}
 
+namespace ov {
+namespace genai {
 
-std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
+ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
     const ov::Tensor& attention_mask,
@@ -88,11 +95,15 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto stream_generated_tokens = [&streamer_ptr, &generations, &active_sequence_groups]() {
         GenerationHandle& handle = generations.at(0);
         if (streamer_ptr && handle->can_read()) {
-            std::unordered_map<uint64_t, GenerationOutput> token = handle->back();
-            for (const auto& gen_token : token.begin()->second.generated_ids) {
-                if (streamer_ptr->put(gen_token)) {
-                    handle->drop();
-                    break;
+            std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
+            OPENVINO_ASSERT(generation_outputs.size() <= 1);
+            if (!generation_outputs.empty()) {
+                for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
+                    auto streaming_status = streamer_ptr->write(generated_token_id);
+                    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+                        break;
+                    }
                 }
             }
         }
@@ -101,7 +112,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
-                return sg->has_finished() || sg->handle_dropped();
+                return sg->has_finished() || sg->handle_stopped() || sg->handle_cancelled();
             });
         active_sequence_groups.erase(removed_it, active_sequence_groups.end());
     };
@@ -111,8 +122,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     // Initialize results and performance metrics.
 
-    EncodedResults results;
-    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    ov::genai::utils::GenerationFinishInfo finish_info;
+    auto& raw_perf_counters = finish_info.results.perf_metrics.raw_metrics;
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
@@ -138,13 +149,10 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     auto logits = m_llm.get_tensor("logits");
 
-    // since we have applied `Slice` operation to last MatMul, model output sequence lenght is 1
-    // so, we need to update sequence groups to think that they already have processed all prompt tokens except last ones
-    // and schedule only `output_sequence_len` ones
     int64_t output_sequence_len = logits.get_shape().at(1);
     for (auto& sequence_group : sequence_groups) {
-        sequence_group->update_processed_tokens_num(sequence_group->get_prompt_len() - output_sequence_len);
-        sequence_group->schedule_tokens(output_sequence_len);
+        sequence_group->schedule_tokens(sequence_group->get_prompt_len());
+        sequence_group->set_output_seq_len(output_sequence_len);
     }
 
     std::map<size_t, size_t> beam_offets;
@@ -251,25 +259,25 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         auto sampling_params = sequence_group->get_sampling_parameters();
         const auto& sequences = sequence_group->get_finished_sequences();
         size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
+        finish_info.streaming_finish_status = sequence_group->get_generation_stream()->get_status();
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
 
-            results.tokens.push_back(sequence->get_generated_ids());
-            results.scores.push_back(score);
+            finish_info.results.tokens.push_back(sequence->get_generated_ids());
+            finish_info.results.scores.push_back(score);
         }
     }
 
     for (SequenceGroup::Ptr sequence_group : sequence_groups)
         sampler.clear_request_info(sequence_group->get_request_id());
 
-    // it is not saved in KV cache, we need to add it for some cases
-    std::optional<int64_t> last_token_of_best_sequence = std::nullopt;
-    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || sequence_groups[0]->handle_dropped())
-        last_token_of_best_sequence = results.tokens[0].back();
+    // last generated token is not saved in KV cache, we need to add it for some cases
+    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH)
+        finish_info.probably_disappeared_token = finish_info.results.tokens[0].back();
 
-    return {results, last_token_of_best_sequence};
+    return finish_info;
 }
 
 }  // namespace genai

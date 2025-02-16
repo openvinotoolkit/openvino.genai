@@ -342,19 +342,19 @@ public:
     }
 
     // must be used only after sequence group generation loop has finished (either by lenght or OOM)
-    // or stopped / cancelled via streamer / generation_stream->drop()
+    // or stopped / cancelled via streamer / generation_stream->stop() / generation_stream->cancel()
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         finished_seqs.reserve(num_total_seqs());
 
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_dropped()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_stopped() || handle_cancelled()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
         OPENVINO_ASSERT(finished_seqs.size() == num_total_seqs(), "Internal error: get_finished_sequences() must be called when all sequences are "
-            "either finisehed / ignored by OOM or dropped via GenerationStream::drop()");
+            "either finished / ignored by OOM or dropped via GenerationStream::stop() / GenerationStream::cancel()");
 
         std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
@@ -589,8 +589,12 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
-    bool handle_dropped() const {
-        return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
+    bool handle_stopped() const {
+        return m_generation_stream->get_status() == GenerationStatus::STOP;
+    }
+
+    bool handle_cancelled() const {
+        return m_generation_stream->get_status() == GenerationStatus::CANCEL;
     }
 
     void push_empty_outputs() {
@@ -649,7 +653,11 @@ public:
                 if (has_finished()) {
                     m_stream_window_size = 0;
                 }
+                // push empty output in case we won't stream generation res
                 if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    if (has_finished()) {
+                        push_empty_outputs();
+                    }
                     return;
                 }
                 // speculative decoding draft handling
@@ -689,7 +697,11 @@ public:
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
-    } 
+    }
+
+    size_t get_max_new_tokens() {
+        return m_sampling_params.get_max_new_tokens(get_prompt_len());
+    }
 };
 
 inline std::shared_ptr<SequenceGroup> Sequence::get_sequence_group_ptr() const {

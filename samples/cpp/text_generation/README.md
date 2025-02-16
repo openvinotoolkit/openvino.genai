@@ -2,7 +2,7 @@
 
 These samples showcase the use of OpenVINO's inference capabilities for text generation tasks, including different decoding strategies such as beam search, multinomial sampling, and speculative decoding. Each sample has a specific focus and demonstrates a unique aspect of text generation.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
-There are also Jupyter notebooks for some samples. You can find links to them in the appropriate sample descritions.
+There are also Jupyter notebooks for some samples. You can find links to them in the appropriate sample descriptions.
 
 ## Table of Contents
 1. [Download and Convert the Model and Tokenizers](#download-and-convert-the-model-and-tokenizers)
@@ -11,47 +11,33 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 4. [Support and Contribution](#support-and-contribution)
 
 ## Download and convert the model and tokenizers
-
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-
-It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
-
+Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimim-cli export openvino --model <model> <output_folder>
+```
+If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
+```sh
+pip install huggingface-hub
+huggingface-cli download <model> --local-dir <output_folder>
 ```
 
 ## Sample Descriptions
 ### Common information
-Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
-Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
+GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
+See https://github.com/openvinotoolkit/openvino.genai/blob/master/SUPPORTED_MODELS.md for the list of supported models.
 
-### 1. Greedy Causal LM (`greedy_causal_lm`)
-- **Description:**
-Basic text generation using a causal language model.
-Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
-Recommended models: meta-llama/Llama-2-7b-hf, etc
-- **Main Feature:** Demonstrates simple text continuation.
-- **Run Command:**
-  ```bash
-  ./greedy_causal_lm <MODEL_DIR> "<PROMPT>"
-  ```
+Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
+```sh
+pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
+```
 
-### 2. Beam Search Causal LM (`beam_search_causal_lm`)
-- **Description:**
-Uses beam search for more coherent text generation.
-Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
-Recommended models: meta-llama/Llama-2-7b-hf, etc
-- **Main Feature:** Improves text quality with beam search.
-- **Run Command:**
-  ```bash
-  ./beam_search_causal_lm <MODEL_DIR> "<PROMPT 1>" ["<PROMPT 2>" ...]
-  ```
-
-### 3. Chat Sample (`chat_sample`)
+### 1. Chat Sample (`chat_sample`)
 - **Description:**
 Interactive chat interface powered by OpenVINO.
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) that provides an example of LLM-powered text generation in Python.
@@ -62,11 +48,44 @@ Recommended models: meta-llama/Llama-2-7b-chat-hf, TinyLlama/TinyLlama-1.1B-Chat
   ./chat_sample <MODEL_DIR>
   ```
 #### Missing chat template
-If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model.
+If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model or update it using call `pipe.get_tokenizer().set_chat_template(new_chat_template)`.
 The following template can be used as a default, but it may not work properly with every model:
 ```
 "chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
 ```
+
+#### NPU support
+
+NPU device is supported with some limitations. See [NPU inference of
+LLMs](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) documentation. In particular:
+
+- Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
+  For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
+- Beam search and parallel sampling are not supported.
+- Use OpenVINO 2025.0 or later (installed by deployment-requirements.txt, see "Common information" section), and the latest NPU driver.
+
+
+### 2. Greedy Causal LM (`greedy_causal_lm`)
+- **Description:**
+Basic text generation using a causal language model.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
+Recommended models: meta-llama/Llama-2-7b-hf, etc
+- **Main Feature:** Demonstrates simple text continuation.
+- **Run Command:**
+  ```bash
+  ./greedy_causal_lm <MODEL_DIR> "<PROMPT>"
+  ```
+
+### 3. Beam Search Causal LM (`beam_search_causal_lm`)
+- **Description:**
+Uses beam search for more coherent text generation.
+Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-question-answering) that provides an example of LLM-powered text generation in Python.
+Recommended models: meta-llama/Llama-2-7b-hf, etc
+- **Main Feature:** Improves text quality with beam search.
+- **Run Command:**
+  ```bash
+  ./beam_search_causal_lm <MODEL_DIR> "<PROMPT 1>" ["<PROMPT 2>" ...]
+  ```
 
 ### 4. Multinomial Causal LM (`multinomial_causal_lm`)
 - **Description:** Text generation with multinomial sampling for diversity.
@@ -104,7 +123,16 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   ./speculative_decoding_lm <MODEL_DIR> <DRAFT_MODEL_DIR> "<PROMPT>"
   ```
 
-### 7. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
+### 7. LoRA Greedy Causal LM (`lora_greedy_causal_lm`)
+- **Description:**
+This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-tuned causal language models. LoRA enables efficient fine-tuning, reducing resource requirements for adapting large models to specific tasks.
+- **Main Feature:** Lightweight fine-tuning with LoRA for efficient text generation
+- **Run Command:**
+  ```bash
+  ./lora_greedy_causal_lm <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> "<PROMPT>"
+  ```
+
+### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
 - **Description:** 
 LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
 The following code snippet demonstrates how to load the model from the memory buffer:
@@ -120,7 +148,7 @@ For the sake of brevity the code above does not include Tokenizer decryption. Fo
   ./encrypted_model_causal_lm <MODEL_DIR> "<PROMPT>"
   ```
 
-### 8. LLMs benchmarking sample (`benchmark_genai`)
+### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 
 This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
@@ -133,8 +161,8 @@ For more information how performance metrics are calculated please follow [perfo
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
+- `--nw, --num_warmup` (default: `1`): Number of warmup iterations.
+- `--mt, --max_new_tokens` (default: `20`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 

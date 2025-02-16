@@ -13,6 +13,7 @@
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "utils.hpp"
 
 #include "tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -151,6 +152,16 @@ public:
     }
 };
 
+bool params_have_torch_generator(ov::AnyMap params) {
+    std::shared_ptr<ov::genai::Generator> generator = nullptr;
+    ov::genai::utils::read_anymap_param(params, "generator", generator);
+    if (std::dynamic_pointer_cast<::TorchGenerator>(generator)) {
+        return true;
+    }
+    return false;
+}
+
+
 } // namespace
 
 void init_clip_text_model(py::module_& m);
@@ -275,7 +286,11 @@ void init_image_generation_pipelines(py::module_& m) {
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -290,7 +305,17 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, params));
+                ov::Tensor res;
+                if (params_have_torch_generator(params)) {
+                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                    // so if it was passed, we don't release GIL
+                    res = pipe.generate(prompt, params);
+                }
+                else {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, params);
+                }
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
@@ -330,13 +355,18 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_static("stable_diffusion", &ov::genai::Image2ImagePipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("latent_consistency_model", &ov::genai::Image2ImagePipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("stable_diffusion_xl", &ov::genai::Image2ImagePipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
+        .def_static("flux", &ov::genai::Image2ImagePipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
         .def(
             "compile",
             [](ov::genai::Image2ImagePipeline& pipe,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -352,7 +382,17 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, image, params));
+                ov::Tensor res;
+                if (params_have_torch_generator(params)) {
+                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                    // so if it was passed, we don't release GIL
+                    res = pipe.generate(prompt, image, params);
+                }
+                else {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, image, params);
+                }
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",
@@ -393,13 +433,18 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_static("stable_diffusion", &ov::genai::InpaintingPipeline::stable_diffusion, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("latent_consistency_model", &ov::genai::InpaintingPipeline::latent_consistency_model, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("unet"), py::arg("vae"))
         .def_static("stable_diffusion_xl", &ov::genai::InpaintingPipeline::stable_diffusion_xl, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("clip_text_model_with_projection"), py::arg("unet"), py::arg("vae"))
+        .def_static("flux", &ov::genai::InpaintingPipeline::flux, py::arg("scheduler"), py::arg("clip_text_model"), py::arg("t5_encoder_model"), py::arg("transformer"), py::arg("vae"))
         .def(
             "compile",
             [](ov::genai::InpaintingPipeline& pipe,
                 const std::string& device,
                 const py::kwargs& kwargs
             ) {
-                pipe.compile(device,  pyutils::kwargs_to_any_map(kwargs));
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.compile(device, map);
+                }
             },
             py::arg("device"), "device on which inference will be done",
             R"(
@@ -416,7 +461,17 @@ void init_image_generation_pipelines(py::module_& m) {
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
-                return py::cast(pipe.generate(prompt, image, mask_image, params));
+                ov::Tensor res;
+                if (params_have_torch_generator(params)) {
+                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
+                    // so if it was passed, we don't release GIL
+                    res = pipe.generate(prompt, image, mask_image, params);
+                }
+                else {
+                    py::gil_scoped_release rel;
+                    res = pipe.generate(prompt, image, mask_image, params);
+                }
+                return py::cast(res);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Initial image",

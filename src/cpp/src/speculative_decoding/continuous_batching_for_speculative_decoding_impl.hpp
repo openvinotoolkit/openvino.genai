@@ -13,11 +13,10 @@ class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl :
 public:
     ContinuousBatchingForSpeculativeDecodingImpl() = default;
 
-    ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
-                                                 const std::shared_ptr<ov::Model>& model,
+    ContinuousBatchingForSpeculativeDecodingImpl(const std::shared_ptr<ov::Model>& model,
                                                  const Tokenizer& tokenizer,
                                                  const GenerationConfig& generation_config,
-                                                 const DeviceConfig& device_config,
+                                                 const std::vector<KVHeadConfig>& kv_cache_configs,
                                                  const SchedulerConfig& scheduler_config,
                                                  const std::string& device,
                                                  const ov::AnyMap& plugin_config,
@@ -31,6 +30,8 @@ public:
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
+
+    size_t get_processed_tokens_per_iteration();
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
