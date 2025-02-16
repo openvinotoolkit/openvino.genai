@@ -140,28 +140,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const std::vector<KVHeadConfig>& kv_cache_config) {
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
-    ov::AnyMap mutable_properties = properties;
+    // apply LoRA
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+    }
     // Extract sampler_num_threads property if exists and remove it from properties
     size_t sampler_num_threads = std::thread::hardware_concurrency();
-    auto sampler_num_threads_it = mutable_properties.find("sampler_num_threads");
-    if (sampler_num_threads_it != mutable_properties.end()) {
+    auto sampler_num_threads_it = filtered_properties->find("sampler_num_threads");
+    if (sampler_num_threads_it != filtered_properties->end()) {
         sampler_num_threads = sampler_num_threads_it->second.as<size_t>();
-        mutable_properties.erase(sampler_num_threads_it);
+        filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
     // TODO: remove once plugin automatically set KV cache precisions
-    apply_kv_cache_precision(model, device, mutable_properties);
+    apply_kv_cache_precision(model, device, *filtered_properties);
 
-    // apply LoRA
-    if (auto filtered_properties = extract_adapters_from_properties(mutable_properties, &m_generation_config.adapters)) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
-        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-        compiled_model = core.compile_model(model, device, *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(model, device, mutable_properties);
-    }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
@@ -419,7 +415,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-    
+
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
@@ -446,7 +442,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     auto all_requests = m_awaiting_requests; // we need to store all requests to get results from them once generation has finished
 
     GenerationHandle& generation = generations.at(0);
-    
+
     streamer_ptr->start();
 
     while (has_non_finished_requests()) {
