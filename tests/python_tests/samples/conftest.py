@@ -5,12 +5,16 @@ import pytest
 import shutil
 import logging
 import gc
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define model names and directories
+# Dictionary containing model configurations.
+# Each key is a model identifier, and the value is a dictionary with:
+# - "name": the model's name or path
+# - "convert_args": a list of arguments for the conversion command
 MODELS = {
     "TinyLlama-1.1B-Chat-v1.0": { 
         "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -88,11 +92,22 @@ def convert_model(request):
         ]
         if model_args:
             command.extend(model_args)
-        logger.info(f"convertion command: {command}")
-        try:
-            subprocess.run(command, check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Model {model_name} conversion failed. The following command was used: {e.cmd}")
+        logger.info(f"Conversion command: {command}")
+        retries = 5
+        timeout = 1
+        for attempt in range(retries):
+            try:
+                subprocess.run(command, check=True)
+                break
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Model {model_name} conversion failed on attempt {attempt + 1}. Retrying... Command: {e.cmd}")
+                if attempt < retries - 1:
+                    logger.info(f"Waiting {timeout} seconds before retrying...")
+                    time.sleep(timeout)
+                    timeout *= 2
+                else:
+                    logger.error(f"Model {model_name} conversion failed after {retries} attempts: {e.cmd}")
+                    raise e
             
     yield model_path
     # Cleanup the model after tests
