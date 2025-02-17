@@ -43,6 +43,8 @@ public:
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
+    void set_stop_token_ids(const std::set<int64_t>& stop_token_ids);
+
     // returns tokenized chat history
     std::vector<int64_t> get_tokenized_history() const;
 

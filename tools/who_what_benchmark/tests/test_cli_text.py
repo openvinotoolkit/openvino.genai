@@ -5,6 +5,7 @@ import tempfile
 import pandas as pd
 import pytest
 import logging
+import json
 
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
@@ -158,7 +159,7 @@ def test_text_verbose():
     assert "## Diff:" in result.stderr
 
 
-def test_text_language_autodetect():
+def test_text_language():
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_file_name = os.path.join(temp_dir, "gt.csv")
         result = run_wwb(
@@ -171,6 +172,8 @@ def test_text_language_autodetect():
                 "2",
                 "--device",
                 "CPU",
+                "--language",
+                "cn",
             ]
         )
         assert result.returncode == 0
@@ -213,6 +216,41 @@ def test_text_genai_model():
             "--genai",
         ]
     )
+    assert result.returncode == 0
+    assert "Metrics for model" in result.stderr
+    assert "## Reference text" not in result.stderr
+
+
+def test_text_genai_cb_model():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        config_path = os.path.join(temp_dir, "config.json")
+        with open(config_path, "w") as f:
+            config = {
+                "dynamic_split_fuse": True,
+                "use_cache_eviction": True,
+                "cache_eviction_config":
+                {
+                    "start_size": 32,
+                    "recent_size": 32,
+                    "max_cache_size": 96
+                }
+            }
+            json.dump(config, f)
+        result = run_wwb(
+            [
+                "--base-model",
+                base_model_path,
+                "--target-model",
+                target_model_path,
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+                "--genai",
+                "--cb-config",
+                config_path
+            ]
+        )
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
     assert "## Reference text" not in result.stderr

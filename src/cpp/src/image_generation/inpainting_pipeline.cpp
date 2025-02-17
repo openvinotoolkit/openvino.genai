@@ -10,6 +10,7 @@
 
 #include "image_generation/stable_diffusion_pipeline.hpp"
 #include "image_generation/stable_diffusion_xl_pipeline.hpp"
+#include "image_generation/flux_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -25,6 +26,8 @@ InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir) {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir);
+    } else if (class_name == "FluxPipeline" || class_name == "FluxInpaintPipeline") {
+        m_impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, root_dir);
     } else {
         OPENVINO_THROW("Unsupported inpainting pipeline '", class_name, "'");
     }
@@ -39,6 +42,8 @@ InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir, co
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
+    } else if (class_name == "FluxPipeline" || class_name == "FluxInpaintPipeline") {
+        m_impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported inpainting pipeline '", class_name, "'");
     }
@@ -92,6 +97,20 @@ InpaintingPipeline InpaintingPipeline::stable_diffusion_xl(
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae) {
     auto impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, clip_text_model, clip_text_model_with_projection, unet, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return InpaintingPipeline(impl);
+}
+
+InpaintingPipeline InpaintingPipeline::flux(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const CLIPTextModel& clip_text_model,
+    const T5EncoderModel& t5_text_encoder,
+    const FluxTransformer2DModel& transformer,
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, clip_text_model, t5_text_encoder, transformer, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);

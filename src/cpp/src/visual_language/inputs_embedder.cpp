@@ -46,6 +46,7 @@ protected:
     // True if chat template should be applied for non-chat scenario
     bool m_apply_chat_template = true;
 
+    std::set<int64_t> m_stop_token_ids;
 public:
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
 
@@ -69,6 +70,10 @@ public:
 
     size_t get_num_tokens_to_remove_from_hist() const {
         return m_kv_history_manager.num_tokens_to_remove_from_kv_cache;
+    }
+
+    void set_stop_token_ids(const std::set<int64_t>& stop_token_ids) {
+        m_stop_token_ids = stop_token_ids;
     }
 
     void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len) {
@@ -156,17 +161,12 @@ protected:
         ),
         m_tokenizer(tokenizer) { }
 
-    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = {}) {
+    std::pair<ov::Tensor, ov::Tensor> apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
             std::string new_templated_chat_history;
-           try {
-                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            } catch (const std::exception& error) {
-                // Use fallback chat template if it was not found in tokenizer_config.json
-                new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, chat_template_fallback);
-            }
+            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             auto start_tokenizer_time = std::chrono::steady_clock::now();
             ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
             ov::Tensor prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
@@ -182,12 +182,7 @@ protected:
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
 
-                if (!m_tokenizer.get_chat_template().empty()) {
-                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-                } else {
-                    // Use fallback chat template if it was not found in tokenizer_config.json
-                    templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template_fallback);
-                }
+                templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
                 encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
             } else {
                 encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
@@ -215,23 +210,22 @@ protected:
             // so let's check it out, find the trusted part and use it in on the next step
             size_t trusted_history_length = 0;
             if (!m_tokenized_history.empty()) {
-                std::set<int64_t> stop_tokens = {m_tokenizer.get_eos_token_id()};
-                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, stop_tokens);
+                trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens, m_tokenized_history, m_stop_token_ids);
             }
 
             if (m_tokenized_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
 
-            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_kv_cache_need_to_update()) {
-                // does_kv_cache_need_to_update will be true here if beam search is activated
+            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_history_cache_need_to_update()) {
+                // does_history_cache_need_to_update will be true here if beam search is activated
                 // in beam search mode we want to remove all history about last model answer from kv cache and add the best answer directly
                 // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_kv_history_manager
-                if (m_kv_history_manager.does_kv_cache_need_to_update()) {
+                if (m_kv_history_manager.does_history_cache_need_to_update()) {
                     trusted_history_length = m_kv_history_manager.trusted_history_length;
                 } else {
                     m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_tokenized_history.size() - trusted_history_length;
-                    // if prev generation was finished because of max len was reached, kv cache is missed one last token, let's keep it
-                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache -= m_last_disappeared_token.has_value() ? 1 : 0;
+                    // last generated token is present in tokenized_history, but not included to attention mask, let's keep it in history
+                    m_kv_history_manager.num_tokens_to_remove_from_kv_cache -= 1;
                 }
 
                 ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
@@ -258,8 +252,8 @@ protected:
         }
     }
 
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics, const std::string& chat_template_fallback = "") {
-        const auto [new_chat_tokens, prev_chat_tokens] = apply_chat_template_tokenize(prompt, metrics, chat_template_fallback);
+    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
+        const auto [new_chat_tokens, prev_chat_tokens] = apply_chat_template_tokenize(prompt, metrics);
         return update_history(new_chat_tokens, prev_chat_tokens);
     }
 
@@ -649,8 +643,6 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
-        // Adapted from llava-1.5-7b-hf chat_template.json
-        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
         
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
@@ -666,7 +658,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -764,8 +756,6 @@ public:
 
     virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::string image_token = m_vlm_config.im_start;
-        // Adapted from llava-1.5-7b-hf chat_template.json
-        std::string chat_template_fallback = "{% for message in messages %}{% if message['role'] == 'user' %}{{ 'USER: ' + message['content'] + ' ' }}{% else %}{{ 'ASSISTANT: ' + message['content'] + ' ' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ 'ASSISTANT:' }}{% endif %}";
 
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
@@ -795,7 +785,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         if (images.empty()) {
@@ -1496,7 +1486,6 @@ public:
         m_vision_projection{utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {}).create_infer_request()} {}
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
-        OPENVINO_ASSERT(images.empty() || m_history.empty(), "Images can only be provided for initial prompt");
         std::vector<ov::Tensor> images_features_proj;
         std::stringstream images_prompt;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
@@ -1528,41 +1517,48 @@ public:
         ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_tokens_per_images);
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
-        OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1);
+        // if <|image_i|> tag is in the begining, it doesn't split tokes into separate sequences and tokens.size() == images_features_proj.size().
+        OPENVINO_ASSERT(tokens.size() == images_features_proj.size() + 1 || tokens.size() == images_features_proj.size());
         size_t features_length = 0;
         for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
             size_t text_length = tokens.at(im_id).get_shape().at(1);
             size_t im_length = images_features_proj.at(im_id).get_shape().at(1);
             features_length += text_length + im_length;
         }
-        features_length += tokens.back().get_shape().at(1);
+        if (tokens.size() > images_features_proj.size()) {
+            features_length += tokens.back().get_shape().at(1);
+        }
         ov::Tensor inputs_embeds{ov::element::f32, {1, features_length, m_vlm_config.hidden_size}};
         size_t offset = 0;
-        for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
-            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
-            const ov::Tensor& image_embeds = images_features_proj.at(im_id);
+        if (tokens.size() > images_features_proj.size()) {
+            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(0));
             size_t text_length = text_embeds.get_shape().at(1);
-            size_t im_length = image_embeds.get_shape().at(1);
             std::copy_n(
                 text_embeds.data<float>(),
                 text_embeds.get_size(),
-                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+                inputs_embeds.data<float>()
             );
-            offset += text_length;
+            offset = text_length;
+            tokens.erase(tokens.begin());
+        }
+        for (size_t im_id = 0; im_id < images_features_proj.size(); ++im_id) {
+            const ov::Tensor& image_embeds = images_features_proj.at(im_id);
+            size_t im_length = image_embeds.get_shape().at(1);
             std::copy_n(
                 image_embeds.data<float>(),
                 image_embeds.get_size(),
                 inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
             );
             offset += im_length;
+            const ov::Tensor& text_embeds = m_embedding.infer(tokens.at(im_id));
+            size_t text_length = text_embeds.get_shape().at(1);
+            std::copy_n(
+                text_embeds.data<float>(),
+                text_embeds.get_size(),
+                inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+            );
+            offset += text_length;
         }
-        const ov::Tensor& text_embeds = m_embedding.infer(tokens.back());
-        size_t text_length = text_embeds.get_shape().at(1);
-        std::copy_n(
-            text_embeds.data<float>(),
-            text_embeds.get_size(),
-            inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-        );
 
         if (!m_is_chat_conversation) {
             m_tokens_per_images.clear();
@@ -1652,9 +1648,7 @@ public:
         }
         formatted_prompt += prompt;
 
-        // Adapted from Qwen/Qwen2-7B-Instruct
-        std::string chat_template_fallback = "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics, chat_template_fallback);
+        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
         ov::Tensor text_embeds = m_embedding.infer(input_ids);
 
         auto start_tokenizer_time = std::chrono::steady_clock::now();
@@ -2036,6 +2030,10 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(c
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
+}
+
+void InputsEmbedder::set_stop_token_ids(const std::set<int64_t>& stop_token_ids) {
+    return m_impl->set_stop_token_ids(stop_token_ids);
 }
 
 std::vector<int64_t> InputsEmbedder::get_tokenized_history() const {

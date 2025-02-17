@@ -299,7 +299,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     int64_t output_token = decode(encoder_hidden_state, models.decoder, init_ids, config, raw_metrics, true, return_timestamps);
     std::vector<int64_t> output_tokens{output_token};
 
-    if (!return_timestamps && streamer && streamer->put(output_token)) {
+    if (!return_timestamps && streamer && streamer->write(output_token) != ov::genai::StreamingStatus::RUNNING) {
         return {true, output_tokens};
     }
 
@@ -325,7 +325,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
         output_tokens.push_back(output_token);
 
-        if (!return_timestamps && streamer && streamer->put(output_token)) {
+        if (!return_timestamps && streamer && streamer->write(output_token) != ov::genai::StreamingStatus::RUNNING) {
             return {true, output_tokens};
         }
     }
@@ -567,6 +567,13 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     ChunkStreamerVariant streamer) {
     auto start_time = std::chrono::steady_clock::now();
     WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (config.stop_token_ids.empty())
+        config.stop_token_ids = m_generation_config.stop_token_ids;
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (config.eos_token_id == -1)
+        config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
     OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
@@ -578,6 +585,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
         streamer_ptr = *streamer_obj;
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
+    } else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
     }
 
@@ -654,7 +663,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer_ptr && streamer_ptr->put_chunk(extracted_segments.non_timestamp_tokens)) {
+            if (streamer_ptr && streamer_ptr->write_chunk(extracted_segments.non_timestamp_tokens) != StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

@@ -10,10 +10,10 @@ from functools import partial
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  Tokenizer, draft_model
 
-from common import get_default_properties, get_hugging_face_models, convert_models, generate_and_compare_with_reference_text, \
-    get_scheduler_config, get_greedy, run_cb_pipeline_with_ref, get_beam_search, get_greedy, \
-    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
-    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
+from common import generate_and_compare_with_reference_text, \
+    get_scheduler_config, run_cb_pipeline_with_ref
+from common import generate_and_compare_with_reference_text, \
+    get_scheduler_config, run_cb_pipeline_with_ref
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
 from ov_genai_test_utils import (
@@ -34,6 +34,12 @@ def read_models_list(file_name: str):
     return models
 
 from shutil import rmtree
+
+from utils.generation_config import get_greedy, get_beam_search, \
+    get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
+    get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
+from utils.constants import get_default_llm_properties
+from utils.hugging_face import get_hugging_face_models, convert_models
 
 #
 # e2e tests on random and real models
@@ -79,7 +85,7 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id, path, tokenizer, model, stateful = read_model((
         "facebook/opt-125m",
         Path("opt-125m")
-    ))
+    ), padding_side="left")
     cb_pipe = get_continuous_batching(path)
     generated = cb_pipe.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
@@ -158,7 +164,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
 
-    cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU", **get_default_properties())
+    cb_pipe = ContinuousBatchingPipeline(models_path, Tokenizer(models_path), scheduler_config, "CPU", **get_default_llm_properties())
 
     # First run should return incomplete response
     output = cb_pipe.generate(["What is OpenVINO?"], [generation_config])
@@ -370,22 +376,24 @@ def test_pipelines_generate_with_streaming(tmp_path, pipeline_type):
     model_id : str = "facebook/opt-125m"
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
-    models_path : Path = tmp_path / "t_streaming" / model_id
+    models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
 
     generation_config = GenerationConfig()
-    pipe, input, gen_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
+    pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
+    it_cnt = 0
     def py_streamer(py_str: str):
+        nonlocal it_cnt
+        it_cnt += 1
         return False
 
-    try:
-        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-    except Exception:
-        assert True
+    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
+
+    assert it_cnt > 0
 
 @pytest.mark.parametrize("pipeline_type", ["continuous_batching", "speculative_decoding", "prompt_lookup_decoding", "llm_pipeline"])
 @pytest.mark.precommit
@@ -393,22 +401,24 @@ def test_pipelines_generate_with_streaming_empty_output(tmp_path, pipeline_type)
     model_id : str = "facebook/opt-125m"
     opt_model, hf_tokenizer = get_hugging_face_models(model_id)
 
-    models_path : Path = tmp_path / "t_streaming" / model_id
+    models_path : Path = tmp_path / model_id
     convert_models(opt_model, hf_tokenizer, models_path)
     
     generation_config = GenerationConfig()
-    generation_config.stop_strings = {" the "}
+    generation_config.stop_strings = {" the"}
     generation_config.include_stop_str_in_output = False
 
     pipe, input, generation_config = get_data_by_pipeline_type(models_path, pipeline_type, generation_config)
 
+    it_cnt = 0
     def py_streamer(py_str: str):
-        raise Exception("Streamer was called")
+        nonlocal it_cnt
+        it_cnt += 1
+        return False
 
-    try:
-        _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
-    except Exception:
-        assert False
+    _ = pipe.generate(input, generation_config=generation_config, streamer=py_streamer)
 
     del pipe
     rmtree(models_path)
+
+    assert it_cnt == 0

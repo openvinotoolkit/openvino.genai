@@ -107,10 +107,16 @@ struct MatchStopStringResult {
 MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                       const TokenIds& generated_tokens,
                       const std::pair<size_t, std::set<std::string>>& stop_strings,
-                      bool is_include_to_output) {
+                      bool is_include_to_output,
+                      size_t draft_generated_tokens = 0) {
     MatchStopStringResult result;
     if (generated_tokens.size() >= stop_strings.first) {
-        size_t offset = generated_tokens.size() - stop_strings.first;
+        // draft_generated_tokens is to handle case with >= 1 generated tokens per step
+        size_t offset = generated_tokens.size() - draft_generated_tokens;
+        if (offset < stop_strings.first) {
+            return result;
+        }
+        offset -= stop_strings.first;
         TokenIds buffer(generated_tokens.begin() + offset, generated_tokens.end());
         std::string decoded_buffer = tokenizer.decode(buffer);
         for (const auto& stop_string : stop_strings.second) {
@@ -132,7 +138,7 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                 // find token cnt to be removed from sequence by decoding token by token
                 std::string decoded_partially_string;
                 for (size_t i = 0; i < buffer.size(); ++i) {
-                    decoded_partially_string += tokenizer.decode(TokenIds{buffer[i]});
+                    decoded_partially_string = tokenizer.decode(TokenIds{buffer.begin(), buffer.begin() + i + 1});
                     if (decoded_partially_string.find(decoded_buffer) != std::string::npos) {
                         result.to_remove = buffer.size() - i - 1;
                         break;
@@ -567,7 +573,8 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
 
         if (!sampling_params.stop_strings.empty()) {
             auto& stop_strings = m_stop_strings.at(sequence_group->get_request_id());
-            auto match_result = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), stop_strings, sampling_params.include_stop_str_in_output);
+            auto match_result = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), stop_strings,
+                                                  sampling_params.include_stop_str_in_output, sequence_group->get_num_tokens_to_validate());
             if (match_result.is_matched) {
                 running_sequence->remove_last_tokens(match_result.to_remove);
 

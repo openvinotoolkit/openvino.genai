@@ -90,7 +90,7 @@ public:
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
         for (GenerationResult& res : generated) {
-            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::DROPPED_BY_HANDLE, "Got unfinished GenerationStatus");
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
@@ -182,7 +182,7 @@ public:
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
-            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::DROPPED_BY_HANDLE, "Got unfinished GenerationStatus");
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }

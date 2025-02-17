@@ -71,6 +71,14 @@ public:
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae);
 
+    // creates Flux pipeline from building blocks
+    static InpaintingPipeline flux(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModel& clip_text_model,
+        const T5EncoderModel& t5_text_encoder,
+        const FluxTransformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
     ImageGenerationConfig get_generation_config() const;
     void set_generation_config(const ImageGenerationConfig& generation_config);
 

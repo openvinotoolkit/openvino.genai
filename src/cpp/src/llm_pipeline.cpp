@@ -43,19 +43,52 @@ std::pair<ov::AnyMap, ov::genai::static_llm::ModelConfigDesc> split_model_descr(
 }
 
 const std::string PA_BACKEND = "PA";
-const std::string SPDA_BACKEND = "SPDA";
+const std::string SDPA_BACKEND = "SDPA";
+
+SchedulerConfig get_latency_oriented_scheduler_config() {
+    SchedulerConfig default_config;
+    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
+    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    return default_config;
+}
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+    return properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
+           properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
+           properties.find(ov::genai::prompt_lookup.name()) != properties.end();
+}
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
-    ov::AnyMap properties = external_properties;
-    auto it = properties.find("ATTENTION_BACKEND");
     std::string attention_backend = PA_BACKEND;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find("ATTENTION_BACKEND");
     if (it != properties.end()) {
         attention_backend = it->second.as<std::string>();
-        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SPDA_BACKEND,
-            "Attention backend must be either '", PA_BACKEND, "' or '", SPDA_BACKEND, "', got '", attention_backend, "'");
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
+            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
         properties.erase(it);
     }
+
+    if (explicitly_requires_paged_attention(properties)) {
+        OPENVINO_ASSERT(attention_backend == PA_BACKEND,
+            "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
+    }
+
     return {properties, attention_backend};
+};
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    } else if (default_config.has_value()) {
+        scheduler_config = *default_config;
+    }
+    return {plugin_config, scheduler_config};
 };
 
 
@@ -65,7 +98,9 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
-    } else  {
+    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
+    } else {
         auto callback = std::get<std::function<bool(std::string)>>(func);
         return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
     }
@@ -79,7 +114,7 @@ std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& properties) {
-    auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
+    auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
@@ -95,7 +130,7 @@ std::pair<std::string, Any> draft_model(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config) {
-    auto [plugin_config, scheduler_config] = utils::split_scheduler_config(properties);
+    auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -122,10 +157,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-        properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-        auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
+    if (explicitly_requires_paged_attention(properties)) {
+        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
 
@@ -139,11 +172,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #ifdef OPENVINO_ARCH_X86_64
-            SchedulerConfig default_config;
-            default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-            default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
-
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, default_config, device, properties);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, get_latency_oriented_scheduler_config(), device, properties);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
@@ -166,10 +195,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-        properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-        auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
+    if (explicitly_requires_paged_attention(properties)) {
+        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     }
 
@@ -183,11 +210,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #ifdef OPENVINO_ARCH_X86_64
-            SchedulerConfig default_config;
-            default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-            default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
-
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, default_config, device, properties);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, get_latency_oriented_scheduler_config(), device, properties);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA
@@ -213,11 +236,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
 
     // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-        properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() ||
-        properties.find(ov::genai::prompt_lookup.name()) != properties.end()){
-
-        auto [device_properties, scheduler_config] = utils::split_scheduler_config(properties);
+    if (explicitly_requires_paged_attention(properties)) {
+        auto [device_properties, scheduler_config] = extract_scheduler_config(properties, get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
     }
@@ -252,12 +272,8 @@ ov::genai::LLMPipeline::LLMPipeline(
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #ifdef OPENVINO_ARCH_X86_64
-            SchedulerConfig default_config;
-            default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-            default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
-
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor, tokenizer,
-                                                                  default_config, device, properties, generation_config);
+                                                                  get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA

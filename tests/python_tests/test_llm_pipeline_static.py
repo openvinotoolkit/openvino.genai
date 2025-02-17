@@ -12,9 +12,8 @@ from ov_genai_test_utils import (
     get_chat_models_list,
     read_model
 )
-from common import get_default_properties
-
-from common import                                      \
+from utils.constants import get_default_llm_properties
+from utils.generation_config import                     \
     get_greedy,                                         \
     get_greedy_with_penalties,                          \
     get_multinomial_all_parameters,                     \
@@ -33,7 +32,7 @@ common_config = {
                       'NPUW_ONLINE_PIPELINE': 'NONE',
                       'PREFILL_CONFIG': { },
                       'GENERATE_CONFIG': { }
-                } | get_default_properties()
+                } | get_default_llm_properties()
 
 
 def generate_chat_history(model_path, device, pipeline_config, questions):
@@ -55,7 +54,7 @@ def test_generation_compare_with_stateful(generation_config):
     prompt = 'What is OpenVINO?'
     model_path = read_model(get_models_list()[0])[1]
 
-    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_properties())
+    stateful_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
@@ -193,16 +192,22 @@ def test_terminate_by_sampler():
 
     current_iter = 0
     num_iters = 10
-    def callback(subword):
-        nonlocal current_iter
-        current_iter += 1
-        return current_iter == num_iters
+
+    class TestStreamer(ov_genai.StreamerBase):
+        def __init__(self):
+            ov_genai.StreamerBase.__init__(self)
+        def put(self, token_id):
+            nonlocal current_iter
+            current_iter += 1
+            return current_iter == num_iters
+        def end(self):
+            pass
 
     tokenizer = ov_genai.Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
 
     pipe = ov_genai.LLMPipeline(model_path, "NPU", **common_config)
-    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=callback)
+    encoded_results = pipe.generate(tokenized_input, max_new_tokens=1000, ignore_eos=True, streamer=TestStreamer())
 
     assert len(encoded_results.tokens[0]) == num_iters
 
@@ -221,7 +226,7 @@ def test_chat_generation():
 
     model_path = read_model(get_chat_models_list()[0])[1]
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_properties(), questions)
+    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
     chat_history_static   = generate_chat_history(model_path, "NPU", common_config, questions)
 
     print('npu chat: \n{chat_history_static}\n')

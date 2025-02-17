@@ -342,19 +342,19 @@ public:
     }
 
     // must be used only after sequence group generation loop has finished (either by lenght or OOM)
-    // or stopped / cancelled via streamer / generation_stream->drop()
+    // or stopped / cancelled via streamer / generation_stream->stop() / generation_stream->cancel()
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         finished_seqs.reserve(num_total_seqs());
 
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_dropped()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_stopped() || handle_cancelled()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
         OPENVINO_ASSERT(finished_seqs.size() == num_total_seqs(), "Internal error: get_finished_sequences() must be called when all sequences are "
-            "either finisehed / ignored by OOM or dropped via GenerationStream::drop()");
+            "either finished / ignored by OOM or dropped via GenerationStream::stop() / GenerationStream::cancel()");
 
         std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
@@ -589,8 +589,12 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
-    bool handle_dropped() const {
-        return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
+    bool handle_stopped() const {
+        return m_generation_stream->get_status() == GenerationStatus::STOP;
+    }
+
+    bool handle_cancelled() const {
+        return m_generation_stream->get_status() == GenerationStatus::CANCEL;
     }
 
     void push_empty_outputs() {

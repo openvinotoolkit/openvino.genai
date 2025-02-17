@@ -8,6 +8,8 @@
 
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "lora_helper.hpp"
+#include "lora_names_mapping.hpp"
 
 #include "json_utils.hpp"
 namespace {
@@ -99,8 +101,8 @@ protected:
 
     virtual void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const = 0;
 
-    void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
-        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
+    virtual void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current", latent.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor noised_image_latent(image_latent.get_element_type(), {});
@@ -130,6 +132,10 @@ protected:
                 latent_data[j * channel_size + i] = (1.0f - mask_value) * noised_image_latent_data[j * channel_size + i] + mask_value * latent_data[j * channel_size + i];
             }
         }
+    }
+
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, diffusers_adapter_normalization);
     }
 
     PipelineType m_pipeline_type;
