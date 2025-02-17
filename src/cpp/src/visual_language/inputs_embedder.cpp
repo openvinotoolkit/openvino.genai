@@ -21,7 +21,6 @@ namespace ov::genai {
 
 // Base InputsEmbedder class
 
-
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
