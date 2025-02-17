@@ -782,12 +782,6 @@ void StatefulLLMPipeline::updateStatefulConfig(
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
 
-    // NB: Try to apply opt transpose only for Llama-2-7b-chat-hf model
-    if ( model_desc.name_or_path == "meta-llama/Llama-2-7b-chat-hf" ||
-        (model_desc.type == "llama" && model_desc.num_key_value_heads == 32)) {
-            update_config(pipeline_config, {"NPUW_LLM_OPTIMIZE_V_TENSORS", true});
-    }
-
     rename_key(pipeline_config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(pipeline_config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(pipeline_config, "PREFILL_CONFIG", "NPUW_LLM_PREFILL_CONFIG");
