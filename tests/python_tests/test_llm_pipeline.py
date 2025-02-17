@@ -17,7 +17,7 @@ from common import run_llm_pipeline_with_ref
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
-from utils.tokenizers import delete_rt_info
+from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline
 from data.models import get_models_list, get_chat_models_list
 

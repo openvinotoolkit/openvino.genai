@@ -158,7 +158,7 @@ def run_hugging_face(
 # download HF model or read converted model
 def get_hugging_face_models(model_id: str | Path):
     hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
+    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties())
     return opt_model, hf_tokenizer
 
 
