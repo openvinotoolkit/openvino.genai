@@ -46,12 +46,20 @@ public:
         const ov::genai::GenerationConfig& generation_config = {}
     );
 
+    void updateStatefulConfig(
+        ov::AnyMap& pipeline_config,
+        const ov::genai::utils::KVAxesPosition& kv_pos
+    );
+
     std::shared_ptr<ov::CompiledModel> setupAndCompileModel(
         const std::shared_ptr<ov::Model>& model,
-        ov::AnyMap& pipeline_config);
+        ov::AnyMap& pipeline_config
+    );
 
-    void updateStatefulConfig(ov::AnyMap& pipeline_config,
-                              const std::shared_ptr<ov::Model>& model);
+    std::shared_ptr<ov::CompiledModel> setupAndCompileModel(
+        const std::filesystem::path& model_path,
+        ov::AnyMap& pipeline_config
+    );
 
     DecodedResults generate(
         StringInputs inputs,

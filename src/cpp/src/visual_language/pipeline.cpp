@@ -92,7 +92,7 @@ public:
         );
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
         auto language_model = compiled_language_model.get_runtime_model();
-        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_kv_axes_pos(language_model).seq_len;
 
         m_language = compiled_language_model.create_infer_request();
 

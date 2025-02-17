@@ -305,7 +305,7 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         return idx;
 }
 
-KVAxesPosition get_seq_len_axis(std::shared_ptr<const ov::Model> model) {
+KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
     // therefore usually seq_length_axis = 2 and batch = 0
     KVAxesPosition kv_pos { 0u, 2u };

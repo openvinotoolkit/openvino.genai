@@ -679,15 +679,22 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         if (!fin.is_open()) {
             OPENVINO_THROW("Blob file can't be opened: " + blob_path);
         }
-        auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
+        auto compiled = genai::utils::singleton_core().import_model(fin, device, config);
         m_max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         auto min_resp_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
         m_kvcache_total = m_max_prompt_len + min_resp_len;
         m_request = compiled.create_infer_request();
     } else {
-        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
         ov::AnyMap properties = config;
-        auto compiled = setupAndCompileModel(model, properties);
+        std::shared_ptr<ov::CompiledModel> compiled;
+        // CACHE_DIR + weightless flow support
+        auto cache_mode = get_option<CacheMode>(config, "CACHE_MODE");
+        if (cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED) {
+            auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
+            compiled = setupAndCompileModel(model, properties);
+        } else {
+            compiled = setupAndCompileModel(models_path / "openvino_model.xml", properties);
+        }
         // Also export compiled model if required
         if (export_blob) {
             if (blob_path.empty()) {
@@ -728,7 +735,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 }
 
 void StatefulLLMPipeline::updateStatefulConfig(ov::AnyMap& pipeline_config,
-                                               const std::shared_ptr<ov::Model>& model) {
+                                               const ov::genai::utils::KVAxesPosition& kv_pos) {
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     m_max_prompt_len = kMaxPromptLen;
@@ -737,10 +744,8 @@ void StatefulLLMPipeline::updateStatefulConfig(ov::AnyMap& pipeline_config,
     update_config(pipeline_config, {"NPU_USE_NPUW", "YES"});
     update_config(pipeline_config, {"NPUW_LLM", "YES"});
 
-    auto axes = ov::genai::utils::get_seq_len_axis(model);
-
-    update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
-    update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+    update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
 
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
@@ -755,9 +760,20 @@ void StatefulLLMPipeline::updateStatefulConfig(ov::AnyMap& pipeline_config,
 std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     const std::shared_ptr<ov::Model>& model,
     ov::AnyMap& pipeline_config) {
-    updateStatefulConfig(pipeline_config, model);
-
+    auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
+    updateStatefulConfig(pipeline_config, kv_pos);
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
+}
+
+std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
+    const std::filesystem::path& model_path,
+    ov::AnyMap& pipeline_config) {
+    auto kv_pos = ov::genai::utils::get_kv_axes_pos(
+        // NB: Only read model to identify seq_len and batch axes
+        genai::utils::singleton_core().read_model(model_path)
+    );
+    updateStatefulConfig(pipeline_config, kv_pos);
+    return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model_path, "NPU", pipeline_config));
 }
 
 DecodedResults StatefulLLMPipeline::generate(
