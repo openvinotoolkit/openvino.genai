@@ -583,6 +583,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 30s ./build/samples/cpp/text_generation/encrypted_model_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?"
+          timeout 30s  python ./samples/python/text_generation/encrypted_model_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?"
 
   benchmark_genai-ubuntu:
     runs-on: ubuntu-24.04
