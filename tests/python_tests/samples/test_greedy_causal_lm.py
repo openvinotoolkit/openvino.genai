@@ -17,7 +17,7 @@ class TestGreedyCausalLM:
         ],
         indirect=["convert_model"],
     )
-    def test_sample_greedy_causal_lm(self, convert_model, sample_args, shared_data, request):
+    def test_sample_greedy_causal_lm(self, convert_model, sample_args):
         # Test Python sample
         script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
         py_result = subprocess.run(["python", script, convert_model, sample_args], capture_output=True, text=True, check=True)
