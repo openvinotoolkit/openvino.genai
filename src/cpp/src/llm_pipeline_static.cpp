@@ -400,22 +400,6 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
     return axes;
 }
 
-ov::genai::static_llm::ModelConfigDesc get_modeldesc_from_json(const std::filesystem::path& filepath) {
-    std::ifstream file(filepath);
-    OPENVINO_ASSERT(file.is_open(), "Could not open file: ", filepath);
-    nlohmann::json config_data = nlohmann::json::parse(file);
-
-    ov::genai::static_llm::ModelConfigDesc desc;
-    desc.type = config_data["model_type"].get<std::string>();
-    // NB: In case _name_or_path field isn't presented in config.json
-    if (config_data.contains("_name_or_path")) {
-        desc.name_or_path = config_data["_name_or_path"].get<std::string>();
-    }
-    desc.num_key_value_heads = config_data.contains("num_key_value_heads")
-        ? config_data["num_key_value_heads"].get<int>() : -1;
-    return desc;
-}
-
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
                        const uint32_t kvcache_size,
@@ -718,9 +702,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_request = compiled.create_infer_request();
     } else {
         auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
-        ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
         ov::AnyMap properties = config;
-        auto compiled = setupAndCompileModel(model, model_desc, properties);
+        auto compiled = setupAndCompileModel(model, properties);
         // Also export compiled model if required
         if (export_blob) {
             if (blob_path.empty()) {
@@ -748,7 +731,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::shared_ptr<ov::Model>& model,
-    const ModelConfigDesc& model_desc,
     const ov::genai::Tokenizer& tokenizer,
     const std::string&,
     const ov::AnyMap& properties,
@@ -756,13 +738,12 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 ) : LLMPipelineImplBase(tokenizer, generation_config),
     m_sampler(m_tokenizer) {
     ov::AnyMap properties_copy = properties;
-    auto compiled = setupAndCompileModel(model, model_desc, properties_copy);
+    auto compiled = setupAndCompileModel(model, properties_copy);
     m_request = compiled->create_infer_request();
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
 void StatefulLLMPipeline::updateStatefulConfig(
-    const ModelConfigDesc& model_desc,
     ov::AnyMap& pipeline_config) {
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
@@ -772,9 +753,9 @@ void StatefulLLMPipeline::updateStatefulConfig(
     update_config(pipeline_config, {"NPU_USE_NPUW", "YES"});
     update_config(pipeline_config, {"NPUW_LLM", "YES"});
 
-    KVAxesPosition axes = get_kv_axes(model_desc.type);
-    update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
-    update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+    //KVAxesPosition axes = get_kv_axes(model_desc.type);
+    //update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
+    //update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
 
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
@@ -788,9 +769,8 @@ void StatefulLLMPipeline::updateStatefulConfig(
 
 std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     const std::shared_ptr<ov::Model>& model,
-    const ModelConfigDesc& model_desc,
     ov::AnyMap& pipeline_config) {
-    updateStatefulConfig(model_desc, pipeline_config);
+    updateStatefulConfig(pipeline_config);
 
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
 }
@@ -1027,7 +1007,6 @@ LLMPipelineFactory::create(const std::filesystem::path& models_path,
 }
 
 std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::shared_ptr<ov::Model>& model,
-                                                                const ModelConfigDesc& model_desc,
                                                                 const ov::genai::Tokenizer& tokenizer,
                                                                 const std::string& device,
                                                                 const ov::AnyMap& properties,
@@ -1036,7 +1015,6 @@ std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::share
     const auto pipeline_mode = str_to_pipeline(pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATEFUL")));
     if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
-                                                                            model_desc,
                                                                             tokenizer,
                                                                             device,
                                                                             properties_copy,

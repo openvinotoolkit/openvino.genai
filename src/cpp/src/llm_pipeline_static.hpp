@@ -12,12 +12,6 @@ namespace ov {
 namespace genai {
 namespace static_llm {
 
-struct ModelConfigDesc {
-    std::string type;
-    std::string name_or_path;
-    int num_key_value_heads;
-};
-
 struct LLMPipelineFactory {
     static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& path,
                                                        const ov::genai::Tokenizer& tokenizer,
@@ -29,7 +23,6 @@ struct LLMPipelineFactory {
                                                        const ov::AnyMap& config);
 
     static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Model>& model,
-                                                       const ModelConfigDesc& model_desc,
                                                        const ov::genai::Tokenizer& tokenizer,
                                                        const std::string& device,
                                                        const ov::AnyMap& properties,
@@ -47,7 +40,6 @@ public:
 
     StatefulLLMPipeline(
         const std::shared_ptr<ov::Model>& model,
-        const ModelConfigDesc& model_desc,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& properties,
@@ -56,12 +48,9 @@ public:
 
     std::shared_ptr<ov::CompiledModel> setupAndCompileModel(
         const std::shared_ptr<ov::Model>& model,
-        const ModelConfigDesc& model_desc,
         ov::AnyMap& pipeline_config);
 
-    void updateStatefulConfig(
-        const ModelConfigDesc& model_desc,
-        ov::AnyMap& pipeline_config);
+    void updateStatefulConfig(ov::AnyMap& pipeline_config);
 
     DecodedResults generate(
         StringInputs inputs,
