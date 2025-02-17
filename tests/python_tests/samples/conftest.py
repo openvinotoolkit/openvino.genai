@@ -55,7 +55,7 @@ TEMP_DIR = os.environ.get("TEMP_DIR", tempfile.mkdtemp())
 MODELS_DIR = os.path.join(TEMP_DIR, "test_models")
 TEST_DATA = os.path.join(TEMP_DIR, "test_data")
 
-SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.getcwd())
+SAMPLES_PY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python"))
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
 # A shared fixture to hold data
