@@ -6,38 +6,29 @@ import subprocess # nosec B404
 import pytest
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 
+   
 @pytest.mark.llm
-@pytest.mark.py
-@pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
-@pytest.mark.parametrize("sample_args", ["0"])
-def test_python_sample_multinomial_causal_lm_tiny_llama(convert_model, sample_args):
-    script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
-    subprocess.run(["python", script, convert_model, sample_args], check=True)
-    
-@pytest.mark.llm
-@pytest.mark.py
-@pytest.mark.parametrize("convert_model", ["open_llama_3b_v2"], indirect=True)
-@pytest.mark.parametrize("sample_args", ["a", "return 0"])
-def test_python_sample_multinomial_causal_lm_open_llama(convert_model, sample_args, shared_data):
-    script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
-    result = subprocess.run(["python", script, convert_model, sample_args], capture_output=True, text=True, check=True)
-    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("py", {}).setdefault("open_llama_3b_v2", {})[sample_args] = result.stdout
+@pytest.mark.parametrize(
+    "convert_model, sample_args, sample_type",
+    [
+        pytest.param("open_llama_3b_v2", "return 0", "all"),
+        pytest.param("TinyLlama-1.1B-Chat-v1.0", "0", "py"),
+    ],
+    indirect=["convert_model"],
+)
+def test_sample_multinomial_causal_lm(convert_model, sample_args, sample_type):
+    py_result = cpp_result = None
 
-@pytest.mark.llm
-@pytest.mark.cpp
-@pytest.mark.parametrize("convert_model", ["open_llama_3b_v2"], indirect=True)
-@pytest.mark.parametrize("sample_args", ["return 0"])
-def test_cpp_sample_multinomial_causal_lm_open_llama(convert_model, sample_args,  shared_data):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
-    result = subprocess.run([cpp_sample, convert_model, sample_args], capture_output=True, text=True, check=True)
-    shared_data.setdefault("multinomial_causal_lm", {}).setdefault("cpp", {}).setdefault("open_llama_3b_v2", {})[sample_args] = result.stdout
+    if "py" == sample_type:
+        # Run Python sample
+        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/multinomial_causal_lm.py")
+        py_result = subprocess.run(["python", py_script, convert_model, sample_args], capture_output=True, text=True, check=True).stdout
 
-@pytest.mark.llm    
-@pytest.mark.cpp
-@pytest.mark.py
-def test_sample_multinomial_causal_lm_diff(shared_data):
-    py_result = shared_data.get("multinomial_causal_lm", {}).get("py", {}).get("open_llama_3b_v2", {}).get("return 0")
-    cpp_result = shared_data.get("multinomial_causal_lm", {}).get("cpp", {}).get("open_llama_3b_v2", {}).get("return 0")
-    if not py_result or not cpp_result:
-        pytest.skip("Skipping because one of the prior tests was skipped or failed.")
-    assert py_result == cpp_result, "Results should match"
+    if "cpp" == sample_type:
+        # Run C++ sample
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'multinomial_causal_lm')
+        cpp_result = subprocess.run([cpp_sample, convert_model, sample_args], capture_output=True, text=True, check=True).stdout
+
+    if "all" == sample_type:
+        # Compare results
+        assert py_result.strip() == cpp_result.strip(), "Python and C++ results should match"
