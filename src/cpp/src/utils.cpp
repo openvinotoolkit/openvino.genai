@@ -340,6 +340,9 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         return;
 
     auto states = request.query_state();
+    
+    OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
+
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
             continue;

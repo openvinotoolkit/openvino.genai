@@ -11,12 +11,6 @@
 
 namespace ov::genai {
 
-
-enum class ModelInputType {
-    TOKENS,
-    EMBEDDINGS
-};
-
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<Scheduler> m_scheduler;
@@ -56,20 +50,6 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
-
-    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    
-    // A model to compute token embeddings.
-    // Input shape: [N, conversation length].
-    // Output shape: [1, conversation length, hidden_size].
-    EmbeddingsModel m_embedding;
-
-    ModelInputType m_model_input_type = ModelInputType::TOKENS;
-
-    // Axis num in kv cache from m_language model, which contains information about history len
-    size_t m_kv_cache_seq_length_axis = 2;
-
-    size_t m_history_size = 0;
 
 
 #ifdef DEBUG_CACHE_STATE_DUMP
@@ -154,13 +134,6 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
 
-    
-    std::vector<GenerationResult>
-    generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override;
 
     /**
      * Updates LoRA adapters for current generation call

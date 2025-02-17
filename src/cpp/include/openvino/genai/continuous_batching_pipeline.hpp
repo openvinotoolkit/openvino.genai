@@ -119,9 +119,10 @@ public:
         const ov::genai::GenerationConfig& generation_config = {}
     );
 
-    ov::genai::Tokenizer get_tokenizer();
+    ov::genai::Tokenizer get_tokenizer() const;
 
     ov::genai::GenerationConfig get_config() const;
+    void set_config(const ov::genai::GenerationConfig& config);
 
     /**
      * Allows to get the current pipeline metrics.
@@ -143,7 +144,7 @@ public:
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+             const StreamerVariant& streamer=std::monostate{});
     /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.

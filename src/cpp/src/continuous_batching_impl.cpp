@@ -113,13 +113,17 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
+    // If eos_token_id was not provided, take value
+    if (m_generation_config.eos_token_id == -1) {
+        m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    }
+
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     auto kv_cache_config = utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties, kv_cache_config);
-    m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
@@ -132,7 +136,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
     m_inputs_embedder = inputs_embedder;
-    m_embedding = m_inputs_embedder->get_embedding_model();
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
 }
@@ -300,6 +303,10 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && m_scheduler->get_config().enable_prefix_caching) {
+        OPENVINO_THROW("Prefix caching is not supported for VLM models.");
+    }
+    
     static ManualTimer step_timer("step()");
     step_timer.start();
 
@@ -528,75 +535,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     generate_timer.end();
     return results;
-}
-
-
-std::vector<GenerationResult>
-ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer)  {
-    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
-    OPENVINO_ASSERT(prompts.size() == 1, "todo");
-    auto prompt = prompts[0];
-    auto rgbs = rgbs_vector[0];
-
-    auto generate_start_time = std::chrono::steady_clock::now();
-    VLMPerfMetrics perf_metrics;
-    auto& raw_counters = perf_metrics.raw_metrics;
-    auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (m_generation_config.eos_token_id == -1)
-        m_generation_config.set_eos_token_id(m_generation_config.eos_token_id);
-    m_generation_config.validate();
-
-    auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-    ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
-    auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-
-    auto infer_request = m_model_runner->get_infer_request();
-
-    auto to_remove_from_hist = m_inputs_embedder->get_num_tokens_to_remove_from_hist();
-    ov::genai::utils::trim_kv_cache(infer_request, to_remove_from_hist, m_kv_cache_seq_length_axis, std::nullopt);
-
-    std::vector<SequenceGroup::Ptr> requests;
-    size_t request_id = 0;
-    size_t block_size = 1; // not used
-
-    size_t history_size = m_history_size - to_remove_from_hist;
-    size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
-
-    auto tokenized_history = m_inputs_embedder->get_tokenized_history();
-    ov::Tensor prompt_ids(ov::element::i64, { 1, history_size + inputs_embeds_size });
-    std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
-    std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
-
-    auto result = generate({inputs_embeds}, sampling_params, streamer)[0];
-
-    auto decode_start_time = std::chrono::steady_clock::now();
-    GenerationResult gen_result;
-    for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-        gen_result.m_generation_ids.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
-        gen_result.m_scores.push_back(result.m_scores.at(idx));
-    }
-    auto decode_end_time = std::chrono::steady_clock::now();
-    std::optional<int64_t> last_disappeared_token;
-
-    m_inputs_embedder->update_tokenized_history(result.m_generation_ids[0], last_disappeared_token, m_generation_config.is_beam_search(),
-                                                gen_result.m_generation_ids.size());
-
-    std::string decoded_results = gen_result.m_generation_ids[0];
-    if (m_is_chat_conversation) {
-        m_inputs_embedder->update_chat_history(decoded_results);
-    } else {
-        infer_request.reset_state();
-    }
-
-    m_history_size = history_size + inputs_embeds_size + gen_result.m_generation_ids.size();
-
-    auto generate_end_time = std::chrono::steady_clock::now();
-    return {gen_result};
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {

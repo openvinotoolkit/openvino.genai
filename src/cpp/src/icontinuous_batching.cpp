@@ -5,9 +5,17 @@
 
 namespace ov::genai {
 
+template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
 }
+
+void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_config(const GenerationConfig& config) {
+    m_generation_config = config;
+}
+
 
 PipelineMetrics ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_metrics() const {
     return m_pipeline_metrics;
@@ -18,6 +26,9 @@ Tokenizer ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_tokenizer
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const std::string& system_message) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        OPENVINO_THROW("Chat mode is not supported.");
+    }
     if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
@@ -115,6 +126,46 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history.pop_back();
 
     return decoded;
+}
+
+std::vector<GenerationResult>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+             const std::vector<std::string>& prompts,
+             const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer)  {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
+    OPENVINO_ASSERT(prompts.size() == 1, "todo");
+    OPENVINO_ASSERT(!m_is_chat_conversation, "Chat mode is not supported.");
+    
+    auto prompt = prompts[0];
+    auto rgbs = rgbs_vector[0];
+
+    auto generate_start_time = std::chrono::steady_clock::now();
+    VLMPerfMetrics perf_metrics;
+    auto& raw_counters = perf_metrics.raw_metrics;
+    auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (m_generation_config.eos_token_id == -1)
+        m_generation_config.set_eos_token_id(m_generation_config.eos_token_id);
+    m_generation_config.validate();
+
+    auto start_get_inputs_embeds = std::chrono::steady_clock::now();
+    ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
+    auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+
+    auto result = generate({inputs_embeds}, sampling_params, streamer)[0];
+
+    auto decode_start_time = std::chrono::steady_clock::now();
+    GenerationResult gen_result;
+    for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
+        gen_result.m_generation_ids.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
+        gen_result.m_scores.push_back(result.m_scores.at(idx));
+    }
+    auto decode_end_time = std::chrono::steady_clock::now();
+    auto generate_end_time = std::chrono::steady_clock::now();
+    // TODO: perf metrics
+    return {gen_result};
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(

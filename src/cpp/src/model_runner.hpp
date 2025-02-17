@@ -178,6 +178,7 @@ public:
                 }
             }
             if (pos > 0) {
+                // TODO: Compute embeddings only for last generated token, while previously generated embeddings save in SequenceGroup
                 auto embedder = m_inputs_embedder->get_embedding_model();
                 generated_ids_embeds = embedder.infer(generated_ids);
                 generated_ids_embeds_data = generated_ids_embeds.data<float>();
@@ -234,15 +235,11 @@ public:
                             sequence->get_generated_ids()[position_id - prompt_len];
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         auto embeds_pos = position_id > prompt_len ? hidden_size * (position_id - prompt_len) : 0;
-                        for (size_t i = 0; i < hidden_size; i++) {
-                            inputs_embeds_data[token_id * hidden_size + i] = position_id < prompt_len ?
-                                sequence_group->get_input_embeds()[position_id][i] :
-                                generated_ids_embeds_data[embeds_pos++];
-                        }
+                        const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_ids_embeds_data + embeds_pos;
+                        std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                     } else {
-                        OPENVINO_THROW("Not implemented.");
+                        OPENVINO_THROW("Unknown model inputs type.");
                     }
-  
 
                     position_ids_data[token_id] = position_id;
 

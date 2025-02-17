@@ -67,15 +67,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
-    
-    std::vector<GenerationResult>
-    generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override {
-        OPENVINO_THROW("Not implemented");
-    }
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
 };

@@ -3,21 +3,8 @@
 
 #pragma once
 
-#include <optional>
-#include <random>
-
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/visual_language/perf_metrics.hpp"
-#include "openvino/genai/tokenizer.hpp"
-
-#include "visual_language/vlm_config.hpp"
-#include "visual_language/inputs_embedder.hpp"
-#include "visual_language/embedding_model.hpp"
-
-#include "sampler.hpp"
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
-#include "lm_encoding.hpp"
 
 using namespace ov::genai;
 
@@ -53,20 +40,6 @@ class ov::genai::VLMPipeline::VLMPipelineBase {
     // Load pipeline time
     float m_load_time_ms = 0;
 public:
-    // VLMPipelineBase(
-    //     const std::filesystem::path& models_dir,
-    //     const std::string& device,
-    //     const ov::AnyMap& properties
-    // ) {};
-
-    // VLMPipelineBase(
-    //     const ModelsMap& models_map,
-    //     const Tokenizer& tokenizer,
-    //     const std::filesystem::path& config_dir_path,
-    //     const std::string& device,
-    //     const ov::AnyMap& properties,
-    //     const ov::genai::GenerationConfig& generation_config
-    // ) {};
 
     virtual ~VLMPipelineBase() = default;
 

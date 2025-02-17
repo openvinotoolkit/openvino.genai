@@ -13,6 +13,12 @@
 
 namespace ov::genai {
 
+enum class ModelInputType {
+    TOKENS,
+    EMBEDDINGS
+};
+
+
 /**
  * Base interface for all continuous batching based pipelines
  */
@@ -47,9 +53,13 @@ protected:
     // to access m_load_time_ms
     friend class ContinuousBatchingPipeline;
 
+    ModelInputType m_model_input_type = ModelInputType::TOKENS;
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
     GenerationConfig get_config() const;
+    void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
 
@@ -99,7 +109,7 @@ public:
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) = 0;
+             const StreamerVariant& streamer);
 
     /**
      * Starts chat with a given system prompt
