@@ -32,7 +32,7 @@ def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
 
 class PipelineType(Enum):
     STATEFUL = 1
-    STATELESS = 2
+    PAGED_ATTENTION = 2
     CONTINIOUS_BATCHING = 3
     SPECULATIVE_DECODING = 4
     PROMPT_LOOKUP_DECODING = 5
@@ -46,7 +46,7 @@ def create_ov_pipeline(models_path: Path,
                        draft_model: draft_model = None):
     if pipeline_type == PipelineType.STATEFUL:
         return LLMPipeline(models_path, device, ov_config)
-    elif pipeline_type == PipelineType.STATELESS:
+    elif pipeline_type == PipelineType.PAGED_ATTENTION:
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config)
     elif pipeline_type == PipelineType.CONTINIOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)

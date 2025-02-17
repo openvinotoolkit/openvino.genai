@@ -77,7 +77,7 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id, tmp_path = ("facebook/opt-125m", Path("opt-125m"))
     _, _, models_path = download_and_convert_model(model_id, tmp_path, padding_side="left")
     ov_pipe = create_ov_pipeline(models_path)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATELESS)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
 
     reference = ov_pipe.generate(prompt, **generation_config)
     generated = cb_pipe.generate(prompt, **generation_config)
@@ -97,7 +97,7 @@ def test_cb_streamer_vs_return_vs_stateful(prompt):
     _, _, models_path = download_and_convert_model(model_id, tmp_path)
 
     ov_pipe = create_ov_pipeline(models_path)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATELESS)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
 
     streamed = []
     generated = cb_pipe.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
@@ -123,7 +123,7 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict):
     _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATELESS)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
 
     ov_pipe.start_chat()
     cb_pipe.start_chat()
