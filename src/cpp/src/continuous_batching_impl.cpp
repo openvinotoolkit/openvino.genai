@@ -113,11 +113,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    // If eos_token_id was not provided, take value
-    if (m_generation_config.eos_token_id == -1) {
-        m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-    }
-
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     auto kv_cache_config = utils::apply_paged_attention_transformations(model, is_need_per_layer_cache_control, allow_cache_rotation);
@@ -306,7 +301,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_scheduler->get_config().enable_prefix_caching) {
         OPENVINO_THROW("Prefix caching is not supported for VLM models.");
     }
-    
+
     static ManualTimer step_timer("step()");
     step_timer.start();
 
