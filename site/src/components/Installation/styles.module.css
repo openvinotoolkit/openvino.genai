@@ -19,7 +19,6 @@
     align-items: center;
     justify-content: center;
     border: 1px solid #E9E9E9;
-    font-family: intelOne, Helvetica, Arial, sans-serif;
     font-weight: 500;
     height: 64px;
     width: 280px;
@@ -27,17 +26,13 @@
 }
 
 .installationTitle {
-    font-size: 24px;
-    font-family: intelOne, Helvetica, Arial, sans-serif;
-    line-height: 32px;
+    font-size: 1.5rem;
+    line-height: 2rem;
     font-weight: 500;
     margin: 0;
 }
 
 .installationDescription {
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 400;
     margin: 0 auto;
     text-align: center;
 }
