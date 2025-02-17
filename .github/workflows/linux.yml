@@ -420,9 +420,9 @@ jobs:
     env:
       CMAKE_GENERATOR: Unix Makefiles
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
-      INSTALL_DIR: ${{ github.workspace }}/install
+      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
       BUILD_DIR: ${{ github.workspace }}/build
-      SRC_DIR: ${{ github.workspace }}/src
 
     steps:
       - name: Clone openvino.genai
@@ -461,14 +461,12 @@ jobs:
           if-no-files-found: 'error'
 
       # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
-      # First we need to put the binaries for GenAI in the bin directory. Then we emulate
-      # the installation of the openvino-node package from NPM. The latest release of the
-      # openvino-node package is installed, and we need to update the binaries in the
-      # node_modules/openvino-node/bin directory to work correctly with GenAI
+      # Here we emulate the installation of the openvino-node package from NPM. The latest
+      # release of the openvino-node package is installed, and we need to update the binaries
+      # in the node_modules/openvino-node/bin directory to work correctly with GenAI
       - name: Install npm package tests dependencies
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
-          cp -R ${{ env.INSTALL_DIR }} bin
           npm install --verbose
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
