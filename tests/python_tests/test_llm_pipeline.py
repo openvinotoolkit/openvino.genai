@@ -30,11 +30,11 @@ test_cases = [
     (dict(max_new_tokens=30, num_beams=15, num_beam_groups=3, num_return_sequences=15, diversity_penalty=1.0), 'Why is the Sun yellow?'),
 ]
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_string_inputs(model_descr, generation_config_dict, prompt):
-    run_llm_pipeline_with_ref(model_id=model_descr[0], prompts=[prompt], generation_config=generation_config_dict, tmp_path=model_descr[1])
+def test_string_inputs(model_id, generation_config_dict, prompt):
+    run_llm_pipeline_with_ref(model_id=model_id, prompts=[prompt], generation_config=generation_config_dict)
 
 
 input_tensors_list = [
@@ -85,11 +85,11 @@ batched_prompts = [
 ]
 @pytest.mark.parametrize("generation_config_dict", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_batch_string_inputs(model_descr, generation_config_dict, prompts):
-    run_llm_pipeline_with_ref(model_id=model_descr[0], prompts=prompts, generation_config=generation_config_dict, tmp_path=model_descr[1])
+def test_batch_string_inputs(model_id, generation_config_dict, prompts):
+    run_llm_pipeline_with_ref(model_id=model_id, prompts=prompts, generation_config=generation_config_dict)
 
 
 @pytest.mark.precommit

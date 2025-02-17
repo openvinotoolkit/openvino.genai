@@ -138,7 +138,7 @@ def run_llm_pipeline(
 def run_llm_pipeline_with_ref(model_id: str, 
                               prompts: List[str], 
                               generation_config: GenerationConfig | dict, 
-                              tmp_path: Path, 
+                              tmp_path: Path = Path("."), 
                               use_cb : bool = False,
                               streamer: StreamerWithResults | Callable | StreamerBase = None):
     if type(generation_config) is dict:
