@@ -82,7 +82,7 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
-    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor, float> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const = 0;
+    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) = 0;
 
     virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;
 
@@ -96,7 +96,7 @@ public:
 
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
         auto stop_time = std::chrono::steady_clock::now();
-        m_perf_metrics.load_time = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+        m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
     }
 
     virtual ~DiffusionPipeline() = default;
@@ -148,6 +148,7 @@ protected:
     PipelineType m_pipeline_type;
     std::shared_ptr<IScheduler> m_scheduler;
     ImageGenerationConfig m_generation_config;
+    float m_load_time_ms = 0.0f;
     ImageGenerationPerfMetrics m_perf_metrics;
 };
 

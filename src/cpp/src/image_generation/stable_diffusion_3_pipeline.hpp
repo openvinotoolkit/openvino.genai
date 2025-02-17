@@ -409,7 +409,7 @@ public:
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds_inp);
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor, float> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
                                m_transformer->get_config().in_channels,
@@ -431,7 +431,7 @@ public:
                 latent_data[i] = noise_data[i] * m_scheduler->get_init_noise_sigma();
         }
 
-        return std::make_tuple(latent, proccesed_image, image_latent, noise, 0.0f);
+        return std::make_tuple(latent, proccesed_image, image_latent, noise);
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
@@ -474,8 +474,7 @@ public:
 
         // 5. Prepare latent variables
         ov::Tensor latent, processed_image, image_latent, noise;
-        float encoder_duration;
-        std::tie(latent, processed_image, image_latent, noise, encoder_duration) = prepare_latents(initial_image, generation_config);
+        std::tie(latent, processed_image, image_latent, noise) = prepare_latents(initial_image, generation_config);
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -550,6 +549,7 @@ public:
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {
+        m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
     }
 

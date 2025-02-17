@@ -329,7 +329,7 @@ public:
         return timesteps;
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor, float> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
@@ -341,14 +341,13 @@ public:
                                height,
                                width};
         ov::Tensor latent, noise, proccesed_image, image_latents;
-        float vae_encoder_duration = 0.0f;
 
         if (initial_image) {
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
             proccesed_image = m_image_processor->execute(proccesed_image);
             auto encode_start = std::chrono::steady_clock::now();
             image_latents = m_vae->encode(proccesed_image, generation_config.generator);
-            vae_encoder_duration =
+            m_perf_metrics.vae_encoder_inference_duration =
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start)
                     .count();
             noise = generation_config.generator->randn_tensor(latent_shape);
@@ -368,7 +367,7 @@ public:
             latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
         }
 
-        return std::make_tuple(latent, proccesed_image, image_latents, noise, vae_encoder_duration);
+        return std::make_tuple(latent, proccesed_image, image_latents, noise);
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
@@ -504,9 +503,7 @@ public:
         m_latent_timestep = timesteps[0];
 
         ov::Tensor latents, processed_image, image_latent, noise;
-        float vae_encoder_duration;
-        std::tie(latents, processed_image, image_latent, noise, vae_encoder_duration) = prepare_latents(initial_image, m_custom_generation_config);
-        m_perf_metrics.vae_encoder_inference_duration = vae_encoder_duration;
+        std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
 
         // prepare mask latents
         ov::Tensor mask, masked_image_latent;
@@ -569,6 +566,7 @@ public:
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {
+        m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
     }
 
