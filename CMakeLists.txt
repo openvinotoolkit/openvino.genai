@@ -35,10 +35,6 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)        
-        
 if(NOT DEFINED Python3_FIND_VIRTUALENV)
     set(Python3_FIND_VIRTUALENV FIRST)
 endif()
