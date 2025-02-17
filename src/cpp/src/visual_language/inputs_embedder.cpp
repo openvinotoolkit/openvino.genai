@@ -100,14 +100,16 @@ public:
 
         m_last_disappeared_token = generation_finish_info.probably_disappeared_token;
 
-        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
-            // let's remove last answer and prompt
-            m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_inputs_embeds_size + last_answer_len;
-            m_tokenized_history = std::move(m_prev_tokenized_history);
-            m_kv_history_manager.reset_kv_cache = m_tokenized_history.empty();
-        } else {
-            auto encoded_result = generation_finish_info.results.tokens[0];
-            std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
+        if (m_is_chat_conversation) {
+            if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
+                // let's remove last answer and prompt
+                m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_inputs_embeds_size + last_answer_len;
+                m_tokenized_history = m_prev_tokenized_history;
+                m_kv_history_manager.reset_kv_cache = m_tokenized_history.empty();
+            } else {
+                auto encoded_result = generation_finish_info.results.tokens[0];
+                std::copy(encoded_result.begin(), encoded_result.end(), std::back_inserter(m_tokenized_history));
+            }
         }
     }
 
@@ -136,8 +138,10 @@ public:
         if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
             // If chat generation process was cancelled by user, let's rollback to previous state of history
             m_history.pop_back();
-            constexpr bool add_generation_prompt = true;
-            m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            if (!m_history.empty()) {
+                constexpr bool add_generation_prompt = true;
+                m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            }
         } else {
             // Tail of chat template is missing in KV cache.
             // Find the tail to concatenate it with the next input prompt.
@@ -352,6 +356,7 @@ class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     ov::Tensor m_pos_embed_cache;
     // Used to insert <image_id>i</image_id> per image (not a slice).
     size_t m_image_id = 0;
+    size_t m_prev_image_id = 0;
 
 public:
     InputsEmbedderMiniCPM(
@@ -392,6 +397,7 @@ public:
 
         std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
 
+        m_prev_image_id = m_image_id;
         for (const ov::Tensor& image : single_images) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             if (m_vlm_config.use_image_id) {
@@ -483,6 +489,13 @@ public:
             m_image_id = 0;
         }
         return inputs_embeds;
+    }
+
+    virtual void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len) {
+        IInputsEmbedder::update_tokenized_history(generation_finish_info, is_beam_search, last_answer_len);
+        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
+            m_image_id = m_prev_image_id;
+        }
     }
 
     virtual void start_chat(const std::string& system_message) override {
@@ -1519,7 +1532,7 @@ public:
     ov::InferRequest m_hd_feature_transformer;
     ov::InferRequest m_vision_projection;
     std::vector<size_t> m_tokens_per_images;
-    std::vector<size_t> m_image_per_generation;
+    std::vector<size_t> m_prev_tokens_per_images;
 
     InputsEmbedderPhi3V(
         const VLMConfig& vlm_config,
@@ -1534,15 +1547,13 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
         std::vector<ov::Tensor> images_features_proj;
         std::stringstream images_prompt;
-        size_t image_per_generation = 0;
+        m_prev_tokens_per_images = m_tokens_per_images;
         for (const ov::Tensor& image : to_single_image_tensors(images)) {
             EncodedImage encoded_image = m_vision_encoder.encode(image);
             images_features_proj.push_back(phi3_v::hd_feature_transform(encoded_image, m_hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, m_vision_projection));
             m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
             images_prompt << "<|image_" << m_tokens_per_images.size() << "|>\n";
-            image_per_generation++;
         }
-        m_image_per_generation.push_back(image_per_generation);
         images_prompt << prompt;
         std::vector<ov::Tensor> new_chat_tokens;
         std::vector<ov::Tensor> prev_chat_tokens;
@@ -1563,7 +1574,7 @@ public:
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
         ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
-        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, {m_tokens_per_images.begin(), m_tokens_per_images.end() - m_image_per_generation.back()});
+        ov::Tensor prev_merged_tokens = phi3_v::insert_image_placeholders(prev_chat_tokens, m_prev_tokens_per_images);
         ov::Tensor new_tokens = update_history(new_merged_tokens, prev_merged_tokens);
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
         // if <|image_i|> tag is in the begining, it doesn't split tokes into separate sequences and tokens.size() == images_features_proj.size().
@@ -1628,9 +1639,8 @@ public:
 
     virtual void update_tokenized_history(const ov::genai::utils::GenerationFinishInfo generation_finish_info, bool is_beam_search, size_t last_answer_len) {
         IInputsEmbedder::update_tokenized_history(generation_finish_info, is_beam_search, last_answer_len);
-        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
-            m_tokens_per_images.erase(m_tokens_per_images.end() - m_image_per_generation.back(), m_tokens_per_images.end());
-        }
+        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL)
+            m_tokens_per_images = m_prev_tokens_per_images;
     }
 };
 
