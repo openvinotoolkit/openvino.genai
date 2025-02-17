@@ -32,7 +32,7 @@ export const Installation = () => {
     return (
         <section className={styles.installation}>
             <h4 className={styles.installationTitle}>Install OpenVINO™ GenAI</h4>
-            <p className={styles.installationDescription}>Unlock the power of OpenVINO GenAITM for Your projects. <br/>Get started with seamless installation now!</p>
+            <p className={styles.installationDescription}>Unlock the power of OpenVINO GenAI™ for your projects. <br/>Get started with seamless installation now!</p>
 
             <InstallationItems />
 

@@ -13,7 +13,7 @@ const FEATURES = [
 const ITEMS = [
     {
         title: 'Run in C++',
-        language: 'c',
+        language: 'cpp',
         content: "#include \"openvino/genai/llm_pipeline.hpp\"\n" +
             "#include <iostream>\n" +
             "\n" +
@@ -27,7 +27,8 @@ const ITEMS = [
         title: 'Run in Python',
         language: 'python',
         content: "import openvino_genai as ov_genai\n" +
-            "#Will run model on CPU, GPU or NPU are possible options\n" +
+            "\n" +
+            "# Will run model on CPU, GPU or NPU are possible options\n" +
             "pipe = ov_genai.LLMPipeline(\"./TinyLlama-1.1B-Chat-v1.0/\", \"CPU\")\n" +
             "print(pipe.generate(\"The Sun is yellow because\", max_new_tokens=100))",
     }
