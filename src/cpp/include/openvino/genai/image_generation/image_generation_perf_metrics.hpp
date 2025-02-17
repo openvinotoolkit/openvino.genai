@@ -13,7 +13,7 @@
 
 namespace ov::genai {
 
-struct OPENVINO_GENAI_EXPORTS RawImageGenerationPerfMetrics {
+struct RawImageGenerationPerfMetrics {
     std::vector<MicroSeconds> unet_inference_durations; // unet inference durations for each step
     std::vector<MicroSeconds> transformer_inference_durations; // transformer inference durations for each step
     std::vector<MicroSeconds> iteration_durations;  //  durations of each step
@@ -37,16 +37,17 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationPerfMetrics {
     void clean_up();
     void evaluate_statistics();
 
-    MeanStdPair get_unet_infer_meanstd();
-    MeanStdPair get_transformer_infer_meanstd();
-    MeanStdPair get_iteration_meanstd();
-    float get_encoder_infer_duration();
-    float get_decoder_infer_duration();
-    float get_all_infer_duration();
-    float get_load_time();
+    MeanStdPair get_unet_infer_duration();
+    MeanStdPair get_transformer_infer_duration();
+    MeanStdPair get_iteration_duration();
+    float get_vae_encoder_infer_duration() const;
+    float get_vae_decoder_infer_duration() const;
+    std::map<std::string, float> get_text_encoder_infer_duration() const;
+    float get_inference_duration();
+    float get_load_time() const;
     float get_generate_duration();
-    void get_iteration_duration(float &first_iter, float &other_iter_avg);
-    void get_unet_infer_duration(float &first_infer, float &other_infer_avg);
-    void get_transformer_infer_duration(float &first_infer, float &other_infer_avg);
+    void get_first_and_other_iter_duration(float& first_iter, float& other_iter_avg);
+    void get_first_and_other_unet_infer_duration(float& first_infer, float& other_infer_avg);
+    void get_first_and_other_trans_infer_duration(float& first_infer, float& other_infer_avg);
 };
 }

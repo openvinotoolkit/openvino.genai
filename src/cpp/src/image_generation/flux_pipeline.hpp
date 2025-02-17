@@ -341,14 +341,14 @@ public:
                                height,
                                width};
         ov::Tensor latent, noise, proccesed_image, image_latents;
-        float encoder_duration = 0.0f;
+        float vae_encoder_duration = 0.0f;
 
         if (initial_image) {
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
             proccesed_image = m_image_processor->execute(proccesed_image);
             auto encode_start = std::chrono::steady_clock::now();
             image_latents = m_vae->encode(proccesed_image, generation_config.generator);
-            encoder_duration =
+            vae_encoder_duration =
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start)
                     .count();
             noise = generation_config.generator->randn_tensor(latent_shape);
@@ -368,7 +368,7 @@ public:
             latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
         }
 
-        return std::make_tuple(latent, proccesed_image, image_latents, noise, encoder_duration);
+        return std::make_tuple(latent, proccesed_image, image_latents, noise, vae_encoder_duration);
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
@@ -530,19 +530,23 @@ public:
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
-            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
             if (m_pipeline_type == PipelineType::INPAINTING) {
                 blend_latents(latents, image_latent, mask, noise, inference_step);
             }
 
             if (callback && callback(inference_step, timesteps.size(), latents)) {
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
                 auto image = ov::Tensor(ov::element::u8, {});
                 m_perf_metrics.generate_duration =
                     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
                         .count();
                 return image;
             }
+
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
@@ -565,7 +569,6 @@ public:
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {
-        m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
     }
 

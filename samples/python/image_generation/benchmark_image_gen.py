@@ -6,30 +6,37 @@ import openvino
 import openvino_genai as ov_genai
 from PIL import Image
 
+def get_total_text_encoder_infer_duration(metircs):
+    total_duration = 0.0
+    for key, value in metrics.get_text_encoder_infer_duration().items():
+        total_duration = total_duration + value
+    return total_duration
+
 def print_one_generate(metrics, prefix, idx):
     prefix_idx = "[" + prefix + "-" + str(idx) + "]"
-    print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration():.2f} ms, total infer time: {metrics.get_all_infer_duration():.2f} ms")
-    print(f"{prefix_idx} encoder infer time: {metrics.get_encoder_infer_duration():.2f} ms")
+    print(f"\n{prefix_idx} generate time: {metrics.get_generate_duration():.2f} ms, total infer time: {metrics.get_inference_duration():.2f} ms")
+    print(f"{prefix_idx} text encoder infer time: {get_total_text_encoder_infer_duration(metrics):.2f} ms")
     first_iter_time = 0.0
     other_iter_avg_time = 0.0
     first_infer_time = 0.0
     other_infer_avg_time = 0.0
-    metrics.get_iteration_duration(first_iter_time, other_iter_avg_time)
+    metrics.get_first_and_other_iter_duration(first_iter_time, other_iter_avg_time)
     if len(metrics.raw_metrics.transformer_inference_durations) > 0:
-        metrics.get_transformer_infer_duration(first_infer_time, other_infer_avg_time)
+        metrics.get_first_and_other_trans_infer_duration(first_infer_time, other_infer_avg_time)
         print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
         print(f"{prefix_idx} transformer inference num: {len(metrics.raw_metrics.transformer_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
     else:
-        metrics.get_unet_infer_duration(first_infer_time, other_infer_avg_time)
+        metrics.get_first_and_other_unet_infer_duration(first_infer_time, other_infer_avg_time)
         print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
         print(f"{prefix_idx} unet inference num: {len(metrics.raw_metrics.unet_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
-    print(f"{prefix_idx} vae decoder infer time: {metrics.vae_decoder_inference_duration:.2f} ms")
+    print(f"{prefix_idx} vae encoder infer time: {metrics.vae_encoder_inference_duration:.2f} ms, vae decoder infer time: {metrics.vae_decoder_inference_duration:.2f} ms")
     
 def print_statistic(warmup_metrics, iter_metrics):
     generate_durations = []
     inference_durations = []
-    encoder_durations = []
-    decoder_durations = []
+    text_encoder_durations = []
+    vae_encoder_durations = []
+    vae_decoder_durations = []
     load_time = 0.0
     warmup_num = len(warmup_metrics)
     iter_num = len(iter_metrics)
@@ -37,13 +44,14 @@ def print_statistic(warmup_metrics, iter_metrics):
     inference_warmup = 0.0
     if warmup_num > 0:
         generate_warmup = warmup_metrics[0].get_generate_duration()
-        inference_warmup = warmup_metrics[0].get_all_infer_duration()
+        inference_warmup = warmup_metrics[0].get_inference_duration()
 
     for metrics in iter_metrics:
         generate_durations.append(metrics.get_generate_duration())
-        inference_durations.append(metrics.get_all_infer_duration())
-        encoder_durations.append(metrics.get_encoder_infer_duration())
-        decoder_durations.append(metrics.get_decoder_infer_duration())
+        inference_durations.append(metrics.get_inference_duration())
+        text_encoder_durations.append(get_total_text_encoder_infer_duration(metrics))
+        vae_encoder_durations.append(metrics.get_vae_encoder_infer_duration())
+        vae_decoder_durations.append(metrics.get_vae_decoder_infer_duration())
         load_time = metrics.get_load_time()
         
     generate_mean = sum(generate_durations)
@@ -53,18 +61,24 @@ def print_statistic(warmup_metrics, iter_metrics):
     inference_mean = sum(inference_durations)
     if (len(inference_durations) > 0):
         inference_mean = inference_mean / len(inference_durations)
-
-    encoder_mean = sum(encoder_durations)
-    if (len(encoder_durations) > 0):
-        encoder_mean = encoder_mean / len(encoder_durations)
         
-    decoder_mean = sum(decoder_durations)
-    if (len(decoder_durations) > 0):
-        decoder_mean = decoder_mean / len(decoder_durations)
+    text_encoder_mean = sum(text_encoder_durations)
+    if (len(text_encoder_durations) > 0):
+        text_encoder_mean = text_encoder_mean / len(text_encoder_durations)
+
+    vae_encoder_mean = sum(vae_encoder_durations)
+    if (len(vae_encoder_durations) > 0):
+        vae_encoder_mean = vae_encoder_mean / len(vae_encoder_durations)
+        
+    vae_decoder_mean = sum(vae_decoder_durations)
+    if (len(vae_decoder_durations) > 0):
+        vae_decoder_mean = vae_decoder_mean / len(vae_decoder_durations)
         
     print(f"\nTest finish, load time: {load_time:.2f} ms")
-    print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup:.2f} ms, infer warmup time: {inference_warmu:.2f} ms")
-    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean:.2f} ms, infer avg time: {inference_mean:.2f} ms, total encoder infer avg time: {encoder_mean:.2f} ms, decoder infer avg time: {decoder_mean:.2f} ms")
+    print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup:.2f} ms, infer warmup time: {inference_warmup:.2f} ms")
+    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean:.2f} ms, 
+          infer avg time: {inference_mean:.2f} ms, all text encoder infer avg time: {text_encoder_mean:.2f} ms, 
+          vae encoder infer avg time: {vae_encoder_mean:.2f} ms, vae decoder infer avg time: {vae_decoder_mean:.2f} ms")
 
 def text2image(args):
     prompt = args.prompt
@@ -188,7 +202,7 @@ def main():
     parser.add_argument("-ni", "--num_images_per_prompt", type=int, default=1, help="The number of images to generate per generate() call")
     parser.add_argument("-i", "--image", type=str, help="Image path")
     # special parameters of text2image pipeline
-    parser.add_argument("-wh", "--width", type=int, default=512, help="The width of the resulting image")
+    parser.add_argument("-w", "--width", type=int, default=512, help="The width of the resulting image")
     parser.add_argument("-ht", "--height", type=int, default=512, help="The height of the resulting image")
     # special parameters of image2image pipeline
     parser.add_argument("-s", "--strength", type=float, default=0.8, help="Indicates extent to transform the reference `image`. Must be between 0 and 1")

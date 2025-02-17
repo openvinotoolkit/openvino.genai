@@ -10,18 +10,27 @@
 #include "load_image.hpp"
 #include "progress_bar.hpp"
 
+inline float get_total_text_encoder_infer_duration(ov::genai::ImageGenerationPerfMetrics& metrics) {
+    float text_encoder_duration = 0.0f;
+    for(auto text_encoder : metrics.get_text_encoder_infer_duration()) {
+        text_encoder_duration += text_encoder.second;
+    }
+    return text_encoder_duration;
+}
+
 inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, std::string prefix, int idx) {
     std::string prefix_idx = "[" + prefix + "-" + std::to_string(idx) + "]";
     std::cout << "\n";
     std::cout << prefix_idx << " generate time: " << metrics.get_generate_duration()
-              << " ms, total infer time:" << metrics.get_all_infer_duration()
+              << " ms, total infer time:" << metrics.get_inference_duration()
               << " ms" << std::endl;
-    std::cout << prefix_idx << " encoder infer time: " << metrics.get_encoder_infer_duration() << " ms"<< std::endl;
+    std::cout << prefix_idx << " text encoder infer time: " << get_total_text_encoder_infer_duration(metrics) << " ms"
+              << std::endl;
     float first_iter_time, other_iter_avg_time;
     float first_infer_time, other_infer_avg_time;
-    metrics.get_iteration_duration(first_iter_time, other_iter_avg_time);
+    metrics.get_first_and_other_iter_duration(first_iter_time, other_iter_avg_time);
     if (!metrics.raw_metrics.transformer_inference_durations.empty()) {
-        metrics.get_transformer_infer_duration(first_infer_time, other_infer_avg_time);
+        metrics.get_first_and_other_trans_infer_duration(first_infer_time, other_infer_avg_time);
         std::cout << prefix_idx << " transformer iteration num:" << metrics.raw_metrics.iteration_durations.size()
                   << ", first iteration time:" << first_iter_time
                   << " ms, other iteration avg time:" << other_iter_avg_time << " ms" << std::endl;
@@ -30,7 +39,7 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
                   << ", first inference time:" << first_infer_time
                   << " ms, other inference avg time:" << other_infer_avg_time << " ms" << std::endl;
     } else {
-        metrics.get_unet_infer_duration(first_infer_time, other_infer_avg_time);
+        metrics.get_first_and_other_unet_infer_duration(first_infer_time, other_infer_avg_time);
         std::cout << prefix_idx << " unet iteration num:" << metrics.raw_metrics.iteration_durations.size()
                   << ", first iteration time:" << first_iter_time
                   << " ms, other iteration avg time:" << other_iter_avg_time << " ms" << std::endl;
@@ -38,8 +47,8 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
                   << ", first inference time:" << first_infer_time
                   << " ms, other inference avg time:" << other_infer_avg_time << " ms" << std::endl;
     }
-    std::cout << prefix_idx << " vae decoder infer time:" << metrics.vae_decoder_inference_duration << " ms"
-              << std::endl;
+    std::cout << prefix_idx << " vae encoder infer time:" << metrics.get_vae_encoder_infer_duration()
+              << " ms, vae decoder infer time:" << metrics.get_vae_decoder_infer_duration() << " ms" << std::endl;
 }
 
 inline float calculate_average(std::vector<float>& durations) {
@@ -58,8 +67,9 @@ inline float calculate_average(std::vector<float>& durations) {
 inline void print_statistic(std::vector<ov::genai::ImageGenerationPerfMetrics>& warmup_metrics, std::vector<ov::genai::ImageGenerationPerfMetrics>& iter_metrics) {
     std::vector<float> generate_durations;
     std::vector<float> total_inference_durations;
-    std::vector<float> encoder_durations;
-    std::vector<float> decoder_durations;
+    std::vector<float> text_encoder_durations;
+    std::vector<float> vae_encoder_durations;
+    std::vector<float> vae_decoder_durations;
     float load_time = 0.0f;
     int warmup_num = warmup_metrics.size();
     int iter_num = iter_metrics.size();
@@ -68,28 +78,32 @@ inline void print_statistic(std::vector<ov::genai::ImageGenerationPerfMetrics>& 
     float inference_warmup = 0.0f;
     if (!warmup_metrics.empty()) {
         generate_warmup = warmup_metrics[0].get_generate_duration();
-        inference_warmup = warmup_metrics[0].get_all_infer_duration();
+        inference_warmup = warmup_metrics[0].get_inference_duration();
     }
 
     for (auto& metrics : iter_metrics) {
         generate_durations.emplace_back(metrics.get_generate_duration());
-        total_inference_durations.emplace_back(metrics.get_all_infer_duration());
-        decoder_durations.emplace_back(metrics.get_decoder_infer_duration());
-        encoder_durations.emplace_back(metrics.get_encoder_infer_duration());
+        total_inference_durations.emplace_back(metrics.get_inference_duration());
+        vae_decoder_durations.emplace_back(metrics.get_vae_decoder_infer_duration());
+        vae_encoder_durations.emplace_back(metrics.get_vae_encoder_infer_duration());
+        text_encoder_durations.emplace_back(get_total_text_encoder_infer_duration(metrics));
         load_time = metrics.get_load_time();
     }
 
     float generate_mean = calculate_average(generate_durations);
     float inference_mean = calculate_average(total_inference_durations);
-    float decoder_mean = calculate_average(decoder_durations);
-    float encoder_mean = calculate_average(encoder_durations);
+    float vae_decoder_mean = calculate_average(vae_decoder_durations);
+    float vae_encoder_mean = calculate_average(vae_encoder_durations);
+    float text_encoder_mean = calculate_average(text_encoder_durations);
 
     std::cout << "\nTest finish, load time: " << load_time << " ms" << std::endl;
     std::cout << "Warmup number:" << warmup_num << ", first generate warmup time:" << generate_warmup
               << " ms, infer warmup time:" << inference_warmup << " ms" << std::endl;
     std::cout << "Generate iteration number:" << iter_num << ", for one iteration, generate avg time: " << generate_mean
-              << " ms, infer avg time:" << inference_mean << " ms, total encoder infer avg time:" << encoder_mean
-              << " ms, decoder infer avg time:" << decoder_mean << " ms" << std::endl;
+              << " ms, infer avg time:" << inference_mean
+              << " ms, all text encoders infer avg time:" << text_encoder_mean
+              << " ms, vae encoder infer avg time:" << vae_encoder_mean
+              << " ms, vae decoder infer avg time:" << vae_decoder_mean << " ms" << std::endl;
 }
 
 void text2image(cxxopts::ParseResult& result) {
@@ -219,7 +233,7 @@ int main(int argc, char* argv[]) try {
     ("ni,num_images_per_prompt", "The number of images to generate per generate() call", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("i,image", "Image path", cxxopts::value<std::string>())
     //special parameters of text2image pipeline
-    ("wh,width", "The width of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
+    ("w,width", "The width of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
     ("ht,height", "The height of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
     //special parameters of image2image pipeline
     ("s,strength", "Indicates extent to transform the reference `image`. Must be between 0 and 1", cxxopts::value<float>()->default_value(std::to_string(0.8)))

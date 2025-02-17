@@ -58,22 +58,22 @@ void ImageGenerationPerfMetrics::evaluate_statistics() {
     m_evaluated = true;
 }
 
-MeanStdPair ImageGenerationPerfMetrics::get_unet_infer_meanstd() {
+MeanStdPair ImageGenerationPerfMetrics::get_unet_infer_duration() {
     evaluate_statistics();
     return unet_inference_duration;
 }
 
-MeanStdPair ImageGenerationPerfMetrics::get_transformer_infer_meanstd() {
+MeanStdPair ImageGenerationPerfMetrics::get_transformer_infer_duration() {
     evaluate_statistics();
     return transformer_inference_duration;
 }
 
-MeanStdPair ImageGenerationPerfMetrics::get_iteration_meanstd() {
+MeanStdPair ImageGenerationPerfMetrics::get_iteration_duration() {
     evaluate_statistics();
     return iteration_duration;
 }
 
-void ImageGenerationPerfMetrics::get_unet_infer_duration(float &first_infer, float &other_infer_avg) {
+void ImageGenerationPerfMetrics::get_first_and_other_unet_infer_duration(float &first_infer, float &other_infer_avg) {
     first_infer = 0.0f;
     other_infer_avg = 0.0f;
     if (!raw_metrics.unet_inference_durations.empty()) {
@@ -90,7 +90,7 @@ void ImageGenerationPerfMetrics::get_unet_infer_duration(float &first_infer, flo
     }
 }
 
-void ImageGenerationPerfMetrics::get_transformer_infer_duration(float &first_infer, float &other_infer_avg) {
+void ImageGenerationPerfMetrics::get_first_and_other_trans_infer_duration(float &first_infer, float &other_infer_avg) {
     first_infer = 0.0f;
     other_infer_avg = 0.0f;
     if (!raw_metrics.transformer_inference_durations.empty()) {
@@ -107,20 +107,19 @@ void ImageGenerationPerfMetrics::get_transformer_infer_duration(float &first_inf
     }
 }
 
-float ImageGenerationPerfMetrics::get_encoder_infer_duration() {
-    float duration = 0.0f;
-    for (auto encoder = encoder_inference_duration.begin(); encoder != encoder_inference_duration.end(); encoder++) {
-        duration += encoder->second;
-    }
-    duration += vae_encoder_inference_duration;
-    return duration;
+std::map<std::string, float> ImageGenerationPerfMetrics::get_text_encoder_infer_duration() const {
+    return encoder_inference_duration;
 }
 
-float ImageGenerationPerfMetrics::get_decoder_infer_duration() {
+float ImageGenerationPerfMetrics::get_vae_decoder_infer_duration() const {
     return vae_decoder_inference_duration;
 }
 
-float ImageGenerationPerfMetrics::get_all_infer_duration() {
+float ImageGenerationPerfMetrics::get_vae_encoder_infer_duration() const {
+    return vae_encoder_inference_duration;
+}
+
+float ImageGenerationPerfMetrics::get_inference_duration() {
     float total_duration = 0;
     if (!raw_metrics.unet_inference_durations.empty()) {
         float total = std::accumulate(raw_metrics.unet_inference_durations.begin(),
@@ -140,7 +139,11 @@ float ImageGenerationPerfMetrics::get_all_infer_duration() {
         total_duration += total;
     }
 
-    total_duration += get_encoder_infer_duration();
+    for (auto encoder = encoder_inference_duration.begin(); encoder != encoder_inference_duration.end(); encoder++) {
+        total_duration += encoder->second;
+    }
+
+    total_duration += vae_encoder_inference_duration;
 
     total_duration += vae_decoder_inference_duration;
 
@@ -148,7 +151,7 @@ float ImageGenerationPerfMetrics::get_all_infer_duration() {
     return total_duration;
 }
 
-float ImageGenerationPerfMetrics::get_load_time() {
+float ImageGenerationPerfMetrics::get_load_time() const {
     return load_time;
 }
 
@@ -156,7 +159,7 @@ float ImageGenerationPerfMetrics::get_generate_duration() {
     return generate_duration;
 }
 
-void ImageGenerationPerfMetrics::get_iteration_duration(float &first_iter, float &other_iter_avg) {
+void ImageGenerationPerfMetrics::get_first_and_other_iter_duration(float &first_iter, float &other_iter_avg) {
     first_iter = 0.0f;
     other_iter_avg = 0.0f;
     if (!raw_metrics.iteration_durations.empty()) {

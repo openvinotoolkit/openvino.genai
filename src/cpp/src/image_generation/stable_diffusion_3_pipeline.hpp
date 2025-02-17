@@ -309,6 +309,7 @@ public:
                                                transformer_config.joint_attention_dim};
             text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);
             std::fill_n(text_encoder_3_output.data<float>(), text_encoder_3_output.get_size(), 0.0f);
+            m_perf_metrics.encoder_inference_duration["text_encode_3"] = 0.0f;
         }
 
         ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out, t5_prompt_embed_out;
@@ -521,16 +522,18 @@ public:
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-
             if (callback && callback(inference_step, timesteps.size(), latent)) {
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
                 auto image = ov::Tensor(ov::element::u8, {});
                 m_perf_metrics.generate_duration =
                     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
                         .count();
                 return image;
             }
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
         }
         auto decode_start = std::chrono::steady_clock::now();
         auto image = decode(latent);
@@ -547,7 +550,6 @@ public:
     }
 
     ImageGenerationPerfMetrics get_performance_metrics() override {
-        m_perf_metrics.load_time = m_load_time_ms;
         return m_perf_metrics;
     }
 
