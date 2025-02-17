@@ -78,6 +78,11 @@ const config: Config = {
           to: '/docs'
         },
         {
+          type: "html",
+          position: 'left',
+          value: '<i style="color: #fec91b"><b>Status:</b> Work in progress</i>'
+        },
+        {
           href: 'https://github.com/openvinotoolkit/openvino.genai',
           label: 'GitHub',
           position: 'right',
