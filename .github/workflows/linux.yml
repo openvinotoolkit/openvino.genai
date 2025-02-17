@@ -323,29 +323,21 @@ jobs:
       matrix:
         build-type: [Release]
         test:
-          - name: 'LLM/Qwen'
+          - name: 'LLM/multinomial_causal_lm'
             marker: 'llm'
-            filter: 'Qwen'
-            cmd: 'tests/python_tests/samples'
-          - name: 'LLM/TinyLlama'
+            cmd: 'tests/python_tests/samples/test_multinomial_causal_lm.py'
+          - name: 'LLM/beam_search_causal_lm'
             marker: 'llm'
-            filter: 'TinyLlama'
-          - name: 'LLM/open_llama'
+            cmd: 'tests/python_tests/samples/test_beam_search_causal_lm.py'
+          - name: 'LLM/greedy_causal_lm'
             marker: 'llm'
-            filter: 'open_llama'
-            cmd: 'tests/python_tests/samples'
-          - name: 'LLM/phi-2'
+            cmd: 'tests/python_tests/samples/test_greedy_causal_lm.py'
+          - name: 'LLM/lora'
             marker: 'llm'
-            filter: 'phi-2'
-            md: 'tests/python_tests/samples'
-          - name: 'LLM/notus'
-            marker: 'llm'
-            filter: 'notus'
-            cmd: 'tests/python_tests/samples'
-          - name: 'Whisper'
+            cmd: 'tests/python_tests/samples/test_lora.py'
+          - name: 'Whisper/whisper_speech_recognition'
             marker: 'whisper'
-            filter: ''
-            cmd: 'tests/python_tests/samples'
+            cmd: 'tests/python_tests/samples/test_whisper_speech_recognition.py'
             
     needs: [ openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples ] 
     timeout-minutes: 45
@@ -394,7 +386,7 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
         
       - name: Test Samples (Python and C++)
-        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" -k "${{ matrix.test.filter }}"
+        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
