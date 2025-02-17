@@ -132,9 +132,6 @@ namespace genai {
 
 class Tokenizer::TokenizerImpl {
 public:
-    ov::CompiledModel m_tokenizer;
-    ov::CompiledModel m_detokenizer;
-
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
 
@@ -264,20 +261,20 @@ public:
         std::string device = "CPU"; // only CPU is supported for now
 
         // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
-        m_older_than_24_5 = (ov_tokenizer ? ov_tokenizer: ov_detokenizer)->get_rt_info().count("openvino_tokenizers_version") == 0;
+        m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer: ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
 
         if (ov_tokenizer) {
             ov::pass::Manager manager;
             manager.register_pass<MakeAddSpecialTokensSatateful>();
             manager.register_pass<MakePaddingSatateful>();
             manager.run_passes(ov_tokenizer);
-            m_tokenizer = core.compile_model(ov_tokenizer, device, properties);
-            ov::genai::utils::print_compiled_model_properties(m_tokenizer, "OV Tokenizer");
+            ov::CompiledModel tokenizer = core.compile_model(ov_tokenizer, device, properties);
+            ov::genai::utils::print_compiled_model_properties(tokenizer, "OV Tokenizer");
 
             m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-                m_tokenizer.get_property(ov::optimal_number_of_infer_requests),
-                [this]() -> ov::InferRequest {
-                    return std::move(this->m_tokenizer.create_infer_request());
+                tokenizer.get_property(ov::optimal_number_of_infer_requests),
+                [&tokenizer]() -> ov::InferRequest {
+                    return tokenizer.create_infer_request();
                 });
 
             const ov::AnyMap& rt_info = ov_tokenizer->get_rt_info();
@@ -291,19 +288,22 @@ public:
             if (!fallback.has_value()) {
                 m_chat_template = find_or_fallback(rt_info, "simplified_chat_template", m_chat_template);
             }
+            // Initialize tokenizer's cache to save time later.
+            // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+            encode("non empty string");
         }
 
         if (ov_detokenizer) {
             ov::pass::Manager manager_detok;
             manager_detok.register_pass<MakeVocabDecoderSatateful>();
             manager_detok.run_passes(ov_detokenizer);
-            m_detokenizer = core.compile_model(ov_detokenizer, device, properties);
-            ov::genai::utils::print_compiled_model_properties(m_detokenizer, "OV Detokenizer");
+            ov::CompiledModel detokenizer = core.compile_model(ov_detokenizer, device, properties);
+            ov::genai::utils::print_compiled_model_properties(detokenizer, "OV Detokenizer");
 
             m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-                m_detokenizer.get_property(ov::optimal_number_of_infer_requests),
-                [this]() -> ov::InferRequest {
-                    return std::move(this->m_detokenizer.create_infer_request());
+                detokenizer.get_property(ov::optimal_number_of_infer_requests),
+                [&detokenizer]() -> ov::InferRequest {
+                    return detokenizer.create_infer_request();
                 });
 
             // Unset/-1 token causes exception in SentencePiece detokenization.
@@ -313,14 +313,7 @@ public:
                 m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::add_special_tokens(true)});
             if (m_eos_token_id != -1 && m_eos_token.empty())
                 m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::add_special_tokens(true)});
-        }
-
-        // Initialize tokenizer's cache to save time later.
-        if (m_tokenizer) {
-            // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-            encode("non empty string");
-        }
-        if (m_detokenizer) {
+            // Initialize detokenizer's cache to save time later.
             decode({1, 33, 199, 42, 42});
         }
     }
@@ -494,7 +487,7 @@ public:
     }
 
     std::string decode(std::vector<int64_t> tokens, const ov::AnyMap& detokenization_params = {}) {
-        OPENVINO_ASSERT(m_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+        OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         set_state_if_necessary(infer_request_guard, detokenization_params);
@@ -506,7 +499,7 @@ public:
     }
 
     std::vector<std::string> decode(ov::Tensor tokens, const ov::AnyMap& detokenization_params = {}) {
-        OPENVINO_ASSERT(m_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+        OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
         OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
         OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
@@ -522,7 +515,7 @@ public:
     }
 
     std::vector<std::string> decode(std::vector<std::vector<int64_t>> lines, const ov::AnyMap& detokenization_params = {}) {
-        OPENVINO_ASSERT(m_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+        OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
         auto compare_lengths = [](const std::vector<int64_t>& a, const std::vector<int64_t>& b) {
             return a.size() < b.size();
