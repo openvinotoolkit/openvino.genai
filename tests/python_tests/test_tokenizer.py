@@ -102,13 +102,12 @@ prompts = [
     'The Sun is yellow because',
     ['The Sun is yellow because', 'Alan Turing was a', 'Alan Turing was a']
 ]
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_encode(model_descr, prompt):
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+def test_encode(model_id, prompt):
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path=models_path)
 
     ov_tokenizer = ov_pipe.get_tokenizer()
@@ -136,12 +135,11 @@ encoded_prompts = [
     # batched tokens
     [[1, 1591, 338, 1754, 310], [1, 1591, 338, 1754, 310], [1, 17102,   323,  3864,   471,   263]]
 ]
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
-def test_decode(model_descr, encoded_prompt):
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+def test_decode(model_id, encoded_prompt):
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path=models_path)
 
     ov_tokenizer = ov_pipe.get_tokenizer()

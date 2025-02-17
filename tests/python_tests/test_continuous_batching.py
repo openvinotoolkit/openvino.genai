@@ -117,11 +117,10 @@ questions = [
     'What was my first question?'
 ]
 @pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
-@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.precommit
-def test_chat_scenario_vs_stateful(model_descr, generation_config_kwargs: Dict):
-    model_id, tmp_path = model_descr
-    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: Dict):
+    _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATELESS)

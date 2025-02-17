@@ -43,14 +43,13 @@ input_tensors_list = [
     (np.array([[1, 4, 42]], dtype=np.int64), np.array([[1, 1, 1]], dtype=np.int64)),
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_encoded_inputs(model_descr, inputs):
+def test_encoded_inputs(model_id, inputs):
     device = 'CPU'
 
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
@@ -133,15 +132,14 @@ questions = [
 ]
 
 @pytest.mark.parametrize("intpus", chat_intpus)
-@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_scenario(model_descr, intpus):
+def test_chat_scenario(model_id, intpus):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, system_massage = intpus
@@ -179,8 +177,7 @@ def test_chat_scenario(model_descr, intpus):
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_chat_scenario_several_chats_in_series():
-    model_id, tmp_dir = get_chat_models_list()[0]
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id, tmp_dir)
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(get_chat_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_intpus[0]
@@ -217,8 +214,7 @@ def test_chat_scenario_several_chats_in_series():
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_chat_scenario_several_start():
-    model_id, tmp_dir = get_chat_models_list()[0]
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id, tmp_dir)
+    opt_model, hf_tokenizer, models_path  = download_and_convert_model(get_chat_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_intpus[0]
@@ -275,14 +271,14 @@ def test_callback_kwargs_one_string(callback):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_descr", get_models_list())
-def test_callback_decoding_metallama(model_descr, callback):
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_callback_decoding_metallama(model_id, callback):
     # On metallama this prompt generates output which can shorten after adding new tokens.
     # Test that streamer correctly handles such cases.
     prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
-    if model_descr[0] != 'meta-llama/Meta-Llama-3-8B-Instruct':
+    if model_id != 'meta-llama/Meta-Llama-3-8B-Instruct':
         pytest.skip()
-    _, _, models_path = download_and_convert_model(model_descr)
+    _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     ov_pipe.generate(prompt, max_new_tokens=300, streamer=callback)
 
@@ -345,10 +341,10 @@ def test_callback_terminate_by_status():
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_chat_scenario_callback_cancel(model_descr):
+def test_chat_scenario_callback_cancel(model_id):
     callback_questions = [
         '1+1=',
         'Why is the Sun yellow?',
@@ -361,8 +357,7 @@ def test_chat_scenario_callback_cancel(model_descr):
     chat_history_hf = []
     chat_history_ov = []
 
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
@@ -615,9 +610,8 @@ def test_unicode_pybind_decoding_one_string_streamer():
 # Perf metrics
 #
 
-def run_perf_metrics_collection(model_descr, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
-    model_id, tmp_path = model_descr
-    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+def run_perf_metrics_collection(model_id, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
+    _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
 

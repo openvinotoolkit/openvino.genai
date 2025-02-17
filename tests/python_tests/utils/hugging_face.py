@@ -187,22 +187,17 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
-def download_and_convert_model(model_id: str | Tuple,
+def download_and_convert_model(model_id: str,
                                tmp_path: Path = Path("."),
                                **tokenizer_kwargs):
-    _model_id = model_id
-    _tmp_path = tmp_path
-    if isinstance(model_id, Tuple):
-        _model_id, _tmp_path = model_id
-
-    dir_name = str(_model_id).replace(sep, "_")
-    models_path : Path = _tmp_path / dir_name
+    dir_name = str(model_id).replace(sep, "_")
+    models_path : Path = tmp_path / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_hugging_face_models(models_path)
     else:
-        opt_model, hf_tokenizer = get_hugging_face_models(_model_id)
+        opt_model, hf_tokenizer = get_hugging_face_models(model_id)
         convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:
