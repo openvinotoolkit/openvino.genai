@@ -50,7 +50,8 @@ public:
         const std::shared_ptr<ov::Model>& model,
         ov::AnyMap& pipeline_config);
 
-    void updateStatefulConfig(ov::AnyMap& pipeline_config);
+    void updateStatefulConfig(ov::AnyMap& pipeline_config,
+                              const std::shared_ptr<ov::Model>& model);
 
     DecodedResults generate(
         StringInputs inputs,

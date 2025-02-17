@@ -40,7 +40,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
     utils::apply_slice_before_matmul_transformation(model);
-    m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
+    m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model).seq_len;
 
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {

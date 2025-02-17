@@ -384,22 +384,6 @@ struct KVAxesPosition {
     uint32_t seq_len;
 };
 
-KVAxesPosition get_kv_axes(const std::string& model_type) {
-    KVAxesPosition axes;
-    if (model_type == "chatglm") {
-        axes.batch = 1u;
-        axes.seq_len = 0u;
-    } else if (model_type == "qwen") {
-        // Note, qwen2 does not fall into this category and conforms to default layout
-        axes.batch = 0u;
-        axes.seq_len = 1u;
-    } else {
-        axes.batch = 0u;
-        axes.seq_len = 2u;
-    }
-    return axes;
-}
-
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
                        const uint32_t kvcache_size,
@@ -743,8 +727,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
-void StatefulLLMPipeline::updateStatefulConfig(
-    ov::AnyMap& pipeline_config) {
+void StatefulLLMPipeline::updateStatefulConfig(ov::AnyMap& pipeline_config,
+                                               const std::shared_ptr<ov::Model>& model) {
     const uint32_t kMaxPromptLen = pop_int_and_cast(pipeline_config, "MAX_PROMPT_LEN").value_or(1024u);
     const uint32_t kMinResponseLen = pop_int_and_cast(pipeline_config, "MIN_RESPONSE_LEN").value_or(128u);
     m_max_prompt_len = kMaxPromptLen;
@@ -753,9 +737,10 @@ void StatefulLLMPipeline::updateStatefulConfig(
     update_config(pipeline_config, {"NPU_USE_NPUW", "YES"});
     update_config(pipeline_config, {"NPUW_LLM", "YES"});
 
-    //KVAxesPosition axes = get_kv_axes(model_desc.type);
-    //update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
-    //update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
+    auto axes = ov::genai::utils::get_seq_len_axis(model);
+
+    update_config(pipeline_config, {"NPUW_LLM_BATCH_DIM", axes.batch});
+    update_config(pipeline_config, {"NPUW_LLM_SEQ_LEN_DIM", axes.seq_len});
 
     update_config(pipeline_config, {"NPUW_LLM_MAX_PROMPT_LEN", kMaxPromptLen});
     update_config(pipeline_config, {"NPUW_LLM_MIN_RESPONSE_LEN", kMinResponseLen});
@@ -770,7 +755,7 @@ void StatefulLLMPipeline::updateStatefulConfig(
 std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     const std::shared_ptr<ov::Model>& model,
     ov::AnyMap& pipeline_config) {
-    updateStatefulConfig(pipeline_config);
+    updateStatefulConfig(pipeline_config, model);
 
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
 }
