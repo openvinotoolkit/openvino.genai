@@ -58,11 +58,6 @@ TEST_DATA = os.path.join(TEMP_DIR, "test_data")
 SAMPLES_PY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python"))
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
-# A shared fixture to hold data
-@pytest.fixture(scope="session")
-def shared_data():
-    return {}
-
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request):
     """Fixture to set up and tear down the temporary directories."""
