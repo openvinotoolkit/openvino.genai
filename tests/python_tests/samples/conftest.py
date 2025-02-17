@@ -93,8 +93,7 @@ def convert_model(request):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {command}")
-        retries = 5
-        timeout = 1
+        retries = 3
         for attempt in range(retries):
             try:
                 subprocess.run(command, check=True)
@@ -102,9 +101,7 @@ def convert_model(request):
             except subprocess.CalledProcessError as e:
                 logger.error(f"Model {model_name} conversion failed on attempt {attempt + 1}. Retrying... Command: {e.cmd}")
                 if attempt < retries - 1:
-                    logger.info(f"Waiting {timeout} seconds before retrying...")
-                    time.sleep(timeout)
-                    timeout *= 2
+                    time.sleep(2 ** attempt)
                 else:
                     logger.error(f"Model {model_name} conversion failed after {retries} attempts: {e.cmd}")
                     raise e
