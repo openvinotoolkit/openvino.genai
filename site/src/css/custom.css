@@ -5,7 +5,12 @@
  */
 
 /* You can override the default Infima variables here. */
-@import "./intelone/intelone.css";
+@import "./typography.css";
+@import "./navbar.css";
+@import "./menu.css";
+@import "./footer.css";
+@import "./toc.css";
+@import "./breadcrumbs.css";
 
 :root {
   --black: #000000;
@@ -47,8 +52,6 @@
   --genai-color-section-bg: #f8f8f8;
 
   --ifm-link-color: var(--genai-color-classic-blue);
-
-  --search-local-input-active-border-color: var(--genai-color-white);
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -63,152 +66,11 @@
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
 
-/* TODO: move these classes to the shared folder */
-
 body {
   background-color: var(--genai-color-white);
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-}
-
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-span,
-p,
-a {
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-}
-
-.navbar {
-  background: linear-gradient(90deg, #27317F 6.98%, #1A3483 46.6%, #02227C 79.11%);
-  width: 100%;
-}
-
-.navbar__items {
-  margin-left: 50px;
-}
-
-.navbar__items--right > a:first-child {
-  margin-right: 16px;
-}
-
-.navbar__inner {
-  align-items: center;
-}
-
-.navbar__logo {
-  top: 0;
-  left: 0;
-  height: 100%;
-  position: absolute;
-}
-
-.navbar__link {
-  font-size: 16px;
-}
-
-.navbar__link--active {
-  --ifm-navbar-link-hover-color: var(--ifm-navbar-link-color);
-}
-
-.navbar__link--active:not(:has(~ .navbar__link--active)) {
-  --ifm-navbar-link-hover-color: var(--genai-color-blue-energy);
-}
-
-.navbar__search-input {
-  border-radius: 3px;
-  font-size: 14px;
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-  color: var(--genai-color-text-white);
-  width: 238px;
-  background: #122f84 url('../../static/img/magnifying-glass.svg') no-repeat 0.75rem center / 1rem 1rem;
-
-  &::placeholder {
-    color: var(--genai-color-text-white);
-    font-family: intelOne, Helvetica, Arial, sans-serif;
-  }
-}
-
-.menu__link {
-  font-size: 14px;
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-  font-weight: 400;
-  position: relative;
-}
-
-.menu__link--active:not(.menu__link--sublist) {
-  --ifm-menu-color-active: var(--genai-color-classic-blue);
-}
-
-.menu__caret:before {
-  --ifm-menu-link-sublist-icon: url('../../static/img/chevron-up.svg');
-  background: var(--ifm-menu-link-sublist-icon);
-  background-position: center;
-  background-repeat: no-repeat;
-  width: 12px;
-  height: 12px;
-}
-
-.table-of-contents__link {
-  position: relative;
-  padding: var(--ifm-menu-link-padding-vertical) var(--ifm-menu-link-padding-horizontal);
-}
-
-.table-of-contents__link--active {
-  background-color: var(--ifm-menu-color-background-active);
-  color: var(--genai-color-classic-blue);
-}
-
-.breadcrumbs > .breadcrumbs__item:first-child {
-  display: none;
-}
-
-.breadcrumbs__link {
-  font-size: 14px;
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-  font-weight: 400;
-  color: var(--genai-color-text-primary);
-}
-
-.breadcrumbs__item:not(:last-child)::after {
-  background: none;
-  content: '/';
-  margin: 0;
+  font-family: var(--genai-font-family);
 }
 
 .theme-back-to-top-button {
   background-color: var(--genai-color-blue-energy) !important;
-}
-
-.footer {
-  --ifm-footer-background-color: #f9f9f9;
-  --ifm-footer-title-color: var(--genai-color-text-black);
-  --ifm-footer-link-color: var(--genai-color-classic-blue);
-  --ifm-footer-color: var(--genai-color-text-black);
-  --ifm-footer-link-hover-color: var(--genai-color-darker-classic-blue);
-
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-}
-
-.footer__links {
-  padding: 0 80px;
-  margin-bottom: 2rem;
-}
-
-.footer__col {
-  display: grid;
-  justify-content: center;
-}
-
-.footer__copyright {
-  white-space: pre-wrap;
-  font-size: 12px;
-}
-
-.tabs__item {
-  font-family: intelOne, Helvetica, Arial, sans-serif;
-  font-weight: 500;
 }
