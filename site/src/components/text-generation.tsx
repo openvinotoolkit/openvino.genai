@@ -1,7 +1,9 @@
 import {Section} from "./Section";
 import {GoToDocumentation} from "@site/src/components/GoToLink/go-to-documentation";
 import {ExploreCodeSamples} from "@site/src/components/GoToLink/explore-code-samples";
-import {LanguageTabs} from "@site/src/components/LanguageTabs/language-tabs";
+
+import {LanguageTabs, TabItemCpp, TabItemPython} from "@site/src/components/LanguageTabs";
+import CodeBlock from '@theme/CodeBlock';
 
 // TODO Consider moving to mdx
 const FEATURES = [
@@ -11,29 +13,24 @@ const FEATURES = [
     'Use draft model to accelerate generation via Speculative Decoding',
 ]
 
-const ITEMS = [
-    {
-        title: 'Run in C++',
-        language: 'cpp',
-        content: "#include \"openvino/genai/llm_pipeline.hpp\"\n" +
-            "#include <iostream>\n" +
-            "\n" +
-            "int main(int argc, char* argv[]) {\n" +
-            "    std::string models_path = argv[1];\n" +
-            "    ov::genai::LLMPipeline pipe(models_path, \"CPU\");\n" +
-            "    std::cout << pipe.generate(\"The Sun is yellow because\", ov::genai::max_new_tokens(100)) << '\\n';\n" +
-            "}",
-    },
-    {
-        title: 'Run in Python',
-        language: 'python',
-        content: "import openvino_genai as ov_genai\n" +
-            "\n" +
-            "# Will run model on CPU, GPU or NPU are possible options\n" +
-            "pipe = ov_genai.LLMPipeline(\"./TinyLlama-1.1B-Chat-v1.0/\", \"CPU\")\n" +
-            "print(pipe.generate(\"The Sun is yellow because\", max_new_tokens=100))",
-    }
-]
+const pythonCodeBlock = <CodeBlock language="python">
+{`import openvino_genai as ov_genai
+
+# Will run model on CPU, GPU or NPU are possible options
+pipe = ov_genai.LLMPipeline(\"./TinyLlama-1.1B-Chat-v1.0/\", \"CPU\")
+print(pipe.generate(\"The Sun is yellow because\", max_new_tokens=100))`}
+</CodeBlock>
+
+const cppCodeBlock = <CodeBlock language="cpp">
+{`#include "openvino/genai/llm_pipeline.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string models_path = argv[1];
+    ov::genai::LLMPipeline pipe(models_path, "CPU");
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100)) << '\\n';
+}`}
+</CodeBlock>
 
 export const TextGeneration = () => {
     return (
@@ -52,7 +49,14 @@ export const TextGeneration = () => {
             <Section.Column>
                 <Section.Features features={FEATURES}/>
                 <hr/>
-                <LanguageTabs items={ITEMS}/>
+                <LanguageTabs>
+                    <TabItemPython>
+                        {pythonCodeBlock}
+                    </TabItemPython>
+                    <TabItemCpp>
+                        {cppCodeBlock}
+                    </TabItemCpp>
+                </LanguageTabs>
                 <hr/>
                 <ExploreCodeSamples link={'docs/category/samples'}/>
                 <GoToDocumentation link={'docs/how-to-guides/llm'}/>
