@@ -1,8 +1,8 @@
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-import LLMPythonExample from './_llm-python-example.mdx';
-import LLMCPPExample from './_llm-cpp-example.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
+import CodeExampleCPP from './_code_example_cpp.mdx';
 
 ## Run Model Using OpenVINO™ GenAI
 
@@ -13,10 +13,10 @@ It will automatically load the main model, tokenizer, detokenizer and default ge
     <TabItem label="Python" value="python">
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
-                <LLMPythonExample device="CPU" />
+                <CodeExamplePython device="CPU" />
             </TabItem>
             <TabItem label="GPU" value="gpu">
-                <LLMPythonExample device="GPU" />
+                <CodeExamplePython device="GPU" />
             </TabItem>
         </Tabs>
         
@@ -24,21 +24,12 @@ It will automatically load the main model, tokenizer, detokenizer and default ge
     <TabItem label="C++" value="cpp">
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
-                <LLMCPPExample device="CPU" />
+                <CodeExampleCPP device="CPU" />
             </TabItem>
             <TabItem label="GPU" value="gpu">
-                <LLMCPPExample device="GPU" />
+                <CodeExampleCPP device="GPU" />
             </TabItem>
         </Tabs>
-        {/* ```cpp
-        #include "openvino/genai/llm_pipeline.hpp"
-        #include <iostream>
-        
-        int main(int argc, char* argv[]) {
-            ov::genai::LLMPipeline pipe(model_path, "GPU");
-            std::cout << pipe.generate("What is Large Language Model?", ov::genai::max_new_tokens(200));
-        }
-        ``` */}
     </TabItem>
 </Tabs>
 
