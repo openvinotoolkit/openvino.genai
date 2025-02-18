@@ -21,7 +21,10 @@ KNOWN_PRECISIONS = [
         'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
 
 
-KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt', 'compressed_weights']
+KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt']
+
+
+OTHER_IGNORE_MODEL_PATH_PARTS = ['compressed_weights']
 
 
 def get_param_from_file(args, input_key):
@@ -240,10 +243,11 @@ def get_model_name(model_name_or_path):
 
 
 def get_model_name_with_path_part(model_name_or_path):
+    IGNORE_MODEL_PATH_PARTS = KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS
     model_path = Path(model_name_or_path)
     model_name = None
     for path_part in reversed(model_path.parts):
-        if not (path_part in KNOWN_PRECISIONS or path_part in KNOWN_FRAMEWORKS): 
+        if not path_part in IGNORE_MODEL_PATH_PARTS:
             model_name = path_part
             break
     return model_name
