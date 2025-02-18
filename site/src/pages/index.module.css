@@ -12,11 +12,6 @@
   background-color: transparent;
 }
 
-section {
-  background-color: var(--genai-color-section-bg);
-  display: flex;
-}
-
 .titleContainer {
   margin-bottom: 1.5rem;
 }
