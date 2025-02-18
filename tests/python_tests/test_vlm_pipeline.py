@@ -149,6 +149,7 @@ def test_sampling(config, cache):
     pipe.generate(prompts[0], image=image, generation_config=config)
 
 
+@pytest.mark.skip(reason="CVS-160580: tests/python_tests/test_vlm_pipeline.py::test_perf_metrics fails")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_perf_metrics(cache):

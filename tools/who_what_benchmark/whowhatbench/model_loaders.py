@@ -1,7 +1,7 @@
 import logging
 import json
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 from diffusers import DiffusionPipeline, AutoPipelineForImage2Image, AutoPipelineForInpainting
 
 
@@ -217,6 +217,11 @@ def load_visual_text_model(
             model.get_vision_tower().load_model()
         except Exception:
             pass
+
+        if "internvl" in model.config.model_type:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            img_context_token_id = tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
+            model.img_context_token_id = img_context_token_id
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)
