@@ -6,7 +6,7 @@ import openvino
 import openvino_genai as ov_genai
 from PIL import Image
 
-def get_total_text_encoder_infer_duration(metircs):
+def get_total_text_encoder_infer_duration(metrics):
     total_duration = 0.0
     for key, value in metrics.get_text_encoder_infer_duration().items():
         total_duration = total_duration + value
@@ -20,16 +20,16 @@ def print_one_generate(metrics, prefix, idx):
     other_iter_avg_time = 0.0
     first_infer_time = 0.0
     other_infer_avg_time = 0.0
-    metrics.get_first_and_other_iter_duration(first_iter_time, other_iter_avg_time)
+    first_iter_time, other_iter_avg_time = metrics.get_first_and_other_iter_duration()
     if len(metrics.raw_metrics.transformer_inference_durations) > 0:
-        metrics.get_first_and_other_trans_infer_duration(first_infer_time, other_infer_avg_time)
+        first_infer_time, other_infer_avg_time = metrics.get_first_and_other_trans_infer_duration()
         print(f"{prefix_idx} transformer iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
         print(f"{prefix_idx} transformer inference num: {len(metrics.raw_metrics.transformer_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
     else:
-        metrics.get_first_and_other_unet_infer_duration(first_infer_time, other_infer_avg_time)
+        first_infer_time, other_infer_avg_time = metrics.get_first_and_other_unet_infer_duration()
         print(f"{prefix_idx} unet iteration num: {len(metrics.raw_metrics.iteration_durations)}, first iteration time: {first_iter_time:.2f} ms, other iteration avg time: {other_iter_avg_time:.2f} ms")
         print(f"{prefix_idx} unet inference num: {len(metrics.raw_metrics.unet_inference_durations)}, first inference time: {first_infer_time:.2f} ms, other inference avg time: {other_infer_avg_time:.2f} ms")
-    print(f"{prefix_idx} vae encoder infer time: {metrics.vae_encoder_inference_duration:.2f} ms, vae decoder infer time: {metrics.vae_decoder_inference_duration:.2f} ms")
+    print(f"{prefix_idx} vae encoder infer time: {metrics.get_vae_encoder_infer_duration():.2f} ms, vae decoder infer time: {metrics.get_vae_decoder_infer_duration():.2f} ms")
     
 def print_statistic(warmup_metrics, iter_metrics):
     generate_durations = []
@@ -76,9 +76,9 @@ def print_statistic(warmup_metrics, iter_metrics):
         
     print(f"\nTest finish, load time: {load_time:.2f} ms")
     print(f"Warmup number: {warmup_num}, first generate warmup time: {generate_warmup:.2f} ms, infer warmup time: {inference_warmup:.2f} ms")
-    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean:.2f} ms, 
-          infer avg time: {inference_mean:.2f} ms, all text encoder infer avg time: {text_encoder_mean:.2f} ms, 
-          vae encoder infer avg time: {vae_encoder_mean:.2f} ms, vae decoder infer avg time: {vae_decoder_mean:.2f} ms")
+    print(f"Generate iteration number: {iter_num}, for one iteration, generate avg time: {generate_mean:.2f} ms, "
+          f"infer avg time: {inference_mean:.2f} ms, all text encoder infer avg time: {text_encoder_mean:.2f} ms, "
+          f"vae encoder infer avg time: {vae_encoder_mean:.2f} ms, vae decoder infer avg time: {vae_decoder_mean:.2f} ms")
 
 def text2image(args):
     prompt = args.prompt
@@ -195,7 +195,7 @@ def main():
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default="The Sky is blue because", help="Prompt")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
-    parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
+    parser.add_argument("-n", "--num_iter", type=int, default=3, help="Number of iterations")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
     parser.add_argument("-o", "--output_dir", type=str, default=".", help="Path to save output image")
     parser.add_argument("-is", "--num_inference_steps", type=int, default=20, help="The number of inference steps used to denoise initial noised latent to final image")
