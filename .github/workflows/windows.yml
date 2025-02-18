@@ -21,7 +21,6 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
-  NUMBA_CACHE_DIR: ${{ github.workspace }}/src/.NUMBA_CACHE_DIR
 
 jobs:
   openvino_download:
@@ -444,6 +443,8 @@ jobs:
         timeout-minutes: 1
         run: python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
+        env:
+          NUMBA_CACHE_DIR: ${{ env.SRC_DIR }}/.NUMBA_CACHE_DIR
 
       - name: C++ Tests Prerequisites
         run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y

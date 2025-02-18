@@ -5,17 +5,17 @@
 import argparse
 import openvino_genai
 
-# import librosa
-from scipy.io import wavfile
-import numpy as np
+import librosa
+# from scipy.io import wavfile
+# import numpy as np
 
 
 def read_wav(filepath):
-    # raw_speech, samplerate = librosa.load(filepath, sr=16000)
-    # return raw_speech.tolist()
-    samplerate, data = wavfile.read(filepath)
-    norm_arr = (data - np.min(data)) / (np.max(data) - np.min(data))
-    return norm_arr.tolist()
+    raw_speech, samplerate = librosa.load(filepath, sr=16000)
+    return raw_speech.tolist()
+    # samplerate, data = wavfile.read(filepath)
+    # norm_arr = (data - np.min(data)) / (np.max(data) - np.min(data))
+    # return norm_arr.tolist()
 
 
 def main():
