@@ -189,7 +189,7 @@ jobs:
           python -m pip install ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install ${{ env.SRC_DIR }} -v ${{ needs.openvino_download.outputs.ov_wheel_source }}
           python -m pip install -r ${{ env.WWB_PATH }}/requirements.txt ${{ needs.openvino_download.outputs.ov_wheel_source }}
-          python -m pip install git+https://github.com/huggingface/optimum-intel.git@main
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git@b1cc208d86c11271525c0c5692fe0e773b363266
         working-directory: ${{ env.OV_INSTALL_DIR }}
       - name: WWB Tests
         run: |
