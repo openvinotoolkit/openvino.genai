@@ -277,7 +277,15 @@ public:
         if (config_map.end() != image) {
             rgbs = {image->second.as<ov::Tensor>()};
         } if (config_map.end() != images) {
-            rgbs = images->second.as<std::vector<ov::Tensor>>();
+            if (images->second.is<std::vector<ov::Tensor>>()) {
+                rgbs = images->second.as<std::vector<ov::Tensor>>();
+            }
+            else if (images->second.is<ov::Tensor>()){
+                rgbs = {images->second.as<ov::Tensor>()};
+            }
+            else {
+                OPENVINO_THROW("Unknown images type.");
+            }
         }
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
