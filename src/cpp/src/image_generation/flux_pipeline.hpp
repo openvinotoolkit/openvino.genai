@@ -274,6 +274,13 @@ public:
         m_transformer->compile(device, *updated_properties);
     }
 
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_decode_device,
+                 const ov::AnyMap& properties) override {
+        OPENVINO_THROW("not supported yet.");
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;

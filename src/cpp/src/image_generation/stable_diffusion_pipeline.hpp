@@ -164,6 +164,12 @@ public:
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) override {
         check_image_size(height, width);
 
+        // update config with the specified parameters, so that the user doesn't need to explicitly pass these as properties to generate()
+        m_generation_config.num_images_per_prompt = num_images_per_prompt;
+        m_generation_config.height = height;
+        m_generation_config.width = width;
+        m_generation_config.guidance_scale = guidance_scale;
+
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         m_clip_text_encoder->reshape(batch_size_multiplier);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
@@ -171,12 +177,19 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
+        compile(device, device, device, properties);
+    }
+
+    void compile(const std::string& text_encode_device,
+        const std::string& denoise_device,
+        const std::string& vae_decode_device,
+        const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
 
-        m_clip_text_encoder->compile(device, *updated_properties);
-        m_unet->compile(device, *updated_properties);
-        m_vae->compile(device, *updated_properties);
+        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
+        m_unet->compile(denoise_device, *updated_properties);
+        m_vae->compile(vae_decode_device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {

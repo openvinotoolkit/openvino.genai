@@ -185,6 +185,13 @@ void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& pr
     m_impl->compile(device, properties);
 }
 
+void Text2ImagePipeline::compile(const std::string& text_encode_device,
+    const std::string& denoise_device,
+    const std::string& vae_decode_device,
+    const ov::AnyMap& properties) {
+    m_impl->compile(text_encode_device, denoise_device, vae_decode_device, properties);
+}
+
 ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
     return m_impl->generate(positive_prompt, {}, {}, properties);
 }

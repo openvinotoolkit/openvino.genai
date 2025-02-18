@@ -82,6 +82,11 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
+    virtual void compile(const std::string& text_encode_device,
+                         const std::string& denoise_device,
+                         const std::string& vae_decode_device,
+                         const ov::AnyMap& properties) = 0;
+
     virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const = 0;
 
     virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;

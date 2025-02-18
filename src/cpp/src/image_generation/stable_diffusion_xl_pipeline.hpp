@@ -148,6 +148,13 @@ public:
         m_vae->compile(device, *updated_properties);
     }
 
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_decode_device,
+                 const ov::AnyMap& properties) override {
+        OPENVINO_THROW("not supported yet.");
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& unet_config = m_unet->get_config();
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG

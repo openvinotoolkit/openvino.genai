@@ -257,6 +257,13 @@ public:
         m_vae->compile(device, properties);
     }
 
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_decode_device,
+                 const ov::AnyMap& properties) override {
+        OPENVINO_THROW("not supported yet.");
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         const auto& transformer_config = m_transformer->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
