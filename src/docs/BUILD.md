@@ -196,6 +196,10 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
 
 > **NOTE**: You'd need to build ABI compatible OpenVINO and OpenVINO Tokenizers for Ubuntu instead of downloading them from PyPI. See [OpenVINO™ GenAI Dependencies](../README.md#openvino-genai-dependencies) for the explanation.
 
+### Build OpenVINO GenAI JavaScript Bindings
+
+Build OpenVINO GenAI JavaScript Bindings from sources following the [instructions](../js/BUILD.md).
+
 ### Install OpenVINO GenAI From Source
 
 1. Clone OpenVINO GenAI repository and init submodules:
