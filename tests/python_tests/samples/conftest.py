@@ -28,8 +28,8 @@ MODELS = {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code']
     },
-    "phi-1_5": {
-        "name": "microsoft/phi-1_5",
+    "SmolLM-135M-Instruct": {
+        "name": "HuggingFaceTB/SmolLM-135M-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2.5-0.5B-Instruct": {
@@ -40,8 +40,8 @@ MODELS = {
         "name": "Qwen/Qwen2-0.5B-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "SmolLM-135M-Instruct": {
-        "name": "HuggingFaceTB/SmolLM-135M-Instruct",
+    "phi-1_5": {
+        "name": "microsoft/phi-1_5",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "TinyStories-1M": {
