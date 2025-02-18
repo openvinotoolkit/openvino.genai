@@ -36,12 +36,12 @@ MODELS = {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "Qwen/Qwen2-0.5B-Instruct": {
+    "Qwen2-0.5B-Instruct": {
         "name": "Qwen/Qwen2-0.5B-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "t5-small": {
-        "name": "google-t5/t5-small",
+    "SmolLM-135M-Instruct": {
+        "name": "HuggingFaceTB/SmolLM-135M-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "TinyStories-1M": {
@@ -112,7 +112,7 @@ def convert_model(request):
         ]
         if model_args:
             command.extend(model_args)
-        logger.info(f"Conversion command: {command}")
+        logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True))
             
     yield model_path

@@ -11,8 +11,8 @@ class TestBeamSearchCausalLM:
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("Qwen/Qwen2-0.5B-Instruct", "你好！"),
-            pytest.param("t5-small", "69"),
+            pytest.param("Qwen2-0.5B-Instruct", "你好！"),
+            pytest.param("SmolLM-135M-Instruct", "69"),
             pytest.param("TinyStories-1M", "69"),
         ],
         indirect=["convert_model"],
