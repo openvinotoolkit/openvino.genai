@@ -55,9 +55,9 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
         }
 
         // TEMP WA: currently FP16 / BF16 KV cache is faster than U8 for PagedAttention
-        if (m_kv_cache_type == ov::element::u8) {
-            m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
-        }
+        // if (m_kv_cache_type == ov::element::u8) {
+        //     m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
+        // }
     } else if (device.find("GPU") != std::string::npos) {
         if (accuracy_mode) {
             inference_precision = ov::element::f32;

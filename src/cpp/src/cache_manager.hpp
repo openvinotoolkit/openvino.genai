@@ -32,7 +32,7 @@ class CacheManager {
         m_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_value_cache[decoder_layer_id]);
     }
 
-    ov::PartialShape to_partial_shape(const KVHeadConfig& config, ov::element::Type cache_type, bool key_param) {
+    ov::PartialShape to_partial_shape(const KVHeadConfig& config, ov::element::Type cache_type, bool key_param, bool bychannel) {
         OPENVINO_ASSERT(!m_device.empty(), "Internal error: device is not set");
         OPENVINO_ASSERT(m_block_size > 0, "Internal error: block size is not set yet");
 
@@ -61,7 +61,11 @@ class CacheManager {
                 // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
                 // so, we have to extend head_size by 8, which is sizeof(float)
                 // for scale and sizeof(float) for zeropoint
-                pshape[3] += 2 * sizeof(float);
+                if (bychannel && key_param) {
+                    pshape[2] += 2 * sizeof(float);
+                } else {
+                    pshape[3] += 2 * sizeof(float);
+                }
             }
         } else if (m_device.find("GPU") != std::string::npos) {
             if (key_param) {
@@ -88,6 +92,7 @@ public:
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
+        bool quant_key_bychannel = compiled_model.get_property(ov::key_cache_quant_bychannel);
         OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
         m_device = execution_devices[0];
         
@@ -104,13 +109,13 @@ public:
                 ov::PartialShape pshape;
 
                 if (name.find("key_cache.") == 0) {
-                    pshape = to_partial_shape(kv_cache_config[kv_input_index], cache_precision, true);
+                    pshape = to_partial_shape(kv_cache_config[kv_input_index], cache_precision, true, quant_key_bychannel);
                     m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     m_key_shapes.push_back(pshape);
                     m_key_precisions.push_back(cache_precision);
                     break;
                 } else if (name.find("value_cache.") == 0) {
-                    pshape = to_partial_shape(kv_cache_config[kv_input_index], cache_precision, false);
+                    pshape = to_partial_shape(kv_cache_config[kv_input_index], cache_precision, false, false);
                     m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     m_value_shapes.push_back(pshape);
                     m_value_precisions.push_back(cache_precision);
