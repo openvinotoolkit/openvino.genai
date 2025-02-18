@@ -12,6 +12,7 @@ def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir")
