@@ -10,6 +10,20 @@ from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MO
 import librosa
 
 
+KNOWN_PRECISIONS = [
+        'FP32', 'FP16',
+        'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
+        'OV_FP32-INT8', 'OV_FP16-INT8',
+        'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM', 'OV_FP16-INT8_ASYM_HYBRID',
+        'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
+        'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
+        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
+        'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
+
+
+KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt', 'compressed_weights']
+
+
 def get_param_from_file(args, input_key):
     is_json_data = False
     data_list = []
@@ -225,13 +239,14 @@ def get_model_name(model_name_or_path):
     return None, None
 
 
-def get_model_name_with_model_id(model_name_or_path, model_id):
-    path = os.path.normpath(model_name_or_path)
-    model_names = path.split(os.sep)
-    for model_name in reversed(model_names):
-        if model_id in model_name.lower():
-            return model_name
-    return None
+def get_model_name_with_path_part(model_name_or_path):
+    model_path = Path(model_name_or_path)
+    model_name = None
+    for path_part in reversed(model_path.parts):
+        if not (path_part in KNOWN_PRECISIONS or path_part in KNOWN_FRAMEWORKS): 
+            model_name = path_part
+            break
+    return model_name
 
 
 def get_config(config):
@@ -279,19 +294,10 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 
 
 def get_model_precision(model_name_list):
-    precision_list = [
-        'FP32', 'FP16',
-        'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
-        'OV_FP32-INT8', 'OV_FP16-INT8',
-        'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM',
-        'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
-        'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
-        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
-        'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
     model_precision = 'unknown'
     # Search from right to left of model path
     for i in range(len(model_name_list) - 1, -1, -1):
-        for precision in precision_list:
+        for precision in KNOWN_PRECISIONS:
             if model_name_list[i] == precision:
                 model_precision = precision
                 break
