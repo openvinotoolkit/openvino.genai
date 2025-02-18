@@ -179,6 +179,15 @@ void Text2ImagePipeline::set_scheduler(std::shared_ptr<Scheduler> scheduler) {
 
 void Text2ImagePipeline::reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale) {
     m_impl->reshape(num_images_per_prompt, height, width, guidance_scale);
+
+    // update config with the specified parameters, so that the user doesn't need to explicitly pass these as properties
+    // to generate()
+    auto config = m_impl->get_generation_config();
+    config.num_images_per_prompt = num_images_per_prompt;
+    config.height = height;
+    config.width = width;
+    config.guidance_scale = guidance_scale;
+    m_impl->set_generation_config(config);
 }
 
 void Text2ImagePipeline::compile(const std::string& device, const ov::AnyMap& properties) {
