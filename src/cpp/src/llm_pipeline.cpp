@@ -19,29 +19,6 @@ namespace genai {
 
 namespace {
 
-/*
-* NPU reads some properties from the config file, but when LLMPipeline is initialized
-* from the model_str and weights_tensor, there are no files.
-* In the later case ModelDesc is stored in properties.
-* This function pops ModelDescr from the the properties and returns a pair of updated properties and ModelDescr.
-*/
-std::pair<ov::AnyMap, ov::genai::static_llm::ModelConfigDesc> split_model_descr(const ov::AnyMap& properties) {
-    ov::AnyMap main_properties = properties;
-    ov::genai::static_llm::ModelConfigDesc model_descr;
-
-    auto pop_property = [](ov::AnyMap& orig_propertis, const std::string& key, auto& value) {
-        if (orig_propertis.find(key) != orig_propertis.end()) {
-            value = orig_propertis.at(key).as<std::decay_t<decltype(value)>>();
-            orig_propertis.erase(key);
-        }
-    };
-    pop_property(main_properties, "name_or_path", model_descr.name_or_path);
-    pop_property(main_properties, "type", model_descr.type);
-    pop_property(main_properties, "num_key_value_heads", model_descr.num_key_value_heads);
-
-    return {main_properties, model_descr};
-}
-
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
 
@@ -243,25 +220,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr && device == "NPU") {
-        // TODO: CVS-158771 Currently, it's a workaround. Probably there is a better solution.
-        // NPU reads some properties from the config file, but when LLMPipeline is initialized
-        // from the model_str and weights_tensor, there is no files.
-        // Therefore, we need to pass these properties manually.
-        // This is necessary only for NPU, for other plugins can be ommited.
-        // Example of usage:
-        // ov::AnyMap model_descr_properties = {{"name_or_path", "meta-llama/Llama-2-7b-chat-hf"},
-        //                                      {"type", "llama"},
-        //                                      {"num_key_value_heads", 32}};
-        // ov::genai::LLMPipeline pipe(model_str,..., model_descr_properties);
-        // This will convert from AnyMap to ModelDesc.
-        auto [device_properties, model_descr] = split_model_descr(properties);
-
         m_pimpl = static_llm::LLMPipelineFactory::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
-            model_descr,
             tokenizer,
             device,
-            device_properties,
+            properties,
             generation_config
         );
     }

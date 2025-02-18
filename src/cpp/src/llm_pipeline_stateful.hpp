@@ -26,6 +26,8 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0, 2};
     // Finish reason of last generation for chat scenario
     ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
+    // if True, full history will be used as prompt on each chat generation
+    bool m_use_full_chat_history = false;
 
     void reset_kv_state();
 public:
