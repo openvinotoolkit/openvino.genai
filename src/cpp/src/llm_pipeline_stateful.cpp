@@ -41,7 +41,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
     utils::apply_slice_before_matmul_transformation(model);
 
-    if (device == "NPU")
+    if (device.find("NPU") != std::string::npos)
         m_use_full_chat_history = true;
 
     if (!m_use_full_chat_history)
