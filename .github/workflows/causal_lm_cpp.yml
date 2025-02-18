@@ -775,7 +775,7 @@ jobs:
           source ./ov/setupvars.sh
           timeout 30s ./build/samples/cpp/text_generation/encrypted_model_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?"
 
-  cpp-benchmark_genai-ubuntu:
+  benchmark_genai-ubuntu:
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -809,6 +809,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 60s ./build/samples/cpp/text_generation/benchmark_genai -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" --nw 2 -n 3 --mt 50 -d CPU
+          timeout 60s  python ./samples/python/text_generation/benchmark_genai.py -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" -nw 2 -n 3 -mt 50 -d CPU
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
