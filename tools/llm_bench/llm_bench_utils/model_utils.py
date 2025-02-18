@@ -243,11 +243,11 @@ def get_model_name(model_name_or_path):
 
 
 def get_model_name_with_path_part(model_name_or_path):
-    IGNORE_MODEL_PATH_PARTS = KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS
+    IGNORE_MODEL_PATH_PARTS = [x.lower() for x in (KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS)]
     model_path = Path(model_name_or_path)
     model_name = None
     for path_part in reversed(model_path.parts):
-        if not path_part in IGNORE_MODEL_PATH_PARTS:
+        if not path_part.lower() in IGNORE_MODEL_PATH_PARTS:
             model_name = path_part
             break
     return model_name
