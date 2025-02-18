@@ -12,8 +12,8 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from common import retry_request
 from utils.constants import get_default_llm_properties
+from utils.network import retry_request
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,

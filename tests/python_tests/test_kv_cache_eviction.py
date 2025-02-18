@@ -17,10 +17,11 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_cb_pipeline_with_ref, retry_request
-from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from common import TESTS_ROOT, run_cb_pipeline_with_ref
 
+from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 from utils.constants import get_default_llm_properties
+from utils.network import retry_request
 
 
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:

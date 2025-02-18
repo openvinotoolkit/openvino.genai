@@ -18,7 +18,7 @@ import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
 
-from common import retry_request
+from utils.network import retry_request
 from typing import Any, List, Dict
 
 @pytest.fixture(scope="class", autouse=True)

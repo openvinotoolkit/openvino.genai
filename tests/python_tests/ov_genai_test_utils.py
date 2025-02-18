@@ -14,8 +14,8 @@ import shutil
 import json
 
 import openvino_genai as ov_genai
-from common import delete_rt_info, retry_request
-
+from common import delete_rt_info
+from utils.network import retry_request
 from utils.constants import get_default_llm_properties
 
 def get_models_list():

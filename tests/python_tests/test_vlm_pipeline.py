@@ -8,7 +8,7 @@ import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
 
-from common import retry_request
+from utils.network import retry_request
 from utils.generation_config import get_beam_search, get_multinomial_all_parameters
 from utils.constants import get_default_llm_properties
 

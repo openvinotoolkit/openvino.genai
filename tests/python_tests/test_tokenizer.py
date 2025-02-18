@@ -12,7 +12,7 @@ from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
 from openvino_genai import Tokenizer
 import json
-from common import delete_rt_info, retry_request
+from common import delete_rt_info
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,
@@ -21,7 +21,7 @@ from ov_genai_test_utils import (
 )
 
 from utils.hugging_face import convert_and_save_tokenizer
-
+from utils.network import retry_request
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
     delete_rt_info(configs, temp_path)

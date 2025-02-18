@@ -2,8 +2,8 @@ import pytest
 import numpy as np
 from transformers import AutoTokenizer
 from openvino_genai import Tokenizer, TextStreamer
-from common import retry_request
 from utils.hugging_face import convert_and_save_tokenizer
+from utils.network import retry_request
 import sys
 
 
