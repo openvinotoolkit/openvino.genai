@@ -3,7 +3,7 @@
 
 #include <thread>
 
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "speculative_decoding_impl.hpp"
 #include "paged_attention_transformations.hpp"
 #include "utils.hpp"

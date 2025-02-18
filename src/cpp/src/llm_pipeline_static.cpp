@@ -22,10 +22,11 @@
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "openvino/core/parallel.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
-#include "text_callback_streamer.hpp"
+
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -713,16 +714,23 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         if (!fin.is_open()) {
             OPENVINO_THROW("Blob file can't be opened: " + blob_path);
         }
-        auto compiled = genai::utils::singleton_core().import_model(fin, device, {});
+        auto compiled = genai::utils::singleton_core().import_model(fin, device, config);
         m_max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         auto min_resp_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
         m_kvcache_total = m_max_prompt_len + min_resp_len;
         m_request = compiled.create_infer_request();
     } else {
-        auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
         ModelConfigDesc model_desc = get_modeldesc_from_json(models_path / "config.json");
         ov::AnyMap properties = config;
-        auto compiled = setupAndCompileModel(model, model_desc, properties);
+        std::shared_ptr<ov::CompiledModel> compiled;
+        // CACHE_DIR + weightless flow support
+        auto cache_mode = get_option<CacheMode>(config, "CACHE_MODE");
+        if (cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED) {
+            auto model = genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config);
+            compiled = setupAndCompileModel(model, model_desc, properties);
+        } else {
+            compiled = setupAndCompileModel(models_path / "openvino_model.xml", model_desc, properties);
+        }
         // Also export compiled model if required
         if (export_blob) {
             if (blob_path.empty()) {
@@ -801,6 +809,15 @@ std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
     updateStatefulConfig(model_desc, pipeline_config);
 
     return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model, "NPU", pipeline_config));
+}
+
+std::shared_ptr<ov::CompiledModel> StatefulLLMPipeline::setupAndCompileModel(
+    const std::filesystem::path& model_path,
+    const ModelConfigDesc& model_desc,
+    ov::AnyMap& pipeline_config) {
+    updateStatefulConfig(model_desc, pipeline_config);
+
+    return std::make_shared<ov::CompiledModel>(genai::utils::singleton_core().compile_model(model_path, "NPU", pipeline_config));
 }
 
 DecodedResults StatefulLLMPipeline::generate(
