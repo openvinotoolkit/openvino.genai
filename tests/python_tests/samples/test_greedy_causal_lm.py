@@ -11,9 +11,9 @@ class TestGreedyCausalLM:
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", ""),
-            pytest.param("open_llama_3b_v2", "return 0"),
-            pytest.param("Qwen-7B-Chat", "69"),
+            pytest.param("LaMini-GPT-124M", ""),
+            pytest.param("OpenELM-270M-Instruct", "return 0"),
+            pytest.param("Qwen2.5-0.5B-Instruct", "69"),
         ],
         indirect=["convert_model"],
     )

@@ -15,36 +15,36 @@ logger = logging.getLogger(__name__)
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
 MODELS = {
-    "TinyLlama-1.1B-Chat-v1.0": { 
-        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "LaMini-GPT-124M": { 
+        "name": "MBZUAI/LaMini-GPT-124M",
         "convert_args": []
     },
-    "TinyLlama-1.1B-intermediate-step-1431k-3T": {
-        "name": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+    "SmolLM2-135M-Instruct": {
+        "name": "HuggingFaceTB/SmolLM2-135M-Instruct",
         "convert_args": ['--trust-remote-code']
     },  
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code']
     },
-    "open_llama_3b_v2": {
-        "name": "openlm-research/open_llama_3b_v2",
+    "OpenELM-270M-Instruct": {
+        "name": "apple/OpenELM-270M-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "Qwen-7B-Chat": {
-        "name": "Qwen/Qwen-7B-Chat",
+    "Qwen2.5-0.5B-Instruct": {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "Qwen1.5-7B-Chat": {
-        "name": "Qwen/Qwen1.5-7B-Chat",
+    "Qwen/Qwen2-0.5B-Instruct": {
+        "name": "Qwen/Qwen2-0.5B-Instruct",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "phi-2": {
-        "name": "microsoft/phi-2",
+    "t5-small": {
+        "name": "google-t5/t5-small",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "notus-7b-v1": {
-        "name": "argilla/notus-7b-v1",
+    "TinyStories-1M": {
+        "name": "roneneldan/TinyStories-1M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     }
 }
