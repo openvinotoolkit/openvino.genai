@@ -144,7 +144,7 @@ def image2image(args):
     
     iter_metrics = []
     for i in range(num_iter):
-        image_tensor = pipe.generate(prompt, image_input, strength)
+        image_tensor = pipe.generate(prompt, image_input, strength=strength)
         perf_metrics = pipe.get_performance_metrics()
         iter_metrics.append(perf_metrics)
         image = Image.fromarray(image_tensor.data[0])
