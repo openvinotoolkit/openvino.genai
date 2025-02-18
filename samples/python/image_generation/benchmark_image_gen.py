@@ -4,6 +4,7 @@
 import argparse
 import openvino
 import openvino_genai as ov_genai
+import numpy as np
 from PIL import Image
 
 def get_total_text_encoder_infer_duration(metrics):
