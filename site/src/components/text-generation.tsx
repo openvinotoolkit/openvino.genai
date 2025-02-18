@@ -3,6 +3,7 @@ import {GoToDocumentation} from "@site/src/components/GoToLink/go-to-documentati
 import {ExploreCodeSamples} from "@site/src/components/GoToLink/explore-code-samples";
 import {LanguageTabs} from "@site/src/components/LanguageTabs/language-tabs";
 
+// TODO Consider moving to mdx
 const FEATURES = [
     'Use different generation parameters (sampling types, etc.)',
     'Optimize for chat scenarios by using chat mode',
