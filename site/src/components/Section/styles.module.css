@@ -32,8 +32,8 @@
     flex: 1;
     min-width: 0;
     align-self: start;
-
-    :global(.language-tabs__code-block) {
+    
+    :global(.theme-code-block) {
         border: 1px solid #E9E9E9;
 
         pre {
