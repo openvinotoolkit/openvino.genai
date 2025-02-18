@@ -11,7 +11,7 @@ class TestMultinomialCausalLM:
     @pytest.mark.parametrize(
         "convert_model, sample_args, sample_type",
         [
-            pytest.param("OpenELM-270M-Instruct", "return 0", "py and cpp"),
+            pytest.param("phi-1_5", "return 0", "py and cpp"),
             pytest.param("LaMini-GPT-124M", "0", "py"),
         ],
         indirect=["convert_model"],

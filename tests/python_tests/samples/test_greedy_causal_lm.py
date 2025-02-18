@@ -12,7 +12,7 @@ class TestGreedyCausalLM:
         "convert_model, sample_args",
         [
             pytest.param("LaMini-GPT-124M", ""),
-            pytest.param("OpenELM-270M-Instruct", "return 0"),
+            pytest.param("phi-1_5", "return 0"),
             pytest.param("Qwen2.5-0.5B-Instruct", "69"),
         ],
         indirect=["convert_model"],

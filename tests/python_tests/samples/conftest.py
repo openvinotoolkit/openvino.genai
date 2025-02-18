@@ -4,7 +4,8 @@ import pytest
 import shutil
 import logging
 import gc
-import time
+
+from utils.network import retry_request
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,8 +28,8 @@ MODELS = {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code']
     },
-    "OpenELM-270M-Instruct": {
-        "name": "apple/OpenELM-270M-Instruct",
+    "phi-1_5": {
+        "name": "microsoft/phi-1_5",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2.5-0.5B-Instruct": {
@@ -112,18 +113,7 @@ def convert_model(request):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {command}")
-        retries = 3
-        for attempt in range(retries):
-            try:
-                subprocess.run(command, check=True)
-                break
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Model {model_name} conversion failed on attempt {attempt + 1}. Retrying... Command: {e.cmd}")
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
-                else:
-                    logger.error(f"Model {model_name} conversion failed after {retries} attempts: {e.cmd}")
-                    raise e
+        retry_request(lambda: subprocess.run(command, check=True))
             
     yield model_path
     
