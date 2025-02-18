@@ -169,12 +169,12 @@ def get_scheduler_config_genai(user_config, config_name="CB config"):
 
 
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
-    import openvino_tokenizers  # noqa: F401
     import openvino_genai
     from transformers import AutoTokenizer
 
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
-        convert_ov_tokenizer(model_path)
+        raise ValueError("OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
+                         "convert_tokenizer --with-detokenizer MODEL_DIR --output MODEL_DIR ")
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
