@@ -16,8 +16,8 @@
 .featureHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;;
 }
 
 .featureHeading {
@@ -25,4 +25,12 @@
   color: var(--genai-color-text-white);
   font-weight: 500;
   font-size: 14px;
+}
+
+.featureCodeExample {
+  font-size: 0.75rem;
+}
+
+.featureCodeExample pre code {
+  padding: 0.5rem;
 }

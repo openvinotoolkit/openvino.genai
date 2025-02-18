@@ -1,40 +1,48 @@
 import clsx from 'clsx';
 import Heading from '@theme/Heading';
+import CodeBlock from '@theme/CodeBlock';
 import styles from './styles.module.css';
+import React from 'react';
+
 
 type FeatureItem = {
   title: string;
-  Svg: React.ComponentType<React.ComponentProps<'svg'>>;
-  CodeExample: React.ComponentType<React.ComponentProps<'svg'>>;
+  Icon: React.ComponentType<React.ComponentProps<'svg'>>;
+  code: string;
 };
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Text generation API',
-    Svg: require('@site/static/img/text.svg').default,
-    CodeExample: require('@site/static/img/text-generation-example.svg').default,
+    title: 'Text Generation API',
+    Icon: require('@site/static/img/text.svg').default,
+    code: `ov_pipe = ov_genai.LLMPipeline("TinyLlama")
+print(ov_pipe.generate("The Sun is yellow because"))`,
   },
   {
-    title: 'Image generation API',
-    Svg: require('@site/static/img/image.svg').default,
-    CodeExample: require('@site/static/img/image-generation-example.svg').default,
+    title: 'Image Generation API',
+    Icon: require('@site/static/img/image.svg').default,
+    code: `ov_pipe = ov_genai.Text2ImagePipeline("Flux")
+image = ov_pipe.generate("Create beautiful Sun")`,
   },
   {
-    title: 'Speech to text API',
-    Svg: require('@site/static/img/sound-on.svg').default,
-    CodeExample: require('@site/static/img/speech-to-text-api-example.svg').default,
+    title: 'Speech to Text API',
+    Icon: require('@site/static/img/sound-on.svg').default,
+    code: `ov_pipe = ov_genai.WhisperPipeline("whisper-base")
+print(ov_pipe.generate(read_wav("sample.wav)))`,
   },
 ];
 
-function Feature({title, Svg, CodeExample}: FeatureItem) {
+function Feature({title, Icon, code}: FeatureItem) {
   return (
     <div>
       <div className={clsx("text--center", styles.featureHeader)}>
-        <Svg role="img" />
+        <Icon role="img" />
         <Heading as="h3" className={styles.featureHeading}>{title}</Heading>
       </div>
       <div>
-        <CodeExample />
+        <CodeBlock language='python' className={styles.featureCodeExample}>
+          {code}
+        </CodeBlock>
       </div>
     </div>
   );
