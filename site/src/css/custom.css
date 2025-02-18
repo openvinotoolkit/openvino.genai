@@ -42,11 +42,8 @@
   --ifm-menu-color-background-active: #f5f5f5;
   --ifm-breadcrumb-item-background-active: transparent;
   --ifm-breadcrumb-color-active: var(--genai-color-classic-blue);
-  --ifm-navbar-link-color: var(--genai-color-text-white);
-  --ifm-navbar-link-hover-color: var(--genai-text-color-white-hover);
   --ifm-footer-link-hover-color: var(--genai-text-color-white-hover);
   --ifm-tabs-color-active: var(--genai-color-classic-blue);
-  
 
   --genai-color-white: #fff;
   --genai-color-section-bg: #f8f8f8;

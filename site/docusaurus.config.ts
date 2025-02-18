@@ -52,24 +52,17 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Replace with your project's social card
-    image: 'img/docusaurus-social-card.jpg',
     colorMode: {
       disableSwitch: true,
       defaultMode: 'light',
     },
     navbar: {
-      title: '',
+      title: 'OpenVINO GenAI',
       logo: {
         alt: 'Intel logo',
         src: 'img/intel-logo.svg',
       },
       items: [
-        {
-          label: 'Overview',
-          position: 'left',
-          to: '/',
-        },
         {
           type: 'docSidebar',
           sidebarId: 'gettingStartedSidebar',

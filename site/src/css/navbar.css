@@ -1,5 +1,9 @@
 :root {
   --search-local-input-active-border-color: var(--genai-color-white);
+
+  --ifm-navbar-link-color: var(--genai-color-text-white);
+  --ifm-navbar-link-hover-color: var(--genai-text-color-white-hover);
+  --ifm-navbar-link-active-color: var(--genai-color-blue-energy);
 }
 
 .navbar {
@@ -8,11 +12,7 @@
 }
 
 .navbar__items {
-  margin-left: 50px;
-}
-
-.navbar__items--right > a:first-child {
-  margin-right: 16px;
+  margin-left: var(--ifm-navbar-height);
 }
 
 .navbar__inner {
@@ -24,14 +24,6 @@
   left: 0;
   height: 100%;
   position: absolute;
-}
-
-.navbar__link {
-  font-size: 16px;
-}
-
-.navbar__link--active {
-  --ifm-navbar-link-hover-color: var(--ifm-navbar-link-color);
 }
 
 .navbar__link--active:not(:has(~ .navbar__link--active)) {
