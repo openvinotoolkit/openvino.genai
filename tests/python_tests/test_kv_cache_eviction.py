@@ -17,7 +17,7 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_cb_pipeline_with_ref
+from common import TESTS_ROOT, run_cb_pipeline_with_ref, retry_request
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 from utils.constants import get_default_llm_properties
@@ -47,8 +47,8 @@ class ConvertedModel:
 @pytest.fixture(scope='module')
 def converted_model(tmp_path_factory):
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties())
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties()))
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id))
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
     ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
@@ -201,8 +201,8 @@ def test_dynamic_memory_allocation(tmp_path, params):
 @pytest.fixture(scope='module')
 def qwen2_converted_model(tmp_path_factory):
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True))
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id))
     models_path = tmp_path_factory.mktemp("cacheopt_test_models") / model_id
     model.save_pretrained(models_path)
     ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
