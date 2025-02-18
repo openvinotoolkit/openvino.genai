@@ -59,6 +59,11 @@ public:
         const ModelConfigDesc& model_desc,
         ov::AnyMap& pipeline_config);
 
+    std::shared_ptr<ov::CompiledModel> setupAndCompileModel(
+        const std::filesystem::path& model_path,
+        const ModelConfigDesc& model_desc,
+        ov::AnyMap& pipeline_config);
+
     void updateStatefulConfig(
         const ModelConfigDesc& model_desc,
         ov::AnyMap& pipeline_config);
