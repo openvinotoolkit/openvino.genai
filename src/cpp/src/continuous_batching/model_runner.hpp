@@ -245,20 +245,27 @@ public:
                 }
 
                 size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+                size_t expected_kv_cache_size_in_blocks = (expected_kv_cache_size + m_block_size - 1) / m_block_size;
                 size_t num_tokens_in_last_block = expected_kv_cache_size % m_block_size;
-                if (num_tokens_in_last_block == 0 && expected_kv_cache_size > m_block_size) {
-                    num_tokens_in_last_block = m_block_size;
-                }
+                size_t num_blocks = sequence_group->get_num_logical_blocks();
 
                 if (!sequence_group->can_generate_tokens()) {
-                    expected_kv_cache_size = m_block_size + num_tokens_in_last_block; // A-shape
+                    if (expected_kv_cache_size > m_block_size) {
+                        if (num_tokens_in_last_block == 0) {
+                            num_tokens_in_last_block = m_block_size;
+                        }
+                        expected_kv_cache_size = m_block_size + num_tokens_in_last_block; // A-shape
+                        num_blocks = 2;
+                    }
+                    else {
+                        num_blocks = 1;
+                    }
                 }
 
                 past_lens_data[0] = expected_kv_cache_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
 
-                size_t num_blocks = (sequence_group->get_context_len()  - sequence_group->get_num_evicted_tokens() +  m_block_size - 1) / m_block_size;
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
 
                 // apply strides to shift to a next sequence
@@ -495,11 +502,13 @@ private:
                     size_t num_blocks = sequence_group->get_num_logical_blocks();
                     size_t seq_id = sequence->get_id();
                     if (!sequence_group->can_generate_tokens()) {
-                        if (num_blocks > 1) {
+                        if (num_blocks == 2) {
                             seq_id_to_select_logical_idx_map[layer_idx][seq_id] = {0, num_blocks - 1}; // A-shape
                         }
-                        else {
+                        else if (num_blocks == 1) {
                             seq_id_to_select_logical_idx_map[layer_idx][seq_id] = {0}; // A-shape
+                        } else {
+                            OPENVINO_THROW("unexpected num_blocks: ", num_blocks, "\n");
                         }
                     }
                     else
