@@ -1,6 +1,3 @@
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 ### Using GenAI in Chat Scenario
 
 For chat applications, OpenVINO GenAI provides special optimizations to maintain conversation context and improve performance using KV-cache.
@@ -11,8 +8,8 @@ Use `start_chat()` and `finish_chat()` to properly manage the chat session's KV-
 
 A simple chat example (with grouped beam search decoding):
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         ```python showLineNumbers
         import openvino_genai as ov_genai
         pipe = ov_genai.LLMPipeline(model_path, 'CPU')
@@ -34,8 +31,8 @@ A simple chat example (with grouped beam search decoding):
         # highlight-next-line
         pipe.finish_chat()
         ```
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         ```cpp showLineNumbers
         #include "openvino/genai/llm_pipeline.hpp"
         #include <iostream>
@@ -66,8 +63,8 @@ A simple chat example (with grouped beam search decoding):
             pipe.finish_chat();
         }
         ```
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>
 
 #### Streaming the Output
 
@@ -76,8 +73,8 @@ For more interactive UIs during generation, you can stream output tokens.
 ##### Streaming with Lambda Function
 In this example, a lambda function outputs words to the console immediately upon generation:
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         ```python showLineNumbers
         import openvino_genai as ov_genai
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
@@ -100,8 +97,8 @@ In this example, a lambda function outputs words to the console immediately upon
         # highlight-next-line
         pipe.finish_chat()
         ```
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         ```cpp showLineNumbers
         #include "openvino/genai/llm_pipeline.hpp"
         #include <iostream>
@@ -133,8 +130,8 @@ In this example, a lambda function outputs words to the console immediately upon
             pipe.finish_chat();
         }
         ```
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>
 
 :::info
 For more information, refer to the [chat sample](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/chat_sample/).
@@ -143,8 +140,8 @@ For more information, refer to the [chat sample](https://github.com/openvinotool
 ##### Custom Streamer Class
 You can also create your custom streamer for more sophisticated processing:
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         ```python showLineNumbers
         import openvino_genai as ov_genai
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
@@ -180,8 +177,8 @@ You can also create your custom streamer for more sophisticated processing:
         # highlight-next-line
         pipe.finish_chat()
         ```
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         ```cpp showLineNumbers
         #include "openvino/genai/streamer_base.hpp"
         #include "openvino/genai/llm_pipeline.hpp"
@@ -225,8 +222,8 @@ You can also create your custom streamer for more sophisticated processing:
             pipe.finish_chat();
         }
         ```
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>
 
 :::info
 For fully implemented iterable CustomStreamer refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/5/samples/python/multinomial_causal_lm) sample.

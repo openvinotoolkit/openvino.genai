@@ -1,6 +1,3 @@
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 import CodeExamplePython from './_code_example_python.mdx';
 import CodeExampleCPP from './_code_example_cpp.mdx';
 
@@ -9,8 +6,8 @@ import CodeExampleCPP from './_code_example_cpp.mdx';
 `LLMPipeline` is the main object used for decoding. You can construct it straight away from the folder with the converted model.
 It will automatically load the main model, tokenizer, detokenizer and default generation configuration.
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
                 <CodeExamplePython device="CPU" />
@@ -19,9 +16,8 @@ It will automatically load the main model, tokenizer, detokenizer and default ge
                 <CodeExamplePython device="GPU" />
             </TabItem>
         </Tabs>
-        
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         <Tabs groupId="device">
             <TabItem label="CPU" value="cpu">
                 <CodeExampleCPP device="CPU" />
@@ -30,8 +26,8 @@ It will automatically load the main model, tokenizer, detokenizer and default ge
                 <CodeExampleCPP device="GPU" />
             </TabItem>
         </Tabs>
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>
 
 :::note
 

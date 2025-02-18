@@ -1,13 +1,10 @@
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 ### Working with LoRA Adapters
 
 LoRA (Low-Rank Adaptation) allows you to fine-tune models for specific tasks efficiently.
 OpenVINO GenAI supports dynamic loading and switching between LoRA adapters without recompilation.
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         ```python
         import openvino_genai as ov_genai
 
@@ -39,8 +36,8 @@ OpenVINO GenAI supports dynamic loading and switching between LoRA adapters with
             adapters=new_config
         )
         ```
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         ```cpp
         #include "openvino/genai/llm_pipeline.hpp"
 
@@ -73,5 +70,5 @@ OpenVINO GenAI supports dynamic loading and switching between LoRA adapters with
             );
         }
         ```
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>

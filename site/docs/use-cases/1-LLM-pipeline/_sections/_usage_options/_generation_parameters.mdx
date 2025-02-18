@@ -1,6 +1,3 @@
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 ### Use Different Generation Parameters
 
 Fine-tune your LLM's output by adjusting various generation parameters.
@@ -15,8 +12,8 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
     - Pass config directly to `generate()` (e.g. `generate(prompt, config)`)
     - Specify options as inputs in the `generate()` method (e.g. `generate(prompt, max_new_tokens=100)`)
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         ```python
         import openvino_genai as ov_genai
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
@@ -34,8 +31,8 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
         # Generate text with custom configuration
         output = pipe.generate("The Sun is yellow because", config)
         ```
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         ```cpp
         int main() {
             ov::genai::LLMPipeline pipe(model_path, "CPU");
@@ -54,8 +51,8 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
             auto output = pipe.generate("The Sun is yellow because", config);
         }
         ```
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>
 
 :::info Understanding Basic Generation Parameters
 
@@ -77,8 +74,8 @@ For the full list of generation parameters, refer to the [API reference](https:/
 
 Beam search helps explore multiple possible text completions simultaneously, often leading to higher quality outputs.
 
-<Tabs groupId="language">
-    <TabItem label="Python" value="python">
+<LanguageTabs>
+    <TabItemPython>
         ```python
         import openvino_genai as ov_genai
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
@@ -95,8 +92,8 @@ Beam search helps explore multiple possible text completions simultaneously, oft
         # Generate text with custom configuration
         print(pipe.generate("The Sun is yellow because", config))
         ```
-    </TabItem>
-    <TabItem label="C++" value="cpp">
+    </TabItemPython>
+    <TabItemCpp>
         ```cpp
         int main(int argc, char* argv[]) {
             std::string model_path = argv[1];
@@ -115,8 +112,8 @@ Beam search helps explore multiple possible text completions simultaneously, oft
             cout << pipe.generate("The Sun is yellow because", config);
         }
         ```
-    </TabItem>
-</Tabs>
+    </TabItemCpp>
+</LanguageTabs>
 
 :::info Understanding Beam Search Generation Parameters
 
