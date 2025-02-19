@@ -1,17 +1,23 @@
 import styles from './styles.module.css'
 
+import LinuxLogo from '@site/static/img/linux-logo.svg';
+import WindowsLogo from '@site/static/img/windows-logo.svg';
+import MacOSLogo from '@site/static/img/mac-os-logo.svg';
+import Link from '@docusaurus/Link';
+import Heading from '@theme/Heading';
+
 const INSTALLATION_ITEMS = [
     {
         title: 'Linux install',
-        Icon: require('@site/static/img/linux-logo.svg').default,
+        Icon: LinuxLogo,
     },
     {
         title: 'Windows install',
-        Icon: require('@site/static/img/windows-logo.svg').default,
+        Icon: WindowsLogo,
     },
     {
         title: 'MacOS install',
-        Icon: require('@site/static/img/mac-os-logo.svg').default,
+        Icon: MacOSLogo,
     },
 ]
 
@@ -31,13 +37,13 @@ const InstallationItems = () => {
 export const Installation = () => {
     return (
         <section className={styles.installation}>
-            <h4 className={styles.installationTitle}>Install OpenVINO™ GenAI</h4>
+            <Heading as='h4' className={styles.installationTitle}>Install OpenVINO™ GenAI</Heading>
             <p className={styles.installationDescription}>Unlock the power of OpenVINO GenAI™ for your projects. <br/>Get started with seamless installation now!</p>
 
             <InstallationItems />
 
-            <p>Full list of installation options <a href="docs/overview/installation">here</a></p>
-            
+            <p>Full list of installation options <Link href="docs/overview/installation">here</Link></p>
+
         </section>
     )
 }

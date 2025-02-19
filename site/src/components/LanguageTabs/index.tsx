@@ -1,5 +1,5 @@
-import Tabs from '@theme/Tabs';
 import TabItem, { Props as TabItemProps } from '@theme/TabItem';
+import Tabs from '@theme/Tabs';
 import { Children, ReactElement } from 'react';
 
 type LanguageTabsProps = {

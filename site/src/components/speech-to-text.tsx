@@ -1,8 +1,10 @@
-import {Section} from "@site/src/components/Section";
-import {ExploreCodeSamples} from "@site/src/components/GoToLink/explore-code-samples";
-import {GoToDocumentation} from "@site/src/components/GoToLink/go-to-documentation";
-import {LanguageTabs, TabItemCpp, TabItemPython} from "@site/src/components/LanguageTabs";
+import { ExploreCodeSamples } from "@site/src/components/GoToLink/explore-code-samples";
+import { GoToDocumentation } from "@site/src/components/GoToLink/go-to-documentation";
+import { LanguageTabs, TabItemCpp, TabItemPython } from "@site/src/components/LanguageTabs";
+import { Section } from "@site/src/components/Section";
 import CodeBlock from '@theme/CodeBlock';
+
+import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
 
 const FEATURES = [
     'Translate transcription to English',
@@ -52,7 +54,7 @@ export const SpeechToText = () => {
                     An intuitive speech-to-text API can work with models like Whisper to enable use cases such as video transcription, enhancing communication tools.
                 </Section.Description>
                 <Section.Image
-                    url={require('@site/static/img/image-generation-placeholder.webp').default}
+                    url={ImagePlaceholder}
                     alt={'Speech to text'}
                 />
             </Section.Column>

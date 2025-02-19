@@ -1,6 +1,7 @@
+import Link from "@docusaurus/Link";
 import styles from "./styles.module.css";
 
-const ChevronRight = require("@site/static/img/chevron-right.svg").default;
+import ChevronRight from "@site/static/img/chevron-right.svg";
 
 interface GoToLinkProps {
     link: string;
@@ -8,9 +9,9 @@ interface GoToLinkProps {
 }
 
 export const GoToLink = ({ link, name }: GoToLinkProps) => {
-    return (
-        <a className={styles.goToLink} href={link} target='_blank' rel='noopener noreferrer'>
+  return (
+        <Link className={styles.goToLink} href={link} target='_blank' rel='noopener noreferrer'>
             {name} <ChevronRight />
-        </a>
-    )
+        </Link>
+  )
 }

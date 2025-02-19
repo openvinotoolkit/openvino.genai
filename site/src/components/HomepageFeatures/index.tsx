@@ -1,32 +1,35 @@
-import clsx from 'clsx';
-import Heading from '@theme/Heading';
 import CodeBlock from '@theme/CodeBlock';
+import Heading from '@theme/Heading';
+import clsx from 'clsx';
+import { ComponentProps, ComponentType } from 'react';
 import styles from './styles.module.css';
-import React from 'react';
 
+import ImageIcon from '@site/static/img/image.svg';
+import SoundIcon from '@site/static/img/sound-on.svg';
+import TextIcon from '@site/static/img/text.svg';
 
 type FeatureItem = {
   title: string;
-  Icon: React.ComponentType<React.ComponentProps<'svg'>>;
+  Icon: ComponentType<ComponentProps<'svg'>>;
   code: string;
 };
 
 const FeatureList: FeatureItem[] = [
   {
     title: 'Text Generation API',
-    Icon: require('@site/static/img/text.svg').default,
+    Icon: TextIcon,
     code: `ov_pipe = ov_genai.LLMPipeline("TinyLlama")
 print(ov_pipe.generate("The Sun is yellow because"))`,
   },
   {
     title: 'Image Generation API',
-    Icon: require('@site/static/img/image.svg').default,
+    Icon: ImageIcon,
     code: `ov_pipe = ov_genai.Text2ImagePipeline("Flux")
 image = ov_pipe.generate("Create beautiful Sun")`,
   },
   {
     title: 'Speech to Text API',
-    Icon: require('@site/static/img/sound-on.svg').default,
+    Icon: SoundIcon,
     code: `ov_pipe = ov_genai.WhisperPipeline("whisper-base")
 print(ov_pipe.generate(read_wav("sample.wav)))`,
   },

@@ -5,6 +5,8 @@ import {GoToDocumentation} from "@site/src/components/GoToLink/go-to-documentati
 import {LanguageTabs, TabItemCpp, TabItemPython} from "@site/src/components/LanguageTabs";
 import CodeBlock from '@theme/CodeBlock';
 
+import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
+
 const FEATURES = [
     'Alter parameters (width, height, iterations) and compile model for static size',
     'Load LoRA adapters (in safetensor format) and dynamically switch between them',
@@ -79,7 +81,7 @@ export const ImageGeneration = () => {
                     A user-friendly image generation API can be used with generative models to improve creative tools and increase productivity. For instance, it can be utilized in furniture design tools to create various design concepts.
                 </Section.Description>
                 <SectionImage
-                    url={require('@site/static/img/image-generation-placeholder.webp').default}
+                    url={ImagePlaceholder}
                     alt={'Image generation API'}
                 />
             </Section.Column>

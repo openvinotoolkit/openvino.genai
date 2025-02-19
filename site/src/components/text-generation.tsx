@@ -1,9 +1,11 @@
-import {Section} from "./Section";
-import {GoToDocumentation} from "@site/src/components/GoToLink/go-to-documentation";
-import {ExploreCodeSamples} from "@site/src/components/GoToLink/explore-code-samples";
+import { ExploreCodeSamples } from "@site/src/components/GoToLink/explore-code-samples";
+import { GoToDocumentation } from "@site/src/components/GoToLink/go-to-documentation";
+import { Section } from "./Section";
 
-import {LanguageTabs, TabItemCpp, TabItemPython} from "@site/src/components/LanguageTabs";
+import { LanguageTabs, TabItemCpp, TabItemPython } from "@site/src/components/LanguageTabs";
 import CodeBlock from '@theme/CodeBlock';
+
+import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
 
 // TODO Consider moving to mdx
 const FEATURES = [
@@ -17,8 +19,8 @@ const pythonCodeBlock = <CodeBlock language="python">
 {`import openvino_genai as ov_genai
 
 # Will run model on CPU, GPU or NPU are possible options
-pipe = ov_genai.LLMPipeline(\"./TinyLlama-1.1B-Chat-v1.0/\", \"CPU\")
-print(pipe.generate(\"The Sun is yellow because\", max_new_tokens=100))`}
+pipe = ov_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
+print(pipe.generate("The Sun is yellow because", max_new_tokens=100))`}
 </CodeBlock>
 
 const cppCodeBlock = <CodeBlock language="cpp">
@@ -42,7 +44,7 @@ export const TextGeneration = () => {
                     assistants like financial helpers, and AI tools like legal contract creators.
                 </Section.Description>
                 <Section.Image
-                    url={require('@site/static/img/image-generation-placeholder.webp').default}
+                    url={ImagePlaceholder}
                     alt={'Text generation API'}
                 />
             </Section.Column>

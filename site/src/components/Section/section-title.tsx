@@ -1,12 +1,13 @@
-import {FC, ReactNode} from "react";
+import { FC, ReactNode } from "react";
 import styles from './styles.module.css'
+import Heading from '@theme/Heading';
 
 interface SectionTitleProps {
-    children: ReactNode;
+  children: ReactNode;
 }
 
-export const SectionTitle: FC<SectionTitleProps> = ({children}) => {
-    return (
-        <h4 className={styles.sectionTitle}>{children}</h4>
-    )
+export const SectionTitle: FC<SectionTitleProps> = ({ children }) => {
+  return (
+    <Heading as="h4" className={styles.sectionTitle}>{children}</Heading>
+  )
 }

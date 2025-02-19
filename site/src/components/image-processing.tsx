@@ -4,6 +4,8 @@ import {GoToDocumentation} from "@site/src/components/GoToLink/go-to-documentati
 import {LanguageTabs, TabItemCpp, TabItemPython} from "@site/src/components/LanguageTabs";
 import CodeBlock from '@theme/CodeBlock';
 
+import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
+
 const FEATURES = [
     'Use different generation parameters (sampling types, etc.)',
     'Optimize for chat scenarios by using chat mode',
@@ -21,7 +23,7 @@ pipe = ov_genai.VLMPipeline("./MiniCPM-V-2_6/", "CPU")
 
 image = Image.open("dog.jpg")
 image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
-image_data = ov.Tensor(image_data)  
+image_data = ov.Tensor(image_data)
 
 prompt = "Can you describe the image?"
 print(pipe.generate(prompt, image=image_data, max_new_tokens=100))`}
@@ -70,7 +72,7 @@ export const ImageProcessing = () => {
                     An easy-to-use API for vision language models can power chatbots, AI assistants like medical helpers, and AI tools like legal contract creators.
                 </Section.Description>
                 <Section.Image
-                    url={require('@site/static/img/image-generation-placeholder.webp').default}
+                    url={ImagePlaceholder}
                     alt={'Image processing with Visual Language Models'}
                 />
             </Section.Column>

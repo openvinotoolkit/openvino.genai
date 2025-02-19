@@ -1,4 +1,5 @@
 import {FC} from "react";
+import Heading from '@theme/Heading';
 import styles from './styles.module.css';
 
 interface SectionFeaturesProps {
@@ -8,7 +9,7 @@ interface SectionFeaturesProps {
 export const SectionFeatures: FC<SectionFeaturesProps> = ({features}) => {
     return (
         <div>
-            <h4 className={styles.sectionFeaturesTitle}>Possibilities</h4>
+            <Heading as='h4' className={styles.sectionFeaturesTitle}>Possibilities</Heading>
 
             <ul className={styles.sectionFeaturesList}>
             {features.map((feature, index) => {

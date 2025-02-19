@@ -1,44 +1,44 @@
 .sectionContainer {
-    display: flex;
-    align-items: center;
-    gap: 80px;
-    padding: 80px;
-    background-color: var(--genai-color-section-bg);
-    width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 80px;
+  padding: 80px;
+  background-color: var(--genai-color-section-bg);
+  width: 100%;
 }
 
 .sectionTitle {
-    font-size: 1.5rem;
-    font-weight: 500;
+  font-size: 1.5rem;
+  font-weight: 500;
 }
 
 .sectionDescription {
-    margin-bottom: 42px;
+  margin-bottom: 42px;
 }
 
 .sectionFeaturesTitle {
-    font-weight: 500;
+  font-weight: 500;
 }
 
 .sectionFeaturesList {
-    margin-top: 16px;
+  margin-top: 16px;
 }
 
 .sectionFeaturesListItem {
-    line-height: 2rem;
+  line-height: 2rem;
 }
 
 .sectionColumn {
-    flex: 1;
-    min-width: 0;
-    align-self: start;
-    
-    :global(.theme-code-block) {
-        border: 1px solid #E9E9E9;
+  flex: 1;
+  min-width: 0;
+  align-self: start;
 
-        pre {
-            --ifm-pre-background: var(--genai-color-white);
-            background-color: var(--ifm-pre-background) !important;
-        }
+  :global(.theme-code-block) {
+    border: 1px solid #E9E9E9;
+
+    pre {
+      --ifm-pre-background: var(--genai-color-white);
+      background-color: var(--ifm-pre-background) !important;
     }
+  }
 }
