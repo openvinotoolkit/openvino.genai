@@ -20,6 +20,10 @@ MODELS = {
         "name": "MBZUAI/LaMini-GPT-124M",
         "convert_args": []
     },
+    "SmolLM-135M": {
+        "name": "HuggingFaceTB/SmolLM-135M",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
     "SmolLM2-135M": {
         "name": "HuggingFaceTB/SmolLM2-135M",
         "convert_args": ['--trust-remote-code']
@@ -27,10 +31,6 @@ MODELS = {
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code']
-    },
-    "SmolLM-135M": {
-        "name": "HuggingFaceTB/SmolLM-135M",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2.5-0.5B-Instruct": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",
