@@ -12,25 +12,59 @@ namespace genai {
 class StableDiffusionXLPipeline : public StableDiffusionPipeline {
 public:
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
-        StableDiffusionPipeline(pipeline_type, root_dir) {
-        const std::filesystem::path model_index_path = root_dir / "model_index.json";
-        std::ifstream file(model_index_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+        StableDiffusionPipeline(pipeline_type) {
+            const std::filesystem::path model_index_path = root_dir / "model_index.json";
+            std::ifstream file(model_index_path);
+            OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
-        nlohmann::json data = nlohmann::json::parse(file);
+            nlohmann::json data = nlohmann::json::parse(file);
+            using utils::read_json_param;
 
-        const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
-        if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2");
-        } else {
-            OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
-        }
+            set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        // initialize generation config
-        initialize_generation_config(data["_class_name"].get<std::string>());
+            const std::string text_encoder = data["text_encoder"][1].get<std::string>();
+            if (text_encoder == "CLIPTextModel") {
+                m_clip_text_encoder =
+                    std::make_shared<CLIPTextModel>(root_dir / "text_encoder");
+            } else {
+                OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
+            }
 
-        // initialize force_zeros_for_empty_prompt, which is SDXL specific
-        utils::read_json_param(data, "force_zeros_for_empty_prompt", m_force_zeros_for_empty_prompt);
+            const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
+            if (text_encoder_2 == "CLIPTextModelWithProjection") {
+                m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
+                    root_dir / "text_encoder_2");
+            } else {
+                OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
+            }
+
+            const std::string unet = data["unet"][1].get<std::string>();
+            if (unet == "UNet2DConditionModel") {
+                m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet");
+            } else {
+                OPENVINO_THROW("Unsupported '", unet, "' UNet type");
+            }
+
+            const std::string vae = data["vae"][1].get<std::string>();
+            if (vae == "AutoencoderKL") {
+                if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+                    m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+                else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE ||
+                         m_pipeline_type == PipelineType::INPAINTING) {
+                    m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder",
+                                                            root_dir / "vae_decoder");
+                } else {
+                    OPENVINO_ASSERT("Unsupported pipeline type");
+                }
+            } else {
+                OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
+            }
+
+            // initialize generation config
+            initialize_generation_config(data["_class_name"].get<std::string>());
+
+            // initialize force_zeros_for_empty_prompt, which is SDXL specific
+            read_json_param(data, "force_zeros_for_empty_prompt", m_force_zeros_for_empty_prompt);
     }
 
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) :
@@ -131,28 +165,27 @@ public:
         check_image_size(height, width);
 
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        m_clip_text_encoder->reshape(batch_size_multiplier);
-        m_clip_text_encoder_with_projection->reshape(batch_size_multiplier);
+        m_clip_text_encoder->reshape(1);
+        m_clip_text_encoder_with_projection->reshape(1);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
-        update_adapters_from_properties(properties, m_generation_config.adapters);
-        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
-        // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
-
-        m_clip_text_encoder->compile(device, *updated_properties);
-        m_clip_text_encoder_with_projection->compile(device, *updated_properties);
-        m_unet->compile(device, *updated_properties);
-        m_vae->compile(device, *updated_properties);
+        compile(device, device, device, properties);
     }
 
     void compile(const std::string& text_encode_device,
                  const std::string& denoise_device,
                  const std::string& vae_decode_device,
                  const ov::AnyMap& properties) override {
-        OPENVINO_THROW("not supported yet.");
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+        // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
+        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
+        m_clip_text_encoder_with_projection->compile(text_encode_device, *updated_properties);
+        m_unet->compile(denoise_device, *updated_properties);
+        m_vae->compile(vae_decode_device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
