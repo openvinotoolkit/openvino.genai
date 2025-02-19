@@ -181,8 +181,14 @@ public:
         ov::Tensor encoder_hidden_states(ov::element::f32, {}), add_text_embeds(ov::element::f32, {});
 
         if (compute_negative_prompt) {
+            auto infer_start = std::chrono::steady_clock::now();
             add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, batch_size_multiplier > 1);
+            auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+            m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration;
+            infer_start = std::chrono::steady_clock::now();
             m_clip_text_encoder->infer(prompt_2_str, negative_prompt_2_str, batch_size_multiplier > 1);
+            infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+            m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
             // prompt_embeds = prompt_embeds.hidden_states[-2]
             ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
@@ -190,8 +196,14 @@ public:
 
             encoder_hidden_states = numpy_utils::concat(encoder_hidden_states_1, encoder_hidden_states_2, -1);
         } else {
+            auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor add_text_embeds_positive = m_clip_text_encoder_with_projection->infer(positive_prompt, negative_prompt_1_str, false);
+            auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+            m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration;
+            infer_start = std::chrono::steady_clock::now();
             m_clip_text_encoder->infer(prompt_2_str, negative_prompt_2_str, false);
+            infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+            m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
             ov::Tensor encoder_hidden_states_1_positive = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
             ov::Tensor encoder_hidden_states_2_positive = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);

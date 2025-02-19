@@ -1,6 +1,29 @@
+import { createRequire } from 'module'
+import path from 'path';
 import util from 'node:util';
+import { platform } from 'node:os';
+import getGenAIAddon from './bindings.cjs';
 
-import addon from './bindings.cjs';
+let ovPath;
+const require = createRequire(import.meta.url);
+try {
+  ovPath = require.resolve('openvino-node');
+} catch (error) {
+  if (error.code === 'MODULE_NOT_FOUND') {
+    console.error(error.message);
+  }
+  throw error;
+}
+
+if (platform() == "win32") {
+  // Find the openvino libraries that are required for genai-node
+  const pathToOpenVino = path.join(path.dirname(ovPath), '../bin');
+  if (!process.env.PATH.includes('openvino-node')) {
+    process.env.PATH += ';' + path.resolve(pathToOpenVino);
+  }
+}
+
+const addon = getGenAIAddon();
 
 class LLMPipeline {
   modelPath = null;
