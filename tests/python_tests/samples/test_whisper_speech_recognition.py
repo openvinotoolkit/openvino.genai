@@ -9,6 +9,7 @@ from test_utils import run_sample
 
 class TestWhisperSpeechRecognition:
     @pytest.mark.whisper
+    @pytest.mark.precommit
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", [TEST_FILES["how_are_you_doing_today.wav"]], indirect=True)
     def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):           
