@@ -27,4 +27,4 @@ class TestGreedyCausalLM:
         cpp_result = subprocess.run([cpp_sample, convert_model, sample_args], capture_output=True, text=True, check=True)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, "Results should match"
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
