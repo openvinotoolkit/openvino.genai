@@ -24,8 +24,11 @@ class OPENVINO_GENAI_EXPORTS TextStreamer: public StreamerBase {
     std::function<CallbackTypeVariant(std::string)> m_subword_callback = [](std::string words)->bool { return false; };
     StreamingStatus run_callback_if_needed(const std::string& text);
 
+    void compute_decoded_length_for_position(size_t cache_position);
+
 public:
     StreamingStatus write(int64_t token) override;
+    StreamingStatus write(const std::vector<int64_t>& tokens) override;
 
     void end() override;
 

@@ -92,6 +92,15 @@ void init_streamers(py::module_& m) {
 
     py::class_<TextStreamer, std::shared_ptr<TextStreamer>, StreamerBase>(m, "TextStreamer", text_streamer_docstring)
         .def(py::init<const Tokenizer&, std::function<CallbackTypeVariant(std::string)>>(), py::arg("tokenizer"), py::arg("callback"))
-        .def("write", &TextStreamer::write, py::arg("token"))
+        .def("write", 
+            [](TextStreamer& self, std::variant<int64_t, std::vector<int64_t>> token) {
+                if (auto _token = std::get_if<int64_t>(&token)) {
+                    return self.write(*_token);
+                } else {
+                    auto tokens = std::get<std::vector<int64_t>>(token);
+                    return self.write(tokens);
+                }
+            },
+            py::arg("token"))
         .def("end", &TextStreamer::end);
 }
