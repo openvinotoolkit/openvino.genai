@@ -195,11 +195,12 @@ public:
         *pad_to_max_length_tensor.data<bool>() = pad_to_max_length_val;
         
         for (auto& state: infer_request_guard.get().query_state()) {
-            if (state.get_name().find(add_special_tokens.name()) != std::string::npos) {
+            auto name = state.get_name();
+            if (state.get_name() == add_special_tokens.name()) {
                 state.set_state(add_special_tensor);
-            } else if (state.get_name().find(skip_special_tokens.name()) != std::string::npos) {
+            } else if (state.get_name() == skip_special_tokens.name()) {
                 state.set_state(skip_special_tensor);
-            } else if (state.get_name().find(MAX_LENGTH_VAR_ID) != std::string::npos) {
+            } else if (state.get_name() == MAX_LENGTH_VAR_ID) {
                 if (max_length_val.has_value()) {
                     *max_length_tensor.data<int32_t>() = *max_length_val;
                     state.set_state(max_length_tensor);
@@ -208,7 +209,7 @@ public:
                     // to the default value stored in constant from IR.
                     state.reset();
                 }
-            } else if (state.get_name().find(PAD_TO_MAX_LENGTH_VAR_ID) != std::string::npos) {
+            } else if (state.get_name() == PAD_TO_MAX_LENGTH_VAR_ID) {
                 state.set_state(pad_to_max_length_tensor);
             }
         }
