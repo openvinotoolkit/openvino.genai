@@ -288,7 +288,6 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       HF_HOME: /mount/caches/huggingface                              # Hugging Face cache
-      TRANSFORMERS_CACHE: /mount/caches/huggingface/transformers      # Hugging Face transformers cache
       HF_DATASETS_CACHE: /mount/caches/huggingface/datasets           # Hugging Face datasets cache
 
     steps:
@@ -311,7 +310,10 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
-
+      
+      - name: Scan Hugging Face cache
+        run: huggingface-cli scan-cache -v
+          
       - name: Tests
         run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
@@ -340,7 +342,6 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
       MODELS_DIR: ${{ github.workspace }}/models
       HF_HOME: /mount/caches/huggingface                              # Hugging Face cache
-      TRANSFORMERS_CACHE: /mount/caches/huggingface/transformers      # Hugging Face transformers cache
       HF_DATASETS_CACHE: /mount/caches/huggingface/datasets           # Hugging Face datasets cache
 
     steps:
