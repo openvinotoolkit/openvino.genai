@@ -20,8 +20,8 @@ MODELS = {
         "name": "MBZUAI/LaMini-GPT-124M",
         "convert_args": []
     },
-    "SmolLM2-135M-Instruct": {
-        "name": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "SmolLM2-135M": {
+        "name": "HuggingFaceTB/SmolLM2-135M",
         "convert_args": ['--trust-remote-code']
     },  
     "WhisperTiny": {
