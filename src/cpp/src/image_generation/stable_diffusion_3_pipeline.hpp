@@ -280,14 +280,20 @@ public:
         std::string negative_prompt_3_str = generation_config.negative_prompt_3 != std::nullopt ? *generation_config.negative_prompt_3 : negative_prompt_1_str;
 
         // text_encoder_1_output - stores positive and negative pooled_prompt_embeds
+        auto infer_start = std::chrono::steady_clock::now();
         ov::Tensor text_encoder_1_output = m_clip_text_encoder_1->infer(positive_prompt, negative_prompt_1_str, do_classifier_free_guidance(generation_config.guidance_scale));
+        auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+        m_perf_metrics.encoder_inference_duration["text_encode"] = infer_duration;
 
         // text_encoder_1_hidden_state - stores positive and negative prompt_embeds
         size_t idx_hidden_state_1 = m_clip_text_encoder_1->get_config().num_hidden_layers + 1;
         ov::Tensor text_encoder_1_hidden_state = m_clip_text_encoder_1->get_output_tensor(idx_hidden_state_1);
 
         // text_encoder_2_output - stores positive and negative pooled_prompt_2_embeds
+        infer_start = std::chrono::steady_clock::now();
         ov::Tensor text_encoder_2_output = m_clip_text_encoder_2->infer(prompt_2_str, negative_prompt_2_str, do_classifier_free_guidance(generation_config.guidance_scale));
+        infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+        m_perf_metrics.encoder_inference_duration["text_encode_2"] = infer_duration;
 
         // text_encoder_2_hidden_state - stores positive and negative prompt_2_embeds
         size_t idx_hidden_state_2 = m_clip_text_encoder_2->get_config().num_hidden_layers + 1;
@@ -295,16 +301,22 @@ public:
 
         ov::Tensor text_encoder_3_output;
         if (m_t5_text_encoder) {
+            infer_start = std::chrono::steady_clock::now();
             text_encoder_3_output = m_t5_text_encoder->infer(prompt_3_str,
                                                              negative_prompt_3_str,
                                                              do_classifier_free_guidance(generation_config.guidance_scale),
                                                              generation_config.max_sequence_length);
+            auto infer_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start)
+                    .count();
+            m_perf_metrics.encoder_inference_duration["text_encode_3"] = infer_duration;
         } else {
             ov::Shape t5_prompt_embed_shape = {generation_config.num_images_per_prompt,
                                                m_clip_text_encoder_1->get_config().max_position_embeddings,
                                                transformer_config.joint_attention_dim};
             text_encoder_3_output = ov::Tensor(ov::element::f32, t5_prompt_embed_shape);
             std::fill_n(text_encoder_3_output.data<float>(), text_encoder_3_output.get_size(), 0.0f);
+            m_perf_metrics.encoder_inference_duration["text_encode_3"] = 0.0f;
         }
 
         ov::Tensor pooled_prompt_embed_out, prompt_embed_out, pooled_prompt_2_embed_out, prompt_2_embed_out, t5_prompt_embed_out;
@@ -404,7 +416,7 @@ public:
         m_transformer->set_hidden_states("pooled_projections", pooled_prompt_embeds_inp);
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
                                m_transformer->get_config().in_channels,
@@ -437,6 +449,8 @@ public:
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        const auto gen_start = std::chrono::steady_clock::now();
+        m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
@@ -477,6 +491,7 @@ public:
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
+            auto step_start = std::chrono::steady_clock::now();
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
                 numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
@@ -485,9 +500,11 @@ public:
                 // just assign to save memory copy
                 latent_cfg = latent;
             }
-
             ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
+            auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+            auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -512,15 +529,35 @@ public:
             latent = scheduler_step_result["latent"];
 
             if (callback && callback(inference_step, timesteps.size(), latent)) {
-                return ov::Tensor(ov::element::u8, {});
-            }
-        }
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
-        return decode(latent);
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
+                        .count();
+                return image;
+            }
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+        auto decode_start = std::chrono::steady_clock::now();
+        auto image = decode(latent);
+        m_perf_metrics.vae_decoder_inference_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
+                .count();
+        m_perf_metrics.generate_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+        return image;
     }
 
     ov::Tensor decode(const ov::Tensor latent) override {
         return m_vae->decode(latent);
+    }
+
+    ImageGenerationPerfMetrics get_performance_metrics() override {
+        m_perf_metrics.load_time = m_load_time_ms;
+        return m_perf_metrics;
     }
 
 private:

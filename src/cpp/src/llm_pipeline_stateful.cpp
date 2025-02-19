@@ -45,7 +45,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_use_full_chat_history = true;
 
     if (!m_use_full_chat_history)
-        m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
+        m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_kv_axes_pos(model).seq_len;
 
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
