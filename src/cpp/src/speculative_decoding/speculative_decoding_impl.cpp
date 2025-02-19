@@ -89,6 +89,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
         draft_kv_cache_config, draft_scheduler_config, draft_device, draft_properties, false);
+
+    m_perf_metrics = PerfMetrics();
+    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+
 }
 
 GenerationHandle
@@ -138,7 +142,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // this blocks adding new requests during step as it may break coherence between main and draft models
     std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
 
-    //auto& raw_perf_counters = m_perf_metrics.raw_metrics;
+    auto& raw_perf_counters = m_perf_metrics.raw_metrics;
 
     ManualTimer step_timer("speculative_decoding: step()");
     step_timer.start();
@@ -195,16 +199,16 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     }
 
     // update perf metrics
-    // const auto num_generated_tokens = m_main_pipeline->get_processed_tokens_per_iteration();
-    // if (num_generated_tokens > 0) {
-    //     auto infer_duration = step_timer.get_duration_microsec();
+    const auto num_generated_tokens = m_main_pipeline->get_processed_tokens_per_iteration();
+    if (num_generated_tokens > 0) {
+        auto infer_duration = step_timer.get_duration_microsec();
     
-    //     raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
-    //     raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
-    //     raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
+        raw_perf_counters.m_token_infer_durations.emplace_back(infer_duration);
+        raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_duration);
+        raw_perf_counters.m_new_token_times.emplace_back(main_timer.get_end_time());
 
-    //     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
-    // }
+        raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
+    }
 
     if (main_generated_requests.empty() && 0) {
         m_sd_metrics.print(true);
