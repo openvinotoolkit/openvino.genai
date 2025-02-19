@@ -139,8 +139,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
     }
 
-    if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, device, properties);
+    if (m_pimpl == nullptr && device == "NPU" && properties.count("STATIC_PIPELINE")) {
+        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, tokenizer, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -177,8 +177,8 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     }
 
-    if (m_pimpl == nullptr && device == "NPU") {
-        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, device, properties);
+    if (m_pimpl == nullptr && device == "NPU" && properties.count("STATIC_PIPELINE")) {
+        m_pimpl = static_llm::LLMPipelineFactory::create(models_path, properties);
     }
 
     // try to call CB adapter one more time, but with safe guard to silent exception
@@ -219,11 +219,10 @@ ov::genai::LLMPipeline::LLMPipeline(
                                                               tokenizer, scheduler_config, device, device_properties, generation_config);
     }
 
-    if (m_pimpl == nullptr && device == "NPU") {
+    if (m_pimpl == nullptr && device == "NPU" && properties.count("STATIC_PIPELINE")) {
         m_pimpl = static_llm::LLMPipelineFactory::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,
-            device,
             properties,
             generation_config
         );
