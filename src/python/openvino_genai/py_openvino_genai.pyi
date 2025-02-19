@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -866,6 +866,8 @@ class Image2ImagePipeline:
         """
     def get_generation_config(self) -> ImageGenerationConfig:
         ...
+    def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
+        ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
@@ -896,6 +898,94 @@ class ImageGenerationConfig:
     def update_generation_config(self, **kwargs) -> None:
         ...
     def validate(self) -> None:
+        ...
+class ImageGenerationPerfMetrics:
+    """
+    
+        Holds performance metrics for each generate call.
+    
+        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        - Generate iteration duration, ms
+        - Inference duration for unet model, ms
+        - Inference duration for transformer model, ms
+    
+        Additional fields include:
+        - Load time, ms
+        - Generate total duration, ms
+        - inference durations for each encoder, ms
+        - inference duration of vae_encoder model, ms
+        - inference duration of vae_decoder model, ms
+    
+        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        If mean and std were already calculated, getters return cached values.
+    
+        :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
+        :type get_text_encoder_infer_duration: Dict[str, float]
+    
+        :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
+        :type get_vae_encoder_infer_duration: float
+    
+        :param get_vae_decoder_infer_duration: Returns the inference duration of vae decoder in milliseconds.
+        :type get_vae_decoder_infer_duration: float
+    
+        :param get_load_time: Returns the load time in milliseconds.
+        :type get_load_time: float
+    
+        :param get_generate_duration: Returns the generate duration in milliseconds.
+        :type get_generate_duration: float
+    
+        :param get_inference_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
+        :type get_inference_duration: float
+    
+        :param get_first_and_other_iter_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
+        :type get_first_and_other_iter_duration: tuple
+    
+        :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
+        :type get_iteration_duration: MeanStdPair
+    
+        :param get_first_and_second_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+        :type get_first_and_second_unet_infer_duration: tuple
+    
+        :param get_unet_infer_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
+        :type get_unet_infer_duration: MeanStdPair
+    
+        :param get_first_and_other_trans_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+        :type get_first_and_other_trans_infer_duration: tuple
+    
+        :param get_transformer_infer_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
+        :type get_transformer_infer_duration: MeanStdPair
+    
+        :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
+        :type raw_metrics: RawImageGenerationPerfMetrics
+    """
+    def __init__(self) -> None:
+        ...
+    def get_first_and_other_iter_duration(self) -> tuple:
+        ...
+    def get_first_and_other_trans_infer_duration(self) -> tuple:
+        ...
+    def get_first_and_other_unet_infer_duration(self) -> tuple:
+        ...
+    def get_generate_duration(self) -> float:
+        ...
+    def get_inference_duration(self) -> float:
+        ...
+    def get_iteration_duration(self) -> MeanStdPair:
+        ...
+    def get_load_time(self) -> float:
+        ...
+    def get_text_encoder_infer_duration(self) -> dict[str, float]:
+        ...
+    def get_transformer_infer_duration(self) -> MeanStdPair:
+        ...
+    def get_unet_infer_duration(self) -> MeanStdPair:
+        ...
+    def get_vae_decoder_infer_duration(self) -> float:
+        ...
+    def get_vae_encoder_infer_duration(self) -> float:
+        ...
+    @property
+    def raw_metrics(self) -> RawImageGenerationPerfMetrics:
         ...
 class InpaintingPipeline:
     """
@@ -969,6 +1059,8 @@ class InpaintingPipeline:
             :rtype: ov.Tensor
         """
     def get_generation_config(self) -> ImageGenerationConfig:
+        ...
+    def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
         ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
@@ -1270,6 +1362,31 @@ class PipelineMetrics:
         ...
     @property
     def scheduled_requests(self) -> int:
+        ...
+class RawImageGenerationPerfMetrics:
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param unet_inference_durations: Durations for each unet inference in microseconds.
+        :type unet_inference_durations: List[float]
+    
+        :param transformer_inference_durations: Durations for each transformer inference in microseconds.
+        :type transformer_inference_durations: List[float]
+    
+        :param iteration_durations: Durations for each step iteration in microseconds.
+        :type iteration_durations: List[float]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def iteration_durations(self) -> list[float]:
+        ...
+    @property
+    def transformer_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def unet_inference_durations(self) -> list[float]:
         ...
 class RawPerfMetrics:
     """
@@ -1703,6 +1820,8 @@ class Text2ImagePipeline:
             :rtype: ov.Tensor
         """
     def get_generation_config(self) -> ImageGenerationConfig:
+        ...
+    def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
         ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
