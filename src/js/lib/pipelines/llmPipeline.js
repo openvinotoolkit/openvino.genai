@@ -19,8 +19,8 @@ export class LLMPipeline {
 
     this.pipeline = new addon.LLMPipeline();
 
-    const init = util.promisify(this.pipeline.init.bind(this.pipeline));
-    const result = await init(this.modelPath, this.device);
+    const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
+    const result = await initPromise(this.modelPath, this.device);
 
     this.isInitialized = true;
 
@@ -110,7 +110,7 @@ export class LLMPipeline {
     if (generationCallback !== undefined && typeof generationCallback !== 'function')
       throw new Error('Generation callback must be a function');
 
-    const g = this.getAsyncGenerator(prompt, options);
+    const g = this.getAsyncGenerator(prompt, generationOptions);
     const result = [];
 
     for await (const chunk of g) {
