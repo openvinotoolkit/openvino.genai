@@ -1,38 +1,38 @@
 .installation {
-    background: none;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 24px;
+  background: none;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
 }
 
 .installationOptions {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
 }
 
-.installationOptionsItem{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid #E9E9E9;
-    font-weight: 500;
-    height: 64px;
-    width: 280px;
-    gap: 16px;
+.installationOptionsItem {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e9e9e9;
+  font-weight: 500;
+  height: 64px;
+  width: 280px;
+  gap: 16px;
 }
 
 .installationTitle {
-    font-size: 1.5rem;
-    line-height: 2rem;
-    font-weight: 500;
-    margin: 0;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 500;
+  margin: 0;
 }
 
 .installationDescription {
-    margin: 0 auto;
-    text-align: center;
+  margin: 0 auto;
+  text-align: center;
 }

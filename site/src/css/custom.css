@@ -5,12 +5,12 @@
  */
 
 /* You can override the default Infima variables here. */
-@import "./typography.css";
-@import "./navbar.css";
-@import "./menu.css";
-@import "./footer.css";
-@import "./toc.css";
-@import "./breadcrumbs.css";
+@import './typography.css';
+@import './navbar.css';
+@import './menu.css';
+@import './footer.css';
+@import './toc.css';
+@import './breadcrumbs.css';
 
 :root {
   --black: #000000;
@@ -27,11 +27,11 @@
 
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 
-  --genai-color-blue-energy: #6DDCFF;
-  --genai-color-classic-blue: #0054AE;
-  --genai-color-darker-classic-blue: #034891FF;
-  --genai-color-text-primary: #2B2C30;
-  --genai-color-text-secondary: #6A6D75;
+  --genai-color-blue-energy: #6ddcff;
+  --genai-color-classic-blue: #0054ae;
+  --genai-color-darker-classic-blue: #034891ff;
+  --genai-color-text-primary: #2b2c30;
+  --genai-color-text-secondary: #6a6d75;
   --genai-color-text-white: #fff;
   --genai-color-text-black: #000;
   --genai-text-color-white-hover: rgba(255, 255, 255, 0.7);

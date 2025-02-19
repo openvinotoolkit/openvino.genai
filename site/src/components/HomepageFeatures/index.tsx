@@ -1,7 +1,7 @@
 import CodeBlock from '@theme/CodeBlock';
 import Heading from '@theme/Heading';
 import clsx from 'clsx';
-import { ComponentProps, ComponentType } from 'react';
+import { ComponentProps, ComponentType, JSX } from 'react';
 import styles from './styles.module.css';
 
 import ImageIcon from '@site/static/img/image.svg';
@@ -35,15 +35,17 @@ print(ov_pipe.generate(read_wav("sample.wav)))`,
   },
 ];
 
-function Feature({title, Icon, code}: FeatureItem) {
+function Feature({ title, Icon, code }: FeatureItem) {
   return (
     <div>
-      <div className={clsx("text--center", styles.featureHeader)}>
+      <div className={clsx('text--center', styles.featureHeader)}>
         <Icon role="img" />
-        <Heading as="h3" className={styles.featureHeading}>{title}</Heading>
+        <Heading as="h3" className={styles.featureHeading}>
+          {title}
+        </Heading>
       </div>
       <div>
-        <CodeBlock language='python' className={styles.featureCodeExample}>
+        <CodeBlock language="python" className={styles.featureCodeExample}>
           {code}
         </CodeBlock>
       </div>

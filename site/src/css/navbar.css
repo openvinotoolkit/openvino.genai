@@ -7,7 +7,7 @@
 }
 
 .navbar {
-  background: linear-gradient(90deg, #27317F 6.98%, #1A3483 46.6%, #02227C 79.11%);
+  background: linear-gradient(90deg, #27317f 6.98%, #1a3483 46.6%, #02227c 79.11%);
   width: 100%;
 }
 
@@ -36,7 +36,8 @@
   font-family: var(--genai-font-family);
   color: var(--genai-color-text-white);
   width: 238px;
-  background: #122f84 url('../../static/img/magnifying-glass.svg') no-repeat 0.75rem center / 1rem 1rem;
+  background: #122f84 url('../../static/img/magnifying-glass.svg') no-repeat 0.75rem center / 1rem
+    1rem;
 
   &::placeholder {
     color: var(--genai-color-text-white);

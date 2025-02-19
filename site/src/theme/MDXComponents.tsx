@@ -1,7 +1,7 @@
-import MDXComponents from '@theme-original/MDXComponents'
-import Tabs from '@theme/Tabs';
+import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/LanguageTabs';
+import MDXComponents from '@theme-original/MDXComponents';
 import TabItem from '@theme/TabItem';
-import { LanguageTabs, TabItemPython, TabItemCpp } from '@site/src/components/LanguageTabs';
+import Tabs from '@theme/Tabs';
 
 export default {
   // Reusing the default mapping

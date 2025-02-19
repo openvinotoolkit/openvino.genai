@@ -68,12 +68,12 @@ const config: Config = {
           sidebarId: 'gettingStartedSidebar',
           position: 'left',
           label: 'Documentation',
-          to: '/docs'
+          to: '/docs',
         },
         {
-          type: "html",
+          type: 'html',
           position: 'left',
-          value: '<i style="color: #fec91b"><b>Status:</b> Work in progress</i>'
+          value: '<i style="color: #fec91b"><b>Status:</b> Work in progress</i>',
         },
         {
           href: 'https://github.com/openvinotoolkit/openvino.genai',
@@ -88,14 +88,14 @@ const config: Config = {
         {
           title: 'OpenVINO',
           items: [
-              {
-                label: 'OpenVINO™ Telemetry',
-                href: 'https://docs.openvino.ai/2024/about-openvino/additional-resources/telemetry.html'
-              },
-              {
-                label: 'Case Studies',
-                href: 'https://www.intel.com/content/www/us/en/internet-of-things/ai-in-production/success-stories.html'
-              }
+            {
+              label: 'OpenVINO™ Telemetry',
+              href: 'https://docs.openvino.ai/2024/about-openvino/additional-resources/telemetry.html',
+            },
+            {
+              label: 'Case Studies',
+              href: 'https://www.intel.com/content/www/us/en/internet-of-things/ai-in-production/success-stories.html',
+            },
           ],
         },
         {
@@ -103,11 +103,11 @@ const config: Config = {
           items: [
             {
               label: 'Terms of Use',
-              href: 'https://docs.openvino.ai/2024/about-openvino/additional-resources/terms-of-use.html'
+              href: 'https://docs.openvino.ai/2024/about-openvino/additional-resources/terms-of-use.html',
             },
             {
               label: 'Responsible AI',
-              href: 'https://www.intel.com/content/www/us/en/artificial-intelligence/responsible-ai.html'
+              href: 'https://www.intel.com/content/www/us/en/artificial-intelligence/responsible-ai.html',
             },
           ],
         },
@@ -116,11 +116,11 @@ const config: Config = {
           items: [
             {
               label: 'Cookies',
-              href: 'https://www.intel.com/content/www/us/en/privacy/intel-cookie-notice.html'
+              href: 'https://www.intel.com/content/www/us/en/privacy/intel-cookie-notice.html',
             },
             {
               label: 'Privacy',
-              href: 'https://www.intel.com/content/www/us/en/privacy/intel-privacy-notice.html'
+              href: 'https://www.intel.com/content/www/us/en/privacy/intel-privacy-notice.html',
             },
           ],
         },
@@ -136,12 +136,14 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
 
   themes: [
-    [require.resolve("@easyops-cn/docusaurus-search-local"),
+    [
+      require.resolve('@easyops-cn/docusaurus-search-local'),
       {
         hashed: true,
         highlightSearchTermsOnTargetPage: true,
         searchBarShortcutHint: false,
-      }],
+      },
+    ],
   ],
 };
 

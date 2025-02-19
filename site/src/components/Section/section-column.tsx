@@ -1,15 +1,11 @@
-import {FC, ReactNode} from "react";
+import { FC, ReactNode } from 'react';
 import styles from './styles.module.css';
 
 type SectionColumnProps = {
-   children: ReactNode;
-   order?: number;
-}
+  children: ReactNode;
+  order?: number;
+};
 
-export const SectionColumn: FC<SectionColumnProps> = ({children}) => {
-    return (
-        <div className={styles.sectionColumn}>
-            {children}
-        </div>
-    )
-}
+export const SectionColumn: FC<SectionColumnProps> = ({ children }) => {
+  return <div className={styles.sectionColumn}>{children}</div>;
+};
