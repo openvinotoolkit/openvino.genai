@@ -9,7 +9,7 @@ from test_utils import run_sample
 
 class TestGreedyCausalLM:
     @pytest.mark.llm
-    @pytest.mark.precommit
+    @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
