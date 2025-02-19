@@ -1,5 +1,5 @@
 import readline from 'readline';
-import { LLMPipeline } from 'genai-node';
+import { LLMPipeline } from 'openvino-genai-node';
 
 main();
 

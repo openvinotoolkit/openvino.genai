@@ -1,5 +1,5 @@
 {
-  "name": "genai-node",
+  "name": "openvino-genai-node",
   "type": "module",
   "version": "2025.1.0-preview",
   "description": "OpenVINO™ GenAI pipelines for using from Node.js environment",
