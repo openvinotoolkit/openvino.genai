@@ -194,6 +194,7 @@ public:
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
 
+        std::map<size_t, size_t> seq_id_to_num_past_blocks_to_discard_map;
 
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
@@ -244,25 +245,15 @@ public:
                     }
                 }
 
-                size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
-                size_t expected_kv_cache_size_in_blocks = (expected_kv_cache_size + m_block_size - 1) / m_block_size;
-                size_t num_tokens_in_last_block = expected_kv_cache_size % m_block_size;
                 size_t num_blocks = sequence_group->get_num_logical_blocks();
+                size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+                size_t num_past_blocks_to_discard = _get_a_shape_num_past_blocks_to_discard(sequence_group);
 
-                if (!sequence_group->can_generate_tokens()) {
-                    if (expected_kv_cache_size > m_block_size) {
-                        if (num_tokens_in_last_block == 0) {
-                            num_tokens_in_last_block = m_block_size;
-                        }
-                        expected_kv_cache_size = m_block_size + num_tokens_in_last_block; // A-shape
-                        num_blocks = 2;
-                    }
-                    else {
-                        num_blocks = 1;
-                    }
-                }
 
-                past_lens_data[0] = expected_kv_cache_size;
+                seq_id_to_num_past_blocks_to_discard_map[sequence->get_id()] = num_past_blocks_to_discard;
+                num_blocks = num_blocks - num_past_blocks_to_discard;
+
+                past_lens_data[0] = expected_kv_cache_size - num_past_blocks_to_discard * m_block_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
 
@@ -312,7 +303,7 @@ public:
         m_request.set_tensor("past_lens", past_lens);
         m_request.set_tensor("subsequence_begins", subsequence_begins);
 
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks);
+        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_num_past_blocks_to_discard_map);
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
 
@@ -405,12 +396,25 @@ public:
     }
 
 private:
+    size_t _get_a_shape_num_past_blocks_to_discard(const SequenceGroup::CPtr sequence_group) {
+        size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+        size_t num_past_blocks = expected_kv_cache_size / m_block_size;
+        size_t num_past_blocks_to_discard = 0;
+
+        if (!sequence_group->can_generate_tokens()) {
+            if (num_past_blocks > 2) { // keep block 0 and previous full block
+                num_past_blocks_to_discard = num_past_blocks - 2;
+            }
+        }
+        return num_past_blocks_to_discard;
+    }
     void _fill_indices_from_block_tables(
         const std::vector<std::string>& dst_tensor_names,
         const std::vector<SequenceGroup::Ptr>& sequence_groups,
         const Scheduler::Output& scheduler_output,
         const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
         OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
+                        (dst_tensor_names.size() == 1 && !m_is_use_per_layer_cache_control) ||
                         seq_id_to_select_logical_idx_maps.empty());
         bool is_fill_all = seq_id_to_select_logical_idx_maps.empty();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
@@ -475,50 +479,56 @@ private:
 
     void _set_block_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                             const Scheduler::Output& scheduler_output,
-                            size_t total_num_blocks) {
+                            size_t total_num_blocks,
+                            const std::map<size_t, size_t>& seq_id_to_num_past_blocks_to_discard_map) {
         std::vector<std::string> tensor_names = {"block_indices"};
 
+        size_t num_layers = 1;
         if (m_is_use_per_layer_cache_control) {
+            num_layers = m_num_decoder_layers;
             tensor_names.resize(m_num_decoder_layers);
             for (size_t i = 0; i < tensor_names.size(); i++) {
                 tensor_names[i] = std::string("block_indices.") + std::to_string(i);
             }
         }
 
-        for (auto& name : tensor_names) {
-            m_request.get_tensor(name).set_shape({total_num_blocks});
-        }
+
+        std::vector<size_t> num_blocks_per_layer(num_layers);
 
         std::vector<std::map<size_t, std::vector<size_t>>> seq_id_to_select_logical_idx_map(m_num_decoder_layers);
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
-        for (size_t layer_idx = 0; layer_idx < m_num_decoder_layers; layer_idx++) {
+        for (size_t layer_idx = 0; layer_idx < num_layers; layer_idx++) {
             for (size_t i = 0; i < num_sequence_groups; ++i) {
                 size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
                 SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
                 std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
                 size_t num_running_sequences = running_sequences.size();
-                for (size_t i = 0; i < num_running_sequences; ++i) {
-                    Sequence::CPtr sequence = running_sequences[i];
+                for (size_t k = 0; k < num_running_sequences; ++k) {
+                    Sequence::CPtr sequence = running_sequences[k];
                     size_t num_blocks = sequence_group->get_num_logical_blocks();
                     size_t seq_id = sequence->get_id();
                     if (!sequence_group->can_generate_tokens()) {
-                        if (num_blocks == 2) {
-                            seq_id_to_select_logical_idx_map[layer_idx][seq_id] = {0, num_blocks - 1}; // A-shape
+                        size_t num_past_blocks_to_discard = seq_id_to_num_past_blocks_to_discard_map.at(seq_id);
+                        std::vector<size_t> remaining_logical_block_ids = {0};
+                        for (size_t j = num_past_blocks_to_discard + 1; j < num_blocks; j++) {
+                            remaining_logical_block_ids.push_back(j);  // A-shape
                         }
-                        else if (num_blocks == 1) {
-                            seq_id_to_select_logical_idx_map[layer_idx][seq_id] = {0}; // A-shape
-                        } else {
-                            OPENVINO_THROW("unexpected num_blocks: ", num_blocks, "\n");
-                        }
+                        seq_id_to_select_logical_idx_map[layer_idx][seq_id] = remaining_logical_block_ids;
+                        num_blocks_per_layer[layer_idx] += remaining_logical_block_ids.size();
                     }
                     else
                     {
                         auto& vec = seq_id_to_select_logical_idx_map[layer_idx][seq_id];
                         vec.resize(num_blocks);
                         std::iota(vec.begin(), vec.end(), 0);
+                        num_blocks_per_layer[layer_idx] += num_blocks;
                     }
                 }
             }
+        }
+
+        for (size_t i = 0; i < num_layers; i++) {
+            m_request.get_tensor(tensor_names[i]).set_shape({num_blocks_per_layer[i]});
         }
 
         _fill_indices_from_block_tables(tensor_names, sequence_groups, scheduler_output, seq_id_to_select_logical_idx_map);
@@ -570,6 +580,9 @@ private:
             for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                 Sequence::CPtr sequence = running_sequences[seq_idx];
                 size_t subsequence_length = sequence_group->get_context_len() - sequence_group->get_num_evicted_tokens();
+                size_t num_past_blocks_to_discard = _get_a_shape_num_past_blocks_to_discard(sequence_group);
+                subsequence_length -= num_past_blocks_to_discard * m_block_size;
+
                 IndexSpan span = {offset, offset + subsequence_length};
                 offset += subsequence_length;
 
