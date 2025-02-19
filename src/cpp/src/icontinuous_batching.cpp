@@ -45,6 +45,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        std::vector<std::vector<ov::Tensor>> images(prompts.size());
+        return generate(prompts, images, sampling_params, streamer);
+    }
     std::vector<ov::Tensor> input_ids;
     auto start_time =  std::chrono::steady_clock::now();
 
@@ -134,38 +138,39 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer)  {
-    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
-    OPENVINO_ASSERT(prompts.size() == 1, "todo");
-    OPENVINO_ASSERT(!m_is_chat_conversation, "Chat mode is not supported.");
-    
-    auto prompt = prompts[0];
-    auto rgbs = rgbs_vector[0];
-
+    // TODO: Add performance metrics
     auto generate_start_time = std::chrono::steady_clock::now();
-    VLMPerfMetrics perf_metrics;
-    auto& raw_counters = perf_metrics.raw_metrics;
-    auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
+    OPENVINO_ASSERT(!m_is_chat_conversation, "Chat mode is not supported.");
+
+    OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
+    OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
+
     // If eos_token_id was not provided, take value from default m_generation_config
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_generation_config.eos_token_id);
     m_generation_config.validate();
 
-    auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-    ov::Tensor inputs_embeds = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics);
-    auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+    std::vector<ov::Tensor> input_embeds_list;
+    for (size_t i = 0; i < prompts.size(); i++) {
+        auto prompt = prompts[i];
+        auto rgbs = rgbs_vector[i];
 
-    auto result = generate({inputs_embeds}, sampling_params, streamer)[0];
-
-    auto decode_start_time = std::chrono::steady_clock::now();
-    GenerationResult gen_result;
-    for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-        gen_result.m_generation_ids.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
-        gen_result.m_scores.push_back(result.m_scores.at(idx));
+        VLMPerfMetrics perf_metrics;
+        input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(prompt, rgbs, perf_metrics));
     }
-    auto decode_end_time = std::chrono::steady_clock::now();
-    auto generate_end_time = std::chrono::steady_clock::now();
-    // TODO: perf metrics
-    return {gen_result};
+    std::vector<GenerationResult> results;
+    auto encoded_results = generate(input_embeds_list, sampling_params, streamer);
+    for (const auto& result: encoded_results) {
+        GenerationResult gen_result;
+        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
+            gen_result.m_generation_ids.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
+            gen_result.m_scores.push_back(result.m_scores.at(idx));
+            gen_result.m_status = result.m_status;
+        }
+        results.emplace_back(gen_result);
+    }
+    return results;
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
@@ -196,5 +201,15 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
 
     const auto tokens = generation_outputs.begin()->second.generated_ids;
     streamer_ptr->write(tokens);
+}
+
+GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                        const std::string& prompt,
+                                        const std::vector<ov::Tensor>& rgbs,
+                                        GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    ov::genai::VLMPerfMetrics metrics;
+    auto inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+    return add_request(request_id, inputs, sampling_params);
 }
 }

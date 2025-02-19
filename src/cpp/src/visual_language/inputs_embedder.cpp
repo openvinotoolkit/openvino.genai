@@ -145,16 +145,16 @@ protected:
         const ov::AnyMap device_config) :
         m_vlm_config{vlm_config},
         m_vision_encoder(
-            get_model_weights_pair(models_map, "vision_embeddings").first,
-            get_model_weights_pair(models_map, "vision_embeddings").second,
+            utils::get_model_weights_pair(models_map, "vision_embeddings").first,
+            utils::get_model_weights_pair(models_map, "vision_embeddings").second,
             config_dir_path,
             m_vlm_config.model_type,
             device,
             device_config
         ),
         m_embedding(
-            get_model_weights_pair(models_map, "text_embeddings").first,
-            get_model_weights_pair(models_map, "text_embeddings").second,
+            utils::get_model_weights_pair(models_map, "text_embeddings").first,
+            utils::get_model_weights_pair(models_map, "text_embeddings").second,
             m_vlm_config.scale_emb,
             device,
             device_config
@@ -334,8 +334,8 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
             m_resampler = utils::singleton_core().compile_model(
-                get_model_weights_pair(models_map, "resampler").first,
-                get_model_weights_pair(models_map, "resampler").second,
+                utils::get_model_weights_pair(models_map, "resampler").first,
+                utils::get_model_weights_pair(models_map, "resampler").second,
                 device,
                 device_config
             ).create_infer_request();
@@ -1611,8 +1611,8 @@ public:
         const ov::AnyMap device_config) :
         IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
             m_vision_embeddings_merger = utils::singleton_core().compile_model(
-                get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-                get_model_weights_pair(models_map, "vision_embeddings_merger").second,
+                utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+                utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
                 device,
                 device_config
             ).create_infer_request();

@@ -114,7 +114,7 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        auto m_language_pair = get_model_weights_pair(models_map, "language");
+        auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
         m_language = utils::singleton_core().compile_model(
             m_language_pair.first, m_language_pair.second, device, properties
         ).create_infer_request();
@@ -305,7 +305,7 @@ VLMPipeline::VLMPipeline(
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
         properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
         properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-        auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
+        auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_config);
     }
     else {
@@ -327,7 +327,7 @@ VLMPipeline::VLMPipeline(
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() || 
         properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() || 
         properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
-        auto [plugin_config, scheduler_config] = extract_scheduler_config(properties);
+        auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
         m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_config, generation_config);
     }
     else {

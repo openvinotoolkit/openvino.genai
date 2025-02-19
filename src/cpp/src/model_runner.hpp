@@ -234,7 +234,7 @@ public:
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-                        auto embeds_pos = position_id > prompt_len ? hidden_size * (position_id - prompt_len) : 0;
+                        auto embeds_pos = position_id < prompt_len ? 0 : hidden_size * (position_id - prompt_len);
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_ids_embeds_data + embeds_pos;
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                     } else {

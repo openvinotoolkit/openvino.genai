@@ -408,6 +408,28 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 }
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    } else if (default_config.has_value()) {
+        scheduler_config = *default_config;
+    }
+    return {plugin_config, scheduler_config};
+};
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
