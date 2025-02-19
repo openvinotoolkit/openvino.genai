@@ -12,36 +12,45 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 
-namespace ov::genai {
+namespace ov {
+namespace genai {
 
 using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
 /**
- * @brief base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
- *
- * @param m_tokenizer tokenizer
+ * Base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
+ * ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.
  */
-class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
+class OPENVINO_GENAI_EXPORTS ChunkStreamerBase {
 public:
+    OPENVINO_DEPRECATED(
+        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+    virtual bool put(int64_t token) = 0;
+
     /// @brief put_chunk is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    virtual bool put_chunk(std::vector<int64_t> tokens) {
-        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write_chunk() insted.");
-        return true;
-    }
+    OPENVINO_DEPRECATED(
+        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
 
-    /// @brief write_chunk is called every time new token chunk is generated
-    /// @return StreamingStatus flag to indicate whether generation should be stopped
-    virtual StreamingStatus write_chunk(std::vector<int64_t> tokens) {
-        return put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
-    }
+    /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
+    OPENVINO_DEPRECATED(
+        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+    virtual void end() = 0;
+
+    OPENVINO_DEPRECATED(
+        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+    virtual ~ChunkStreamerBase();
 };
 
 // Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
-using ChunkStreamerVariant =
-    std::variant<std::function<bool(std::string)>, std::function<StreamingStatus(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
+using WhisperStreamerVariant = std::variant<std::function<bool(std::string)>,
+                                            std::function<StreamingStatus(std::string)>,
+                                            std::shared_ptr<StreamerBase>,
+                                            std::shared_ptr<ChunkStreamerBase>,
+                                            std::monostate>;
 
 struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
@@ -154,14 +163,12 @@ public:
      * @param raw_speech_input raw speech input. Required to be normalized to near [-1, 1] range and have 16k Hz
      * sampling rate.
      * @param generation_config optional GenerationConfig
-     * @param streamer optional streamer. Streamer supported for short-form audio (< 30 seconds) with
-     * `return_timestamps=False` only
+     * @param streamer optional streamer
      * @return WhisperDecodedResults decoded resulting text transcription
      */
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config = std::nullopt,
-                                   ChunkStreamerVariant streamer = std::monostate());
-
+                                   WhisperStreamerVariant streamer = std::monostate());
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
      * properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100),
@@ -183,6 +190,8 @@ public:
     void set_generation_config(const WhisperGenerationConfig& config);
 };
 
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(ChunkStreamerVariant func);
+OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func);
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config);
-}  // namespace ov::genai
+}  // namespace genai
+}  // namespace ov

@@ -23,7 +23,7 @@ namespace pyutils = ov::genai::pybind::utils;
 namespace {
 
 auto streamer_base_docstring =  R"(
-    Base class for streamers. In order to use inherit from from this class and implement put, and methods.
+    Base class for streamers. In order to use inherit from from this class and implement write and end methods.
 )";
 
 auto text_streamer_docstring =  R"(
@@ -51,6 +51,14 @@ class ConstructableStreamer: public StreamerBase {
             token  // Argument(s)
         );
     }
+    StreamingStatus write(const std::vector<int64_t>& token) override {
+        PYBIND11_OVERRIDE(
+            StreamingStatus,  // Return type
+            StreamerBase,  // Parent class
+            write,  // Name of function in C++ (must match Python name)
+            token  // Argument(s)
+        );
+    }
     void end() override {
         PYBIND11_OVERRIDE_PURE(void, StreamerBase, end);
     }
@@ -66,7 +74,17 @@ void init_streamers(py::module_& m) {
 
     auto streamer = py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
-        .def("write", &StreamerBase::write, "Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled", py::arg("token"))
+        .def("write",
+            [](StreamerBase& self, std::variant<int64_t, std::vector<int64_t>> token) {
+               if (auto _token = std::get_if<int64_t>(&token)) {
+                   return self.write(*_token);
+               } else {
+                   auto tokens = std::get<std::vector<int64_t>>(token);
+                   return self.write(tokens);
+               }
+            },
+            "Put is called every time new token or vector of tokens is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops",
+            py::arg("token"))
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
     OPENVINO_SUPPRESS_DEPRECATED_START
     streamer.def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"));

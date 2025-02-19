@@ -195,7 +195,7 @@ def sample_from_dataset(request):
 
     return samples[sample_id]
 
-def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> Dict[str, Any]:
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> List[Dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
 
 def run_pipeline_with_ref(
@@ -625,3 +625,133 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+
+@pytest.fixture(params=[
+    "DeprecatedBaseStreamer",
+    "DeprecatedChunkStreamer",
+    "Streamer",
+    "streamer_callback",
+    "streamer_bool_callback"
+])
+def streamer_for_test(request):
+    class ResultHandler:
+        def __init__(self, container: list[int] | list[str]):
+            self.container: list[int] | list[str] = container
+
+        def decode(self, tokenizer: ov_genai.Tokenizer) -> str:
+            if type(self.container[0]) == int:
+                return tokenizer.decode(typing.cast(list[int], self.container))
+            return ''.join(typing.cast(list[str], self.container))
+
+        def reset(self) -> None:
+            self.container.clear()
+
+
+    class DeprecatedBaseStreamer(ov_genai.StreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def put(self, token: int) -> bool:
+            self.tokens.append(token)
+            return False
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'DeprecatedBaseStreamer':
+        streamer = DeprecatedBaseStreamer()
+        return streamer, ResultHandler(streamer.tokens)
+
+
+    class DeprecatedChunkStreamer(ov_genai.ChunkStreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def put(self, token: int) -> bool:
+            self.tokens.append(token)
+            return False
+
+        def put_chunk(self, tokens: list[int]) -> bool:
+            self.tokens += tokens
+            return False
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'DeprecatedChunkStreamer':
+        streamer = DeprecatedChunkStreamer()
+        return streamer, ResultHandler(streamer.tokens)
+    
+    class Streamer(ov_genai.StreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            if type(token) == list:
+                self.tokens += token
+            else:
+                self.tokens.append(token)
+            return ov_genai.StreamingStatus.RUNNING
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'Streamer':
+        streamer = Streamer()
+        return streamer, ResultHandler(streamer.tokens)
+
+
+    if request.param == 'streamer_callback':
+        texts = []
+        def streamer_callback(subword):
+            texts.append(subword)
+            return ov_genai.StreamingStatus.RUNNING
+        return streamer_callback, ResultHandler(texts)
+
+    if request.param == 'streamer_bool_callback':
+        texts = []
+        def streamer_bool_callback(subword):
+            texts.append(subword)
+            return False
+        return streamer_bool_callback, ResultHandler(texts)
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
+@pytest.mark.precommit
+def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    streamer, result_handler = streamer_for_test
+
+    result = genai_pipe.generate(sample_from_dataset, streamer=streamer)
+
+    expected = result.texts[0]
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    config = genai_pipe.get_generation_config()
+    genai_pipe.generate(sample_from_dataset, config, streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    genai_pipe.generate(sample_from_dataset, config, streamer=streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+
+    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer)
+
+    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    result_handler.reset()
+        

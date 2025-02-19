@@ -16,6 +16,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -262,9 +263,15 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
     } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
         return py::cast<std::function<bool(size_t, size_t, ov::Tensor&)>>(py_obj);
-    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
-        auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
-        return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
+        // todo: add ChunkStreamerBase?
+    } else if (property_name == "streamer") {
+        if (py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) {
+            auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
+            return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
+        } else if (py::isinstance<ov::genai::ChunkStreamerBase>(py_obj)) {
+            auto streamer = py::cast<std::shared_ptr<ChunkStreamerBase>>(py_obj);
+            return ov::genai::streamer(streamer).second;
+        }
     }
     OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
 }
