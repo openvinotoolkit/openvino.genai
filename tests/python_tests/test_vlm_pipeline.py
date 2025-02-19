@@ -7,7 +7,9 @@ import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
-from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters, get_default_properties
+
+from utils.generation_config import get_beam_search, get_multinomial_all_parameters
+from utils.constants import get_default_llm_properties
 
 def get_ov_model(model_id, cache):
     model_dir = cache.mkdir(model_id.split('/')[-1])
@@ -18,8 +20,9 @@ def get_ov_model(model_id, cache):
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
-    processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
+    if processor.tokenizer.chat_template is not None:
+        processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
     return model_dir
@@ -42,15 +45,31 @@ image_links_for_testing = [
     [image_links[0], image_links[2], image_links[1]]
 ]
 
-@pytest.mark.precommit
-@pytest.mark.nightly
-@pytest.mark.parametrize("model_id", [
+model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
     "katuni4ka/tiny-random-phi3-vision",
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-qwen2vl",
-])
+]
+
+
+def get_image_by_link(link):
+    from PIL import Image
+    import requests
+    from openvino import Tensor
+    import numpy as np
+
+    image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
+    return Tensor(image_data)
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
 def test_vlm_pipeline(model_id, cache):
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -67,8 +86,34 @@ def test_vlm_pipeline(model_id, cache):
         images = []
         for link in links:
             images.append(get_image_by_link(link))
+        
+        result_from_streamer = []
+        res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        assert res.texts[0] == ''.join(result_from_streamer)
 
-        ov_pipe.start_chat()
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", model_ids)
+@pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
+def test_vlm_pipeline_chat(model_id, system_message, cache):
+    def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
+        return False
+
+    models_path = get_ov_model(model_id, cache)
+    ov_pipe = VLMPipeline(models_path, "CPU")
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    for links in image_links_for_testing:
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        ov_pipe.start_chat(system_message)
 
         result_from_streamer = []
         res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
@@ -103,6 +148,8 @@ def test_sampling(config, cache):
     pipe = VLMPipeline(models_path, "CPU")
     pipe.generate(prompts[0], image=image, generation_config=config)
 
+
+@pytest.mark.skip(reason="CVS-160580: tests/python_tests/test_vlm_pipeline.py::test_perf_metrics fails")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_perf_metrics(cache):

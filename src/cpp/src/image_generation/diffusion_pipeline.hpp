@@ -8,6 +8,8 @@
 
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "lora_helper.hpp"
+#include "lora_names_mapping.hpp"
 
 #include "json_utils.hpp"
 namespace {
@@ -80,7 +82,7 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
-    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const = 0;
+    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) = 0;
 
     virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;
 
@@ -89,6 +91,13 @@ public:
     virtual ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, ov::Tensor mask_image, const ov::AnyMap& properties) = 0;
 
     virtual ov::Tensor decode(const ov::Tensor latent) = 0;
+
+    virtual ImageGenerationPerfMetrics get_performance_metrics() = 0;
+
+    void save_load_time(std::chrono::steady_clock::time_point start_time) {
+        auto stop_time = std::chrono::steady_clock::now();
+        m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+    }
 
     virtual ~DiffusionPipeline() = default;
 
@@ -99,8 +108,8 @@ protected:
 
     virtual void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const = 0;
 
-    void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
-        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
+    virtual void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
         OPENVINO_ASSERT(image_latent.get_shape() == latent.get_shape(), "Shapes for current", latent.get_shape(), "and initial image latents ", image_latent.get_shape(), " must match");
 
         ov::Tensor noised_image_latent(image_latent.get_element_type(), {});
@@ -132,9 +141,15 @@ protected:
         }
     }
 
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, diffusers_adapter_normalization);
+    }
+
     PipelineType m_pipeline_type;
     std::shared_ptr<IScheduler> m_scheduler;
     ImageGenerationConfig m_generation_config;
+    float m_load_time_ms = 0.0f;
+    ImageGenerationPerfMetrics m_perf_metrics;
 };
 
 } // namespace genai

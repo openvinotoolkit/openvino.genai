@@ -83,8 +83,9 @@ auto generation_result_docstring = R"(
         RUNNING = 0 - Default status for ongoing generation.
         FINISHED = 1 - Status set when generation has been finished.
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-        DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
-        DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+        CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
+        STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+        DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
     perf_metrics:
                         Performance metrics for each generation result.
 
@@ -159,8 +160,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
         .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
         .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
-        .value("DROPPED_BY_PIPELINE", ov::genai::GenerationStatus::DROPPED_BY_PIPELINE)
-        .value("DROPPED_BY_HANDLE", ov::genai::GenerationStatus::DROPPED_BY_HANDLE);
+        .value("CANCEL", ov::genai::GenerationStatus::CANCEL)
+        .value("STOP", ov::genai::GenerationStatus::STOP);
 
     py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
@@ -209,6 +210,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
         .def("drop", &GenerationHandleImpl::drop)
+        .def("stop", &GenerationHandleImpl::stop)
+        .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
 

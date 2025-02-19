@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import argparse
 import os
 import json
 import logging as log
@@ -75,23 +74,6 @@ def set_default_param_for_ov_config(ov_config):
         ov_config['CACHE_DIR'] = ''
 
 
-def add_stateful_model_arguments(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        '--stateful',
-        action='store_true',
-        default=None,
-        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model. '
-        'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
-    )
-
-    parser.add_argument(
-        '--disable-stateful',
-        action="store_true",
-        default=None,
-        help="Disable stateful transformation for model conversion"
-    )
-
-
 def analyze_args(args):
     model_args = {}
     model_args['prompt'] = args.prompt
@@ -104,9 +86,6 @@ def analyze_args(args):
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
-    model_args['fuse_decoding_strategy'] = args.fuse_decoding_strategy
-    model_args['stateful'] = args.stateful
-    model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
@@ -210,6 +189,7 @@ def get_use_case(model_name_or_path):
         raise RuntimeError('==Failure FOUND==: no use_case found')
     else:
         log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
+    return case, model_name
 
 
 def get_model_name(model_name_or_path):

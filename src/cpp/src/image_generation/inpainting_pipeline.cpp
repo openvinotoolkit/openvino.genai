@@ -10,6 +10,7 @@
 
 #include "image_generation/stable_diffusion_pipeline.hpp"
 #include "image_generation/stable_diffusion_xl_pipeline.hpp"
+#include "image_generation/flux_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -19,32 +20,41 @@ namespace genai {
 InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
+    auto start_time = std::chrono::steady_clock::now();
     if (class_name == "StableDiffusionPipeline" || 
         class_name == "LatentConsistencyModelPipeline" ||
         class_name == "StableDiffusionInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir);
     } else if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir);
+    } else if (class_name == "FluxPipeline" || class_name == "FluxInpaintPipeline") {
+        m_impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, root_dir);
     } else {
         OPENVINO_THROW("Unsupported inpainting pipeline '", class_name, "'");
     }
+    m_impl->save_load_time(start_time);
 }
 
 InpaintingPipeline::InpaintingPipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
     const std::string class_name = get_class_name(root_dir);
 
+    auto start_time = std::chrono::steady_clock::now();
     if (class_name == "StableDiffusionPipeline" ||
         class_name == "LatentConsistencyModelPipeline" ||
         class_name == "StableDiffusionInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else if (class_name == "StableDiffusionXLPipeline" || class_name == "StableDiffusionXLInpaintPipeline") {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
+    } else if (class_name == "FluxPipeline" || class_name == "FluxInpaintPipeline") {
+        m_impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported inpainting pipeline '", class_name, "'");
     }
+    m_impl->save_load_time(start_time);
 }
 
 InpaintingPipeline::InpaintingPipeline(const Image2ImagePipeline& pipe) {
+    auto start_time = std::chrono::steady_clock::now();
     if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::INPAINTING, *stable_diffusion_xl);
     } else if (auto stable_diffusion = std::dynamic_pointer_cast<StableDiffusionPipeline>(pipe.m_impl); stable_diffusion != nullptr) {
@@ -52,6 +62,7 @@ InpaintingPipeline::InpaintingPipeline(const Image2ImagePipeline& pipe) {
     } else {
         OPENVINO_ASSERT("Cannot convert specified Image2ImagePipeline to InpaintingPipeline");
     }
+    m_impl->save_load_time(start_time);
 }
 
 InpaintingPipeline::InpaintingPipeline(const std::shared_ptr<DiffusionPipeline>& impl)
@@ -99,6 +110,20 @@ InpaintingPipeline InpaintingPipeline::stable_diffusion_xl(
     return InpaintingPipeline(impl);
 }
 
+InpaintingPipeline InpaintingPipeline::flux(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const CLIPTextModel& clip_text_model,
+    const T5EncoderModel& t5_text_encoder,
+    const FluxTransformer2DModel& transformer,
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<FluxPipeline>(PipelineType::INPAINTING, clip_text_model, t5_text_encoder, transformer, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return InpaintingPipeline(impl);
+}
+
 ImageGenerationConfig InpaintingPipeline::get_generation_config() const {
     return m_impl->get_generation_config();
 }
@@ -127,6 +152,10 @@ ov::Tensor InpaintingPipeline::generate(const std::string& positive_prompt, ov::
 
 ov::Tensor InpaintingPipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent);
+}
+
+ImageGenerationPerfMetrics InpaintingPipeline::get_performance_metrics() {
+    return m_impl->get_performance_metrics();
 }
 
 }  // namespace genai

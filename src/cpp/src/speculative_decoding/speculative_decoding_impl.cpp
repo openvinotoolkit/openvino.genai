@@ -3,7 +3,7 @@
 
 #include <thread>
 
-#include "text_callback_streamer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "speculative_decoding_impl.hpp"
 #include "paged_attention_transformations.hpp"
 #include "utils.hpp"
@@ -99,6 +99,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 };
@@ -111,6 +112,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
+    draft_sampling_params.stop_strings = {};
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, prompt, sampling_params);
 }
@@ -231,19 +233,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     m_main_pipeline->set_adapters(sampling_params[0].adapters);
     m_draft_pipeline->set_adapters(sampling_params[0].adapters);
 
-    const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
-        [](std::monostate) -> std::shared_ptr<StreamerBase> {
-            return nullptr;
-        },
-        [](const std::shared_ptr<StreamerBase>& streamer) {
-            return streamer;
-        },
-        [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
-        }
-    }, streamer);
+    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
 
-    OPENVINO_ASSERT(streamer_ptr == nullptr || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
+    OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     std::vector<GenerationHandle> main_generations;
@@ -255,70 +247,29 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         auto draft_sampling_params = sampling_params[request_id];
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
+        draft_sampling_params.stop_strings = {};
         std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
         m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
     }
     auto all_requests = get_awaiting_requests();
 
-    std::atomic<bool> has_active_requests = has_non_finished_requests();
     GenerationHandle& generation = main_generations.at(0);
 
-    // create variables to make optimal thread-safe streaming
-    std::mutex mutex;
-    std::unique_lock<std::mutex> lock(mutex);
-    std::condition_variable cv;
+    streamer_ptr->start();
 
-    std::shared_ptr<std::thread> t_stream_ptr = nullptr;
-    if (streamer_ptr) {
-        // define stream token lambda to use in `t_stream_ptr`
-        auto stream_tokens = [this, &generation, &streamer_ptr, &has_active_requests, &cv, &lock]() {
-            while (has_active_requests || generation->can_read()) {
-                // waiting for any tokens or request finishing
-                cv.wait(lock, [&generation, &has_active_requests]{
-                    return generation->can_read() || !has_active_requests;
-                });
-
-                if (generation->can_read()) {
-                    std::unordered_map<uint64_t, GenerationOutput> generation_outputs = generation->read();
-                    OPENVINO_ASSERT(generation_outputs.size() <= 1);
-                    if (!generation_outputs.empty()) {
-                        for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                            if (streamer_ptr->put(generated_token_id)) {
-                                generation->drop();
-                                break;
-                            }
-                        }
-                    }
-                }
-            };
-            
-            streamer_ptr->end();
-        };
-
-        t_stream_ptr = std::make_shared<std::thread>([&stream_tokens] {
-            stream_tokens();
-        });
-    }
-
-    std::exception_ptr thrown_exception = nullptr;
-    while (has_active_requests) {
+    while (has_non_finished_requests()) {
         try {
             step();
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
-            thrown_exception = std::current_exception();
+            streamer_ptr->end();
+            std::rethrow_exception(std::current_exception());
         }
-        has_active_requests = has_non_finished_requests();
-        cv.notify_one();
-        if (thrown_exception) {
-            throw thrown_exception;
-        }
+        stream_tokens(streamer_ptr, generation);
     }
 
     // waiting for competion of streaming
-    if (t_stream_ptr && t_stream_ptr->joinable()) {
-        t_stream_ptr->join();
-    }
+    streamer_ptr->end();
 
     OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
@@ -337,6 +288,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto & sequence = sequences[i];
