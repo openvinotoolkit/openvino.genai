@@ -51,7 +51,7 @@ ov::InferRequest init_model(ov::CompiledModel& compiled) {
         ov::RemoteContext context = compiled.get_context();
         ov::Shape output_shape = request.get_output_tensor().get_shape();
         ov::RemoteTensor remote = context.create_tensor(ov::element::f32, output_shape);
-        request.set_output_tensor(remote);
+        request.set_tensor("last_hidden_state", remote);
         return request;
     } catch (const ov::Exception&) {
         return request;
