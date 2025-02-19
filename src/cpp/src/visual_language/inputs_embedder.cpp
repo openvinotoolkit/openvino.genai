@@ -653,8 +653,11 @@ public:
         for (const auto& image : single_images) {
             ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
             EncodedImage encoded_image = m_vision_encoder.encode(image, vision_config);
+            for (size_t idx = 0; idx < encoded_image.resized_source.get_shape().at(1); ++idx) {
+                formatted_prompt += image_token;
+            }
+            formatted_prompt += "\n";
             image_embeds.push_back(std::move(encoded_image.resized_source));
-            formatted_prompt += image_token + "\n";
         }
         formatted_prompt += prompt;
 
@@ -676,7 +679,7 @@ public:
 protected:
     ov::Tensor merge_text_and_image_embeddings_llava(
         const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
+        ov::Tensor& text_embeds,
         const std::vector<ov::Tensor>& image_embeds,
         int64_t image_token_id
     ) {
@@ -685,54 +688,20 @@ protected:
         size_t hidden_size = text_embeds_shape[2];
 
         const int64_t* input_ids_data = input_ids.data<const int64_t>();
-        const float* text_embeds_data = text_embeds.data<const float>();
+        const int64_t* idx = input_ids_data;
+        const int64_t* end = input_ids_data + text_embeds_seq_length;
+        float* text_embeds_data = text_embeds.data<float>();
 
-        size_t num_image_tokens = 0;
-        for (size_t s = 0; s < text_embeds_seq_length; ++s) {
-            if (input_ids_data[s] == image_token_id) {
-                num_image_tokens++;
-            }
+        for (const ov::Tensor& image_embed : image_embeds) {
+            idx = std::find(idx, end, image_token_id);
+            OPENVINO_ASSERT(end != idx);
+            std::copy_n(
+                image_embed.data<const float>(),
+                image_embed.get_size(),
+                text_embeds_data + std::distance(input_ids_data, idx) * hidden_size);
+            idx += image_embed.get_shape().at(1) + 1;
         }
-        auto num_images = image_embeds.size();
-        OPENVINO_ASSERT(
-            num_image_tokens == num_images,
-            "Number of image tokens in input_ids different from num_images."
-        );
-
-        size_t total_image_seq_length = 0;
-        for (const auto& single_image_embeds : image_embeds) {
-            OPENVINO_ASSERT(
-                text_embeds_shape[2] == single_image_embeds.get_shape().at(2),
-                "Incompatible shapes between text_embeds and image_embeds"
-            );
-            total_image_seq_length += single_image_embeds.get_shape().at(1);
-        }
-        size_t merged_seq_length = text_embeds_seq_length + total_image_seq_length - num_image_tokens;
-
-        constexpr size_t BATCH_SIZE = 1;
-        ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
-        float* merged_data = merged_embeds.data<float>();
-
-        size_t merged_idx = 0;
-        size_t image_idx = 0;
-        for (size_t s = 0; s < text_embeds_seq_length; ++s) {
-            if (input_ids_data[s] == image_token_id) {
-                const float* image_embeds_data = image_embeds[image_idx].data<const float>();
-                size_t image_seq_length = image_embeds[image_idx].get_shape()[1];
-
-                std::copy_n(image_embeds_data,
-                            image_seq_length * hidden_size,
-                            merged_data + merged_idx * hidden_size);
-                merged_idx += image_seq_length;
-                image_idx++;
-            } else {
-                std::copy_n(text_embeds_data + s * hidden_size,
-                            hidden_size,
-                            merged_data + merged_idx * hidden_size);
-                merged_idx++;
-            }
-        }
-        return merged_embeds;
+        return text_embeds;
     }
 };
 
@@ -779,9 +748,11 @@ public:
             ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)}; // [height, width]
 
             ov::Tensor packed_features = pack_image_features_llava_next(encoded_image, original_image_size, image_newline);
-
+            for (size_t idx = 0; idx < packed_features.get_shape().at(1); ++idx) {
+                formatted_prompt += image_token;
+            }
+            formatted_prompt += "\n";
             image_embeds.push_back(std::move(packed_features));
-            formatted_prompt += image_token + "\n";
         }
         formatted_prompt += prompt;
 
