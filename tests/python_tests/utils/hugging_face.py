@@ -192,7 +192,7 @@ def download_and_convert_model(model_id: str,
                                tmp_path: Path | TemporaryDirectory = TemporaryDirectory(),
                                **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
-    models_path = Path(tmp_path.name) / dir_name
+    models_path = (TemporaryDirectory() if tmp_path == None else Path(tmp_path.name)) / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():

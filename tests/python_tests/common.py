@@ -7,6 +7,7 @@ import pytest
 import openvino
 
 from optimum.intel import OVModelForCausalLM
+from optimum.intel.openvino.utils import TemporaryDirectory
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase, Tokenizer
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -138,13 +139,13 @@ def run_llm_pipeline(
 def run_llm_pipeline_with_ref(model_id: str, 
                               prompts: List[str], 
                               generation_config: GenerationConfig | dict, 
-                              tmp_path: Path = None, 
+                              tmp_path: Path | TemporaryDirectory = TemporaryDirectory(), 
                               use_cb : bool = False,
                               streamer: StreamerWithResults | Callable | StreamerBase = None):
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, Path(tmp_path.name))
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)

@@ -642,8 +642,8 @@ test_cases = [
 def test_perf_metrics(generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    model_id, path = 'katuni4ka/tiny-random-gemma2', Path('katuni4ka-tiny-random-gemma2')
-    perf_metrics = run_perf_metrics_collection((model_id, path), generation_config, prompt)
+    model_id = 'katuni4ka/tiny-random-gemma2'
+    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
 
     # Check that load time is adequate.
