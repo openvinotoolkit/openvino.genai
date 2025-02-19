@@ -99,7 +99,7 @@ public:
         const std::string& device,
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
-    )  :
+    ) :
         m_vlm_config{
             utils::from_config_json_if_exists<VLMConfig>(
                 config_dir_path, "config.json"
@@ -292,7 +292,6 @@ public:
 
         m_generation_config.validate();
     }
-
 };
 
 VLMPipeline::VLMPipeline(

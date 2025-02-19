@@ -45,10 +45,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-
         auto result = m_impl.generate({prompt}, {rgbs}, {generation_config}, streamer)[0];
-
-        auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
             decoded.texts.push_back(result.m_generation_ids.at(idx));
@@ -56,8 +53,6 @@ public:
         }
         return decoded;
     }
-
-
 
     virtual void start_chat(const std::string& system_message) override { m_impl.start_chat(system_message); };
 

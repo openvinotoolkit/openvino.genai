@@ -16,7 +16,6 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::set_config(const G
     m_generation_config = config;
 }
 
-
 PipelineMetrics ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_metrics() const {
     return m_pipeline_metrics;
 }
