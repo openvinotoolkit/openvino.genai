@@ -86,16 +86,6 @@ def get_argprser():
         ' output the maximum memory consumption in all iterations.',
     )
     parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
-    parser.add_argument(
-        '--fuse_decoding_strategy',
-        action='store_true',
-        help='Add decoding postprocessing for next token selection to the model as an extra ops. Original hf_model.generate function will be patched.',
-    )
-    parser.add_argument(
-        '--save_prepared_model',
-        default=None,
-        help='Path to .xml file to save IR used for inference with all pre-/post processing included',
-    )
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
         '--torch_compile_backend',
@@ -130,7 +120,6 @@ def get_argprser():
         'if the value is False (default), input prompts are processed in interleave manner'
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
-    llm_bench_utils.model_utils.add_stateful_model_arguments(parser)
     parser.add_argument("--genai", action="store_true", help="[DEPRECATED] Use OpenVINO GenAI optimized pipelines for benchmarking. Enabled by default")
     parser.add_argument("--optimum", action="store_true", help="Use Optimum Intel pipelines for benchmarking")
     parser.add_argument(
