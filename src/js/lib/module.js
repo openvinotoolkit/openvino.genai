@@ -1,4 +1,4 @@
-import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
+import { LLMPipeline as LLM } from './pipelines/llmPipeline.js';
 
 class PipelineFactory {
   static async LLMPipeline(modelPath, device = 'CPU') {
@@ -9,4 +9,4 @@ class PipelineFactory {
   }
 }
 
-export const LLMPipeline = PipelineFactory.LLMPipeline;
+export const {LLMPipeline} = PipelineFactory;

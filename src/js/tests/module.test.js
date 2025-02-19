@@ -23,6 +23,7 @@ describe('module', async () => {
   await it('should generate non empty string', async () => {
     const result = await pipeline.generate(
       'Type something in English',
+      // eslint-disable-next-line camelcase
       { temperature: '0', max_new_tokens: '4' },
       () => {},
     );
@@ -94,34 +95,39 @@ describe('generation parameters validation', () => {
     );
   });
 
-  it('should throw an error if generationCallback is not a function', async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
+  it(
+    'should throw an error if generationCallback is not a function',
+    async () => {
+      const pipeline = await LLMPipeline(MODEL_PATH, 'CPU');
 
-    await pipeline.startChat();
+      await pipeline.startChat();
 
-    await assert.rejects(
-      async () => await pipeline.generate('prompt', {}, false),
-      {
-        name: 'Error',
-        message: 'Generation callback must be a function',
-      },
-    );
-  });
+      await assert.rejects(
+        async () => await pipeline.generate('prompt', {}, false),
+        {
+          name: 'Error',
+          message: 'Generation callback must be a function',
+        },
+      );
+    });
 
-  it('should throw an error if options specified but not an object', async () => {
-    await assert.rejects(
-      async () => await pipeline.generate('prompt', 'options', () => {}),
-      {
-        name: 'Error',
-        message: 'Options must be an object',
-      },
-    );
-  });
+  it(
+    'should throw an error if options specified but not an object',
+    async () => {
+      await assert.rejects(
+        async () => await pipeline.generate('prompt', 'options', () => {}),
+        {
+          name: 'Error',
+          message: 'Options must be an object',
+        },
+      );
+    });
 
   it('should perform generation with default options', async () => {
     try {
+      // eslint-disable-next-line camelcase
       await pipeline.generate('prompt', { max_new_tokens: 1 });
-    } catch (error) {
+    } catch(error) {
       assert.fail(error);
     }
 
@@ -129,12 +135,14 @@ describe('generation parameters validation', () => {
   });
 
   it('should return a string as generation result', async () => {
+    // eslint-disable-next-line camelcase
     const reply = await pipeline.generate('prompt', { max_new_tokens: 1 });
 
     assert.strictEqual(typeof reply, 'string');
   });
 
   it('should call generationCallback with string chunk', async () => {
+    // eslint-disable-next-line camelcase
     await pipeline.generate('prompt', { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, 'string');
     });

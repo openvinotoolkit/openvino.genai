@@ -53,6 +53,7 @@ describe('bindings', () => {
 
       assert.ok(output.length > 0);
       done();
+    // eslint-disable-next-line camelcase
     }, { temperature: '0', max_new_tokens: '4' });
   });
 });

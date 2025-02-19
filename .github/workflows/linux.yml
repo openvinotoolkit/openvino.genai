@@ -471,6 +471,10 @@ jobs:
           rm -rf node_modules/openvino-node/bin
           cp -R ${{ env.OV_INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
 
+      - name: Check lint
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: npm run lint
+
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: npm test

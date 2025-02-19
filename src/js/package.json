@@ -19,6 +19,7 @@
     "GenAI"
   ],
   "scripts": {
+    "lint": "eslint .",
     "test_setup": "node ./tests/setup.js",
     "test": "npm run test_setup && node --test ./tests/*.test.js",
     "postinstall": "node ./scripts/download-runtime.cjs --ignore-if-exists"
@@ -28,7 +29,9 @@
   },
   "devDependencies": {
     "@huggingface/hub": "^0.21.0",
+    "eslint": "^9.20.1",
     "global-agent": "^3.0.0",
+    "globals": "^15.15.0",
     "node-fetch": "^3.3.2"
   },
   "binary": {

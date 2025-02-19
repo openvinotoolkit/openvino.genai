@@ -1,4 +1,3 @@
-
 const { join } = require('node:path');
 const BinaryManager = require('openvino-node/scripts/lib/binary-manager');
 

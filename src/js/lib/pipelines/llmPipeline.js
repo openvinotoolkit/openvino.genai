@@ -32,7 +32,7 @@ export class LLMPipeline {
       throw new Error('Chat is already started');
 
     const startChatPromise = util.promisify(
-      this.pipeline.startChat.bind(this.pipeline)
+      this.pipeline.startChat.bind(this.pipeline),
     );
     const result = await startChatPromise();
 
@@ -45,7 +45,7 @@ export class LLMPipeline {
       throw new Error('Chat is not started');
 
     const finishChatPromise = util.promisify(
-      this.pipeline.finishChat.bind(this.pipeline)
+      this.pipeline.finishChat.bind(this.pipeline),
     );
     const result = await finishChatPromise();
 
@@ -80,10 +80,12 @@ export class LLMPipeline {
     // Callback function that C++ will call when a chunk is ready
     function chunkOutput(isDone, subword) {
       if (resolvePromise) {
-        resolvePromise({ value: subword, done: isDone }); // Fulfill pending request
-        resolvePromise = null;  // Reset promise resolver
+        // Fulfill pending request
+        resolvePromise({ value: subword, done: isDone });
+        resolvePromise = null; // Reset promise resolver
       } else {
-        queue.push({ isDone, subword }); // Add data to queue if no pending promise
+        // Add data to queue if no pending promise
+        queue.push({ isDone, subword });
       }
     }
 
@@ -101,13 +103,14 @@ export class LLMPipeline {
 
         return new Promise((resolve) => (resolvePromise = resolve));
       },
-      [Symbol.asyncIterator]() { return this; }
+      [Symbol.asyncIterator]() { return this; },
     };
   }
 
   async generate(prompt, generationOptions, generationCallback) {
 
-    if (generationCallback !== undefined && typeof generationCallback !== 'function')
+    if (generationCallback !== undefined
+      && typeof generationCallback !== 'function')
       throw new Error('Generation callback must be a function');
 
     const g = this.getAsyncGenerator(prompt, generationOptions);
