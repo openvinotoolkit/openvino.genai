@@ -231,6 +231,7 @@ unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
 @pytest.mark.parametrize("model_id", [
     "katuni4ka/tiny-random-phi3",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "BAAI/bge-small-en-v1.5",  # model with 2 RaggedToDense ops
     # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
 ])
 @pytest.mark.precommit
