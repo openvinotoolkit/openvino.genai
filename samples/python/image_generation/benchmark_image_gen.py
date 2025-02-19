@@ -137,7 +137,7 @@ def image2image(args):
 
     warmup_metrics = []
     for i in range(num_warmup):
-        pipe.generate(prompt, image_input, strength)
+        pipe.generate(prompt, image_input, strength=strength)
         metrics = pipe.get_performance_metrics()
         warmup_metrics.append(metrics)
         print_one_generate(metrics, "warmup", i)
