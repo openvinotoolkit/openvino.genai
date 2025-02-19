@@ -1,5 +1,5 @@
 import util from 'node:util';
-import addon from '../bindings.cjs';
+import addon from '../addon.js';
 
 export class LLMPipeline {
   modelPath = null;
