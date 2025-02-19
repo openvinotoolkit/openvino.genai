@@ -43,23 +43,23 @@ OpenVINO GenAI supports dynamic loading and switching between LoRA adapters with
 
         int main() {
             ov::genai::AdapterConfig adapter_config;
-            
+
             // Add multiple adapters with different weights
             ov::genai::Adapter adapter1("path/to/lora1.safetensors");
             ov::genai::Adapter adapter2("path/to/lora2.safetensors");
-            
+
             adapter_config.add(adapter1, 0.5f);
             adapter_config.add(adapter2, 0.5f);
-            
+
             ov::genai::LLMPipeline pipe(
                 model_path,
                 "CPU",
                 ov::genai::adapters(adapter_config)
             );
-            
+
             // Generate with current adapters
             auto output1 = pipe.generate("Generate story about", ov::genai::max_new_tokens(100));
-            
+
             // Switch to different adapter configuration
             ov::genai::AdapterConfig new_config;
             new_config.add(adapter1, 1.0f);

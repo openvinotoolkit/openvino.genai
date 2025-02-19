@@ -36,17 +36,17 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
         ```cpp
         int main() {
             ov::genai::LLMPipeline pipe(model_path, "CPU");
-            
+
             // Get default configuration
             auto config = pipe.get_generation_config();
-            
+
             // Modify parameters
             config.max_new_tokens = 100;
             config.temperature = 0.7f;
             config.top_k = 50;
             config.top_p = 0.9f;
             config.repetition_penalty = 1.2f;
-            
+
             // Generate text with custom configuration
             auto output = pipe.generate("The Sun is yellow because", config);
         }
@@ -101,7 +101,7 @@ Beam search helps explore multiple possible text completions simultaneously, oft
 
             // Get default generation config
             ov::genai::GenerationConfig config = pipe.get_generation_config();
-            
+
             // Modify parameters
             config.max_new_tokens = 256;
             config.num_beams = 15;

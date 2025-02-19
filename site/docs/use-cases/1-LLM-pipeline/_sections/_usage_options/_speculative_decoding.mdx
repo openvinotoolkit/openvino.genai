@@ -13,7 +13,7 @@ This reduces the number of infer requests to the main model, increasing performa
     This approach reduces the need for multiple infer requests to the main model, enhancing performance.
     For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target.
     In that case they are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests.
-    
+
     More details can be found in the original papers:
     - https://arxiv.org/pdf/2211.17192.pdf
     - https://arxiv.org/pdf/2302.01318.pdf
