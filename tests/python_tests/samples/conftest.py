@@ -28,8 +28,8 @@ MODELS = {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code']
     },
-    "SmolLM-135M-Instruct": {
-        "name": "HuggingFaceTB/SmolLM-135M-Instruct",
+    "SmolLM-135M": {
+        "name": "HuggingFaceTB/SmolLM-135M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "Qwen2.5-0.5B-Instruct": {
