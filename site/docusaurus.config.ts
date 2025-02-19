@@ -4,7 +4,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
-const organizationName = 'yatarkan';
+const organizationName = 'openvinotoolkit';
 const projectName = 'openvino.genai';
 
 const config: Config = {
