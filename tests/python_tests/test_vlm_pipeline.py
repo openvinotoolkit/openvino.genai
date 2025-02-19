@@ -6,9 +6,9 @@ import openvino
 import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
-from openvino_genai import VLMPipeline, GenerationConfig
+from openvino_genai import VLMPipeline, GenerationConfig, SchedulerConfig, ContinuousBatchingPipeline, GenerationStatus
 
-from utils.generation_config import get_beam_search, get_multinomial_all_parameters
+from utils.generation_config import get_beam_search, get_multinomial_all_parameters, get_greedy
 from utils.constants import get_default_llm_properties
 
 def get_ov_model(model_id, cache):
@@ -90,6 +90,50 @@ def test_vlm_pipeline(model_id, cache):
         result_from_streamer = []
         res = ov_pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
         assert res.texts[0] == ''.join(result_from_streamer)
+
+
+configs = [
+    get_greedy(),
+    get_beam_search(),
+]
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", configs)
+def test_vlm_continuous_batching(config, cache):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_ids[0], cache)
+    ov_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
+    generation_config = config
+    generation_config.max_new_tokens = 30
+    image_links_list = [
+        [],
+        [image_links[0]]
+    ]
+
+    res_generate = []
+    for links in image_links_for_testing:
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        res_generate.append(ov_pipe.generate(prompts[0], images=images, generation_config=generation_config))
+
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device="CPU")
+    tokenizer = cb_pipe.get_tokenizer()
+
+    for idx, links in enumerate(image_links_list):
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+        handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+        while handle.get_status() != GenerationStatus.FINISHED:
+            cb_pipe.step()
+        outputs = handle.read_all()
+        for out_idx, output in enumerate(outputs):
+            text = tokenizer.decode(output.generated_ids)
+            assert text == res_generate[idx].texts[out_idx]
+            assert output.score == res_generate[idx].scores[out_idx]
 
 
 @pytest.mark.precommit
