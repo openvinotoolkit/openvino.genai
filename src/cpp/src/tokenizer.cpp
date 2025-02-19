@@ -208,7 +208,7 @@ public:
                     // to the default value stored in constant from IR.
                     state.reset();
                 }
-            } else if (state.get_name().find(PAD_TO_LONGEST_VAR_ID) != std::string::npos) {
+            } else if (state.get_name().find(PAD_TO_MAX_LENGTH_VAR_ID) != std::string::npos) {
                 state.set_state(pad_to_max_length_tensor);
             }
         }
