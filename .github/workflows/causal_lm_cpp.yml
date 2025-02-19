@@ -23,7 +23,7 @@ env:
 
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
@@ -82,7 +82,7 @@ jobs:
             ./build/samples/cpp/text_generation/beam_search_causal_lm,
             python ./samples/python/text_generation/beam_search_causal_lm.py,
           ]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -298,7 +298,7 @@ jobs:
           && python samples\python\text_generation\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-greedy_causal_lm-Qwen-7B-Chat:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -332,7 +332,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -367,7 +367,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-Phi-2:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -402,7 +402,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-beam_search_causal_lm-notus-7b-v1:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -437,7 +437,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-speculative_decoding_lm-ubuntu:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -451,7 +451,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Build app
         run: |
@@ -494,7 +494,7 @@ jobs:
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -558,7 +558,7 @@ jobs:
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
 
   cpp-Phi-1_5:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -616,7 +616,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
@@ -739,6 +739,77 @@ jobs:
           timeout 30s ./samples/python/text_generation/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
+
+  cpp-encrypted_model_causal_lm-ubuntu:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - name: Run
+        env:
+          PYTHONPATH: "./build"
+        run: |
+          source ./ov/setupvars.sh
+          timeout 30s ./build/samples/cpp/text_generation/encrypted_model_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?"
+
+  benchmark_genai-ubuntu:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - name: Run
+        env:
+          PYTHONPATH: "./build"
+        run: |
+          source ./ov/setupvars.sh
+          timeout 60s ./build/samples/cpp/text_generation/benchmark_genai -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" --nw 2 -n 3 --mt 50 -d CPU
+          timeout 60s  python ./samples/python/text_generation/benchmark_genai.py -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" -nw 2 -n 3 -mt 50 -d CPU
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
@@ -909,7 +980,7 @@ jobs:
         timeout-minutes: 4
 
   cpp-continuous-batching-ubuntu:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash

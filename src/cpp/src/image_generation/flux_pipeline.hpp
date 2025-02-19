@@ -189,16 +189,18 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string t5_text_encoder = data["text_encoder_2"][1].get<std::string>();
         if (t5_text_encoder == "T5EncoderModel") {
-            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, properties);
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", t5_text_encoder, "' text encoder type");
         }
@@ -206,9 +208,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
@@ -218,13 +220,14 @@ public:
 
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "FluxTransformer2DModel") {
-            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, properties);
+            m_transformer = std::make_shared<FluxTransformer2DModel>(root_dir / "transformer", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
 
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     FluxPipeline(PipelineType pipeline_type,
@@ -263,19 +266,27 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
-        m_clip_text_encoder->compile(device, properties);
-        m_t5_text_encoder->compile(device, properties);
-        m_vae->compile(device, properties);
-        m_transformer->compile(device, properties);
+        update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
+        m_clip_text_encoder->compile(device, *updated_properties);
+        m_t5_text_encoder->compile(device, *updated_properties);
+        m_vae->compile(device, *updated_properties);
+        m_transformer->compile(device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         // encode_prompt
         std::string prompt_2_str = generation_config.prompt_2 != std::nullopt ? *generation_config.prompt_2 : positive_prompt;
 
+        auto infer_start = std::chrono::steady_clock::now();
         m_clip_text_encoder->infer(positive_prompt, {}, false);
+        auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
         ov::Tensor pooled_prompt_embeds = m_clip_text_encoder->get_output_tensor(1);
+        infer_start = std::chrono::steady_clock::now();
         ov::Tensor prompt_embeds = m_t5_text_encoder->infer(prompt_2_str, "", false, generation_config.max_sequence_length);
+        infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+        m_perf_metrics.encoder_inference_duration["text_encoder_2"] = infer_duration;
 
         pooled_prompt_embeds = numpy_utils::repeat(pooled_prompt_embeds, generation_config.num_images_per_prompt);
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
@@ -318,7 +329,7 @@ public:
         return timesteps;
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
@@ -334,8 +345,11 @@ public:
         if (initial_image) {
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
             proccesed_image = m_image_processor->execute(proccesed_image);
-
+            auto encode_start = std::chrono::steady_clock::now();
             image_latents = m_vae->encode(proccesed_image, generation_config.generator);
+            m_perf_metrics.vae_encoder_inference_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start)
+                    .count();
             noise = generation_config.generator->randn_tensor(latent_shape);
 
             latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
@@ -357,7 +371,13 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        OPENVINO_THROW("LORA adapters are not implemented for FLUX pipeline yet");
+        if(adapters) {
+            if(auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            m_clip_text_encoder->set_adapters(adapters);
+            m_transformer->set_adapters(adapters);
+        }
     }
 
     std::tuple<ov::Tensor, ov::Tensor> prepare_mask_latents(ov::Tensor mask_image, ov::Tensor processed_image, const ImageGenerationConfig& generation_config) {
@@ -393,7 +413,11 @@ public:
 
         ov::Tensor masked_image_latent;
         // TODO: support is_inpainting_model() == true
+        // auto encode_start = std::chrono::steady_clock::now();
         // masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
+        // m_perf_metrics.vae_encoder_inference_duration +=
+        //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start)
+        //         .count();
         // // masked_image_latents = (masked_image_latents - self.vae.config.shift_factor) * self.vae.config.scaling_factor
         // float * masked_image_latent_data = masked_image_latent.data<float>();
         // for (size_t i = 0; i < masked_image_latent.get_size(); ++i) {
@@ -437,6 +461,8 @@ public:
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        const auto gen_start = std::chrono::steady_clock::now();
+        m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
 
@@ -456,6 +482,8 @@ public:
             compute_dim(m_custom_generation_config.width, initial_image, 2 /* assume NHWC */);
 
         check_inputs(m_custom_generation_config, initial_image);
+
+        set_lora_adapters(m_custom_generation_config.adapters);
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
@@ -488,9 +516,13 @@ public:
         float* timestep_data = timestep.data<float>();
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
+            auto step_start = std::chrono::steady_clock::now();
             timestep_data[0] = timesteps[inference_step] / 1000.0f;
 
+            auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
+            auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
@@ -500,12 +532,29 @@ public:
             }
 
             if (callback && callback(inference_step, timesteps.size(), latents)) {
-                return ov::Tensor(ov::element::u8, {});
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
+                        .count();
+                return image;
             }
+
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
-        return m_vae->decode(latents);
+        const auto decode_start = std::chrono::steady_clock::now();
+        auto image = m_vae->decode(latents);
+        m_perf_metrics.vae_decoder_inference_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
+                .count();
+        m_perf_metrics.generate_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+        return image;
     }
 
     ov::Tensor decode(const ov::Tensor latent) override {
@@ -514,6 +563,11 @@ public:
                                      m_custom_generation_config.width,
                                      m_vae->get_vae_scale_factor());
         return m_vae->decode(unpacked_latent);
+    }
+
+    ImageGenerationPerfMetrics get_performance_metrics() override {
+        m_perf_metrics.load_time = m_load_time_ms;
+        return m_perf_metrics;
     }
 
 private:
@@ -610,6 +664,11 @@ private:
         for (size_t i = 0; i < latents.get_size(); ++i) {
             latents_data[i] = (1.0f - mask_data[i]) * init_latents_proper_data[i] + mask_data[i] * latents_data[i];
         }
+    }
+
+    // Returns non-empty updated adapters iff they are required to be updated
+    static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
+        return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
 
     std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;

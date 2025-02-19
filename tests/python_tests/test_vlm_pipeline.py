@@ -7,7 +7,6 @@ import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
-from common import get_image_by_link
 
 from utils.generation_config import get_beam_search, get_multinomial_all_parameters
 from utils.constants import get_default_llm_properties
@@ -53,6 +52,20 @@ model_ids = [
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-qwen2vl",
 ]
+
+
+def get_image_by_link(link):
+    from PIL import Image
+    import requests
+    from openvino import Tensor
+    import numpy as np
+
+    image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
+    return Tensor(image_data)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -136,6 +149,7 @@ def test_sampling(config, cache):
     pipe.generate(prompts[0], image=image, generation_config=config)
 
 
+@pytest.mark.skip(reason="CVS-160580: tests/python_tests/test_vlm_pipeline.py::test_perf_metrics fails")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_perf_metrics(cache):

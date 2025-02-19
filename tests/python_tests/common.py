@@ -16,6 +16,7 @@ from typing import List, Tuple, Callable
 from utils.generation_config import get_greedy, get_beam_search
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import convert_models, get_hugging_face_models, run_hugging_face
+from utils.comparation import compare_generation_results
 
 TESTS_ROOT = Path(__file__).parent
 
@@ -155,34 +156,6 @@ def run_llm_pipeline(
     return generation_results
 
 
-def compare_generation_result(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
-    if generation_config.is_beam_search():
-        assert len(hf_result.m_scores) == len(ov_result.m_scores)
-        for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
-            # Note, that for fp32 / fp16 models scores are different less than 0.001
-            assert abs(hf_score - ov_score) < 0.02
-
-    if not generation_config.include_stop_str_in_output and len(generation_config.stop_strings) > 0:
-        assert len(hf_result.m_generation_ids) >= len(ov_result.m_generation_ids)
-        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
-            assert ov_text in hf_text
-    else:
-        assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
-        for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
-            assert hf_text == ov_text
-
-
-def compare_generation_results(prompts: List[str], hf_results: List[GenerationResult], ov_results: List[GenerationResult], generation_configs: List[GenerationConfig] | GenerationConfig):
-    if type(generation_configs) is not list:
-        generation_configs = [generation_configs]
-
-    assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(ov_results)
-
-    for prompt, ref_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nReference result = {ref_result}\nOpenVINO result = {ov_result.m_generation_ids}")
-        compare_generation_result(ref_result, ov_result, generation_config)
-
 def run_llm_pipeline_with_ref(model_id: str, 
                               prompts: List[str], 
                               generation_config: GenerationConfig | dict, 
@@ -238,20 +211,6 @@ def generate_and_compare_with_reference_text(models_path: Path, prompts: List[st
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
             assert ref_text == ov_text
 
-
-def get_image_by_link(link):
-    from PIL import Image
-    import requests
-    from openvino import Tensor
-    import numpy as np
-
-    image = Image.open(requests.get(link, stream=True).raw)
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
-    return Tensor(image_data)
-
-
 """rt_info has the highest priority. Delete it to respect configs."""
 def delete_rt_info(configs: List[Tuple], temp_path):
     core = openvino.Core()
@@ -261,8 +220,10 @@ def delete_rt_info(configs: List[Tuple], temp_path):
         rt_info = tokenizer.get_rt_info()
         for config, _ in configs:
             for key in config.keys():
-                try:
-                    del rt_info[key]
-                except KeyError:
-                    pass
+                # tokenizer_config.json contains strings instead of ids so the keys don't have "_id".
+                for modified_key in (key, key+"_id"):
+                    try:
+                        del rt_info[modified_key]
+                    except KeyError:
+                        pass
         openvino.save_model(tokenizer, model_path)
