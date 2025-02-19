@@ -3,6 +3,7 @@
 
 import requests
 import time
+from huggingface_hub.utils import HfHubHTTPError
 
 def retry_request(func, retries=3):
     """
@@ -18,7 +19,7 @@ def retry_request(func, retries=3):
     for attempt in range(retries):
         try:
             return func()
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, HfHubHTTPError) as e:
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
             else:
