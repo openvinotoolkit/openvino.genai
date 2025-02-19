@@ -74,8 +74,8 @@ batched_prompts = [
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(prompt, generation_config):
-    model_id, tmp_path = ("facebook/opt-125m", Path("opt-125m"))
-    _, _, models_path = download_and_convert_model(model_id, tmp_path, padding_side="left")
+    model_id = "facebook/opt-125m"
+    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
     ov_pipe = create_ov_pipeline(models_path)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
 

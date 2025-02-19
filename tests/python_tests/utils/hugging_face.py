@@ -9,6 +9,7 @@ from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM
+from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
@@ -188,10 +189,10 @@ def convert_models(opt_model : OVModelForCausalLM,
 
 
 def download_and_convert_model(model_id: str,
-                               tmp_path: Path = Path("."),
+                               tmp_path: Path | TemporaryDirectory = TemporaryDirectory(),
                                **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
-    models_path : Path = tmp_path / dir_name
+    models_path = Path(tmp_path.name) / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
