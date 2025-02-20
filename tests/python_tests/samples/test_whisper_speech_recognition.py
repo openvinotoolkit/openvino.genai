@@ -24,4 +24,4 @@ class TestWhisperSpeechRecognition:
         cpp_result = run_sample(cpp_command)
 
         # Compare results
-        # assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match" # blocked by CVS-162822
+        assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
