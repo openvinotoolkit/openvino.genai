@@ -7,7 +7,7 @@ function getGenAIAddon() {
   const require = createRequire(import.meta.url);
   const ovPath = require.resolve('openvino-node');
   if (platform() == 'win32') {
-    // Find the openvino libraries that are required for genai-node
+    // Find the openvino binaries that are required for openvino-genai-node
     const pathToOpenVino = join(dirname(ovPath), '../bin');
     if (!process.env.PATH.includes('openvino-node')) {
       process.env.PATH += ';' + resolve(pathToOpenVino);
