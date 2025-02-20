@@ -109,17 +109,14 @@ void CLIPTextModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
 ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
     OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
 
-    const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        ov::Tensor input_ids_token = m_clip_tokenizer.encode(prompt).input_ids;
+        ov::Tensor input_ids_token = m_clip_tokenizer.encode(prompt, pad_to_max_length(true)).input_ids;
 
         if (input_ids.get_element_type() == ov::element::i32) {
-            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
             std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
         } else {
-            std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
             std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int64_t>());
         }
     };

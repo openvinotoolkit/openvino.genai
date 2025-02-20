@@ -71,18 +71,16 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
 ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
-    const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
-
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
-        size_t min_length = std::min(input_ids.get_size(), input_ids_token.get_size());
+        ov::Tensor input_ids_token = m_tokenizer.encode(prompt, max_length(max_sequence_length), pad_to_max_length(true)).input_ids;
+
+        std::cout << "tokenized " << input_ids_token.get_size() << std::endl;
+        std::cout << "input " << input_ids.get_size() << std::endl;
 
         if (input_ids.get_element_type() == ov::element::i32) {
-            std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-            std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int32_t>());
+            std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
         } else {
-            std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
-            std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int64_t>());
+            std::copy_n(input_ids_token.data<int64_t>(), input_ids_token.get_size(), input_ids.data<int64_t>());
         }
     };
 

@@ -446,20 +446,20 @@ std::vector<std::string> prompts = {"The Sun is yellow because", "The"};
 // Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
 // Resulting shape is defined by length of the longest tokens sequence.
 // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
-tokens = tokenizer.encode({"The Sun is yellow because", "The"})
+tokens = tokenizer.encode({"The Sun is yellow because", "The"});
 // or is equivalent to
-tokens = tokenizer.encode({"The Sun is yellow because", "The"}, ov::genai::pad_to_max_length(False))
+tokens = tokenizer.encode({"The Sun is yellow because", "The"}, ov::genai::pad_to_max_length(false));
 // out_shape: [2, 6]
 
 // Resulting tokens tensor will be padded to 1024.
 // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
 tokens = tokenizer.encode({"The Sun is yellow because", 
                            "The",
-                           std::string(2000, 'n')}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
+                           std::string(2000, 'n')}, ov::genai::pad_to_max_length(true), ov::genai::max_length(1024));
 // out_shape: [3, 1024]
 
 // For single string prompts truncation and padding are also applied.
-tokens = tokenizer.encode({"The Sun is yellow because"}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
+tokens = tokenizer.encode({"The Sun is yellow because"}, ov::genai::pad_to_max_length(true), ov::genai::max_length(1024));
 // out_shape: [1, 128]
 ```
 

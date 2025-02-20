@@ -125,7 +125,7 @@ public:
     * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(const std::string& prompt, const ov::AnyMap& tokenization_params = {});
 
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
@@ -146,7 +146,7 @@ public:
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
-    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(std::string& prompt, Properties&&... properties) {
+    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(const std::string& prompt, Properties&&... properties) {
         return encode(prompt, AnyMap{std::forward<Properties>(properties)...});
     }
 
