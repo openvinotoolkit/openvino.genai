@@ -18,6 +18,7 @@ import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
 
+from utils.network import retry_request
 from typing import Any, List, Dict
 
 @pytest.fixture(scope="class", autouse=True)
@@ -61,15 +62,15 @@ def read_whisper_model(params, stateful=True):
     if not (path / "openvino_encoder_model.xml").exists():
         save_model(model_id=model_id, tmp_path=path, stateful=stateful)
 
-    opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
         path,
         trust_remote_code=True,
         compile=False,
         device="CPU",
         load_in_8bit=False,
-    )
+    ))
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
 
     hf_pipe = pipeline(
         "automatic-speech-recognition",
@@ -87,7 +88,7 @@ def read_whisper_model(params, stateful=True):
 
 
 def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
         tokenizer,
         with_detokenizer=True,
@@ -100,7 +101,7 @@ def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
     # to store tokenizer config jsons with special tokens
     tokenizer.save_pretrained(tmp_path)
 
-    opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
         model_id,
         export=True,
         trust_remote_code=True,
@@ -108,12 +109,12 @@ def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
         compile=False,
         device="CPU",
         load_in_8bit=False,
-    )
+    ))
     opt_model.generation_config.save_pretrained(tmp_path)
     opt_model.config.save_pretrained(tmp_path)
     opt_model.save_pretrained(tmp_path)
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
     processor.save_pretrained(tmp_path)
 
 

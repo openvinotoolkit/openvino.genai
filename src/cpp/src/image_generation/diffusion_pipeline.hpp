@@ -7,7 +7,12 @@
 #include <tuple>
 
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "image_generation/numpy_utils.hpp"
+#include "image_generation/image_processor.hpp"
+
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/image_generation/autoencoder_kl.hpp"
+
 #include "lora_helper.hpp"
 #include "lora_names_mapping.hpp"
 
@@ -60,8 +65,23 @@ enum class PipelineType {
 
 class DiffusionPipeline {
 public:
-    explicit DiffusionPipeline(PipelineType pipeline_type) :
-        m_pipeline_type(pipeline_type) { }
+    explicit DiffusionPipeline(PipelineType pipeline_type) : m_pipeline_type(pipeline_type) {
+        // TODO: support GPU as well
+        const std::string device = "CPU";
+
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
+            const bool do_normalize = true, do_binarize = false, gray_scale_source = false;
+            m_image_processor = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, gray_scale_source);
+            m_image_resizer = std::make_shared<ImageResizer>(device, ov::element::u8, "NHWC", ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
+        }
+
+        if (m_pipeline_type == PipelineType::INPAINTING) {
+            bool do_normalize = false, do_binarize = true;
+            m_mask_processor_rgb = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, false);
+            m_mask_processor_gray = std::make_shared<ImageProcessor>(device, do_normalize, do_binarize, true);
+            m_mask_resizer = std::make_shared<ImageResizer>(device, ov::element::f32, "NCHW", ov::op::v11::Interpolate::InterpolateMode::NEAREST);
+        }
+    }
 
     ImageGenerationConfig get_generation_config() const {
         return m_generation_config;
@@ -82,7 +102,7 @@ public:
 
     virtual void compile(const std::string& device, const ov::AnyMap& properties) = 0;
 
-    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const = 0;
+    virtual std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) = 0;
 
     virtual void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) = 0;
 
@@ -92,6 +112,13 @@ public:
 
     virtual ov::Tensor decode(const ov::Tensor latent) = 0;
 
+    virtual ImageGenerationPerfMetrics get_performance_metrics() = 0;
+
+    void save_load_time(std::chrono::steady_clock::time_point start_time) {
+        auto stop_time = std::chrono::steady_clock::now();
+        m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+    }
+
     virtual ~DiffusionPipeline() = default;
 
 protected:
@@ -100,6 +127,13 @@ protected:
     virtual void check_image_size(const int height, const int width) const = 0;
 
     virtual void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const = 0;
+
+    virtual bool is_inpainting_model() const {
+        assert(m_vae != nullptr);
+        return get_config_in_channels() == (m_vae->get_config().latent_channels * 2 + 1);
+    }
+
+    virtual size_t get_config_in_channels() const = 0;
 
     virtual void blend_latents(ov::Tensor image_latent, ov::Tensor noise, ov::Tensor mask, ov::Tensor latent, size_t inference_step) {
         OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'blend_latents' can be called for inpainting pipeline only");
@@ -138,9 +172,58 @@ protected:
         return ov::genai::derived_adapters(adapters, diffusers_adapter_normalization);
     }
 
+    virtual std::tuple<ov::Tensor, ov::Tensor> prepare_mask_latents(ov::Tensor mask_image,
+                                                                    ov::Tensor processed_image,
+                                                                    const ImageGenerationConfig& generation_config,
+                                                                    const size_t batch_size_multiplier) {
+        OPENVINO_ASSERT(m_pipeline_type == PipelineType::INPAINTING, "'prepare_mask_latents' can be called for inpainting pipeline only");
+
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        ov::Shape target_shape = processed_image.get_shape();
+
+        ov::Tensor mask_condition = m_image_resizer->execute(mask_image, target_shape[2], target_shape[3]);
+        std::shared_ptr<IImageProcessor> mask_processor = mask_condition.get_shape()[3] == 1 ? m_mask_processor_gray : m_mask_processor_rgb;
+        mask_condition = mask_processor->execute(mask_condition);
+
+        // resize mask to shape of latent space
+        ov::Tensor mask = m_mask_resizer->execute(mask_condition, target_shape[2] / vae_scale_factor, target_shape[3] / vae_scale_factor);
+        mask = numpy_utils::repeat(mask, generation_config.num_images_per_prompt * batch_size_multiplier);
+
+        ov::Tensor masked_image_latent;
+
+        if (is_inpainting_model()) {
+            // create masked image
+            ov::Tensor masked_image(ov::element::f32, processed_image.get_shape());
+            const float * mask_condition_data = mask_condition.data<const float>();
+            const float * processed_image_data = processed_image.data<const float>();
+            float * masked_image_data = masked_image.data<float>();
+
+            for (size_t i = 0, plane_size = mask_condition.get_shape()[2] * mask_condition.get_shape()[3]; i < mask_condition.get_size(); ++i) {
+                masked_image_data[i + 0 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 0 * plane_size] : 0.0f;
+                masked_image_data[i + 1 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 1 * plane_size] : 0.0f;
+                masked_image_data[i + 2 * plane_size] = mask_condition_data[i] < 0.5f ? processed_image_data[i + 2 * plane_size] : 0.0f;
+            }
+
+            // encode masked image to latent scape
+            auto encode_start = std::chrono::steady_clock::now();
+            masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
+            m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                             std::chrono::steady_clock::now() - encode_start).count();
+            masked_image_latent = numpy_utils::repeat(masked_image_latent, generation_config.num_images_per_prompt * batch_size_multiplier);
+        }
+
+        return std::make_tuple(mask, masked_image_latent);
+    }
+
     PipelineType m_pipeline_type;
     std::shared_ptr<IScheduler> m_scheduler;
     ImageGenerationConfig m_generation_config;
+    float m_load_time_ms = 0.0f;
+    ImageGenerationPerfMetrics m_perf_metrics;
+
+    std::shared_ptr<AutoencoderKL> m_vae = nullptr;
+    std::shared_ptr<IImageProcessor> m_image_processor = nullptr, m_mask_processor_rgb = nullptr, m_mask_processor_gray = nullptr;
+    std::shared_ptr<ImageResizer> m_image_resizer = nullptr, m_mask_resizer = nullptr;
 };
 
 } // namespace genai

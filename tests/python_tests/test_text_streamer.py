@@ -2,6 +2,7 @@ import pytest
 from transformers import AutoTokenizer
 from openvino_genai import Tokenizer, TextStreamer
 from utils.hugging_face import convert_and_save_tokenizer
+from utils.network import retry_request
 
 def chunks(arr: list, n: int):
     for i in range(0, len(arr), n):
@@ -61,7 +62,7 @@ def test_text_prompts(tmp_path, prompt, model_id):
     
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True)
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True))
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
     tokens = ov_tokenizer.encode(prompt=prompt).input_ids.data[0].tolist()
@@ -97,7 +98,7 @@ encoded_prompts = [
 def test_encoded_prompts(tmp_path, encoded_prompt, model_id):
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True)
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True))
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
 
