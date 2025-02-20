@@ -5,7 +5,7 @@ import requests
 import time
 import logging
 from huggingface_hub.utils import HfHubHTTPError
-from subprocess import CalledProcessError
+from subprocess import CalledProcessError # nosec B404
 
 # Configure the logger
 logging.basicConfig(level=logging.INFO)
