@@ -21,27 +21,21 @@ using RawSpeechInput = std::vector<float>;
 
 /**
  * Base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
- * ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.
  */
-class OPENVINO_GENAI_EXPORTS ChunkStreamerBase {
+
+class OPENVINO_DEPRECATED(
+    "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+    OPENVINO_GENAI_EXPORTS ChunkStreamerBase {
 public:
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
     virtual bool put(int64_t token) = 0;
 
     /// @brief put_chunk is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
     virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
 
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
     virtual void end() = 0;
 
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
     virtual ~ChunkStreamerBase();
 };
 
@@ -190,8 +184,8 @@ public:
     void set_generation_config(const WhisperGenerationConfig& config);
 };
 
-OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func);
+
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config);
 }  // namespace genai
 }  // namespace ov

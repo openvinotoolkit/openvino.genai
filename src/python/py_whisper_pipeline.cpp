@@ -31,10 +31,12 @@ using ov::genai::WhisperGenerationConfig;
 using ov::genai::WhisperPerfMetrics;
 using ov::genai::WhisperPipeline;
 using ov::genai::WhisperRawPerfMetrics;
+OPENVINO_SUPPRESS_DEPRECATED_START
 using PyBindWhisperStreamerVariant = std::variant<std::function<std::optional<uint16_t>(py::str)>,
                                                   std::shared_ptr<ChunkStreamerBase>,
                                                   std::shared_ptr<StreamerBase>,
                                                   std::monostate>;
+OPENVINO_SUPPRESS_DEPRECATED_END
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -250,7 +252,7 @@ class ConstructableChunkStreamer : public ChunkStreamerBase {
 
 ov::genai::WhisperStreamerVariant pystreamer_to_streamer(const PyBindWhisperStreamerVariant& py_streamer) {
     ov::genai::WhisperStreamerVariant streamer = std::monostate();
-
+    OPENVINO_SUPPRESS_DEPRECATED_START
     std::visit(pyutils::overloaded{
                    [&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback) {
                        // Wrap python streamer with manual utf-8 decoding. Do not rely
@@ -285,6 +287,7 @@ ov::genai::WhisperStreamerVariant pystreamer_to_streamer(const PyBindWhisperStre
                    },
                    [](std::monostate none) { /*streamer is already a monostate */ }},
                py_streamer);
+    OPENVINO_SUPPRESS_DEPRECATED_END
     return streamer;
 }
 
@@ -313,7 +316,7 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
 void init_whisper_pipeline(py::module_& m) {
     m.doc() = "Pybind11 binding for Whisper Pipeline";
-
+    OPENVINO_SUPPRESS_DEPRECATED_START
     py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>>(
         m,
         "ChunkStreamerBase",
@@ -332,6 +335,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def("end",
              &ChunkStreamerBase::end,
              "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig, GenerationConfig>(m,

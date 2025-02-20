@@ -12,7 +12,9 @@ namespace genai {
 
 class ChunkToBaseStreamerAdapter : public StreamerBase {
 public:
+    OPENVINO_SUPPRESS_DEPRECATED_START
     ChunkToBaseStreamerAdapter(std::shared_ptr<ChunkStreamerBase> chunk_streamer) : m_chunk_streamer{chunk_streamer} {}
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     StreamingStatus write(const std::vector<int64_t>& tokens) override {
         return m_chunk_streamer->put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
@@ -27,7 +29,9 @@ public:
     }
 
 private:
+    OPENVINO_SUPPRESS_DEPRECATED_START
     std::shared_ptr<ChunkStreamerBase> m_chunk_streamer;
+    OPENVINO_SUPPRESS_DEPRECATED_END
 };
 
 }  // namespace genai

@@ -36,6 +36,8 @@ ov::genai::WhisperStreamerVariant get_streamer_from_map(const ov::AnyMap& config
     }
 
     auto any_val = config_map.at(ov::genai::utils::STREAMER_ARG_NAME);
+
+    OPENVINO_SUPPRESS_DEPRECATED_START
     if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
         streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
     } else if (any_val.is<std::function<bool(std::string)>>()) {
@@ -46,6 +48,7 @@ ov::genai::WhisperStreamerVariant get_streamer_from_map(const ov::AnyMap& config
     } else if (any_val.is<std::function<ov::genai::StreamingStatus(std::string)>>()) {
         streamer = any_val.as<std::function<ov::genai::StreamingStatus(std::string)>>();
     }
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     return streamer;
 }
@@ -53,6 +56,8 @@ ov::genai::WhisperStreamerVariant get_streamer_from_map(const ov::AnyMap& config
 std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::WhisperStreamerVariant streamer,
                                                           ov::genai::Tokenizer& tokenizer) {
     std::shared_ptr<ov::genai::StreamerBase> streamer_ptr;
+
+    OPENVINO_SUPPRESS_DEPRECATED_START
     if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
         streamer_ptr = nullptr;
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
@@ -64,6 +69,7 @@ std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::WhisperStre
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::ChunkStreamerBase>>(&streamer)) {
         streamer_ptr = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(*streamer_obj);
     }
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     return streamer_ptr;
 }
@@ -162,9 +168,11 @@ private:
     Sampler m_sampler;
 };
 
+OPENVINO_SUPPRESS_DEPRECATED_START
 std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func) {
     return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(func)};
 }
+OPENVINO_SUPPRESS_DEPRECATED_END
 
 std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
