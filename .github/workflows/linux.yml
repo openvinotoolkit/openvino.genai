@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  OV_BRANCH: f7dade77a733c802c5b26d14a6f9a0a274c60c75
   CMAKE_CXX_COMPILER_LAUNCHER: sccache
   CMAKE_C_COMPILER_LAUNCHER: sccache
   SCCACHE_IGNORE_SERVER_IO_ERROR: 1
@@ -57,7 +57,7 @@ jobs:
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
-        repository: 'openvinotoolkit/openvino'
+        repository: 'zhangYiIntel/openvino'
         path: 'openvino'
         ref: ${{ env.OV_BRANCH }}
         sparse-checkout: |
