@@ -30,7 +30,7 @@ image = ov_pipe.generate("Create beautiful Sun")`,
     title: 'Speech to Text API',
     Icon: SoundIcon,
     code: `ov_pipe = ov_genai.WhisperPipeline("whisper-base")
-print(ov_pipe.generate(read_wav("sample.wav)))`,
+print(ov_pipe.generate(read_wav("sample.wav")))`,
   },
 ];
 
