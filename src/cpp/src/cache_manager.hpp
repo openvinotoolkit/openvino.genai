@@ -63,6 +63,7 @@ class CacheManager {
                 // for scale and sizeof(float) for zeropoint
                 if (bychannel && key_param) {
                     pshape[2] += 2 * sizeof(float);
+                    std::cout << "GenAI|by_channel|key_shape" << pshape << std::endl;
                 } else {
                     pshape[3] += 2 * sizeof(float);
                 }
