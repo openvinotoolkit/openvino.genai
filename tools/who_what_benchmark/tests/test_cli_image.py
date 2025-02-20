@@ -103,9 +103,6 @@ def test_image_model_types(model_id, model_type, backend):
                             ])),
 )
 def test_image_model_genai(model_id, model_type):
-    if ("stable-diffusion-3" in model_id) and model_type != "text-to-image":
-        pytest.skip(reason="SD3 is supported as text to image only")
-
     with tempfile.TemporaryDirectory() as temp_dir:
         GT_FILE = os.path.join(temp_dir, "gt.csv")
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
