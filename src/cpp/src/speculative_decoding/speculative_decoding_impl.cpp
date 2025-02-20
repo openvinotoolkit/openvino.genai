@@ -214,6 +214,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_sd_metrics.print(true);
         m_sd_metrics.clean_up();
     }
+    step_timer.end();
 }
 
 std::vector<EncodedGenerationResult>

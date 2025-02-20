@@ -43,6 +43,6 @@ public:
     }
 
     ~ManualTimer() {
-        // std::cout << m_title << ": " << m_total / 1e6. << " secs" << std::endl;
+        // std::cout << m_title << ": " << m_total / 1e6 << " secs" << std::endl;
     }
 };

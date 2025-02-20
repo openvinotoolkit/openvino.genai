@@ -122,9 +122,9 @@ void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
         total_duration = draft_duration + main_duration;
     }
     std::cout << "\n=============================== " << std::endl;
-    std::cout << "Total duration, ms: " << total_duration << std::endl;
-    std::cout << "Draft model duration, ms: " << draft_duration << std::endl;
-    std::cout << "Main model duration, ms: " << main_duration << std::endl;
+    std::cout << "Total duration, sec: " << total_duration << std::endl;
+    std::cout << "Draft model duration, sec: " << draft_duration << std::endl;
+    std::cout << "Main model duration, sec: " << main_duration << std::endl;
     std::cout << "Draft model duration, %: " << get_draft_duration_percentage() << std::endl;
     std::cout << "Main model duration, %: " << get_main_duration_percentage() << std::endl;
     std::cout << "AVG acceptance rate, %: " << get_avg_acceptance_rate(-1) << std::endl;
