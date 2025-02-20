@@ -28,8 +28,8 @@ ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap&
     }
 }
 
-ov::genai::WhisperStreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
-    ov::genai::WhisperStreamerVariant streamer = std::monostate();
+ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::StreamerVariant streamer = std::monostate();
 
     if (!config_map.count(ov::genai::utils::STREAMER_ARG_NAME)) {
         return streamer;
@@ -42,9 +42,6 @@ ov::genai::WhisperStreamerVariant get_streamer_from_map(const ov::AnyMap& config
         streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
     } else if (any_val.is<std::function<bool(std::string)>>()) {
         streamer = any_val.as<std::function<bool(std::string)>>();
-    } else if (any_val.is<std::shared_ptr<ov::genai::ChunkStreamerBase>>()) {
-        auto chunk_streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
-        streamer = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(chunk_streamer);
     } else if (any_val.is<std::function<ov::genai::StreamingStatus(std::string)>>()) {
         streamer = any_val.as<std::function<ov::genai::StreamingStatus(std::string)>>();
     }
@@ -53,7 +50,7 @@ ov::genai::WhisperStreamerVariant get_streamer_from_map(const ov::AnyMap& config
     return streamer;
 }
 
-std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::WhisperStreamerVariant streamer,
+std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::StreamerVariant streamer,
                                                           ov::genai::Tokenizer& tokenizer) {
     std::shared_ptr<ov::genai::StreamerBase> streamer_ptr;
 
@@ -61,13 +58,15 @@ std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::WhisperStre
     if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
         streamer_ptr = nullptr;
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
-        streamer_ptr = *streamer_obj;
+        if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(*streamer_obj)) {
+            streamer_ptr = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(chunk_streamer);
+        } else {
+            streamer_ptr = *streamer_obj;
+        }
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ov::genai::TextStreamer>(tokenizer, *callback);
     } else if (auto callback = std::get_if<std::function<ov::genai::StreamingStatus(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ov::genai::TextStreamer>(tokenizer, *callback);
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::ChunkStreamerBase>>(&streamer)) {
-        streamer_ptr = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(*streamer_obj);
     }
     OPENVINO_SUPPRESS_DEPRECATED_END
 
@@ -196,7 +195,7 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
 
 ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
                                                                       OptionalWhisperGenerationConfig generation_config,
-                                                                      WhisperStreamerVariant streamer) {
+                                                                      StreamerVariant streamer) {
     auto base_streamer = to_base_streamer(streamer, m_impl->m_tokenizer);
 
     return m_impl->generate(raw_speech_input, generation_config, base_streamer);
@@ -207,7 +206,7 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
     auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
-    WhisperStreamerVariant streamer_variant = get_streamer_from_map(config_map);
+    StreamerVariant streamer_variant = get_streamer_from_map(config_map);
     const std::shared_ptr<StreamerBase> base_streamer = to_base_streamer(streamer_variant, m_impl->m_tokenizer);
 
     return m_impl->generate(raw_speech_input, config, base_streamer);

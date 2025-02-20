@@ -21,7 +21,9 @@ public:
     }
 
     StreamingStatus write(int64_t token) override {
+        OPENVINO_SUPPRESS_DEPRECATED_START
         return m_chunk_streamer->put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+        OPENVINO_SUPPRESS_DEPRECATED_END
     }
 
     void end() override {

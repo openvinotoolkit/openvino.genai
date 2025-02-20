@@ -347,7 +347,7 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
-class ChunkStreamerBase:
+class ChunkStreamerBase(StreamerBase):
     """
     
         Base class for chunk streamers. In order to use inherit from from this class.
@@ -2212,7 +2212,7 @@ class WhisperPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | ChunkStreamerBase | StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
