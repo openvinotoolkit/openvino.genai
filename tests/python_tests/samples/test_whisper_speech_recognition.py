@@ -3,6 +3,7 @@
 
 import os
 import pytest
+import sys
 
 from conftest import TEST_FILES, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
@@ -15,7 +16,7 @@ class TestWhisperSpeechRecognition:
     def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):           
         # Run Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "whisper_speech_recognition/whisper_speech_recognition.py")
-        py_command = ["python", py_script, convert_model, download_test_content]
+        py_command = [sys.executable, py_script, convert_model, download_test_content]
         py_result = run_sample(py_command)
 
         # Run C++ sample

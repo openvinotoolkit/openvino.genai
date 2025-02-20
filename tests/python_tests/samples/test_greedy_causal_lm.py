@@ -3,6 +3,7 @@
 
 import os
 import pytest
+import sys
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
@@ -22,7 +23,7 @@ class TestGreedyCausalLM:
     def test_sample_greedy_causal_lm(self, convert_model, sample_args):
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
-        py_command = ["python", py_script, convert_model, sample_args]
+        py_command = [sys.executable, py_script, convert_model, sample_args]
         py_result = run_sample(py_command)
 
         # Test CPP sample
