@@ -3,7 +3,6 @@ import styles from './styles.module.css';
 
 type SectionColumnProps = {
   children: ReactNode;
-  order?: number;
 };
 
 export const SectionColumn: FC<SectionColumnProps> = ({ children }) => {
