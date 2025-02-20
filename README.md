@@ -135,8 +135,8 @@ from PIL import Image
 pipe = openvino_genai.VLMPipeline("./InternVL2-1B", "CPU")
 
 image = Image.open("dog.jpg")
-image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
-image_data = ov.Tensor(image_data)  
+image_data = np.array(image)
+image_data = ov.Tensor(image_data)
 
 prompt = "Can you describe the image?"
 result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
@@ -232,7 +232,7 @@ device = 'CPU'  # GPU can be used as well
 pipe = openvino_genai.Image2ImagePipeline("./dreamlike_anime_1_0_ov/INT8", device)
 
 image = Image.open("small_city.jpg")
-image_data = np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8)
+image_data = np.array(image)[None]
 image_data = ov.Tensor(image_data)
 
 image_tensor = pipe.generate(
@@ -277,7 +277,7 @@ import openvino as ov
 
 def read_image(path: str) -> openvino.Tensor:
     pic = Image.open(path).convert("RGB")
-    image_data = np.array(pic.getdata()).reshape(1, pic.size[1], pic.size[0], 3).astype(np.uint8)
+    image_data = np.array(pic)[None]
     return openvino.Tensor(image_data)
 
 device = 'CPU'  # GPU can be used as well
