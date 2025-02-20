@@ -16,6 +16,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {

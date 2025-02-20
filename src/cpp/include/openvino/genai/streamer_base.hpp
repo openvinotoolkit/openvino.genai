@@ -17,8 +17,6 @@ enum class StreamingStatus {
 
 /**
  * @brief base class for streamers. In order to use inherit from from this class and implement put, and methods
- *
- * @param m_tokenizer tokenizer
  */
 class OPENVINO_GENAI_EXPORTS StreamerBase {
 public:
@@ -26,7 +24,7 @@ public:
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
     OPENVINO_DEPRECATED("Please, use `write()` instead of `put()`. Support will be removed in 2026.0.0 release.")
     virtual bool put(int64_t token) {
-        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write() insted.");
+        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write() instead.");
         return true;
     };
 
@@ -36,6 +34,19 @@ public:
         OPENVINO_SUPPRESS_DEPRECATED_START
         return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
         OPENVINO_SUPPRESS_DEPRECATED_END
+    };
+
+    /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup decoding
+    /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
+    virtual StreamingStatus write(const std::vector<int64_t>& tokens) {
+        for (const auto token : tokens) {
+            const auto status = write(token);
+            if (status != StreamingStatus::RUNNING) {
+                return status;
+            }
+        }
+
+        return StreamingStatus::RUNNING;
     };
 
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one

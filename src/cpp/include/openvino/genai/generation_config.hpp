@@ -193,6 +193,7 @@ extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
+static constexpr ov::Property<size_t> max_ngram_size{"max_ngram_size"};
 
 static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 

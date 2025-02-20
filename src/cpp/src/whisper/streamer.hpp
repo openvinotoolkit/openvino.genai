@@ -3,21 +3,37 @@
 
 #pragma once
 
+#include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
-#include "openvino/genai/text_streamer.hpp"
 
 namespace ov {
 namespace genai {
 
-class ChunkTextCallbackStreamer : private TextStreamer, public ChunkStreamerBase {
+class ChunkToBaseStreamerAdapter : public StreamerBase {
 public:
-    StreamingStatus write(int64_t token) override;
-    StreamingStatus write_chunk(std::vector<int64_t> tokens) override;
-    void end() override;
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    ChunkToBaseStreamerAdapter(std::shared_ptr<ChunkStreamerBase> chunk_streamer) : m_chunk_streamer{chunk_streamer} {}
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
-    ChunkTextCallbackStreamer(const Tokenizer& tokenizer, std::function<ov::genai::CallbackTypeVariant(std::string)> callback)
-        : TextStreamer(tokenizer, callback){};
+    StreamingStatus write(const std::vector<int64_t>& tokens) override {
+        return m_chunk_streamer->put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+    }
+
+    StreamingStatus write(int64_t token) override {
+        OPENVINO_SUPPRESS_DEPRECATED_START
+        return m_chunk_streamer->put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+        OPENVINO_SUPPRESS_DEPRECATED_END
+    }
+
+    void end() override {
+        return m_chunk_streamer->end();
+    }
+
+private:
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    std::shared_ptr<ChunkStreamerBase> m_chunk_streamer;
+    OPENVINO_SUPPRESS_DEPRECATED_END
 };
 
 }  // namespace genai

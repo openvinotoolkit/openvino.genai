@@ -1,11 +1,12 @@
 import pytest
-import numpy as np
 from transformers import AutoTokenizer
 from openvino_genai import Tokenizer, TextStreamer
 from utils.hugging_face import convert_and_save_tokenizer
 from utils.network import retry_request
-import sys
 
+def chunks(arr: list, n: int):
+    for i in range(0, len(arr), n):
+        yield arr[i:i + n]
 
 tokenizer_model_ids = [
     "microsoft/phi-1_5",
@@ -73,6 +74,14 @@ def test_text_prompts(tmp_path, prompt, model_id):
 
     assert ''.join(accumulated) == ov_tokenizer.decode(tokens)
 
+    for chunk_size in [1,2,3,4,5]:
+        accumulated.clear()
+        for token_chunk in chunks(tokens, chunk_size):
+            streamer.write(token_chunk)
+        streamer.end()
+        assert ''.join(accumulated) == ov_tokenizer.decode(tokens)
+
+
 encoded_prompts = [
     # This tokens caused error in Meta-Llama-3-8B-Instruct
     [2, 3479, 990, 122, 254, 9, 70, 498, 655],
@@ -100,3 +109,10 @@ def test_encoded_prompts(tmp_path, encoded_prompt, model_id):
     streamer.end()
 
     assert ''.join(accumulated) == ov_tokenizer.decode(encoded_prompt)
+
+    for chunk_size in [1,2,3,4,5]:
+        accumulated.clear()
+        for token_chunk in chunks(encoded_prompt, chunk_size):
+            streamer.write(token_chunk)
+        streamer.end()
+        assert ''.join(accumulated) == ov_tokenizer.decode(encoded_prompt)
