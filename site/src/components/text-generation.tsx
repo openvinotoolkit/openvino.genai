@@ -3,9 +3,11 @@ import { GoToDocumentation } from '@site/src/components/GoToLink/go-to-documenta
 import { Section } from './Section';
 
 import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/LanguageTabs';
-import CodeBlock from '@theme/CodeBlock';
 
 import ImagePlaceholder from '@site/static/img/image-generation-placeholder.webp';
+
+import CodeExampleCpp from '@site/docs/use-cases/1-LLM-pipeline/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExamplePython from '@site/docs/use-cases/1-LLM-pipeline/_sections/_run_model/_code_example_python.mdx';
 
 // TODO Consider moving to mdx
 const FEATURES = [
@@ -14,29 +16,6 @@ const FEATURES = [
   'Load LoRA adapters and dynamically switch between them without recompilation',
   'Use draft model to accelerate generation via Speculative Decoding',
 ];
-
-const pythonCodeBlock = (
-  <CodeBlock language="python">
-    {`import openvino_genai as ov_genai
-
-# Will run model on CPU, GPU or NPU are possible options
-pipe = ov_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
-print(pipe.generate("The Sun is yellow because", max_new_tokens=100))`}
-  </CodeBlock>
-);
-
-const cppCodeBlock = (
-  <CodeBlock language="cpp">
-    {`#include "openvino/genai/llm_pipeline.hpp"
-#include <iostream>
-
-int main(int argc, char* argv[]) {
-    std::string models_path = argv[1];
-    ov::genai::LLMPipeline pipe(models_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100)) << '\\n';
-}`}
-  </CodeBlock>
-);
 
 export const TextGeneration = () => {
   return (
@@ -53,8 +32,12 @@ export const TextGeneration = () => {
         <Section.Features features={FEATURES} />
         <hr />
         <LanguageTabs>
-          <TabItemPython>{pythonCodeBlock}</TabItemPython>
-          <TabItemCpp>{cppCodeBlock}</TabItemCpp>
+          <TabItemPython>
+            <CodeExamplePython />
+          </TabItemPython>
+          <TabItemCpp>
+            <CodeExampleCpp />
+          </TabItemCpp>
         </LanguageTabs>
         <hr />
         <ExploreCodeSamples link={'docs/category/samples'} />

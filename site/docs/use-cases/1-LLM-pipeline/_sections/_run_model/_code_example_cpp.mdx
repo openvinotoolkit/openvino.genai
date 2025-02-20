@@ -7,7 +7,7 @@ import CodeBlock from '@theme/CodeBlock';
 int main(int argc, char* argv[]) {
     std::string models_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "${props.device || 'CPU'}");
-    std::cout << pipe.generate("What is Large Language Model?", ov::genai::max_new_tokens(100)) << '\\n';
+    std::cout << pipe.generate("What is OpenVINO?", ov::genai::max_new_tokens(100)) << '\\n';
 }
 `}
 </CodeBlock>
