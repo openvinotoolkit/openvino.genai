@@ -89,8 +89,8 @@ const config: Config = {
           title: 'OpenVINO',
           items: [
             {
-              label: 'OpenVINO™ Telemetry',
-              href: 'https://docs.openvino.ai/2024/about-openvino/additional-resources/telemetry.html',
+              label: 'OpenVINO™ Documentation',
+              href: 'https://docs.openvino.ai/',
             },
             {
               label: 'Case Studies',
