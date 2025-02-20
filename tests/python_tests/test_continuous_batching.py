@@ -93,8 +93,8 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(prompt):
-    model_id, tmp_path = ("facebook/opt-125m", Path("opt-125m"))
-    _, _, models_path = download_and_convert_model(model_id, tmp_path)
+    model_id = "facebook/opt-125m"
+    _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
