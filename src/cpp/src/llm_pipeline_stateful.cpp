@@ -56,10 +56,10 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     ov::CompiledModel compiled_model;
-    if (device == "NPU") {
+    if (device.find("NPU") != std::string::npos) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
-            model, properties, kv_pos, models_path
+            model, filtered_properties, kv_pos, models_path
         );
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
@@ -300,7 +300,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     auto execution_devices = m_model_runner.get_compiled_model().get_property(ov::execution_devices);
     OPENVINO_ASSERT(execution_devices.size() == 1u);
-    if (execution_devices.front() == "NPU") {
+    if (execution_devices[0].find("NPU") != std::string::npos) {
         OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
         OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
             "Currently only greedy and multinomial decoding are supported for NPU device!");
