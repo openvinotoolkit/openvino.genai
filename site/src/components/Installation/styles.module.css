@@ -1,28 +1,9 @@
 .installation {
-  background: none;
   text-align: center;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 24px;
-}
-
-.installationOptions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 24px;
-}
-
-.installationOptionsItem {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #e9e9e9;
-  font-weight: 500;
-  height: 64px;
-  width: 280px;
-  gap: 16px;
+  gap: 1.5rem;
 }
 
 .installationTitle {
@@ -34,5 +15,19 @@
 
 .installationDescription {
   margin: 0 auto;
-  text-align: center;
+}
+
+.installationOptions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.5rem;
+
+  button {
+    --button-icon-size: 2.25rem;
+
+    width: 14rem;
+    height: 4rem;
+    font-size: 1rem;
+  }
 }
