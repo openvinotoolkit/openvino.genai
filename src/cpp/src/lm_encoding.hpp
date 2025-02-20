@@ -34,7 +34,7 @@ public:
         return state.empty();
     }
 
-    void reset() {
+    void reset_state() {
         return state.clear();
     }
 };
