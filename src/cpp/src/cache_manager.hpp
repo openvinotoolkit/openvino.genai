@@ -63,10 +63,11 @@ class CacheManager {
                 // for scale and sizeof(float) for zeropoint
                 if (bychannel && key_param) {
                     pshape[2] += 2 * sizeof(float);
-                    std::cout << "GenAI|by_channel|key_shape" << pshape << std::endl;
                 } else {
                     pshape[3] += 2 * sizeof(float);
                 }
+                std::cout << "GenAI|by_channel| " << bychannel << "|is_key|" << key_param << "|shape" << pshape
+                          << std::endl;
             }
         } else if (m_device.find("GPU") != std::string::npos) {
             if (key_param) {
@@ -93,7 +94,7 @@ public:
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
-        bool quant_key_bychannel = compiled_model.get_property(ov::key_cache_quant_bychannel);
+        bool quant_key_bychannel = compiled_model.get_property("KEY_CACHE_QUANT_BYCHANNEL").as<bool>();
         OPENVINO_ASSERT(execution_devices.size() == 1, "Contituous batching: execution device is expected to be CPU or GPU, but got ", execution_devices.size(), " devices");
         m_device = execution_devices[0];
         

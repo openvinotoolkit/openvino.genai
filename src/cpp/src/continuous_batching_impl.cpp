@@ -165,7 +165,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
-
+    std::cout << "GenAI|OV_Version|" << ov::get_openvino_version() << std::endl;
     // Cache manager
     std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request, kv_cache_config);
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
