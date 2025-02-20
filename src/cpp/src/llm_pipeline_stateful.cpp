@@ -56,7 +56,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     ov::CompiledModel compiled_model;
-    if (device == "NPU") {
+    if (device.find("NPU") != std::string::npos) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
             model, properties, kv_pos, models_path
