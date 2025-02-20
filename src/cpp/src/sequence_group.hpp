@@ -457,7 +457,7 @@ public:
     }
 
     bool requires_sampling() const {
-        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && m_sampling_params.max_new_tokens > 0;
+        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && m_sampling_params.get_max_new_tokens(get_prompt_len()) > 0;
     }
 
     void schedule_tokens(size_t num_tokens) {

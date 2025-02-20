@@ -222,6 +222,7 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
         // to avoid selecting the same tokens for beams within group, let's just initialize score
         // for the front one
         group.ongoing.front().m_score = 0.0f;
+        group.prompt_len = this->m_sequence_group->get_prompt_len();
     }
 }
 
@@ -1036,7 +1037,7 @@ void Sampler::GroupBeamSearcher::Group::is_done() {
         return;
     }
     case ov::genai::StopCriteria::NEVER: {
-        size_t length = sampling_params.length_penalty > 0.0 ? sequence_group->get_max_new_tokens() : cur_len;
+        size_t length = sampling_params.length_penalty > 0.0 ? sequence_group->get_max_new_tokens(this->prompt_len) : cur_len;
         float highest_attainable_score = best_sum_logprobs / std::pow(float(length), sampling_params.length_penalty);
         done = worst_score >= highest_attainable_score;
         return;

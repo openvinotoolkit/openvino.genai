@@ -140,6 +140,7 @@ class Sampler::GroupBeamSearcher {
     struct Group {
         std::vector<Beam> ongoing;  // Best beams in front
         std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
+        size_t prompt_len;
         bool done = false;
 
         int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params);
