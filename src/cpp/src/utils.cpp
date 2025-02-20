@@ -496,9 +496,9 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
         if (!fin.is_open()) {
             OPENVINO_THROW("Blob file can't be opened: " + blob_path);
         }
-        compiled = ov::genai::utils::singleton_core().import_model(fin, "NPU", {});
-        kv_desc.max_prompt_len = compiled.get_property("NPUW_MAX_PROMPT_LEN").as<uint32_t>();
-        kv_desc.min_response_len = compiled.get_property("NPUW_MIN_RESPONSE_LEN").as<uint32_t>();
+        compiled = ov::genai::utils::singleton_core().import_model(fin, "NPU", config);
+        kv_desc.max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+        kv_desc.min_response_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
     } else {
         kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
         kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);

@@ -3,6 +3,7 @@
 
 import openvino_genai as ov_genai
 from openvino_genai import GenerationConfig
+import os
 
 import pytest
 import platform
@@ -27,12 +28,9 @@ if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64
 
 # This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
 default_config = {
-                      'NPU_USE_NPUW': 'YES',
-                      'NPUW_DEVICES': 'CPU',
-                      'NPUW_ONLINE_PIPELINE': 'NONE',
-                      'PREFILL_CONFIG': { },
-                      'GENERATE_CONFIG': { }
-                } | get_default_llm_properties()
+                     'NPUW_DEVICES': 'CPU',
+                     'NPUW_ONLINE_PIPELINE': 'NONE'
+                 } | get_default_llm_properties()
 
 static_config = { **default_config, 'STATIC_PIPELINE': 'STATEFUL' }
 
@@ -65,6 +63,32 @@ def test_generation_compare_with_stateful(generation_config, config):
 
     static_pipe = ov_genai.LLMPipeline(model_path, "NPU", **config)
     actual_out = static_pipe.generate(prompt, generation_config)
+
+    if ref_out != actual_out:
+        print(f'ref_out: {ref_out}\n')
+        print(f'actual_out: {actual_out}')
+    assert ref_out == actual_out
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", pipeline_configs)
+def test_pipeline_from_blob(config):
+    prompt = 'What is OpenVINO?'
+    model_path = read_model(get_models_list()[0])[1]
+    blob_path = "compiled_model.blob"
+
+    cpu_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
+
+    # NB: Generate the blob
+    npu_pipe = ov_genai.LLMPipeline(model_path, "NPU", **(config | { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path }))
+    del npu_pipe
+
+    # Import blob and check accuracy
+    weights_path = os.path.join(model_path,  'openvino_model.bin')
+    npu_pipe = ov_genai.LLMPipeline(model_path, "NPU", **(config | {"BLOB_PATH": blob_path, "WEIGHTS_PATH": weights_path }))
+    actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
     if ref_out != actual_out:
         print(f'ref_out: {ref_out}\n')
