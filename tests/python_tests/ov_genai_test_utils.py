@@ -15,7 +15,7 @@ import json
 
 import openvino_genai as ov_genai
 from common import delete_rt_info
-
+from utils.network import retry_request
 from utils.constants import get_default_llm_properties
 
 def get_models_list():
@@ -89,14 +89,14 @@ def read_model(params, **tokenizer_kwargs):
 
     from optimum.intel.openvino import OVModelForCausalLM
     from transformers import AutoTokenizer
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
     
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     if (models_path / "openvino_model.xml").exists():
-        opt_model = OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
-                                                       compile=False, device='CPU', ov_config=get_default_llm_properties())
+        opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
+                                                       compile=False, device='CPU', ov_config=get_default_llm_properties()))
     else:
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(hf_tokenizer,
                                                                              with_detokenizer=True,
@@ -107,8 +107,8 @@ def read_model(params, **tokenizer_kwargs):
         # to store tokenizer config jsons with special tokens
         hf_tokenizer.save_pretrained(models_path)
 
-        opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True,
-                                                       compile=False, device='CPU', load_in_8bit=False, ov_config=get_default_llm_properties())
+        opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True,
+                                                       compile=False, device='CPU', load_in_8bit=False, ov_config=get_default_llm_properties()))
         opt_model.generation_config.save_pretrained(models_path)
         opt_model.config.save_pretrained(models_path)
         opt_model.save_pretrained(models_path)

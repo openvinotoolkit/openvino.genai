@@ -221,7 +221,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         }
 
         if (m_embedding.has_value()) {
-            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids);
+            constexpr bool return_remote_tensor = true;
+            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
