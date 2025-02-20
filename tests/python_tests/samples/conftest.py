@@ -29,7 +29,7 @@ MODELS = {
         "convert_args": ['--trust-remote-code']
     },  
     "WhisperTiny": {
-        "name": "openai/whisper-tiny",
+        "name": "openai/whisper-tiny1",
         "convert_args": ['--trust-remote-code']
     },
     "Qwen2.5-0.5B-Instruct": {
@@ -106,7 +106,7 @@ def convert_model(request):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True))
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
             
     yield model_path
     
