@@ -83,7 +83,7 @@ public:
         m_kv_history_trim_manager.reset();
         if (!m_kv_cache_state->is_state_empty()) {
             m_history.clear();
-            m_kv_cache_state->reset();
+            m_kv_cache_state->reset_state();
         }
         if (system_message.empty()) {
             return;
@@ -103,7 +103,7 @@ public:
         m_kv_history_trim_manager.reset();
 
         m_history.clear();
-        m_kv_cache_state->reset();
+        m_kv_cache_state->reset_state();
     }
 
 protected:

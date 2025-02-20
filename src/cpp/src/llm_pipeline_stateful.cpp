@@ -313,7 +313,6 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
-    m_kv_cache_state->add_inputs(input_ids);
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
                                                                                 requests, position_ids, m_kv_cache_state, std::nullopt, std::nullopt);
     ov::genai::EncodedResults& result = finish_info.results;
@@ -330,7 +329,7 @@ EncodedResults StatefulLLMPipeline::generate(
             }
         }
     } else {
-        m_kv_cache_state->reset();
+        m_kv_cache_state->reset_state();
     }
 
     auto stop_time = std::chrono::steady_clock::now();
@@ -376,6 +375,7 @@ void StatefulLLMPipeline::finish_chat() {
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_history.clear();
         m_tokenized_chat_history.clear();
+        m_kv_cache_state->reset_state();
     }
 }
 
