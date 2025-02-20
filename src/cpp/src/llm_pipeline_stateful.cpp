@@ -17,7 +17,17 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config.has_value() ? *generation_config : GenerationConfig()),
-    m_model_runner(request) {}
+    m_model_runner(request) {
+    auto compiled_model = m_model_runner.get_compiled_model();
+    auto execution_devices = compiled_model.get_property(ov::execution_devices);
+    if (execution_devices[0].find("NPU") != std::string::npos) {
+        OPENVINO_ASSERT(execution_devices.size() == 1u);
+        m_is_npu = true;
+        const auto max_prompt_len = compiled_model.get_property("NPUW_MAX_PROMPT_LEN").as<uint32_t>();
+        const auto min_response_len = compiled_model.get_property("NPUW_MIN_RESPONSE_LEN").as<uint32_t>();
+        m_max_kv_cache_size = max_prompt_len + min_response_len;
+    }
+}
 
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
@@ -44,8 +54,10 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     utils::apply_slice_before_matmul_transformation(model);
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
-    if (device.find("NPU") != std::string::npos)
+    if (device.find("NPU") != std::string::npos) {
+        m_is_npu = true;
         m_use_full_chat_history = true;
+    }
 
     if (!m_use_full_chat_history)
         m_kv_history_manager.kv_cache_seq_length_axis = kv_pos.seq_len;
@@ -56,10 +68,10 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
     }
     ov::CompiledModel compiled_model;
-    if (device.find("NPU") != std::string::npos) {
+    if (m_is_npu) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
-            model, filtered_properties, kv_pos, models_path
+            model, *filtered_properties, kv_pos, models_path
         );
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
@@ -298,9 +310,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     auto batch_size = input_ids.get_shape().at(0);
 
-    auto execution_devices = m_model_runner.get_compiled_model().get_property(ov::execution_devices);
-    OPENVINO_ASSERT(execution_devices.size() == 1u);
-    if (execution_devices[0].find("NPU") != std::string::npos) {
+    if (m_is_npu) {
         OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
         OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
             "Currently only greedy and multinomial decoding are supported for NPU device!");

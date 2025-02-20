@@ -31,6 +31,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
+    bool m_is_npu = false;
 
     void reset_kv_state();
 public:
