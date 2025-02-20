@@ -5,7 +5,7 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
 
 #### Basic Generation Configuration
 
-1. Get the default config with `get_generation_config()`
+1. Get the model default config with `get_generation_config()`
 2. Modify parameters
 3. Apply the updated config:
     - Use `set_generation_config(config)`
@@ -65,7 +65,7 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
 - `top_p`: Selects from the smallest set of tokens whose cumulative probability exceeds p. Helps balance diversity and quality.
 - `repetition_penalty`: Reduces the likelihood of repeating tokens. Values above 1.0 discourage repetition.
 
-For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2024/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
+For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
 
 :::
 
@@ -122,6 +122,6 @@ Beam search helps explore multiple possible text completions simultaneously, oft
 - `num_beam_groups`: The number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
 - `diversity_penalty`: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
 
-For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2024/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
+For the full list of generation parameters, refer to the [API reference](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.GenerationConfig.html#openvino-genai-generationconfig).
 
 :::
