@@ -1,0 +1,22 @@
+.footer {
+  --ifm-footer-background-color: #f9f9f9;
+  --ifm-footer-title-color: var(--genai-color-text-black);
+  --ifm-footer-link-color: var(--genai-color-classic-blue);
+  --ifm-footer-color: var(--genai-color-text-black);
+  --ifm-footer-link-hover-color: var(--genai-color-darker-classic-blue);
+}
+
+.footer__links {
+  padding: 0 80px;
+  margin-bottom: 2rem;
+}
+
+.footer__col {
+  display: grid;
+  justify-content: center;
+}
+
+.footer__copyright {
+  white-space: pre-wrap;
+  font-size: 12px;
+}

@@ -1,0 +1,13 @@
+.breadcrumbs > .breadcrumbs__item:first-child {
+  display: none;
+}
+
+.breadcrumbs__link {
+  font-size: 14px;
+}
+
+.breadcrumbs__item:not(:last-child)::after {
+  background: none;
+  content: '/';
+  margin: 0;
+}

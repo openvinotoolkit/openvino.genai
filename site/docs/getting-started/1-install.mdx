@@ -1,0 +1,53 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Installing OpenVINO GenAI
+
+The OpenVINO GenAI flavor is available for installation via PyPI and Archive distributions. A detailed guide on how to build OpenVINO GenAI is available in the OpenVINO GenAI repository.
+
+## Installing via PyPI
+
+To install the GenAI flavor of OpenVINO via PyPI, follow the standard installation steps, but use the openvino-genai package instead of openvino:
+
+## Archive Installation
+
+The OpenVINO GenAI archive package includes the OpenVINO™ Runtime and Tokenizers. To install the GenAI flavor of OpenVINO from an archive file, follow the standard installation steps for your system but instead of using the vanilla package file, download the one with OpenVINO GenAI:
+
+### Linux
+
+<Tabs>
+  <TabItem value="x86_64" label="x86_64" default>
+    <Tabs>
+      <TabItem value="Ubuntu_24_04" label="Ubuntu 24.04">
+          ```bash
+          curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.5/linux/openvino_genai_ubuntu24_2024.5.0.0_x86_64.tar.gz --output openvino_genai_2024.5.0.0.tgz
+
+          tar -xf openvino_genai_2024.5.0.0.tgz
+          ```
+      </TabItem>
+      <TabItem value="Ubuntu_22_04" label="Ubuntu 22.04">
+          ```bash
+          curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.5/linux/openvino_genai_ubuntu22_2024.5.0.0_x86_64.tar.gz --output openvino_genai_2024.5.0.0.tgz
+
+          tar -xf openvino_genai_2024.5.0.0.tgz
+          ```
+       </TabItem>
+      <TabItem value="Ubuntu_20_04" label="Ubuntu 20.04">
+          ```bash
+          curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.5/linux/openvino_genai_ubuntu20_2024.5.0.0_x86_64.tar.gz  --output openvino_genai_2024.5.0.0.tgz
+
+          tar -xf openvino_genai_2024.5.0.0.tgz
+          ```
+       </TabItem>
+    </Tabs>
+  </TabItem>
+  <TabItem value="arm64" label="ARM 64-bit">
+    ```bash
+    curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.5/linux/openvino_genai_ubuntu20_2024.5.0.0_arm64.tar.gz -O openvino_genai_2024.5.0.0.tgz
+
+    tar -xf openvino_genai_2024.5.0.0.tgz
+    ```
+  </TabItem>
+</Tabs>
+
+### Windows
