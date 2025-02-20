@@ -21,7 +21,7 @@ from ov_genai_test_utils import (
 )
 
 from utils.hugging_face import convert_and_save_tokenizer
-
+from utils.network import retry_request
 
 def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
     delete_rt_info(configs, temp_path)
@@ -241,7 +241,7 @@ def test_special_tokens(tmp_path, prompt, model_id):
 
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params))
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
 
@@ -421,7 +421,7 @@ def test_load_special_tokens_from_tokenizer_config_and_config_json(model_tmp_pat
 def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(model_tmp_path):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
 
     special_tokens_map_json = {}
     token_str_int_map = {}
