@@ -40,18 +40,20 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::genai::GenerationConfig& generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
     utils::apply_slice_before_matmul_transformation(model);
-    m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(model);
 
-    ov::CompiledModel compiled_model;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters)) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.model.");
+    if (device.find("NPU") != std::string::npos)
+        m_use_full_chat_history = true;
+
+    if (!m_use_full_chat_history)
+        m_kv_history_manager.kv_cache_seq_length_axis = ov::genai::utils::get_kv_axes_pos(model).seq_len;
+
+    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    if (m_generation_config.adapters) {
+        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
-        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
-        m_model_runner = compiled_model.create_infer_request();
-    } else {
-        compiled_model = utils::singleton_core().compile_model(model, device, properties);
-        m_model_runner = compiled_model.create_infer_request();
     }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+    m_model_runner = compiled_model.create_infer_request();
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");
 
     // If eos_token_id was not provided, take value
@@ -131,12 +133,12 @@ DecodedResults StatefulLLMPipeline::generate(
             // if we met sequence with such combination of symbols, we cannot correctly subtract the new history from the old history
             // so let's check it out, find the trusted part and use it in on the next step
             size_t trusted_history_length = 0;
-            if (!m_tokenized_chat_history.empty()) {
+            if (!m_tokenized_chat_history.empty() && !m_use_full_chat_history) {
                 std::set<int64_t> stop_tokens = config.stop_token_ids;
                 trusted_history_length = ov::genai::utils::get_first_history_difference(prev_chat_tokens.input_ids, m_tokenized_chat_history, stop_tokens);
             }
 
-            if (m_tokenized_chat_history.empty()) {
+            if (m_tokenized_chat_history.empty() || m_use_full_chat_history) {
                 encoded_input = new_chat_tokens;
             } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_history_cache_need_to_update()) {
                 // does_history_cache_need_to_update will be true here if beam search is activated
@@ -298,7 +300,7 @@ EncodedResults StatefulLLMPipeline::generate(
                     "(input_ids, attention_mask, position_ids, beam_idx) "
                     "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-    if (m_kv_history_manager.reset_kv_cache)
+    if (m_kv_history_manager.reset_kv_cache || m_use_full_chat_history)
         reset_kv_state();
     else
         ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_history_manager.num_tokens_to_remove_from_kv_cache,
@@ -306,7 +308,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     size_t kv_cache_len = 0;
     ov::Tensor concatenated_attention_mask;
-    if (is_chat_conversation && !m_tokenized_chat_history.empty()) {
+    if (is_chat_conversation && !m_tokenized_chat_history.empty() && !m_use_full_chat_history) {
         OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
         // If history is saved in KV cache, concatenate new attention_mask with the already existing.
         // Between subsequent runs attention_mask should not be modified.

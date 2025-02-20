@@ -99,16 +99,18 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
-            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, properties);
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
@@ -116,9 +118,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
@@ -170,10 +172,11 @@ public:
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
 
-        m_clip_text_encoder->compile(device, properties);
-        m_unet->compile(device, properties);
-        m_vae->compile(device, properties);
+        m_clip_text_encoder->compile(device, *updated_properties);
+        m_unet->compile(device, *updated_properties);
+        m_vae->compile(device, *updated_properties);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -181,8 +184,11 @@ public:
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(generation_config.guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
 
         std::string negative_prompt = generation_config.negative_prompt != std::nullopt ? *generation_config.negative_prompt : std::string{};
+        auto infer_start = std::chrono::steady_clock::now();
         ov::Tensor encoder_hidden_states = m_clip_text_encoder->infer(positive_prompt, negative_prompt,
             batch_size_multiplier > 1);
+        auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
+        m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
@@ -210,7 +216,7 @@ public:
         }
     }
 
-    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) const override {
+    std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
         std::vector<int64_t> timesteps = m_scheduler->get_timesteps();
         OPENVINO_ASSERT(!timesteps.empty(), "Timesteps are not computed yet");
         int64_t latent_timestep = timesteps.front();
@@ -233,9 +239,13 @@ public:
             // - inpainting with strength < 1.0
             // - inpainting with non-specialized model
             if (!is_strength_max || return_image_latent) {
+                auto encode_start = std::chrono::steady_clock::now();
                 image_latent = m_vae->encode(proccesed_image, generation_config.generator);
-
-                // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with image_latent
+                m_perf_metrics.vae_encoder_inference_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                    std::chrono::steady_clock::now() - encode_start)
+                                                                    .count();
+                // in case of image to image or inpaining with strength < 1.0, we need to initialize initial latent with
+                // image_latent
                 if (!is_strength_max) {
                     image_latent.copy_to(latent);
                     latent = numpy_utils::repeat(latent, generation_config.num_images_per_prompt);
@@ -291,7 +301,10 @@ public:
             }
 
             // encode masked image to latent scape
+            auto encode_start = std::chrono::steady_clock::now();
             masked_image_latent = m_vae->encode(masked_image, generation_config.generator);
+            m_perf_metrics.vae_encoder_inference_duration += std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - encode_start).count();
             masked_image_latent = numpy_utils::repeat(masked_image_latent, generation_config.num_images_per_prompt * batch_size_multiplier);
         }
 
@@ -299,15 +312,22 @@ public:
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
-        m_clip_text_encoder->set_adapters(adapters);
-        m_unet->set_adapters(adapters);
+        if(adapters) {
+            if(auto updated_adapters = derived_adapters(*adapters)) {
+                adapters = updated_adapters;
+            }
+            m_clip_text_encoder->set_adapters(adapters);
+            m_unet->set_adapters(adapters);
+        }
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        const auto gen_start = std::chrono::steady_clock::now();
         using namespace numpy_utils;
+        m_perf_metrics.clean_up();
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
@@ -357,6 +377,7 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg), denoised, noisy_residual_tensor(ov::element::f32, {}), latent_model_input;
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
+            auto step_start = std::chrono::steady_clock::now();
             numpy_utils::batch_copy(latent, latent_cfg, 0, 0, generation_config.num_images_per_prompt);
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
@@ -367,11 +388,14 @@ public:
 
             ov::Tensor latent_model_input = is_inpainting_model() ? numpy_utils::concat(numpy_utils::concat(latent_cfg, mask, 1), masked_image_latent, 1) : latent_cfg;
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
+            auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred_tensor = m_unet->infer(latent_model_input, timestep);
+            auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+            m_perf_metrics.raw_metrics.unet_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
- 
+
             if (batch_size_multiplier > 1) {
                 noisy_residual_tensor.set_shape(noise_pred_shape);
 
@@ -401,15 +425,36 @@ public:
             denoised = it != scheduler_step_result.end() ? it->second : latent;
 
             if (callback && callback(inference_step, timesteps.size(), denoised)) {
-                return ov::Tensor(ov::element::u8, {});
-            }
-        }
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
-        return decode(denoised);
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
+                        .count();
+                return image;
+            }
+
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+        auto decode_start = std::chrono::steady_clock::now();
+        auto image = decode(denoised);
+        m_perf_metrics.vae_decoder_inference_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
+                .count();
+        m_perf_metrics.generate_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+        return image;
     }
 
     ov::Tensor decode(const ov::Tensor latent) override {
         return m_vae->decode(latent);
+    }
+
+    ImageGenerationPerfMetrics get_performance_metrics() override {
+        m_perf_metrics.load_time = m_load_time_ms;
+        return m_perf_metrics;
     }
 
 protected:
