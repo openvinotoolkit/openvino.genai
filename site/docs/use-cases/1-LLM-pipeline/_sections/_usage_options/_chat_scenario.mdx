@@ -153,7 +153,7 @@ You can also create your custom streamer for more sophisticated processing:
                 super().__init__()
                 # Initialization logic.
 
-            def put(self, token_id) -> bool:
+            def write(self, token_id) -> bool:
                 # Custom decoding/tokens processing logic.
 
                 # Returns a flag whether generation should be stopped, if true generation stops.
@@ -188,7 +188,7 @@ You can also create your custom streamer for more sophisticated processing:
         // Create custom streamer class
         class CustomStreamer: public ov::genai::StreamerBase {
         public:
-            bool put(int64_t token) {
+            bool write(int64_t token) {
                 // Custom decoding/tokens processing logic.
 
                 // Returns a flag whether generation should be stopped, if true generation stops.
