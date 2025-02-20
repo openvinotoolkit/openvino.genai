@@ -59,7 +59,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (device.find("NPU") != std::string::npos) {
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(
-            model, properties, kv_pos, models_path
+            model, filtered_properties, kv_pos, models_path
         );
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
