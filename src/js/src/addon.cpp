@@ -27,4 +27,4 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
 }
 
 // Register the addon with Node.js
-NODE_API_MODULE(genai-node, init_module)
+NODE_API_MODULE(openvino-genai-node, init_module)
