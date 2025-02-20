@@ -28,7 +28,7 @@ This reduces the number of infer requests to the main model, increasing performa
 
         def streamer(subword):
             print(subword, end='', flush=True)
-            return False
+            return openvino_genai.StreamingStatus.RUNNING
 
         def infer(model_dir: str, draft_model_dir: str, prompt: str):
             main_device = 'CPU'  # GPU can be used as well.
@@ -89,9 +89,9 @@ This reduces the number of infer requests to the main model, increasing performa
                 ov::genai::draft_model(draft_model_path, draft_device),
                 ov::genai::scheduler_config(scheduler_config));
 
-            auto streamer = [](std::string subword) {
-                std::cout << subword << std::flush;
-                return false;
+            auto streamer = [](std::string word) {
+                std::cout << word << std::flush;
+                return ov::genai::StreamingStatus::RUNNING;
             };
 
             pipe.generate("The Sun is yellow because", config, streamer);

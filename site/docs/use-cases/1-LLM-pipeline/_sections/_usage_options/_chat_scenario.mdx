@@ -70,8 +70,9 @@ A simple chat example (with grouped beam search decoding):
 
 For more interactive UIs during generation, you can stream output tokens.
 
-##### Streaming with Lambda Function
-In this example, a lambda function outputs words to the console immediately upon generation:
+##### Streaming Function
+
+In this example, a function outputs words to the console immediately upon generation:
 
 <LanguageTabs>
     <TabItemPython>
@@ -80,8 +81,11 @@ In this example, a lambda function outputs words to the console immediately upon
         pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
         # highlight-start
-        # Create a streamer lambda function
-        streamer = lambda x: print(x, end='', flush=True)
+        # Create a streamer function
+        def streamer(subword):
+            print(subword, end='', flush=True)
+            # Return flag corresponds whether generation should be stopped.
+            return ov_genai.StreamingStatus.RUNNING
         # highlight-end
 
         # highlight-next-line
@@ -110,10 +114,11 @@ In this example, a lambda function outputs words to the console immediately upon
             ov::genai::LLMPipeline pipe(model_path, "CPU");
 
             // highlight-start
-            // Create a streamer lambda function
-            std::function<bool(std::string)> streamer = [](std::string word) {
+            // Create a streamer function
+            auto streamer = [](std::string word) {
                 std::cout << word << std::flush;
-                return false;
+                // Return flag corresponds whether generation should be stopped.
+                return ov::genai::StreamingStatus::RUNNING;
             };
             // highlight-end
 
@@ -138,6 +143,7 @@ For more information, refer to the [chat sample](https://github.com/openvinotool
 :::
 
 ##### Custom Streamer Class
+
 You can also create your custom streamer for more sophisticated processing:
 
 <LanguageTabs>
@@ -156,8 +162,8 @@ You can also create your custom streamer for more sophisticated processing:
             def write(self, token_id) -> bool:
                 # Custom decoding/tokens processing logic.
 
-                # Returns a flag whether generation should be stopped, if true generation stops.
-                return False
+                # Return flag corresponds whether generation should be stopped.
+                return ov_genai.StreamingStatus.RUNNING
 
             def end(self):
                 # Custom finalization logic.
@@ -191,8 +197,8 @@ You can also create your custom streamer for more sophisticated processing:
             bool write(int64_t token) {
                 // Custom decoding/tokens processing logic.
 
-                // Returns a flag whether generation should be stopped, if true generation stops.
-                return false;
+                // Return flag corresponds whether generation should be stopped.
+                return ov::genai::StreamingStatus::RUNNING;
             };
 
             void end() {
