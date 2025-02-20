@@ -77,7 +77,7 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id, padding_side="left")
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
-    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.CONTINIOUS_BATCHING)
+    cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
 
     reference = ov_pipe.generate(prompt, **generation_config)
     generated = cb_pipe.generate(prompt, **generation_config)
