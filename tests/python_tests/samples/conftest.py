@@ -55,7 +55,7 @@ TEST_FILES = {
     "adapter_model.safetensors": "https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors"
 }
 
-SAMPLES_PY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python"))
+SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
 def pytest_addoption(parser):

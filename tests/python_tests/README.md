@@ -61,3 +61,8 @@ Or to run only the `whisper` tests:
 ```sh
 python -m pytest tests/python_tests/samples -m whisper
 ```
+
+If the `OV_CACHE` environment variable is set, all downloaded and converted models will be saved to the specified directory. This allows the models to be reused between runs, saving time and resources. For example:
+```sh
+OV_CACHE=$HOME/ov_cache python -m pytest tests/python_tests/ -m precommit
+```
