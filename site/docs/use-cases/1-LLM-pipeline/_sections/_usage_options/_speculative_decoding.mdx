@@ -27,8 +27,8 @@ This reduces the number of infer requests to the main model, increasing performa
         import threading
 
         def streamer(subword):
-                print(subword, end='', flush=True)
-                return False
+            print(subword, end='', flush=True)
+            return False
 
         def infer(model_dir: str, draft_model_dir: str, prompt: str):
             main_device = 'CPU'  # GPU can be used as well.
