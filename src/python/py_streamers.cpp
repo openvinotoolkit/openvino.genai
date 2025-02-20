@@ -83,7 +83,7 @@ void init_streamers(py::module_& m) {
                    return self.write(tokens);
                }
             },
-            "Put is called every time new token or vector of tokens is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops",
+            "Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled",
             py::arg("token"))
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
     OPENVINO_SUPPRESS_DEPRECATED_START

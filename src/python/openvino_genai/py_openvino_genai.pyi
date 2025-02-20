@@ -1533,7 +1533,7 @@ class StreamerBase:
         """
     def write(self, token: int | list[int]) -> StreamingStatus:
         """
-        Put is called every time new token or vector of tokens is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
+        Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
 class StreamingStatus:
     """
