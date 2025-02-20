@@ -129,8 +129,8 @@ def parse_args():
         "--language",
         type=str,
         choices=["en", "cn"],
-        default=None,
-        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+        default="en",
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'cn'.",
     )
     parser.add_argument(
         "--hf",
@@ -308,7 +308,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
         image=image_data,
@@ -321,8 +321,8 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    mask_data = ov.Tensor(np.array(mask.getdata()).reshape(1, mask.size[1], mask.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
+    mask_data = ov.Tensor(np.array(mask)[None])
     image_tensor = model.generate(
         prompt,
         image=image_data,
@@ -335,7 +335,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
     out = model.generate(prompt, image=image_data, do_sample=False, max_new_tokens=max_new_tokens)
     return out.texts[0]
 

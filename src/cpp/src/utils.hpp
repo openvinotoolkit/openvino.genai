@@ -117,7 +117,12 @@ ov::Core singleton_core();
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens);
 
-size_t get_seq_len_axis(std::shared_ptr<const ov::Model> model);
+struct KVAxesPosition {
+    size_t batch;
+    size_t seq_len;
+};
+
+KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 
 void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t seq_length_axis, std::optional<AdapterController> adapter_controller);
 

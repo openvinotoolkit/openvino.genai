@@ -123,7 +123,6 @@ class IterableStreamer(openvino_genai.StreamerBase):
             self.put_word(word)
             self.tokens_cache = []
             self.print_len = 0
-        self.put_word('\n')
         self.put_word(None)
 
 

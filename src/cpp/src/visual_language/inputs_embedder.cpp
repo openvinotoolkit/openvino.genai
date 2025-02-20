@@ -1508,8 +1508,16 @@ public:
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_templated_chat_history = std::move(new_templated_chat_history);
         } else {
+            std::string templated_prompt;
+            if (m_apply_chat_template) {
+                ChatHistory history({{{"role", "user"}, {"content", images_prompt.str()}}});
+                constexpr bool add_generation_prompt = true;
+                templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            } else {
+                templated_prompt = images_prompt.str();
+            }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
-            new_chat_tokens = phi3_v::split_tokenize(images_prompt.str(), m_tokenizer);
+            new_chat_tokens = phi3_v::split_tokenize(templated_prompt, m_tokenizer);
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }
