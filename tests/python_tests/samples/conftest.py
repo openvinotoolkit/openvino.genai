@@ -58,11 +58,6 @@ TEST_FILES = {
 SAMPLES_PY_DIR = os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python")))
 SAMPLES_CPP_DIR = os.environ.get("SAMPLES_CPP_DIR", os.getcwd())
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--cleanup-cache", action="store_true", default=False, help="Cleanup cache after tests"
-    )
-
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
@@ -81,7 +76,7 @@ def setup_and_teardown(request, tmp_path_factory):
     
     yield
     
-    if request.config.getoption("--cleanup-cache"):
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(ov_cache):
             logger.info(f"Removing temporary directory: {ov_cache}")
             shutil.rmtree(ov_cache)
@@ -116,7 +111,7 @@ def convert_model(request):
     yield model_path
     
     # Cleanup the model after tests
-    if request.config.getoption("--cleanup-cache"):
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
             logger.info(f"Removing converted model: {model_cache}")
             shutil.rmtree(model_cache)
@@ -142,7 +137,7 @@ def download_test_content(request):
         logger.info(f"Test content already exists at {file_path}")
     yield file_path
     # Cleanup the test content after tests
-    if request.config.getoption("--cleanup-cache"):
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(file_path):
             logger.info(f"Removing test content: {file_path}")
             os.remove(file_path)

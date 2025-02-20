@@ -49,7 +49,7 @@ List of currently supported `nightly` and `precommit` models can be found in tes
 ## Test Samples
 To test samples, set the `SAMPLES_PY_DIR` and `SAMPLES_CPP_DIR` environment variables to the directories containing your Python samples and built C++ samples respectively. The `SAMPLES_CPP_DIR` should point to the folder with built C++ samples, which can be installed using `smake --component samples_bin`. For example:
 ```sh
-SAMPLES_PY_DIR=openvino.genai/samples/python SAMPLES_CPP_DIR=openvino.genai/samples_bin python -m pytest tests/python_tests/samples -m samples
+SAMPLES_PY_DIR=openvino.genai/samples/python SAMPLES_CPP_DIR=openvino.genai/samples_bin python -m pytest tests/python_tests -m samples
 ```
 
 You can also use markers such as `llm` and `whisper` to run specific sets of tests. For example, to run only the `llm` tests:
@@ -64,5 +64,10 @@ python -m pytest tests/python_tests/samples -m whisper
 
 If the `OV_CACHE` environment variable is set, all downloaded and converted models will be saved to the specified directory. This allows the models to be reused between runs, saving time and resources. For example:
 ```sh
-OV_CACHE=$HOME/ov_cache python -m pytest tests/python_tests/ -m precommit
+OV_CACHE=$HOME/ov_cache python -m pytest tests/python_tests -m samples
+```
+
+If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted models will be removed right after the tests have stopped using them. Note that this does not affect the HuggingFace (HF) cache. For example:
+```sh
+CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
