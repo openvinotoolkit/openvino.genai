@@ -13,6 +13,8 @@ pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
+If NPU is the inference device, an additional option `--disable-stateful` is required. See [NPU with OpenVINO GenAI](https://docs.openvino.ai/nightly/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) for the detail.
+
 ## Prepare audio file
 
 Prepare audio file in wav format with sampling rate 16k Hz.
