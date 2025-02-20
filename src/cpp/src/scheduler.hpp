@@ -287,7 +287,7 @@ private:
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
                     if (num_scheduled_blocks > 0)
-                        m_block_manager->allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_ids());
+                        m_block_manager->allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_len());
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 
