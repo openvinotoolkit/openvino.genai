@@ -106,7 +106,7 @@ def convert_model(request):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True))
+        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
             
     yield model_path
     
