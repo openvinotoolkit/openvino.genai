@@ -118,7 +118,7 @@ def text2image(args):
 
 def read_image(path: str) -> openvino.Tensor:
     pic = Image.open(path).convert("RGB")
-    image_data = np.array(pic)
+    image_data = np.array(pic)[None]
     return openvino.Tensor(image_data)
 
 def image2image(args):
