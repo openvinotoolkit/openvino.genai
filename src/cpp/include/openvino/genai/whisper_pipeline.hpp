@@ -22,8 +22,9 @@ using RawSpeechInput = std::vector<float>;
 /**
  * Base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
  */
-
-class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
+class OPENVINO_GENAI_EXPORTS OPENVINO_DEPRECATED(
+    "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
+    ChunkStreamerBase : public StreamerBase {
 public:
     /// @brief put_chunk is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops

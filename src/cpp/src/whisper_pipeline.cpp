@@ -8,6 +8,7 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
+#include "logger.hpp"
 #include "utils.hpp"
 #include "whisper/context_tokens.hpp"
 #include "whisper/models/decoder.hpp"
@@ -59,6 +60,8 @@ std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::StreamerVar
         streamer_ptr = nullptr;
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
         if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(*streamer_obj)) {
+            ov::genai::Logger::warn(
+                "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.");
             streamer_ptr = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(chunk_streamer);
         } else {
             streamer_ptr = *streamer_obj;
