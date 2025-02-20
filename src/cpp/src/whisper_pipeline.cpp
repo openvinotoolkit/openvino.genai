@@ -8,7 +8,6 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
-#include "logger.hpp"
 #include "utils.hpp"
 #include "whisper/context_tokens.hpp"
 #include "whisper/models/decoder.hpp"
@@ -38,7 +37,6 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
 
     auto any_val = config_map.at(ov::genai::utils::STREAMER_ARG_NAME);
 
-    OPENVINO_SUPPRESS_DEPRECATED_START
     if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
         streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
     } else if (any_val.is<std::function<bool(std::string)>>()) {
@@ -46,7 +44,6 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     } else if (any_val.is<std::function<ov::genai::StreamingStatus(std::string)>>()) {
         streamer = any_val.as<std::function<ov::genai::StreamingStatus(std::string)>>();
     }
-    OPENVINO_SUPPRESS_DEPRECATED_END
 
     return streamer;
 }
@@ -55,23 +52,21 @@ std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::StreamerVar
                                                           ov::genai::Tokenizer& tokenizer) {
     std::shared_ptr<ov::genai::StreamerBase> streamer_ptr;
 
-    OPENVINO_SUPPRESS_DEPRECATED_START
     if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
         streamer_ptr = nullptr;
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
         if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(*streamer_obj)) {
-            ov::genai::Logger::warn(
-                "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.");
             streamer_ptr = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(chunk_streamer);
         } else {
             streamer_ptr = *streamer_obj;
         }
+        OPENVINO_SUPPRESS_DEPRECATED_END
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ov::genai::TextStreamer>(tokenizer, *callback);
     } else if (auto callback = std::get_if<std::function<ov::genai::StreamingStatus(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ov::genai::TextStreamer>(tokenizer, *callback);
     }
-    OPENVINO_SUPPRESS_DEPRECATED_END
 
     return streamer_ptr;
 }
