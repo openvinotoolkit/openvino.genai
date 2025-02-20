@@ -93,12 +93,10 @@ def convert_model(request):
     """Fixture to convert the model once for the session."""
     models_cache = request.config.cache.get("MODELS_DIR", None)
     model_id = request.param
-    if model_id not in MODELS:
-        raise ValueError(f"Model ID '{model_id}' not found in MODELS dictionary.")
     model_name = MODELS[model_id]["name"]
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
-    model_args = MODELS[model_id].get("convert_args", [])
+    model_args = MODELS[model_id]["convert_args"]
     model_hf_cache = os.environ.get("HF_HOME", os.path.join(model_cache, "hf_cache"))
     logger.info(f"Preparing model: {model_name}")
     # Convert the model if not already converted
