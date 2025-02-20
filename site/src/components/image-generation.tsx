@@ -63,17 +63,15 @@ export const ImageGeneration = () => {
   return (
     <Section.Container>
       <Section.Column>
-        <Section.Column>
-          <Section.Features features={FEATURES} />
-          <hr />
-          <LanguageTabs>
-            <TabItemPython>{pythonCodeBlock}</TabItemPython>
-            <TabItemCpp>{cppCodeBlock}</TabItemCpp>
-          </LanguageTabs>
-          <hr />
-          <ExploreCodeSamples link={'docs/category/samples'} />
-          <GoToDocumentation link={'docs/how-to-guides/image-generation'} />
-        </Section.Column>
+        <Section.Features features={FEATURES} />
+        <hr />
+        <LanguageTabs>
+          <TabItemPython>{pythonCodeBlock}</TabItemPython>
+          <TabItemCpp>{cppCodeBlock}</TabItemCpp>
+        </LanguageTabs>
+        <hr />
+        <ExploreCodeSamples link={'docs/category/samples'} />
+        <GoToDocumentation link={'docs/how-to-guides/image-generation'} />
       </Section.Column>
       <Section.Column>
         <Section.Title>Image generation API</Section.Title>
