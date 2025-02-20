@@ -1,6 +1,5 @@
 import Heading from '@theme/Heading';
 import Layout from '@theme/Layout';
-import clsx from 'clsx';
 
 import { ImageGeneration } from '../components/image-generation';
 import { ImageProcessing } from '../components/image-processing';
@@ -17,7 +16,7 @@ import { JSX } from 'react';
 
 function HomepageHeader() {
   return (
-    <header className={clsx('hero', styles.banner)}>
+    <header className={styles.banner}>
       <div className="container">
         <Heading as="h1" className={styles.titleContainer}>
           <div className={styles.title}>

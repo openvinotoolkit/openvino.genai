@@ -1,6 +1,5 @@
 import CodeBlock from '@theme/CodeBlock';
 import Heading from '@theme/Heading';
-import clsx from 'clsx';
 import { ComponentProps, ComponentType, JSX } from 'react';
 import styles from './styles.module.css';
 
@@ -38,7 +37,7 @@ print(ov_pipe.generate(read_wav("sample.wav)))`,
 function Feature({ title, Icon, code }: FeatureItem) {
   return (
     <div>
-      <div className={clsx('text--center', styles.featureHeader)}>
+      <div className={styles.featureHeader}>
         <Icon role="img" />
         <Heading as="h3" className={styles.featureHeading}>
           {title}
