@@ -7,13 +7,13 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
 
 #include "sampler.hpp"
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
@@ -92,7 +92,7 @@ public:
         );
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
         auto language_model = compiled_language_model.get_runtime_model();
-        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_kv_axes_pos(language_model).seq_len;
 
         m_language = compiled_language_model.create_infer_request();
 

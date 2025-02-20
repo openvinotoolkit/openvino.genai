@@ -265,10 +265,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
-    } else if (py::isinstance<py::object>(py_obj)) {
-        return py_obj;
     }
-    OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+    OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
 }
 
 } // namespace

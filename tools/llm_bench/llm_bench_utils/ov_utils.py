@@ -6,7 +6,6 @@ from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 from openvino import Core
 import openvino as ov
 import logging as log
-import torch
 import time
 import json
 import types
@@ -17,84 +16,10 @@ from llm_bench_utils.config_class import (
     DEFAULT_MODEL_CLASSES,
     IMAGE_GEN_CLS
 )
-try:
-    import openvino.opset13 as opset
-except ImportError:
-    import openvino.runtime.opset13 as opset
 from transformers import pipeline
 import openvino_genai as ov_genai
 import queue
 from transformers.generation.streamers import BaseStreamer
-
-GENAI_SUPPORTED_VLM = ["llava", "llava-next", "internvl-chat", "minicpmv"]
-
-
-def generate_simplified(self, *args, **kwargs):
-    if len(args):
-        raise Exception(f'Not empty args is not supported in generate_simplified, given: {args}')
-    # TODO: Check other ignored parameters and report about them
-
-    log.warning('Termination criteria is not supported in overridden generate, max_new_tokens only matters')
-
-    # TODO: Check if unsupported kwargs are provided
-
-    input_ids = kwargs['input_ids']
-    attention_mask = kwargs['attention_mask']
-
-    assert kwargs['num_beams'] == 1, "Overridden generate doesn't support num_beams > 1"
-
-    past_key_values = None
-
-    for _i in range(kwargs['max_new_tokens']):
-        outputs = self(input_ids=input_ids, attention_mask=attention_mask, past_key_values=past_key_values, use_cache=True)
-
-        next_tokens = outputs.logits  # logits is an old name from original model, when interprocessing is fused it is a token
-        # TODO: Apply termination criteria in addition to max_new_tokens
-        # TODO: Doing the cat with input_ids here, we will 'uncat' it later in the next forward,
-        # avoid doing it by passible next_tokens (without cat) directly to the next forward
-        input_ids = torch.cat([input_ids, next_tokens], dim=-1)
-        attention_mask = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
-        # Depending on whether we are in stateful mode, past_key_values may or may not represent meaningful values,
-        # need to pass them anyway to identify the first iteration
-        past_key_values = outputs.past_key_values
-
-    return input_ids
-
-
-def patch_decoding_strategy(hf_model, patch_methods, **kwargs):
-    """Fuse post-processing as an extra ops into a model."""
-    ov_model = hf_model.model
-
-    if kwargs.get('fuse_decoding_strategy', False):
-        ppp = ov.preprocess.PrePostProcessor(ov_model)
-
-        assert kwargs['num_beams'] == 1, "Parameter fuse_decoding_strategy doesn't support beam_search, set num_beams to 1"
-
-        def greedy_search(input_port):
-            next_token = opset.gather(input_port, opset.constant(-1), opset.constant(1))  # take last logits only (makes sense at the first iteration only)
-            topk = opset.topk(next_token, opset.constant(1), axis=-1, mode='max', sort='none').output(1)
-            return topk
-
-        ppp.output(0).postprocess().custom(greedy_search)
-
-        ov_model = ppp.build()
-        hf_model.model = ov_model
-        if patch_methods:
-            hf_model._orig_generate = hf_model.generate
-            hf_model.generate = types.MethodType(generate_simplified, hf_model)
-
-
-def save_model(hf_model, **kwargs):
-    xml_file_name = kwargs['save_prepared_model']
-    if xml_file_name is not None:
-        log.info(f'Saving prepared OpenVINO model to {xml_file_name} ...')
-        ov.save_model(hf_model.model, xml_file_name)
-
-
-def patch_inter_processing_and_compile(hf_model, **kwargs):
-    patch_decoding_strategy(hf_model, True, **kwargs)
-    save_model(hf_model, **kwargs)
-    hf_model.compile()
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -217,8 +142,6 @@ def create_text_gen_model(model_path, device, **kwargs):
             stateful=kwargs.get("stateful", None),
             trust_remote_code=remote_code
         )
-        if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
-            patch_inter_processing_and_compile(ov_model, **kwargs)
         end = time.perf_counter()
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
@@ -246,12 +169,12 @@ def get_scheduler_config_genai(user_config, config_name="CB config"):
 
 
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
-    import openvino_tokenizers  # noqa: F401
     import openvino_genai
     from transformers import AutoTokenizer
 
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
-        convert_ov_tokenizer(model_path)
+        raise ValueError("OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
+                         "convert_tokenizer --with-detokenizer MODEL_DIR --output MODEL_DIR ")
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -554,13 +477,13 @@ def get_vlm_processor(model_path):
     if model_type == "llava-qwen2":
         processor = AutoProcessor.from_pretrained(config.mm_vision_tower, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        preprocessors = {"processor": processor, "tokenizer": tokenizer}
+        preprocessors = {"processor": processor, "tokenizer": tokenizer, "config": config}
     elif model_type == "internvl_chat":
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
     else:
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-        preprocessors = {"processor": processor, "tokenizer": processor}
+        preprocessors = {"processor": processor, "tokenizer": processor, "config": config}
     return preprocessors
 
 
@@ -575,6 +498,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs):
     start = time.perf_counter()
     llm_pipe = openvino_genai.VLMPipeline(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
+    log.info("Selected OpenVINO GenAI for benchmarking")
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, processor_config, end - start, None, True
@@ -600,12 +524,12 @@ def create_image_text_gen_model(model_path, device, **kwargs):
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-            if model_config.model_type.replace("_", "-") in GENAI_SUPPORTED_VLM:
-                log.info("Selected OpenVINO GenAI for benchmarking")
+            try:
                 return create_genai_image_text_gen_model(model_path, device, ov_config, **kwargs)
-            else:
+            except Exception as exp:
                 log.warning(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                    f"GenAI pipeline loading failed with following error: {exp}"
                     "Benchmark will be switched to Optimum Intel pipeline realization"
                 )
 

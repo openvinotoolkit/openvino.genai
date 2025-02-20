@@ -9,6 +9,13 @@
 #include <fstream>
 #include <regex>
 #include <optional>
+#include <numeric>
+#include <iostream>
+#include <unordered_map>
+#include <unordered_set>
+#include <functional>
+#include <memory>
+#include <cmath>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
@@ -31,6 +38,7 @@
 #include "openvino/genai/lora_adapter.hpp"
 
 #include "utils.hpp"
+#include "lora_common.hpp"
 #include "lora_names_mapping.hpp"
 
 extern "C" {
@@ -49,6 +57,7 @@ namespace {
 using NodePtr = std::shared_ptr<ov::Node>;
 using ov::NodeVector;
 using namespace ov::op;
+using namespace ov::genai::utils;
 
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
 using Buffer = std::vector<char>;
@@ -57,22 +66,8 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 
 // Holds usual LoRA parameters alpha, A and B of a given type.
-template <typename T>
-struct LoRAParts {
-    T alpha, A, B;
-
-    LoRAParts() = default;
-    LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B) {}
-
-    template <typename Other>
-    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B) {}
-};
-
-
-using LoRAWeight = LoRAParts<std::shared_ptr<v0::Constant>>;
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
-using LoRATensors = std::map<std::string, LoRAWeight>;
 
 
 // Read binary file to memory.
@@ -157,28 +152,12 @@ ConstantMap read_safetensors(const std::filesystem::path& filename) {
 }
 
 
-// Holds a compiled regex pattern and an index to a particular capture group
-// operator() takes a string, parses it with that regex pattern and returns the capture group value
-struct RegexParser {
-    std::regex pattern;
-    size_t capture_index;
-    RegexParser (const std::string& pattern, size_t capture_index) : pattern(pattern), capture_index(capture_index) {}
-    std::optional<std::string> operator() (const std::string& name) {
-        std::smatch match;
-        if(std::regex_match(name, match, pattern)) {
-            return match[capture_index];
-        }
-        return std::nullopt;
-    }
-};
-
-
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {
     return LoRAPartsParser(
-        RegexParser(R"((.*)\.alpha)", 1),
-        RegexParser(R"((.*)\.(lora_(A|down)\.weight))", 1),
-        RegexParser(R"((.*)\.(lora_(B|up)\.weight))", 1)
+        RegexParser("(.*)\\.alpha", 1),
+        RegexParser("((.*)[_.](lora[_.](A|down)\\.weight))|((.*lora[12])\\.(down\\.weight))", {2, 6}),
+        RegexParser("((.*)[_.](lora[_.](B|up)\\.weight))|((.*lora[12])\\.(up\\.weight))", {2, 6})
     );
 }
 
@@ -311,7 +290,6 @@ struct LoRAWeightGetterDefault {
             std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
         }
     }
-
 };
 
 
@@ -570,7 +548,7 @@ NodePtr decompression_convert (NodePtr node) {
     }
     OPENVINO_ASSERT(
         std::dynamic_pointer_cast<v0::Constant>(node),
-        "Not supported decompression pattern at the weight input (presumably low-bit compression). Use f32/f16/bf16 weights only."
+        "LoRA adapter application: not supported decompression pattern at the weight input (presumably low-bit compression). Use f32/f16/bf16 weights only if MODE_FUSE is used."
     );
     return convert;
 }
@@ -793,6 +771,7 @@ public:
         NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
         replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1, transpose_in_end);
 
+        replacement->get_output_tensor(0).add_names(target.get_names());
         for (auto consumer : consumers) {
             consumer.replace_source_output(replacement->output(0));
         }
@@ -807,6 +786,47 @@ std::shared_ptr<v0::Constant> alpha_as_constant(float alpha) {
 }
 
 
+LoRATensors flux_normalization(const LoRATensors& tensors) {
+    // Check for specific substrings to improve performance, equivalent to chaining the preprocessors
+    // apply flux_xlabs_lora_preprocessing if at least one tensor in tensors has "processor" substring in its name
+    for(const auto& src_tensor: tensors) {
+        if(src_tensor.first.find("processor") != std::string::npos) {
+            return flux_xlabs_lora_preprocessing(tensors);
+        }
+    }
+    // apply flux_kohya_lora_preprocessing if at least one tensor in tensors has "lora_unet" substring in its name
+    for(const auto& src_tensor: tensors) {
+        if(src_tensor.first.find("lora_unet") != std::string::npos) {
+            return flux_kohya_lora_preprocessing(tensors);
+        }
+    }
+    return tensors;
+}
+
+LoRATensors diffusers_normalization (const LoRATensors& tensors) {
+    std::set<std::string> keys;
+    for(const auto& kv: tensors) {
+        keys.insert(kv.first);
+    }
+    auto mapping = maybe_map_non_diffusers_lora_to_diffusers(keys);
+    if(!mapping.empty()) {
+        LoRATensors new_tensors;
+        for(const auto& kv: tensors) {
+            auto it = mapping.find(kv.first);
+            if(it == mapping.end()) {
+                // pass
+                new_tensors[kv.first] = kv.second;
+            } else {
+                // replace key
+                new_tensors[it->second] = kv.second;
+            }
+        }
+        return new_tensors;
+    } else {
+        return tensors;
+    }
+}
+
 } // namespace
 
 
@@ -814,48 +834,97 @@ namespace ov {
 namespace genai {
 
 
-class Adapter::Impl {
+class AdapterImpl {
 public:
-    Impl(const std::filesystem::path& path) :
-        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
-    {
-        std::set<std::string> keys;
-        for(const auto& kv: tensors) {
-            keys.insert(kv.first);
-        }
-        auto mapping = maybe_map_non_diffusers_lora_to_diffusers(keys);
-        if(!mapping.empty()) {
-            LoRATensors new_tensors;
-            for(const auto& kv: tensors) {
-                auto it = mapping.find(kv.first);
-                if(it == mapping.end()) {
-                    // pass
-                    new_tensors[kv.first] = kv.second;
-                } else {
-                    // replace key
-                    new_tensors[it->second] = kv.second;
-                }
-            }
-            tensors = new_tensors;
-        }
+
+    virtual const LoRATensors& get_tensors() const = 0;
+    virtual bool eq(const AdapterImpl* other) const = 0;
+};
+
+class SafetensorsAdapterImpl : public AdapterImpl {
+public:
+
+    SafetensorsAdapterImpl(const std::filesystem::path& path) :
+        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())) {}
+
+    const LoRATensors& get_tensors() const override {
+        return tensors;
     }
+
+    bool eq(const AdapterImpl* other) const override {
+        if(auto other_casted = dynamic_cast<const SafetensorsAdapterImpl*>(other)) {
+            return other == this;
+        }
+        return false;
+    }
+
+private:
 
     LoRATensors tensors;
 };
 
 
+/// @brief Adapter that derived from another adapter by applying Derivation function.
+/// Two objects instanciated from the same Derivation type are equal when both origins and derivations are equal (while comparing with operator==).
+/// The derivation is postponed to the first call of get_tensors(), giving a way to compare Adapters without applying the derivation.
+/// It is supposed that Derivation works always in the same way and don't have a side effect.
+template <typename Derivation>
+class DerivedAdapterImpl : public AdapterImpl {
+public:
+
+    DerivedAdapterImpl(const std::shared_ptr<AdapterImpl>& origin, const Derivation& derivation) : origin(origin), derivation(derivation) {}
+
+    const LoRATensors& get_tensors() const override {
+        if(!tensors) {
+            tensors = derivation(origin->get_tensors());
+        }
+        return *tensors;
+    }
+
+    bool eq(const AdapterImpl* other) const override {
+        if(auto other_casted = dynamic_cast<const DerivedAdapterImpl<Derivation>*>(other)) {
+            return origin.get() == other_casted->origin.get() && derivation == other_casted->derivation;
+        }
+        return false;
+    }
+
+private:
+
+    std::shared_ptr<AdapterImpl> origin;
+    Derivation derivation;
+    mutable std::optional<LoRATensors> tensors;
+};
+
+
+Adapter diffusers_adapter_normalization(const Adapter& adapter) {
+    auto origin = adapter.m_pimpl;
+    using DiffusersDerivedAdapter = DerivedAdapterImpl<decltype(&diffusers_normalization)>;
+    if(std::dynamic_pointer_cast<DiffusersDerivedAdapter>(origin)) {
+        return adapter; // it is already derived adapter, skipping
+    }
+    return Adapter(std::make_shared<DiffusersDerivedAdapter>(origin, diffusers_normalization));
+}
+
+Adapter flux_adapter_normalization(const Adapter& adapter) {
+    auto origin = adapter.m_pimpl;
+    using FluxDerivedAdapter = DerivedAdapterImpl<decltype(&flux_normalization)>;
+    if(std::dynamic_pointer_cast<FluxDerivedAdapter>(origin)) {
+        return adapter; // it is already derived adapter, skipping
+    }
+    return Adapter(std::make_shared<FluxDerivedAdapter>(origin, flux_normalization));
+}
+
+
+Adapter::Adapter(const std::shared_ptr<AdapterImpl>& pimpl) : m_pimpl(pimpl) {}
+
+
 Adapter::Adapter(const std::filesystem::path& path) :
-    m_pimpl(std::make_shared<Adapter::Impl>(path)) {
+    m_pimpl(std::make_shared<SafetensorsAdapterImpl>(path)) {
 }
 
 
 bool operator== (const Adapter& a, const Adapter& b) {
-    return a.m_pimpl == b.m_pimpl;
-}
-
-
-bool operator< (const Adapter& a, const Adapter& b) {
-    return a.m_pimpl < b.m_pimpl;
+    return a.m_pimpl->eq(b.m_pimpl.get());
 }
 
 
@@ -875,9 +944,9 @@ struct AdapterControllerImpl {
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, config.get_tensor_name_prefix().value_or("")));
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->get_tensors(), config.get_tensor_name_prefix().value_or("")));
             if(params_getter.type != ov::element::f32) {
-                for(auto const& tensor : adapter_impl->tensors) {
+                for(auto const& tensor : adapter_impl->get_tensors()) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
                     OPENVINO_ASSERT(lora_tensor_type == tensor.second.B->get_output_element_type(0));
                     if(params_getter.type == ov::element::dynamic) {
@@ -940,7 +1009,7 @@ struct AdapterControllerImpl {
         }
     }
 
-    static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
+    static std::shared_ptr<AdapterImpl> get_adapter_impl(const Adapter& adapter) {
         return adapter.m_pimpl;
     }
 
@@ -1016,7 +1085,7 @@ struct AdapterControllerImpl {
         const auto& adapters = current_config.get_adapters();
         weight_getters.reserve(adapters.size());
         for(const auto& adapter: adapters) {
-            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, current_config.get_tensor_name_prefix().value_or("")));
+            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->get_tensors(), current_config.get_tensor_name_prefix().value_or("")));
         }
 
         auto state = infer_request.query_state();
@@ -1241,7 +1310,6 @@ struct AdapterControllerImpl {
             alpha_only ? ov::Tensor() : ov::Tensor(lora_var_ids.B.data_type, dynamic_to_static(lora_var_ids.B.data_shape))
         };
         auto new_tensors = prepare_lora_tensors(name, weight_getters, lora_state_tensors, /*set_empty_adapters=*/true, alpha_only);
-
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         if(!alpha_only) {
             state[lora_indices.A].set_state(new_tensors.A);
@@ -1398,6 +1466,24 @@ void AdapterConfig::update (const AdapterConfig& other) {
     }
     if(other.tensor_name_prefix) {
         tensor_name_prefix = other.tensor_name_prefix;
+    }
+}
+
+std::vector<std::pair<Adapter, float>> AdapterConfig::get_adapters_and_alphas() const {
+    OPENVINO_ASSERT(adapters.size() == alphas.size());
+    std::vector<std::pair<Adapter, float>> result;
+    for(size_t i = 0; i < adapters.size(); ++i) {
+        result.emplace_back(adapters[i], alphas[i]);
+    }
+    return result;
+}
+
+void AdapterConfig::set_adapters_and_alphas(const std::vector<std::pair<Adapter, float>>& _adapters) {
+    adapters.clear();
+    alphas.clear();
+    for(auto const& adapter_and_alpha: _adapters) {
+        adapters.push_back(adapter_and_alpha.first);
+        alphas.push_back(adapter_and_alpha.second);
     }
 }
 

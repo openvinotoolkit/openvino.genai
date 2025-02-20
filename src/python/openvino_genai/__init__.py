@@ -16,7 +16,8 @@ from .py_openvino_genai import (
     PerfMetrics,
     StreamerBase,
     get_version,
-    StreamingStatus
+    StreamingStatus,
+    TextStreamer
 )
 
 __version__ = get_version()
@@ -77,6 +78,8 @@ from .py_openvino_genai import (
     Generator,
     CppStdGenerator,
     TorchGenerator,
+    ImageGenerationPerfMetrics,
+    RawImageGenerationPerfMetrics,
 )
 
 # Continuous batching

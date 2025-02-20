@@ -220,8 +220,10 @@ def delete_rt_info(configs: List[Tuple], temp_path):
         rt_info = tokenizer.get_rt_info()
         for config, _ in configs:
             for key in config.keys():
-                try:
-                    del rt_info[key]
-                except KeyError:
-                    pass
+                # tokenizer_config.json contains strings instead of ids so the keys don't have "_id".
+                for modified_key in (key, key+"_id"):
+                    try:
+                        del rt_info[modified_key]
+                    except KeyError:
+                        pass
         openvino.save_model(tokenizer, model_path)
