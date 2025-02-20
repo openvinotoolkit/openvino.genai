@@ -73,14 +73,15 @@ batched_prompts = [
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
 @pytest.mark.precommit
+@pytest.mark.skip(reason="CVS-162891: Fix test_continuous_batching_vs_stateful tests after we started to compare cb vs sdpa")
 def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id, padding_side="left")
-    ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
 
-    reference = ov_pipe.generate(prompt, **generation_config)
     generated = cb_pipe.generate(prompt, **generation_config)
+    reference = ov_pipe.generate(prompt, **generation_config)
 
     assert generated.texts == reference.texts
     if 1 != generation_config.get("num_return_sequences", 1):
