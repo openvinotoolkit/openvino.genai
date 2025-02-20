@@ -300,7 +300,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     auto execution_devices = m_model_runner.get_compiled_model().get_property(ov::execution_devices);
     OPENVINO_ASSERT(execution_devices.size() == 1u);
-    if (execution_devices.front() == "NPU") {
+    if (execution_devices[0].find("NPU") != std::string::npos) {
         OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
         OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
             "Currently only greedy and multinomial decoding are supported for NPU device!");
