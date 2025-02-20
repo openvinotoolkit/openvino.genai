@@ -19,6 +19,7 @@ from ov_genai_test_utils import (
     read_model,
     model_tmp_path,
 )
+import functools
 
 from utils.hugging_face import convert_and_save_tokenizer
 from utils.network import retry_request
@@ -269,12 +270,28 @@ def test_special_tokens(tmp_path, prompt, model_id):
     assert decoded_genai_skip_spec != decoded_genai_no_skip
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
+@pytest.fixture
+def hf_ov_genai_models(tmp_path_factory):
+
+    @functools.lru_cache(maxsize=2)
+    def _get_model_path(model_id, subfolder):
+        model_dir = tmp_path_factory.getbasetemp() / model_id.replace('/', '_')
+        model_dir.mkdir(exist_ok=True, parents=True)
+        tokenizer_path = model_dir / "openvino_tokenizer.xml"
+
+        hf_tokenizer = AutoTokenizer.from_pretrained(model_id, subfolder=subfolder)
+        if not tokenizer_path.exists():
+            convert_and_save_tokenizer(hf_tokenizer, model_dir)
+        genai_tokenzier = Tokenizer(model_dir)
+        return hf_tokenizer, genai_tokenzier
+    return _get_model_path
+
 prompts = [
     ['1+1=', 'What is the previous answer?'],
     'What is the previous answers? ' * 1000,  # long sentence exceeding max_length, check that is truncated
     'what',                                   # check that short sentence is padded to long
     # check that large batch with multilangual data is correctly padded
-    [   
+    [
         '1+1=',
         'What is the previous answer?',
         'Why is the Sun yellow?',
@@ -290,10 +307,16 @@ prompts = [
 @pytest.mark.parametrize("max_length", [None, 10, 16, 64, 77, 103, 512, 1024])
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
-def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
-    model_descr = get_models_list()[0]
-    model_id, path, hf_tokenizer, model_opt, ov_pipe = read_model((model_descr[0], model_descr[1]))
-    genai_tokenzier = ov_pipe.get_tokenizer()
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-phi3",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "BAAI/bge-small-en-v1.5",  # model with 2 RaggedToDense ops
+    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+])
+def test_padding(hf_ov_genai_models, add_special_tokens, max_length, pad_to_max_length, prompt, model_id):
+    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+    
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models(model_id, subfolder=hf_tok_load_params.get("subfolder", None))
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied 
     # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
@@ -315,7 +338,6 @@ def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
         
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
-
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
