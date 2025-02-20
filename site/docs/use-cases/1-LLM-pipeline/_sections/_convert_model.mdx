@@ -11,12 +11,12 @@
         <Tabs groupId="export-precision">
             <TabItem label="Compress weights to the int4 precision" value="int4">
                 ```bash
-                optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --trust-remote-code --weight-format int4 ov_llama_2_7b_int4
+                optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --weight-format int4 ov_llama_2_7b_int4 --trust-remote-code
                 ```
             </TabItem>
             <TabItem label="Keep full model precision" value="fp16">
                 ```bash
-                optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --trust-remote-code --weight-format fp16 ov_llama_2_7b_fp16
+                optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --weight-format fp16 ov_llama_2_7b_fp16 --trust-remote-code
                 ```
             </TabItem>
         </Tabs>
@@ -51,17 +51,17 @@
         <Tabs groupId="export-precision">
             <TabItem label="INT4" value="int4">
                 ```bash
-                optimum-cli export openvino -m model_path --task text-generation-with-past --weight-format int4 ov_qwen2_7b_int4
+                optimum-cli export openvino -m model_path --weight-format int4 ov_qwen2_7b_int4 --task text-generation-with-past
                 ```
             </TabItem>
             <TabItem label="INT8" value="int8">
                 ```bash
-                optimum-cli export openvino -m model_path --task text-generation-with-past --weight-format int8 ov_qwen2_7b_int8
+                optimum-cli export openvino -m model_path --weight-format int8 ov_qwen2_7b_int8 --task text-generation-with-past
                 ```
             </TabItem>
             <TabItem label="FP16" value="fp16">
                 ```bash
-                optimum-cli export openvino -m model_path --task text-generation-with-past --weight-format fp16 ov_qwen2_7b_fp16
+                optimum-cli export openvino -m model_path --weight-format fp16 ov_qwen2_7b_fp16 --task text-generation-with-past
                 ```
             </TabItem>
         </Tabs>
