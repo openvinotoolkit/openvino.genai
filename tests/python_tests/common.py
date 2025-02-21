@@ -17,7 +17,6 @@ from typing import List, Tuple, Callable
 from utils.generation_config import get_greedy, get_beam_search
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model, run_hugging_face
-from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import dict_to_scheduler_config, run_ov_pipeline, StreamerWithResults, PipelineType
 
@@ -81,7 +80,7 @@ def run_llm_pipeline_with_ref(model_id: str,
     if type(generation_config) is dict:
         generation_config = GenerationConfig(**generation_config)
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, Path(tmp_path.name))
 
     ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
@@ -91,11 +90,7 @@ def run_llm_pipeline_with_ref(model_id: str,
 
 def run_cb_pipeline_with_ref(tmp_path: str,
                              model_id: str,
-                             scheduler_params: dict = {},
-                             generation_config : GenerationConfig | dict = None):
-def run_cb_pipeline_with_ref(tmp_path: str,
-                             model_id: str,
-                             scheduler_params: dict = {},
+                             scheduler_params: dict = get_default_llm_properties(),
                              generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = dict_to_scheduler_config(scheduler_params)
@@ -108,7 +103,6 @@ def run_cb_pipeline_with_ref(tmp_path: str,
         generation_configs = [generation_config] * len(prompts)
 
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
@@ -117,7 +111,11 @@ def run_cb_pipeline_with_ref(tmp_path: str,
 
 
 # TODO: remove after Generator property is supported by LLMPipeline / VLMPipeline
-def generate_and_compare_with_reference_text(models_path: Path, prompts: List[str], reference_texts_per_prompt: List[List[str]], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
+def generate_and_compare_with_reference_text(models_path: Path,
+                                             prompts: List[str],
+                                             reference_texts_per_prompt: List[List[str]],
+                                             generation_configs: List[GenerationConfig],
+                                             scheduler_config: SchedulerConfig):
     ov_results : List[GenerationResult] = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
     assert len(prompts) == len(reference_texts_per_prompt)

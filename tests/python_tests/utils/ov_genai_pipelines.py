@@ -9,6 +9,7 @@ from shutil import rmtree
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
     LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
 
+from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results
 
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
@@ -35,7 +36,7 @@ def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
 
 class PipelineType(Enum):
     STATEFUL = 1
-    STATELESS = 2
+    PAGED_ATTENTION = 2
     CONTINIOUS_BATCHING = 3
     SPECULATIVE_DECODING = 4
     PROMPT_LOOKUP_DECODING = 5
@@ -81,7 +82,7 @@ def create_ov_pipeline(models_path: Path,
 
 
 def prepare_generation_config_by_pipe_type(generation_config : GenerationConfig,
-                                           pipeline_type: PipelineType = PipelineType.STATEFUL):
+                                           pipeline_type: PipelineType = PipelineType.PAGED_ATTENTION):
     if pipeline_type == PipelineType.SPECULATIVE_DECODING:
         generation_config.assistant_confidence_threshold = 0.9
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
@@ -90,7 +91,7 @@ def prepare_generation_config_by_pipe_type(generation_config : GenerationConfig,
     return generation_config
 
 def prepare_generation_configs_by_pipe_type(generation_configs : List[GenerationConfig],
-                                            pipeline_type: PipelineType = PipelineType.STATEFUL):
+                                            pipeline_type: PipelineType = PipelineType.PAGED_ATTENTION):
     return [ prepare_generation_config_by_pipe_type(generation_config, pipeline_type) for generation_config in generation_configs ]
 
 
@@ -117,7 +118,7 @@ def convert_decoded_results_to_generation_result(generate_outputs: DecodedResult
 def run_ov_pipeline(models_path: Path,
                     prompt : str | List[str],
                     generation_config : GenerationConfig | List[GenerationConfig],
-                    pipeline_type : PipelineType = PipelineType.STATEFUL,
+                    pipeline_type : PipelineType = PipelineType.PAGED_ATTENTION,
                     streamer: StreamerWithResults | Callable | StreamerBase = None,
                     scheduler_config: SchedulerConfig = SchedulerConfig(),
                     draft_model: draft_model = None,
