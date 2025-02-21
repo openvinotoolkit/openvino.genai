@@ -39,6 +39,20 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
+          async sidebarItemsGenerator({ defaultSidebarItemsGenerator, ...args }) {
+            const excludeCategories = args.item.customProps?.excludeCategories as
+              | string[]
+              | undefined;
+
+            const sidebarItems = await defaultSidebarItemsGenerator(args);
+
+            return sidebarItems.filter((item) => {
+              if (excludeCategories && item.type === 'category') {
+                return !excludeCategories.includes(item.label);
+              }
+              return true;
+            });
+          },
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl: `https://github.com/${organizationName}/${projectName}/tree/main/site`,
@@ -65,7 +79,7 @@ const config: Config = {
       items: [
         {
           type: 'docSidebar',
-          sidebarId: 'gettingStartedSidebar',
+          sidebarId: 'genaiDocsSidebar',
           position: 'left',
           label: 'Documentation',
           to: '/docs',
