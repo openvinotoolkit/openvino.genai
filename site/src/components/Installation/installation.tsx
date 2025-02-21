@@ -56,6 +56,15 @@ export const Installation = () => {
         Get started with seamless installation now!
       </p>
       <InstallationOptions />
+      <div>
+        <Button
+          label="Get Started"
+          link="/docs/getting-started/introduction"
+          size="lg"
+          outline={false}
+          variant="primary"
+        />
+      </div>
     </section>
   );
 };
