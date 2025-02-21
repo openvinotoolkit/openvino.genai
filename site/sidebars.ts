@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
           label: 'Installation',
           href: 'https://docs.openvino.ai/2025/get-started/install-openvino.html?PACKAGE=OPENVINO_GENAI&VERSION=v_2025_0_0&OP_SYSTEM=WINDOWS&DISTRIBUTION=PIP',
         },
+        'getting-started/quick-start-guide',
       ],
     },
     {
