@@ -126,8 +126,8 @@ int main(int argc, char* argv[]) {
     LLMPipelineGenerate(pipe, options.prompt, output, MAX_OUTPUT_LENGTH, config);
 
     DecodedResultsHandle* results = LLMPipelineGenerateDecodeResults(pipe, options.prompt, config);
-    
-    DecodeResultsGetString(results,output,MAX_OUTPUT_LENGTH);
+
+    DecodeResultsGetString(results, output, MAX_OUTPUT_LENGTH);
     printf("%s\n", output);
 
     PerfMetricsHandle* metrics = CreatePerfMetrics();
