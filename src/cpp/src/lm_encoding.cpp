@@ -229,7 +229,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         // we don't need to keep state for non chat mode and for beam_search in chat mode
         // in case of beam_search in chat mode, kv cache contains info about longest generated result among all sequences
-        // let's remove last answer from kv_cache and include it to the prompt on the next step
+        // last answer will be removed from kv_cache and will be included to the prompt on the next step
         if (new_input_ids.get_size() == 1)
             kv_cache_state.add_inputs(new_input_ids);
 
@@ -336,7 +336,9 @@ void align_kv_cache_and_history(ov::genai::KVCacheTrimManager& kv_history_manage
         return;
 
     size_t first_diverse_tokens_idx = ov::genai::utils::get_first_history_difference(new_chat_tokens, state);
-    kv_history_manager.num_tokens_to_trim = state.size() - first_diverse_tokens_idx;
+    // in the case of beam_search the longest answer is in the kv cache, but the best one is needed
+    // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated serquence
+    kv_history_manager.num_tokens_to_trim = kv_history_manager.num_tokens_to_trim > 0 ? kv_history_manager.num_tokens_to_trim : (state.size() - first_diverse_tokens_idx);
     state.resize(first_diverse_tokens_idx);
 }
 
