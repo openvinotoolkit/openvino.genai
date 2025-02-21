@@ -10,7 +10,7 @@ interface GoToLinkProps {
 
 export const GoToLink = ({ link, name }: GoToLinkProps) => {
   return (
-    <Link className={styles.goToLink} href={link} target="_blank" rel="noopener noreferrer">
+    <Link className={styles.goToLink} href={link}>
       {name} <ChevronRight />
     </Link>
   );
