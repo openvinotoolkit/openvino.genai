@@ -504,12 +504,11 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
         kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
         update_npu_config(properties, model, kv_pos, kv_desc);
         auto cache_mode = get_option<CacheMode>(config, ov::cache_mode.name());
-        // NB: OPTIMIZE_SIZE is only possible when model_path is defined!
-        // Otherwise, switch to OPTIMIZE_SPEED
-        if (cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SIZE && !model_path.empty()) {
-            compiled = ov::genai::utils::singleton_core().compile_model(model_path, "NPU", properties);
-        } else {
+        // NB: Select OPTIMIZE_SPEED with model_path isn't provided
+        if ((cache_mode.has_value() && *cache_mode == CacheMode::OPTIMIZE_SPEED) || model_path.empty()) {
             compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        } else {
+            compiled = ov::genai::utils::singleton_core().compile_model(model_path, "NPU", properties);
         }
         // Also export compiled model if required
         if (export_blob) {
