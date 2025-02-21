@@ -7,6 +7,7 @@ import pytest
 import openvino
 
 from optimum.intel import OVModelForCausalLM
+from optimum.intel.openvino.utils import TemporaryDirectory
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, SchedulerConfig, GenerationResult, GenerationConfig, DecodedResults, StopCriteria, StreamerBase, Tokenizer
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -15,6 +16,7 @@ from typing import List, Tuple, Callable
 
 from utils.generation_config import get_greedy, get_beam_search
 from utils.constants import get_default_llm_properties
+from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import dict_to_scheduler_config, run_ov_pipeline, StreamerWithResults, PipelineType
@@ -73,7 +75,7 @@ def run_llm_pipeline(
 def run_llm_pipeline_with_ref(model_id: str, 
                               prompts: List[str], 
                               generation_config: GenerationConfig | dict, 
-                              tmp_path: Path, 
+                              tmp_path: Path | TemporaryDirectory = TemporaryDirectory(), 
                               use_cb : bool = False,
                               streamer: StreamerWithResults | Callable | StreamerBase = None):
     if type(generation_config) is dict:
@@ -91,7 +93,12 @@ def run_cb_pipeline_with_ref(tmp_path: str,
                              model_id: str,
                              scheduler_params: dict = {},
                              generation_config : GenerationConfig | dict = None):
+def run_cb_pipeline_with_ref(tmp_path: str,
+                             model_id: str,
+                             scheduler_params: dict = {},
+                             generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
+    scheduler_config = dict_to_scheduler_config(scheduler_params)
     scheduler_config = dict_to_scheduler_config(scheduler_params)
 
     # override dataset's generation config
@@ -100,6 +107,7 @@ def run_cb_pipeline_with_ref(tmp_path: str,
             generation_config = GenerationConfig(**generation_config)
         generation_configs = [generation_config] * len(prompts)
 
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)

@@ -83,7 +83,7 @@ def print_generated(iter_num, warm_up=False, generated=None, prompt_idx=-1):
     if generated is not None:
         try:
             log.info(f'{prefix} Generated: {generated}')
-        except UnicodeError:
+        except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
             try:
                 utf8_generated = generated.encode(encoding="utf-8", errors="replace").decode()
                 log.info(f'{prefix} Generated: {utf8_generated}')

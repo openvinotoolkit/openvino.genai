@@ -3,17 +3,19 @@
 
 from os.path import sep
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM
+from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
 from utils.constants import get_default_llm_properties
+from utils.network import retry_request
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -157,8 +159,8 @@ def run_hugging_face(
 
 # download HF model or read converted model
 def get_hugging_face_models(model_id: str | Path):
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+    opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties()))
     return opt_model, hf_tokenizer
 
 
@@ -188,10 +190,11 @@ def convert_models(opt_model : OVModelForCausalLM,
 
 
 def download_and_convert_model(model_id: str,
-                               tmp_path: Path,
+                               tmp_path: Path | TemporaryDirectory = TemporaryDirectory(),
                                **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
-    models_path : Path = tmp_path / dir_name
+    models_path = (TemporaryDirectory() if tmp_path == None else Path(tmp_path.name)) / dir_name
+
     from utils.constants import OV_MODEL_FILENAME
     if (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_hugging_face_models(models_path)

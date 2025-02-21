@@ -1,9 +1,9 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import pathlib
-import os
+from pathlib import Path
 import pytest
+from os.path import sep
 
 
 def get_models_list():
@@ -45,8 +45,7 @@ def get_models_list():
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
 
-    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
-    return [ (model_id, prefix) for model_id in model_ids ]
+    return model_ids
 
 
 def get_chat_models_list():
@@ -67,5 +66,4 @@ def get_chat_models_list():
     else:
         model_ids = nightly_models
 
-    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
-    return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
+    return model_ids

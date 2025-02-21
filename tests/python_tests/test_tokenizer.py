@@ -9,8 +9,13 @@ import numpy as np
 import dataclasses
 import openvino
 import typing
+import functools
 from transformers import AutoTokenizer
 from typing import Dict, Tuple, List
+import functools
+
+from utils.hugging_face import convert_and_save_tokenizer
+from utils.network import retry_request
 
 from openvino_genai import Tokenizer
 
@@ -32,10 +37,6 @@ def load_genai_tokenizer_with_configs(configs: List[Tuple], temp_path):
             json.dump(config_json, f)
 
     ov_tokenizer = Tokenizer(temp_path)
-
-    for _, config_name in configs:
-        os.remove(temp_path / config_name)
-
     return ov_tokenizer
 
 
@@ -106,16 +107,13 @@ prompts = [
     'The Sun is yellow because',
     ['The Sun is yellow because', 'Alan Turing was a', 'Alan Turing was a']
 ]
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_encode(model_descr, prompt):
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+def test_encode(model_id, prompt):
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     ov_tokenizer = ov_pipe.get_tokenizer()
 
@@ -142,15 +140,12 @@ encoded_prompts = [
     # batched tokens
     [[1, 1591, 338, 1754, 310], [1, 1591, 338, 1754, 310], [1, 17102,   323,  3864,   471,   263]]
 ]
-@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
-def test_decode(model_descr, encoded_prompt):
-    model_id, tmp_path = model_descr
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+def test_decode(model_id, encoded_prompt):
+    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     ov_tokenizer = ov_pipe.get_tokenizer()
     decoded_ov = ov_tokenizer.decode(encoded_prompt)
@@ -176,16 +171,14 @@ conversation = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize('chat_config', get_chat_templates())
-def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict], model_id):
     tokenizer_config = chat_config[1]
 
     # Will load openvino_model for tiny-random-phi as a placeholder
     # but indeed only Tokenizer and apply_chat_template will be tested.
-    model_id, tmp_path = get_models_list()[0]
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+    _, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(conversation,
@@ -211,12 +204,10 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-def test_set_chat_template():
-    model_id, tmp_path = get_models_list()[0]
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_set_chat_template(model_id):
+    _, _, models_path = download_and_convert_model(model_id)
+    ov_pipe = create_ov_pipeline(models_path=models_path)
 
     prompt = "how are you?"
     dummy_conversation = [
@@ -235,16 +226,19 @@ def test_set_chat_template():
     assert prompt == templated_prompt
 
 
-prompts = [
+eng_prompts = [
     '1+1=',
     'What is the previous answer?',
     'Why is the Sun yellow?',
     'What was my first question?',
     ['Why is the Sun yellow?'],
+    "Multiline\nstring\nWow!",
+]
+unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
     "如果您有任何疑问，请联系我们，我们将予以解答。",
     "מחרוזת בדיקה",
-    "Multiline\nstring!\nWow!",
-]
+])]
+
 @pytest.mark.parametrize("model_id", [
     "katuni4ka/tiny-random-phi3",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -252,14 +246,13 @@ prompts = [
 ])
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_special_tokens(tmp_path, prompt, model_id):
-    if sys.platform.startswith('win') and isinstance(prompt, str) and (prompt.startswith('如') or prompt.endswith('ה')):
-        pytest.skip("CVS-160780 - Fails on Win with 'RuntimeError: No mapping for the Unicode character exists in the target multi-byte code page'")
+    prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params)
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params))
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
 
@@ -287,12 +280,28 @@ def test_special_tokens(tmp_path, prompt, model_id):
     assert decoded_genai_skip_spec != decoded_genai_no_skip
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
+@pytest.fixture
+def hf_ov_genai_models(tmp_path_factory):
+
+    @functools.lru_cache(maxsize=2)
+    def _get_model_path(model_id, subfolder):
+        model_dir = tmp_path_factory.getbasetemp() / model_id.replace('/', '_')
+        model_dir.mkdir(exist_ok=True, parents=True)
+        tokenizer_path = model_dir / "openvino_tokenizer.xml"
+
+        hf_tokenizer = AutoTokenizer.from_pretrained(model_id, subfolder=subfolder)
+        if not tokenizer_path.exists():
+            convert_and_save_tokenizer(hf_tokenizer, model_dir)
+        genai_tokenzier = Tokenizer(model_dir)
+        return hf_tokenizer, genai_tokenzier
+    return _get_model_path
+
 prompts = [
     ['1+1=', 'What is the previous answer?'],
     'What is the previous answers? ' * 1000,  # long sentence exceeding max_length, check that is truncated
     'what',                                   # check that short sentence is padded to long
     # check that large batch with multilangual data is correctly padded
-    [   
+    [
         '1+1=',
         'What is the previous answer?',
         'Why is the Sun yellow?',
@@ -308,14 +317,16 @@ prompts = [
 @pytest.mark.parametrize("max_length", [None, 10, 16, 64, 77, 103, 512, 1024])
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 @pytest.mark.parametrize("prompt", prompts)
-def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
-    model_id, tmp_path = get_models_list()[0]
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
-    ov_pipe = create_ov_pipeline(models_path=models_path,
-                                 pipeline_type=PipelineType.STATEFUL,
-                                 ov_config=get_disabled_mmap_ov_config())
-
-    genai_tokenzier = ov_pipe.get_tokenizer()
+@pytest.mark.parametrize("model_id", [
+    "katuni4ka/tiny-random-phi3",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "BAAI/bge-small-en-v1.5",  # model with 2 RaggedToDense ops
+    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+])
+def test_padding(hf_ov_genai_models, add_special_tokens, max_length, pad_to_max_length, prompt, model_id):
+    model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
+    
+    hf_tokenizer, genai_tokenzier = hf_ov_genai_models(model_id, subfolder=hf_tok_load_params.get("subfolder", None))
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied 
     # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor 
@@ -337,7 +348,6 @@ def test_padding(add_special_tokens, max_length, pad_to_max_length, prompt):
         
     ov_res = genai_tokenzier.encode(prompt, **ov_params)
     hf_res = hf_tokenizer(prompt, return_tensors="np", **hf_params)
-
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
 
@@ -373,8 +383,7 @@ def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
-@pytest.mark.skip(reason="CVS-158682 - RTInfo is not modified in tests for unknown reasons")
-def test_load_special_tokens_from_tokenizer_config_json(model_tokenizers_tmp_path):
+def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
     # special_tokens_map is not available
     # but tokenize_config.json exists
     # will load both string and integer representations
@@ -389,7 +398,7 @@ def test_load_special_tokens_from_tokenizer_config_json(model_tokenizers_tmp_pat
         "eos_token": "</s>",
     }
 
-    tok = load_genai_tokenizer_with_configs([(tok_config_json, "tokenizer_config.json")], model_tokenizers_tmp_path[1])
+    tok = load_genai_tokenizer_with_configs([(tok_config_json, "tokenizer_config.json")], model_tmp_path[1])
     assert tok.get_pad_token() == tok_config_json['pad_token']
     assert tok.get_bos_token() == tok_config_json['bos_token']
     assert tok.get_eos_token() == tok_config_json['eos_token']
@@ -444,7 +453,7 @@ def test_load_special_tokens_from_tokenizer_config_and_config_json(model_tmp_pat
 def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(model_tmp_path):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
 
     special_tokens_map_json = {}
     token_str_int_map = {}

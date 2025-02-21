@@ -61,14 +61,14 @@ class StreamerWithResults:
 
 
 def create_ov_pipeline(models_path: Path,
-                       pipeline_type: PipelineType = PipelineType.STATEFUL,
+                       pipeline_type: PipelineType = PipelineType.PAGED_ATTENTION,
                        device: str = "CPU",
-                       ov_config: dict = {},
+                       ov_config: dict = get_default_llm_properties(),
                        scheduler_config: SchedulerConfig = SchedulerConfig(),
                        draft_model: draft_model = None):
     if pipeline_type == PipelineType.STATEFUL:
-        return LLMPipeline(models_path, device, ov_config)
-    elif pipeline_type == PipelineType.STATELESS:
+        return LLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
+    elif pipeline_type == PipelineType.PAGED_ATTENTION:
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config)
     elif pipeline_type == PipelineType.CONTINIOUS_BATCHING:
         return ContinuousBatchingPipeline(models_path, scheduler_config, device, ov_config)
