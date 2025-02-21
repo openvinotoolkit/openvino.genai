@@ -38,7 +38,11 @@
   --genai-text-color-active: #fff;
 
   --ifm-menu-color-active: var(--genai-color-text-primary);
-  --ifm-color-primary: var(--genai-color-text-primary);
+
+  --ifm-color-primary: var(--genai-color-classic-blue);
+  --ifm-color-primary-dark: var(--genai-color-darker-classic-blue);
+  --ifm-color-primary-darker: var(--genai-color-darker-classic-blue);
+
   --ifm-menu-color-background-active: #f5f5f5;
   --ifm-breadcrumb-item-background-active: transparent;
   --ifm-breadcrumb-color-active: var(--genai-color-classic-blue);
