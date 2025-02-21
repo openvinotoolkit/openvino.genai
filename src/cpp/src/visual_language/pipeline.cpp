@@ -252,10 +252,6 @@ public:
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
 
-        if (!m_is_chat_conversation) {
-            m_language.get_tensor("attention_mask").set_shape({0, 0});
-        }
-
         return decoded;
     }
 
