@@ -42,7 +42,7 @@ protected:
     // Finish reason of last generation for chat scenario
     ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
     // reflection of tokens contained in the kv cache
-    KVCacheState::Ptr m_kv_cache_state = std::make_shared<KVCacheState>();
+    KVCacheState m_kv_cache_state;
 
     std::set<int64_t> m_stop_token_ids;
 public:
@@ -62,7 +62,7 @@ public:
         return m_tokenizer;
     }
 
-    KVCacheState::Ptr get_kv_cache_state() const {
+    KVCacheState& get_kv_cache_state() {
         return m_kv_cache_state;
     }
 
@@ -81,9 +81,9 @@ public:
     virtual void start_chat(const std::string& system_message) {
         m_is_chat_conversation = true;
         m_kv_history_trim_manager.reset();
-        if (!m_kv_cache_state->is_state_empty()) {
+        if (!m_kv_cache_state.get_state().empty()) {
             m_history.clear();
-            m_kv_cache_state->reset_state();
+            m_kv_cache_state.reset_state();
         }
         if (system_message.empty()) {
             return;
@@ -103,7 +103,7 @@ public:
         m_kv_history_trim_manager.reset();
 
         m_history.clear();
-        m_kv_cache_state->reset_state();
+        m_kv_cache_state.reset_state();
     }
 
 protected:
@@ -187,7 +187,7 @@ protected:
     ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
         const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
         auto new_input_ids = update_history(new_chat_tokens);
-        m_kv_cache_state->add_inputs(new_input_ids);
+        m_kv_cache_state.add_inputs(new_input_ids);
 
         return new_input_ids;
     }
@@ -1455,7 +1455,7 @@ public:
         }
         ov::Tensor new_merged_tokens = phi3_v::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
         ov::Tensor new_tokens = update_history(new_merged_tokens);
-        m_kv_cache_state->add_inputs(new_tokens);
+        m_kv_cache_state.add_inputs(new_tokens);
 
         std::vector<ov::Tensor> tokens = phi3_v::drop_image_placeholders(new_tokens);
         // if <|image_i|> tag is in the begining, it doesn't split tokes into separate sequences and tokens.size() == images_features_proj.size().
@@ -1977,7 +1977,7 @@ void InputsEmbedder::set_stop_token_ids(const std::set<int64_t>& stop_token_ids)
     return m_impl->set_stop_token_ids(stop_token_ids);
 }
 
-KVCacheState::Ptr InputsEmbedder::get_kv_cache_state() const {
+KVCacheState& InputsEmbedder::get_kv_cache_state() {
     return  m_impl->get_kv_cache_state();
 }
 

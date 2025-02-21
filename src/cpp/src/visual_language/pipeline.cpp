@@ -17,7 +17,6 @@
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
-
 using namespace ov::genai;
 
 namespace {
@@ -188,9 +187,8 @@ public:
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        auto kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        auto tokenized_history = kv_cache_state->get_state();
-
+        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
@@ -232,6 +230,8 @@ public:
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
             m_inputs_embedder->update_chat_history(decoded_results);
+        else
+            kv_cache_state.reset_state();
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
@@ -250,10 +250,6 @@ public:
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
-
-        if (!m_is_chat_conversation) {
-            kv_cache_state->reset_state();
-        }
 
         return decoded;
     }

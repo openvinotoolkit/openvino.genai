@@ -47,11 +47,8 @@ public:
 
     void set_stop_token_ids(const std::set<int64_t>& stop_token_ids);
 
-    // returns tokenized chat history
-    std::vector<int64_t> get_tokenized_history() const;
-
     // get reflection of tokens contained in the kv cache
-    KVCacheState::Ptr get_kv_cache_state() const;
+    KVCacheState& get_kv_cache_state();
 
     // returns amount of elements, which need to remove from the end of the KV cache
     size_t get_num_tokens_to_remove_from_hist() const;

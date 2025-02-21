@@ -27,7 +27,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
     // reflection of tokens contained in the kv cache
-    KVCacheState::Ptr m_kv_cache_state = std::make_shared<KVCacheState>();
+    KVCacheState m_kv_cache_state;
 
     void reset_kv_state();
 public:
