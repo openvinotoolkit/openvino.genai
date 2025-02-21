@@ -4,7 +4,6 @@
 #include "openvino/genai/openvino_genai_c.h"
 
 int main(int argc, char* argv[]) {
-    printf("This is a C API example for OpenVINO GenAI.\n");
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <MODEL_DIR> \"<PROMPT>\"\n", argv[0]);
         return EXIT_FAILURE;

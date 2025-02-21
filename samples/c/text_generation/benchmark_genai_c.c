@@ -92,7 +92,6 @@ int parse_arguments(int argc, char* argv[], Options* options) {
 }
 
 int main(int argc, char* argv[]) {
-    printf("This is a C API example for OpenVINO GenAI.\n");
     Options options = {.model = NULL,
                        .prompt = DEFAULT_PROMPT,
                        .num_warmup = DEFAULT_NUM_WARMUP,
@@ -139,7 +138,8 @@ int main(int argc, char* argv[]) {
         PerfMetricsHandle* _metrics = CreatePerfMetrics();
         DecodedeResultsGetPerfMetrics(results, _metrics);
         AddPerfMetricsInPlace(metrics, _metrics);
-        DestoryPerfMetics(_metrics);
+        DestroyPerfMetics(_metrics);
+        DestroyDecodedResults(results);
     }
 
     printf("%.2f ms\n", PerfMetricsGetLoadTime(metrics));
@@ -162,6 +162,6 @@ int main(int argc, char* argv[]) {
     DestroyLLMPipeline(pipe);
     DestroyGenerationConfig(config);
     DestroyDecodedResults(results);
-    DestoryPerfMetics(metrics);
+    DestroyPerfMetics(metrics);
     return EXIT_SUCCESS;
 }

@@ -25,7 +25,7 @@ OPENVINO_EXTERN_C {
         metrics->object = std::make_shared<ov::genai::PerfMetrics>();
         return metrics;
     }
-    void DestoryPerfMetics(PerfMetricsHandle * metrics) {
+    void DestroyPerfMetics(PerfMetricsHandle * metrics) {
         if (metrics)
             delete metrics;
     }

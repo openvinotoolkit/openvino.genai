@@ -14,7 +14,6 @@ void streamer(const char* word) {
     fflush(stdout);
 }
 int main(int argc, char* argv[]) {
-    printf("This is a C API example for OpenVINO GenAI.\n");
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <MODEL_DIR>\n", argv[0]);
         return EXIT_FAILURE;
