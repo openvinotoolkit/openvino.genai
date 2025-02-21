@@ -631,6 +631,7 @@ def test_perf_metrics(model_descr, sample_from_dataset):
 @pytest.fixture(params=[
     "DeprecatedBaseStreamer",
     "DeprecatedChunkStreamer",
+    "DeprecatedChunkWriteStreamer",
     "Streamer",
     "streamer_callback",
     "streamer_bool_callback"
@@ -684,6 +685,25 @@ def streamer_for_test(request):
 
     if request.param == 'DeprecatedChunkStreamer':
         streamer = DeprecatedChunkStreamer()
+        return streamer, ResultHandler(streamer.tokens)
+
+    class DeprecatedChunkWriteStreamer(ov_genai.ChunkStreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            if type(token) == list:
+                self.tokens += token
+            else:
+                self.tokens.append(token)
+            return ov_genai.StreamingStatus.RUNNING
+
+        def end(self) -> None:
+            pass
+
+    if request.param == 'DeprecatedChunkWriteStreamer':
+        streamer = DeprecatedChunkWriteStreamer()
         return streamer, ResultHandler(streamer.tokens)
     
     class Streamer(ov_genai.StreamerBase):
