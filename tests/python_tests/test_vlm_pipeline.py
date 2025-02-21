@@ -101,7 +101,7 @@ configs = [
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("config", configs)
-def test_vlm_continuous_batching(config, cache):
+def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0], cache)
     ov_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
@@ -113,7 +113,7 @@ def test_vlm_continuous_batching(config, cache):
     ]
 
     res_generate = []
-    for links in image_links_for_testing:
+    for links in image_links_list:
         images = []
         for link in links:
             images.append(get_image_by_link(link))
@@ -135,6 +135,81 @@ def test_vlm_continuous_batching(config, cache):
             text = tokenizer.decode(output.generated_ids)
             assert text == res_generate[idx].texts[out_idx]
             assert output.score == res_generate[idx].scores[out_idx]
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", configs)
+def test_vlm_continuous_batching_vs_stateful(config, cache):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_ids[0], cache)
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device="CPU")
+    generation_config = config
+    generation_config.max_new_tokens = 25
+    eps = 0.001
+    image_links_list = [
+        [],
+        [image_links[0]]
+    ]
+
+    res_cb = []
+    for links in image_links_list:
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        res_cb.append(cb_pipe.generate([prompts[0]], images=[images], generation_config=[generation_config]))
+
+    models_path = get_ov_model(model_ids[0], cache)
+    for idx, links in enumerate(image_links_list):
+        stateful_pipe = VLMPipeline(models_path, "CPU")
+
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        res_stateful = stateful_pipe.generate(prompts[0], images=images, generation_config=generation_config)
+        for out_idx, text in enumerate(res_stateful.texts):
+            assert text == res_cb[idx][0].m_generation_ids[out_idx]
+            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].m_scores[out_idx]) < eps
+
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", configs)
+def test_vlm_with_scheduler_vs_default(config, cache):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_ids[0], cache)
+    cb_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
+    generation_config = config
+    generation_config.max_new_tokens = 25
+    eps = 0.001
+    image_links_list = [
+        [],
+        [image_links[0]]
+    ]
+
+    res_cb = []
+    for links in image_links_list:
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        res_cb.append(cb_pipe.generate(prompts[0], images=images, generation_config=generation_config))
+
+    models_path = get_ov_model(model_ids[0], cache)
+    for idx, links in enumerate(image_links_list):
+        stateful_pipe = VLMPipeline(models_path, "CPU")
+
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
+
+        res_stateful = stateful_pipe.generate(prompts[0], images=images, generation_config=generation_config)
+        for out_idx, text in enumerate(res_stateful.texts):
+            assert text == res_cb[idx].texts[out_idx]
+            assert abs(res_stateful.scores[out_idx] - res_cb[idx].scores[out_idx]) < eps
 
 
 @pytest.mark.precommit
