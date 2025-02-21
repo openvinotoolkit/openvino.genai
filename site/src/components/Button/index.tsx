@@ -7,7 +7,7 @@ import styles from './styles.module.css';
 type ButtonProps = {
   size?: 'sm' | 'lg' | 'small' | 'medium' | 'large' | null;
   outline?: boolean;
-  variant: 'primary' | 'secondary' | 'danger' | 'warning' | 'success' | 'info' | 'link' | string;
+  variant?: 'primary' | 'secondary' | 'danger' | 'warning' | 'success' | 'info' | 'link' | string;
   block?: boolean;
   disabled?: boolean;
   className?: string;
