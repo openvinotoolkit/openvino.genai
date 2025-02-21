@@ -30,7 +30,7 @@ public:
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
     OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated and will be removed in 2026.0.0 "
                         "release. Use StreamerBase instead.")
-    OPENVINO_GENAI_EXPORTS virtual bool put_chunk(std::vector<int64_t> tokens) {
+    virtual bool put_chunk(std::vector<int64_t> tokens) {
         OPENVINO_THROW(
             "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.");
         return true;
@@ -40,7 +40,7 @@ public:
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
     OPENVINO_DEPRECATED(
         "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    OPENVINO_GENAI_EXPORTS virtual bool put(int64_t token) override {
+    virtual bool put(int64_t token) override {
         OPENVINO_THROW(
             "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.");
         return true;
@@ -51,7 +51,7 @@ public:
     /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
     OPENVINO_DEPRECATED(
         "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    OPENVINO_GENAI_EXPORTS virtual StreamingStatus write(const std::vector<int64_t>& tokens) override {
+    virtual StreamingStatus write(const std::vector<int64_t>& tokens) override {
         OPENVINO_SUPPRESS_DEPRECATED_START
         return put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
         OPENVINO_SUPPRESS_DEPRECATED_END
@@ -61,7 +61,7 @@ public:
     /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
     OPENVINO_DEPRECATED(
         "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    OPENVINO_GENAI_EXPORTS virtual StreamingStatus write(int64_t token) override {
+    virtual StreamingStatus write(int64_t token) override {
         OPENVINO_SUPPRESS_DEPRECATED_START
         return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
         OPENVINO_SUPPRESS_DEPRECATED_END
@@ -70,7 +70,7 @@ public:
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
     OPENVINO_DEPRECATED(
         "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    OPENVINO_GENAI_EXPORTS virtual void end() override = 0;
+    virtual void end() override = 0;
 
     virtual ~ChunkStreamerBase() override;
 };
