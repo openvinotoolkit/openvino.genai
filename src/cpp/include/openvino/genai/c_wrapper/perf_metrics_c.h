@@ -56,7 +56,7 @@ OPENVINO_EXTERN_C {
     OPENVINO_GENAI_EXPORTS size_t PerfMetricsGetNumGeneratedTokens(const PerfMetricsHandle* metrics);
 
     /**
-     * @brief Get the number of input tokens from PerfMetricsHandle.    
+     * @brief Get the number of input tokens from PerfMetricsHandle.
      * @param metrics A pointer to the PerfMetricsHandle.
      * @return The number of input tokens.
      */
@@ -73,7 +73,7 @@ OPENVINO_EXTERN_C {
      * @brief Get the time per output token (TPOT in ms) from PerfMetricsHandle.
      * @param metrics A pointer to the PerfMetricsHandle.
      * @return Mean and standard deviation of time per output token.
-    */
+     */
     OPENVINO_GENAI_EXPORTS MeanStdPair_C PerfMetricsGetTpot(const PerfMetricsHandle* metrics);
 
     /**
@@ -120,9 +120,9 @@ OPENVINO_EXTERN_C {
 
     /**
      * @brief C interface for PerfMetrics& operator+=(const PerfMetrics& right)
-     * 
+     *
      * This function adds the PerfMetrics from 'right' to 'left' in place.
-     * 
+     *
      * @param left A pointer to the PerfMetricsHandle that will be updated.
      * @param right A pointer to the PerfMetricsHandle whose metrics will be added to 'left'.
      */

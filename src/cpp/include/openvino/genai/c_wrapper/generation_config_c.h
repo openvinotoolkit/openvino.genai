@@ -53,7 +53,8 @@ OPENVINO_EXTERN_C {
     OPENVINO_GENAI_EXPORTS void DestroyGenerationConfig(GenerationConfigHandle * handle);
 
     /**
-     * @brief Set the maximum number of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+     * @brief Set the maximum number of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens
+     * has priority over max_length.
      * @param handle A pointer to the GenerationConfigHandle.
      * @param value The maximum number of tokens to generate.
      */
@@ -89,9 +90,10 @@ OPENVINO_EXTERN_C {
     OPENVINO_GENAI_EXPORTS void GenerationConfigSetEcho(GenerationConfigHandle * config, bool value);
 
     /**
-     * @brief Set the number of top logprobs computed for each position, 
+     * @brief Set the number of top logprobs computed for each position,
               if set to 0, logprobs are not computed and value 0.0 is returned.
-              Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1.(default: 0).
+              Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs
+     == 1.(default: 0).
      * @param handle A pointer to the GenerationConfigHandle.
      * @param value The number of top logprobs computed for each position.
      */
@@ -109,7 +111,8 @@ OPENVINO_EXTERN_C {
     /**
      * @brief Set whether or not to include stop string that matched generation in the output.
      * @param handle A pointer to the GenerationConfigHandle.
-     * @param value If set to true stop string that matched generation will be included in generation output (default: false).
+     * @param value If set to true stop string that matched generation will be included in generation output (default:
+     * false).
      */
     OPENVINO_GENAI_EXPORTS void GenerationConfigSetIncludeStopStrInOutput(GenerationConfigHandle * config, bool value);
 
@@ -124,7 +127,8 @@ OPENVINO_EXTERN_C {
                                                                 size_t token_ids_num);
 
     /**
-     * @brief Set the number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+     * @brief Set the number of groups to divide `num_beams` into in order to ensure diversity among different groups of
+     * beams.
      * @param handle A pointer to the GenerationConfigHandle.
      * @param value The number of beam groups.
      */
@@ -164,7 +168,7 @@ OPENVINO_EXTERN_C {
     OPENVINO_GENAI_EXPORTS void GenerationConfigSetNumReturnSequences(GenerationConfigHandle * config, size_t value);
 
     /**
-     * @brief Set the no_repeat_ngram_size 
+     * @brief Set the no_repeat_ngram_size
      * @param handle A pointer to the GenerationConfigHandle.
      * @param value If set to int > 0, all ngrams of that size can only occur once.
      */

@@ -26,7 +26,7 @@ OPENVINO_EXTERN_C {
             metrics->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
         }
     }
-    void DecodeResultsGetString(DecodedResultsHandle* results, char* output, int max_size) {
+    void DecodeResultsGetString(DecodedResultsHandle * results, char* output, int max_size) {
         if (results && results->object && output) {
             std::string str = *(results->object);
             strncpy(output, str.c_str(), max_size - 1);
@@ -64,12 +64,12 @@ OPENVINO_EXTERN_C {
         }
     }
     DecodedResultsHandle* LLMPipelineGenerateDecodeResults(LLMPipelineHandle * pipe,
-                                          const char* inputs,
-                                          GenerationConfigHandle* config) {
+                                                           const char* inputs,
+                                                           GenerationConfigHandle* config) {
         if (pipe && pipe->object) {
             std::string input_str(inputs);
             ov::genai::StringInputs input = {input_str};
-            
+
             DecodedResultsHandle* results = CreateDecodedResults();
             if (config && config->object) {
                 *(results->object) = pipe->object->generate(input, *(config->object));

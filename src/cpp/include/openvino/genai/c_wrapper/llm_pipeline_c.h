@@ -20,7 +20,7 @@ OPENVINO_EXTERN_C {
      */
     typedef struct OpaqueDecodedResults DecodedResultsHandle;
 
-     /**
+    /**
      * @brief Create DecodedResults
      */
     OPENVINO_GENAI_EXPORTS DecodedResultsHandle* CreateDecodedResults();
@@ -47,7 +47,7 @@ OPENVINO_EXTERN_C {
      */
     OPENVINO_GENAI_EXPORTS void DecodeResultsGetString(DecodedResultsHandle * results, char* output, int max_size);
 
-     /**
+    /**
      * @struct LLMPipelineHandle
      * @brief type define LLMPipelineHandle from OpaqueLLMPipeline
      */
@@ -55,7 +55,7 @@ OPENVINO_EXTERN_C {
 
     /**
      * @brief Construct LLMPipelineHandle.
-    */
+     */
     OPENVINO_GENAI_EXPORTS LLMPipelineHandle* CreateLLMPipeline(const char* models_path, const char* device);
 
     /**
@@ -71,23 +71,23 @@ OPENVINO_EXTERN_C {
      * @param output A pointer to the output string buffer.
      * @param max_size The maximum size of the output buffer.
      * @param config A pointer to the GenerationConfigHandle, the pointer can be NULL.
-    */
+     */
     OPENVINO_GENAI_EXPORTS void LLMPipelineGenerate(LLMPipelineHandle * handle,
                                                     const char* inputs,
                                                     char* output,
                                                     int max_size,
                                                     GenerationConfigHandle* config);
-    
+
     /**
      * @brief Generate text by LLMPipelineHandle and return DecodedResultsHandle.
      * @param pipe A pointer to the LLMPipelineHandle.
      * @param inputs A pointer to the input string.
      * @pram config A pointer to the GenerationConfigHandle, the pointer can be NULL.
      * @return DecodedResultsHandle A pointer to the DecodedResultsHandle.
-    */
+     */
     OPENVINO_GENAI_EXPORTS DecodedResultsHandle* LLMPipelineGenerateDecodeResults(LLMPipelineHandle * handle,
-                                                                 const char* inputs,
-                                                                 GenerationConfigHandle* config);
+                                                                                  const char* inputs,
+                                                                                  GenerationConfigHandle* config);
     /**
      * @brief Start chat with keeping history in kv cache.
      * @param pipe A pointer to the LLMPipelineHandle.
@@ -97,24 +97,24 @@ OPENVINO_EXTERN_C {
     /**
      * @brief Finish chat and clear kv cache.
      * @param pipe A pointer to the LLMPipelineHandle.
-    */
+     */
     OPENVINO_GENAI_EXPORTS void LLMPipelineFinishChat(LLMPipelineHandle * pipe);
 
     /**
      * @brief Get the GenerationConfig from LLMPipelineHandle.
      * @param pipe A pointer to the LLMPipelineHandle.
      * @return GenerationConfigHandle A pointer to the GenerationConfigHandle.
-    */
+     */
     OPENVINO_GENAI_EXPORTS GenerationConfigHandle* LLMPipelineGetGeneratonConfig(LLMPipelineHandle * pipe);
 
     /**
      * @brief Set the GenerationConfig to LLMPipelineHandle.
      * @param pipe A pointer to the LLMPipelineHandle.
      * @param config A pointer to the GenerationConfigHandle.
-    */
+     */
     OPENVINO_GENAI_EXPORTS void LLMPipelineSetGeneratonConfig(LLMPipelineHandle * pipe,
                                                               GenerationConfigHandle * config);
-    //TODO: Add C wrapper for class EncodedResults and LLMPipeline::generation with Streamer.
+    // TODO: Add C wrapper for class EncodedResults and LLMPipeline::generation with Streamer.
 #ifdef __cplusplus
 }
 #endif
