@@ -89,6 +89,10 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
         draft_kv_cache_config, draft_scheduler_config, draft_device, draft_properties, false);
+
+    m_perf_metrics = PerfMetrics();
+    m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+
 }
 
 GenerationHandle

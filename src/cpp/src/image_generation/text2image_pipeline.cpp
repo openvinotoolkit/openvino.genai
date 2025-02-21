@@ -20,6 +20,7 @@ namespace genai {
 Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
+    auto start_time = std::chrono::steady_clock::now();
     if (class_name == "StableDiffusionPipeline" || 
         class_name == "LatentConsistencyModelPipeline")   {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
@@ -32,11 +33,13 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
+    m_impl->save_load_time(start_time);
 }
 
 Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) {
     const std::string class_name = get_class_name(root_dir);
 
+    auto start_time = std::chrono::steady_clock::now();
     if (class_name == "StableDiffusionPipeline" ||
         class_name == "LatentConsistencyModelPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
@@ -49,9 +52,11 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
+    m_impl->save_load_time(start_time);
 }
 
 Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) {
+    auto start_time = std::chrono::steady_clock::now();
     if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, *stable_diffusion_xl);
     } else if (auto stable_diffusion = std::dynamic_pointer_cast<StableDiffusionPipeline>(pipe.m_impl); stable_diffusion != nullptr) {
@@ -63,9 +68,11 @@ Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) {
     } else {
         OPENVINO_ASSERT("Cannot convert specified Image2ImagePipeline to Text2ImagePipeline");
     }
+    m_impl->save_load_time(start_time);
 }
 
 Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) {
+    auto start_time = std::chrono::steady_clock::now();
     if (auto stable_diffusion_xl = std::dynamic_pointer_cast<StableDiffusionXLPipeline>(pipe.m_impl); stable_diffusion_xl != nullptr) {
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::TEXT_2_IMAGE, *stable_diffusion_xl);
     } else if (auto stable_diffusion = std::dynamic_pointer_cast<StableDiffusionPipeline>(pipe.m_impl); stable_diffusion != nullptr) {
@@ -77,6 +84,7 @@ Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) {
     } else {
         OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Text2ImagePipeline");
     }
+     m_impl->save_load_time(start_time);
 }
 
 Text2ImagePipeline::Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
@@ -191,6 +199,10 @@ ov::Tensor Text2ImagePipeline::generate(const std::string& positive_prompt, cons
 
 ov::Tensor Text2ImagePipeline::decode(const ov::Tensor latent) {
     return m_impl->decode(latent);
+}
+
+ImageGenerationPerfMetrics Text2ImagePipeline::get_performance_metrics() {
+    return m_impl->get_performance_metrics();
 }
 
 }  // namespace genai
