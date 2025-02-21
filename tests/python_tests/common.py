@@ -66,7 +66,7 @@ def run_llm_pipeline(
     return run_ov_pipeline(models_path=models_path,
                            prompt=prompts,
                            generation_config=generation_config,
-                           pipeline_type=(PipelineType.STATELESS if use_cb else PipelineType.STATEFUL),
+                           pipeline_type=(PipelineType.PAGED_ATTENTION if use_cb else PipelineType.STATEFUL),
                            streamer=streamer,
                            ov_config=properties)
 
