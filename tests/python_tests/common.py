@@ -90,7 +90,7 @@ def run_llm_pipeline_with_ref(model_id: str,
 
 def run_cb_pipeline_with_ref(tmp_path: str,
                              model_id: str,
-                             scheduler_params: dict = get_default_llm_properties(),
+                             scheduler_params: dict = {},
                              generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = dict_to_scheduler_config(scheduler_params)
