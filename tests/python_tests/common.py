@@ -94,7 +94,6 @@ def run_cb_pipeline_with_ref(tmp_path: str,
                              generation_config : GenerationConfig | dict = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = dict_to_scheduler_config(scheduler_params)
-    scheduler_config = dict_to_scheduler_config(scheduler_params)
 
     # override dataset's generation config
     if generation_config is not None:
