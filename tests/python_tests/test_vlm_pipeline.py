@@ -104,7 +104,7 @@ configs = [
 def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0], cache)
-    ov_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
+    ov_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config, **get_default_llm_properties())
     generation_config = config
     generation_config.max_new_tokens = 30
     image_links_list = [
@@ -120,7 +120,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
 
         res_generate.append(ov_pipe.generate(prompts[0], images=images, generation_config=generation_config))
 
-    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device="CPU")
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device="CPU", properties=get_default_llm_properties())
     tokenizer = cb_pipe.get_tokenizer()
 
     for idx, links in enumerate(image_links_list):
@@ -143,7 +143,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cache):
 def test_vlm_continuous_batching_vs_stateful(config, cache):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0], cache)
-    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device="CPU")
+    cb_pipe = ContinuousBatchingPipeline(models_path, scheduler_config=scheduler_config, device="CPU", properties=get_default_llm_properties())
     generation_config = config
     generation_config.max_new_tokens = 25
     eps = 0.001
@@ -162,7 +162,7 @@ def test_vlm_continuous_batching_vs_stateful(config, cache):
 
     models_path = get_ov_model(model_ids[0], cache)
     for idx, links in enumerate(image_links_list):
-        stateful_pipe = VLMPipeline(models_path, "CPU")
+        stateful_pipe = VLMPipeline(models_path, "CPU", **get_default_llm_properties())
 
         images = []
         for link in links:
@@ -181,7 +181,7 @@ def test_vlm_continuous_batching_vs_stateful(config, cache):
 def test_vlm_with_scheduler_vs_default(config, cache):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0], cache)
-    cb_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config)
+    cb_pipe = VLMPipeline(models_path, "CPU", scheduler_config=scheduler_config, **get_default_llm_properties())
     generation_config = config
     generation_config.max_new_tokens = 25
     eps = 0.001
@@ -200,7 +200,7 @@ def test_vlm_with_scheduler_vs_default(config, cache):
 
     models_path = get_ov_model(model_ids[0], cache)
     for idx, links in enumerate(image_links_list):
-        stateful_pipe = VLMPipeline(models_path, "CPU")
+        stateful_pipe = VLMPipeline(models_path, "CPU", **get_default_llm_properties())
 
         images = []
         for link in links:
