@@ -14,12 +14,15 @@ from llm_bench_utils.config_class import (
     OV_MODEL_CLASSES_MAPPING,
     TOKENIZE_CLASSES_MAPPING,
     DEFAULT_MODEL_CLASSES,
-    IMAGE_GEN_CLS
+    IMAGE_GEN_CLS,
+    INPAINTING_IMAGE_GEN_CLS,
+    IMAGE_TO_IMAGE_GEN_CLS
 )
 from transformers import pipeline
 import openvino_genai as ov_genai
 import queue
 from transformers.generation.streamers import BaseStreamer
+from llm_bench_utils.config_class import TASK
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -249,6 +252,12 @@ def convert_ov_tokenizer(tokenizer_path):
 
 def create_image_gen_model(model_path, device, **kwargs):
     model_class = IMAGE_GEN_CLS
+
+    if (kwargs.get("task", "") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))):
+        model_class = INPAINTING_IMAGE_GEN_CLS
+    elif (kwargs.get("task") == TASK["img2img"] or kwargs.get("media") or kwargs.get("images")):
+        model_class = IMAGE_TO_IMAGE_GEN_CLS
+
     model_path = Path(model_path)
     ov_config = kwargs['config']
     if not Path(model_path).exists():
@@ -347,6 +356,18 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         def get_vae_decoder_step_count(self):
             return 1
 
+    image_gen_pipeline_class = openvino_genai.Text2ImagePipeline
+    if kwargs.get("task") == TASK["inpainting"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image")):
+        log.info("Selected Inpainting image generation pipeline")
+        image_gen_pipeline_class = openvino_genai.InpaintingPipeline
+    elif kwargs.get("task") == TASK["img2img"] or kwargs.get("media") or kwargs.get("images"):
+        log.info("Selected Image to Image image generation pipeline")
+        image_gen_pipeline_class = openvino_genai.Image2ImagePipeline
+    elif kwargs.get("task") == TASK["text2img"] or not kwargs.get("task"):
+        log.info("Selected Text to Image image generation pipeline")
+    else:
+        log.warning(f'Task {kwargs.get("task")} is not defined. Text to Image image generation pipeline will be used.')
+
     adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
     if adapter_config:
         ov_config['adapters'] = adapter_config
@@ -379,24 +400,24 @@ def create_genai_image_gen_model(model_path, device, ov_config, **kwargs):
         if model_class_name == "StableDiffusionPipeline":
             text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
             unet = get_genai_unet_model(data, model_path, device, ov_config)
-            t2i_pipe = openvino_genai.Text2ImagePipeline.stable_diffusion(scheduler, text_encoder, unet, vae)
+            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
         elif model_class_name == "LatentConsistencyModelPipeline":
             text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
             unet = get_genai_unet_model(data, model_path, device, ov_config)
-            t2i_pipe = openvino_genai.Text2ImagePipeline.latent_consistency_model(scheduler, text_encoder, unet, vae)
+            image_gen_pipe = image_gen_pipeline_class.latent_consistency_model(scheduler, text_encoder, unet, vae)
         elif model_class_name == "StableDiffusionXLPipeline":
             clip_text_encoder = get_genai_clip_text_encoder(data, model_path, device, ov_config)
             clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(data, model_path, "text_encoder_2", device, ov_config)
             unet = get_genai_unet_model(data, model_path, device, ov_config)
-            t2i_pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae)
+            image_gen_pipe = image_gen_pipeline_class.stable_diffusion_xl(scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae)
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
     else:
-        t2i_pipe = openvino_genai.Text2ImagePipeline(model_path, device.upper(), **ov_config)
+        image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
 
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    return t2i_pipe, end - start, True, callback
+    return image_gen_pipe, end - start, True, callback
 
 
 def create_ldm_super_resolution_model(model_path, device, **kwargs):
