@@ -8,10 +8,10 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
+#include "openvino/genai/text_streamer.hpp"
 #include "utils.hpp"
 #include "whisper/context_tokens.hpp"
 #include "whisper/models/decoder.hpp"
-#include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
@@ -55,13 +55,7 @@ std::shared_ptr<ov::genai::StreamerBase> to_base_streamer(ov::genai::StreamerVar
     if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
         streamer_ptr = nullptr;
     } else if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(*streamer_obj)) {
-            streamer_ptr = std::make_shared<ov::genai::ChunkToBaseStreamerAdapter>(chunk_streamer);
-        } else {
-            streamer_ptr = *streamer_obj;
-        }
-        OPENVINO_SUPPRESS_DEPRECATED_END
+        streamer_ptr = *streamer_obj;
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ov::genai::TextStreamer>(tokenizer, *callback);
     } else if (auto callback = std::get_if<std::function<ov::genai::StreamingStatus(std::string)>>(&streamer)) {
@@ -234,3 +228,5 @@ void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationCo
 }
 
 ov::genai::WhisperPipeline::~WhisperPipeline() = default;
+
+ov::genai::ChunkStreamerBase::~ChunkStreamerBase() = default;

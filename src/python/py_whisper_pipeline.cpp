@@ -12,7 +12,6 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
 #include "tokenizers_path.hpp"
-#include "whisper/streamer.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChunkStreamerBase;
@@ -226,17 +225,31 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
 class ConstructableChunkStreamer : public ChunkStreamerBase {
     bool put(int64_t token) override {
-        PYBIND11_OVERRIDE_PURE(bool,               // Return type
-                               ChunkStreamerBase,  // Parent class
-                               put,                // Name of function in C++ (must match Python name)
-                               token               // Argument(s)
+        PYBIND11_OVERRIDE(bool,               // Return type
+                          ChunkStreamerBase,  // Parent class
+                          put,                // Name of function in C++ (must match Python name)
+                          token               // Argument(s)
         );
     }
     bool put_chunk(std::vector<int64_t> tokens) override {
-        PYBIND11_OVERRIDE_PURE(bool,               // Return type
-                               ChunkStreamerBase,  // Parent class
-                               put_chunk,          // Name of function in C++ (must match Python name)
-                               tokens              // Argument(s)
+        PYBIND11_OVERRIDE(bool,               // Return type
+                          ChunkStreamerBase,  // Parent class
+                          put_chunk,          // Name of function in C++ (must match Python name)
+                          tokens              // Argument(s)
+        );
+    }
+    StreamingStatus write(const std::vector<int64_t>& token) override {
+        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
+                          ChunkStreamerBase,  // Parent class
+                          write,              // Name of function in C++ (must match Python name)
+                          token               // Argument(s)
+        );
+    }
+    StreamingStatus write(int64_t token) override {
+        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
+                          ChunkStreamerBase,  // Parent class
+                          write,              // Name of function in C++ (must match Python name)
+                          token               // Argument(s)
         );
     }
     void end() override {

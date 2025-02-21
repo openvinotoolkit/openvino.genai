@@ -10,7 +10,6 @@
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "utils.hpp"
 #include "whisper/logit_processor.hpp"
-#include "whisper/streamer.hpp"
 #include "whisper/timestamps.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
