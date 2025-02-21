@@ -161,7 +161,6 @@ int main(int argc, char* argv[]) {
     // Release Resources
     DestroyLLMPipeline(pipe);
     DestroyGenerationConfig(config);
-    DestroyDecodedResults(results);
     DestroyPerfMetics(metrics);
     return EXIT_SUCCESS;
 }
