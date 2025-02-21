@@ -24,7 +24,6 @@ if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64
     pytest.skip("NPU plugin is available only on Linux and Windows x86_64", allow_module_level=True)
 
 
-# This test suite is designed specifically to validate the functionality and robustness of the StaticLLMPipeline on NPUW:CPU.
 default_config = {
                      'NPUW_DEVICES': 'CPU',
                      'NPUW_ONLINE_PIPELINE': 'NONE'
@@ -60,7 +59,7 @@ def test_generation_compare_with_stateful(generation_config, config, model_id):
     stateful_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = stateful_pipe.generate(prompt, generation_config)
 
-    static_pipe = LLMPipeline(model_path, "NPU", **common_config)
+    static_pipe = LLMPipeline(model_path, "NPU", **config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
     if ref_out != actual_out:
@@ -72,22 +71,25 @@ def test_generation_compare_with_stateful(generation_config, config, model_id):
 @pytest.mark.precommit
 @pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
-def test_pipeline_from_blob(config):
+@pytest.mark.parametrize("model_id", get_models_list())
+def test_pipeline_from_blob(config, model_id):
     prompt = 'What is OpenVINO?'
-    model_path = read_model(get_models_list()[0])[1]
+    _, _, model_path = download_and_convert_model(model_id)
     blob_path = "compiled_model.blob"
 
-    cpu_pipe = ov_genai.LLMPipeline(model_path, "CPU", **get_default_llm_properties())
+    cpu_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
 
     # NB: Generate the blob
-    npu_pipe = ov_genai.LLMPipeline(model_path, "NPU", **(config | { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path }))
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path }))
     del npu_pipe
 
     # Import blob and check accuracy
     weights_path = os.path.join(model_path,  'openvino_model.bin')
-    npu_pipe = ov_genai.LLMPipeline(model_path, "NPU", **(config | {"BLOB_PATH": blob_path, "WEIGHTS_PATH": weights_path }))
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | {"BLOB_PATH": blob_path, "WEIGHTS_PATH": weights_path }))
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
+
+    os.remove(blob_path)
 
     if ref_out != actual_out:
         print(f'ref_out: {ref_out}\n')
@@ -112,7 +114,7 @@ def test_multinomial_sampling(generation_config, config, model_id):
     # so only ensure that no exceptions are raised.
     prompt = 'What is OpenVINO?'
     _, _, model_path = download_and_convert_model(model_id)
-    static_pipe = LLMPipeline(model_path, "NPU", **common_config)
+    static_pipe = LLMPipeline(model_path, "NPU", **config)
     actual_out = static_pipe.generate(prompt, generation_config)
 
 
@@ -124,7 +126,7 @@ def test_length_properties_set_no_exception(config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     # NB: Check it doesn't throw any exception
     pipeline_config = { "MAX_PROMPT_LEN": 128, "MIN_RESPONSE_LEN": 64 }
-    pipeline_config |= common_config
+    pipeline_config |= config
     pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
@@ -143,7 +145,7 @@ def test_invalid_length_properties_raise_error(length_config, config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     length_config |= config
     with pytest.raises(RuntimeError):
-        pipe = ov_genai.LLMPipeline(model_path, "NPU", **length_config)
+        pipe = LLMPipeline(model_path, "NPU", **length_config)
 
 
 @pytest.mark.precommit
@@ -212,7 +214,7 @@ def test_terminate_by_max_number_of_tokens(config, model_id):
 @pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_out_of_memory(config):
+def test_terminate_by_out_of_memory(config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     prompt = 'The Sun is yellow because'
     pipeline_config = { "MAX_PROMPT_LEN": 64, "MIN_RESPONSE_LEN": 64 }
@@ -233,7 +235,7 @@ def test_terminate_by_out_of_memory(config):
 @pytest.mark.nightly
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_terminate_by_sampler(config):
+def test_terminate_by_sampler(config, model_id):
     _, _, model_path = download_and_convert_model(model_id)
     prompt = 'The Sun is yellow because'
 
