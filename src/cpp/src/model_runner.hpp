@@ -151,13 +151,13 @@ public:
             max_context_len(ov::element::i32, {});
         
         ov::Tensor generated_ids_embeds;
-        float *generated_ids_embeds_data;
+        float *generated_ids_embeds_data = nullptr;
 
         max_context_len.data<int32_t>()[0] = max_context_len_val;
 
         // get raw pointers to copy to
-        float *inputs_embeds_data;
-        int64_t *input_ids_data;
+        float *inputs_embeds_data = nullptr;
+        int64_t *input_ids_data = nullptr;
         
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             OPENVINO_ASSERT(m_use_embeddings, "Got sequence group with embeddings, but inputs embedder wasn't set.");
