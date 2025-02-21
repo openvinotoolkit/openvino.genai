@@ -1,4 +1,3 @@
-import Link from '@docusaurus/Link';
 import styles from './styles.module.css';
 
 import Button from '@site/src/components/Button';
@@ -56,12 +55,7 @@ export const Installation = () => {
         Unlock the power of OpenVINO GenAI™ for your projects. <br />
         Get started with seamless installation now!
       </p>
-
       <InstallationOptions />
-
-      <p>
-        Full list of installation options <Link href="docs/overview/installation">here</Link>
-      </p>
     </section>
   );
 };
