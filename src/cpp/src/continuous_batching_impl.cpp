@@ -269,6 +269,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size);
 
     if (m_scheduler->get_config().enable_prefix_caching) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+            OPENVINO_THROW("Prefix caching is not supported for VLM models.");
+        }
         m_scheduler->restore_cached_blocks(sequence_group);
     }
 
@@ -293,11 +296,22 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
         timer.end();
         return add_request(request_id, inputs, sampling_params);
     } else if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+        return add_request(request_id, prompt, {}, sampling_params);
     } else {
         OPENVINO_THROW("Unknown model input type.");
     }
 
+    return add_request(request_id, inputs, sampling_params);
+}
+
+GenerationHandle 
+ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
+                                        const std::string& prompt,
+                                        const std::vector<ov::Tensor>& rgbs,
+                                        GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    ov::genai::VLMPerfMetrics metrics;
+    auto inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
     return add_request(request_id, inputs, sampling_params);
 }
 
@@ -307,10 +321,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
-    if (m_model_input_type == ModelInputType::EMBEDDINGS && m_scheduler->get_config().enable_prefix_caching) {
-        OPENVINO_THROW("Prefix caching is not supported for VLM models.");
-    }
-
     static ManualTimer step_timer("step()");
     step_timer.start();
 

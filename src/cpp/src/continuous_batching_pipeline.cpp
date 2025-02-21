@@ -246,7 +246,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& images,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
-    return m_impl->generate(prompts, images, sampling_params, streamer);;
+    return m_impl->generate(prompts, images, sampling_params, streamer);
 }
 
 

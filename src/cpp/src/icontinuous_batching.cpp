@@ -45,6 +45,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
+        // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         return generate(prompts, images, sampling_params, streamer);
     }
@@ -145,10 +147,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
     OPENVINO_ASSERT(prompts.size() == rgbs_vector.size(), "Number of prompts should be equal to the number of images vectors.");
 
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (m_generation_config.eos_token_id == -1)
-        m_generation_config.set_eos_token_id(m_generation_config.eos_token_id);
-    m_generation_config.validate();
+    for (auto config: sampling_params) {
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (config.eos_token_id == -1) {
+            config.set_eos_token_id(m_generation_config.eos_token_id);
+        }
+        if (config.stop_token_ids.empty()) {
+            config.stop_token_ids = m_generation_config.stop_token_ids;
+        }
+        config.validate();
+    }
 
     std::vector<ov::Tensor> input_embeds_list;
     for (size_t i = 0; i < prompts.size(); i++) {
@@ -202,13 +210,4 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
     streamer_ptr->write(tokens);
 }
 
-GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
-                                        const std::string& prompt,
-                                        const std::vector<ov::Tensor>& rgbs,
-                                        GenerationConfig sampling_params) {
-    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
-    ov::genai::VLMPerfMetrics metrics;
-    auto inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
-    return add_request(request_id, inputs, sampling_params);
-}
 }
