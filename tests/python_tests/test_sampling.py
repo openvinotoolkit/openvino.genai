@@ -75,10 +75,10 @@ def test_greedy(tmp_path, generation_config, prompt, use_cb):
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     run_llm_pipeline_with_ref(model_id=model_id, 
-                            prompts=[prompt], 
-                            generation_config=generation_config, 
-                            tmp_path=tmp_path,
-                            use_cb=use_cb)
+                              prompts=[prompt], 
+                              generation_config=generation_config, 
+                              tmp_path=tmp_path,
+                              use_cb=use_cb)
 
 
 @pytest.mark.precommit
