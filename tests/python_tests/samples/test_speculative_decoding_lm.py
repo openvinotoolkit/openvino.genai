@@ -17,7 +17,7 @@ class TestSpeculativeDecodingLM:
     @pytest.mark.parametrize(
         "convert_model_1, convert_model_2, sample_args",
         [
-            pytest.param("dolly-v2-7b", "dolly-v2-3b", "Alan Turing was a"),
+            pytest.param("SmolLM2-360M", "SmolLM2-135M", "Alan Turing was a"),
         ],
         indirect=["convert_model_1", "convert_model_2"],
     )

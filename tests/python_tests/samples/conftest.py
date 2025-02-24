@@ -27,6 +27,10 @@ MODELS = {
     "SmolLM2-135M": {
         "name": "HuggingFaceTB/SmolLM2-135M",
         "convert_args": ['--trust-remote-code']
+    },
+    "SmolLM2-360M": {
+        "name": "HuggingFaceTB/SmolLM2-360M",
+        "convert_args": ['--trust-remote-code']
     },  
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
@@ -46,14 +50,6 @@ MODELS = {
     },
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },
-    "dolly-v2-3b": {
-        "name": "databricks/dolly-v2-3b",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },   
-    "dolly-v2-7b": {
-        "name": "databricks/dolly-v2-7b",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     }
 }
