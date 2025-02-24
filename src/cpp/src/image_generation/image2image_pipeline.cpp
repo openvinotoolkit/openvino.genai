@@ -9,6 +9,7 @@
 
 #include "image_generation/stable_diffusion_pipeline.hpp"
 #include "image_generation/stable_diffusion_xl_pipeline.hpp"
+#include "image_generation/stable_diffusion_3_pipeline.hpp"
 #include "image_generation/flux_pipeline.hpp"
 
 #include "utils.hpp"
@@ -26,6 +27,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "FluxPipeline") {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "StableDiffusion3Pipeline") {
+        m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
@@ -42,6 +45,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
         m_impl = std::make_shared<StableDiffusionXLPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "FluxPipeline") {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "StableDiffusion3Pipeline") {
+        m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
@@ -56,6 +61,8 @@ Image2ImagePipeline::Image2ImagePipeline(const InpaintingPipeline& pipe) {
         m_impl = std::make_shared<StableDiffusionPipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion);
     } else if (auto flux = std::dynamic_pointer_cast<FluxPipeline>(pipe.m_impl); flux != nullptr) {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::IMAGE_2_IMAGE, *flux);
+    } else if (auto stable_diffusion_3 = std::dynamic_pointer_cast<StableDiffusion3Pipeline>(pipe.m_impl); stable_diffusion_3 != nullptr) {
+        m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion_3);
     } else {
         OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Image2ImagePipeline");
     }
@@ -114,6 +121,35 @@ Image2ImagePipeline Image2ImagePipeline::flux(
     const FluxTransformer2DModel& transformer,
     const AutoencoderKL& vae){
     auto impl = std::make_shared<FluxPipeline>(PipelineType::IMAGE_2_IMAGE, clip_text_model, t5_encoder_model, transformer, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return Image2ImagePipeline(impl);
+}
+
+Image2ImagePipeline Image2ImagePipeline::stable_diffusion_3(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const CLIPTextModelWithProjection& clip_text_model_1,
+    const CLIPTextModelWithProjection& clip_text_model_2,
+    const T5EncoderModel& t5_encoder_model,
+    const SD3Transformer2DModel& transformer,
+    const AutoencoderKL& vae){
+    auto impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, clip_text_model_1, clip_text_model_2, t5_encoder_model, transformer, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return Image2ImagePipeline(impl);
+}
+
+Image2ImagePipeline Image2ImagePipeline::stable_diffusion_3(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const CLIPTextModelWithProjection& clip_text_model_1,
+    const CLIPTextModelWithProjection& clip_text_model_2,
+    const SD3Transformer2DModel& transformer,
+    const AutoencoderKL& vae){
+    auto impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, clip_text_model_1, clip_text_model_2, transformer, vae);
 
     assert(scheduler != nullptr);
     impl->set_scheduler(scheduler);
