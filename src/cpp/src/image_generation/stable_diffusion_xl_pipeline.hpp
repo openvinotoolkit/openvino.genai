@@ -178,10 +178,6 @@ public:
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
-    void compile(const std::string& device, const ov::AnyMap& properties) override {
-        compile(device, device, device, properties);
-    }
-
     void compile(const std::string& text_encode_device,
                  const std::string& denoise_device,
                  const std::string& vae_decode_device,
