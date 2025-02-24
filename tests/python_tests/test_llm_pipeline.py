@@ -140,14 +140,14 @@ def test_chat_scenario(model_id, intpus):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
-    generation_config_kwargs, system_massage = intpus
+    generation_config_kwargs, system_message = intpus
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
 
-    ov_pipe.start_chat(system_massage)
-    chat_history_hf.append({"role": "system", "content": system_massage})
-    chat_history_ov.append({"role": "system", "content": system_massage})
+    ov_pipe.start_chat(system_message)
+    chat_history_hf.append({"role": "system", "content": system_message})
+    chat_history_ov.append({"role": "system", "content": system_message})
     for prompt in questions:
         chat_history_hf.append({'role': 'user', 'content': prompt})
         chat_history_ov.append({'role': 'user', 'content': prompt})

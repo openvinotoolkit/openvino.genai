@@ -17,7 +17,6 @@
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
-
 using namespace ov::genai;
 
 namespace {
@@ -188,7 +187,8 @@ public:
         size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - to_remove_from_hist;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        auto tokenized_history = m_inputs_embedder->get_tokenized_history();
+        KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
@@ -215,9 +215,9 @@ public:
         }
 
         ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                             position_ids, m_embedding, rope_delta);
-        ov::genai::EncodedResults& encoded_result = finish_info.results;
+                                                                                               position_ids, kv_cache_state, m_embedding, rope_delta);
 
+        ov::genai::EncodedResults& encoded_result = finish_info.results;
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -227,12 +227,11 @@ public:
         }
         auto decode_end_time = std::chrono::steady_clock::now();
 
-        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], finish_info.probably_disappeared_token, generation_config.is_beam_search(),
-                                                    m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
-
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation)
             m_inputs_embedder->update_chat_history(decoded_results);
+        else
+            kv_cache_state.reset_state();
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
@@ -251,10 +250,6 @@ public:
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
-
-        if (!m_is_chat_conversation) {
-            m_language.get_tensor("attention_mask").set_shape({0, 0});
-        }
 
         return decoded;
     }
