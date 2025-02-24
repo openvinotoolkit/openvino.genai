@@ -15,7 +15,7 @@ from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
 from transformers import AutoTokenizer
 
-from common import TESTS_ROOT, run_cb_pipeline_with_ref
+from common import TESTS_ROOT, generate_and_compare
 
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 from utils.constants import get_default_llm_properties
@@ -194,7 +194,10 @@ scheduler_params_list = [
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(tmp_path, params):
-    run_cb_pipeline_with_ref(tmp_path, "facebook/opt-125m", scheduler_params=params[0], generation_config=params[1])
+    generate_and_compare(rmp_path=tmp_path,
+                         model="facebook/opt-125m",
+                         scheduler_config=params[0],
+                         generation_config=params[1])
 
 
 @pytest.fixture(scope='module')

@@ -71,59 +71,105 @@ def run_llm_pipeline(
                            ov_config=properties)
 
 
-def run_llm_pipeline_with_ref(model_id: str, 
-                              prompts: List[str], 
-                              generation_config: GenerationConfig | dict, 
-                              tmp_path: Path | TemporaryDirectory = TemporaryDirectory(), 
-                              use_cb : bool = False,
-                              streamer: StreamerWithResults | Callable | StreamerBase = None):
-    if type(generation_config) is dict:
-        generation_config = GenerationConfig(**generation_config)
+# def run_llm_pipeline_with_ref(model_id: str, 
+#                               prompts: List[str], 
+#                               generation_config: GenerationConfig | dict, 
+#                               tmp_path: Path | TemporaryDirectory = TemporaryDirectory(), 
+#                               use_cb : bool = False,
+#                               streamer: StreamerWithResults | Callable | StreamerBase = None):
+    # if type(generation_config) is dict:
+    #     generation_config = GenerationConfig(**generation_config)
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, Path(tmp_path.name))
+    # opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, Path(tmp_path.name))
 
-    ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
-    hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
+    # ov_results = run_llm_pipeline(models_path, prompts, generation_config, use_cb, streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer)
+    # hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
 
-    compare_generation_results(prompts, hf_results, ov_results, generation_config)
+    # compare_generation_results(prompts, hf_results, ov_results, generation_config)
 
 
-def run_cb_pipeline_with_ref(tmp_path: str,
-                             model_id: str,
-                             scheduler_params: dict = {},
-                             generation_config : GenerationConfig | dict = None):
-    prompts, generation_configs = get_test_dataset()
-    scheduler_config = dict_to_scheduler_config(scheduler_params)
+# def run_cb_pipeline_with_ref(tmp_path: str,
+#                              model_id: str,
+#                              scheduler_params: dict = {},
+#                              generation_config : GenerationConfig | dict = None):
+#     prompts, generation_configs = get_test_dataset()
+#     scheduler_config = dict_to_scheduler_config(scheduler_params)
 
-    # override dataset's generation config
-    if generation_config is not None:
-        if type(generation_config) is dict:
-            generation_config = GenerationConfig(**generation_config)
-        generation_configs = [generation_config] * len(prompts)
+#     # override dataset's generation config
+#     if generation_config is not None:
+#         if type(generation_config) is dict:
+#             generation_config = GenerationConfig(**generation_config)
+#         generation_configs = [generation_config] * len(prompts)
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
+#     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id, tmp_path)
 
-    hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
-    ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
+#     hf_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_configs)
+#     ov_results = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
-    compare_generation_results(prompts, hf_results, ov_results, generation_configs)
+#     compare_generation_results(prompts, hf_results, ov_results, generation_configs)
 
 
 # TODO: remove after Generator property is supported by LLMPipeline / VLMPipeline
-def generate_and_compare_with_reference_text(models_path: Path,
-                                             prompts: List[str],
-                                             reference_texts_per_prompt: List[List[str]],
-                                             generation_configs: List[GenerationConfig],
-                                             scheduler_config: SchedulerConfig):
-    ov_results : List[GenerationResult] = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
+# def generate_and_compare_with_reference_text(models_path: Path,
+#                                              prompts: List[str],
+#                                              reference_texts_per_prompt: List[List[str]],
+#                                              generation_configs: List[GenerationConfig],
+#                                              scheduler_config: SchedulerConfig):
+#     ov_results : List[GenerationResult] = run_continuous_batching(models_path, scheduler_config, prompts, generation_configs)
 
-    assert len(prompts) == len(reference_texts_per_prompt)
-    assert len(prompts) == len(ov_results)
+#     assert len(prompts) == len(reference_texts_per_prompt)
+#     assert len(prompts) == len(ov_results)
 
-    for prompt, ref_texts_for_this_prompt, ov_result in zip(prompts, reference_texts_per_prompt, ov_results):
-        print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
+#     for prompt, ref_texts_for_this_prompt, ov_result in zip(prompts, reference_texts_per_prompt, ov_results):
+#         print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
 
-        assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
-        for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
-            assert ref_text == ov_text
+#         assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
+#         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
+#             assert ref_text == ov_text
 
+
+def generate_and_compare(model: Path | str,
+                         prompts : List[str],
+                         generation_config: List[GenerationConfig] | GenerationConfig | dict,
+                         pipeline_type: PipelineType = PipelineType.PAGED_ATTENTION,
+                         scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
+                         ref : List[List[str]] = None,
+                         streamer: StreamerWithResults | Callable | StreamerBase = None,
+                         tmp_path: Path | TemporaryDirectory = TemporaryDirectory()) :
+    if type(generation_config) is dict:
+        gen_config = GenerationConfig(**generation_config)
+    elif isinstance(generation_config, GenerationConfig):
+        gen_config = [generation_config] * len(prompts)
+    else:
+        gen_config = generation_config
+
+    if isinstance(scheduler_config, SchedulerConfig):
+        scheduler_config_ = scheduler_config
+    else:
+        scheduler_config_= dict_to_scheduler_config(scheduler_config)
+
+    if isinstance(model, Path):
+        models_path = model
+    else:
+        opt_model, hf_tokenizer, models_path = download_and_convert_model(model, Path(tmp_path.name))
+
+    ov_results = run_ov_pipeline(models_path=models_path,
+                                 prompt=prompts,
+                                 generation_config=gen_config,
+                                 pipeline_type=pipeline_type,
+                                 streamer=streamer.accumulate if isinstance(streamer, StreamerWithResults) else streamer,
+                                 scheduler_config=scheduler_config_,
+                                 ov_config=get_default_llm_properties())
+    if ref is None:
+        ref_results = run_hugging_face(opt_model, hf_tokenizer, prompts, generation_config)
+        compare_generation_results(prompts, ref_results, ov_results, generation_config)
+    else:
+        assert len(prompts) == len(ref)
+        assert len(prompts) == len(ov_results)
+
+        for prompt, ref_texts_for_this_prompt, ov_result in zip(prompts, ref, ov_results):
+            print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
+
+            assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
+            for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
+                assert ref_text == ov_text

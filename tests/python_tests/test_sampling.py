@@ -9,7 +9,8 @@ from typing import List, TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from common import run_llm_pipeline_with_ref, run_llm_pipeline
+from common import generate_and_compare, run_llm_pipeline
+from utils.ov_genai_pipelines import PipelineType
 from utils.hugging_face import get_hugging_face_models, convert_models
 
 @pytest.mark.precommit
@@ -30,7 +31,7 @@ from utils.hugging_face import get_hugging_face_models, convert_models
                               ])
 def test_basic_stop_criteria(tmp_path, generation_config, prompt):
     model_id : str = "katuni4ka/tiny-random-phi3"
-    run_llm_pipeline_with_ref(model_id, [prompt], generation_config, tmp_path)
+    generate_and_compare(model_id, [prompt], generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -53,7 +54,7 @@ def test_basic_stop_criteria(tmp_path, generation_config, prompt):
                               "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
 def test_stop_strings(tmp_path, generation_config, model_id):
     prompts = [ "What is OpenVINO?" ]
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -69,16 +70,16 @@ def test_stop_strings(tmp_path, generation_config, model_id):
     '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
-@pytest.mark.parametrize("use_cb", [True, False])
-def test_greedy(tmp_path, generation_config, prompt, use_cb):
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
+def test_greedy(tmp_path, generation_config, prompt, pipeline_type):
     model_id : str = "katuni4ka/tiny-random-phi3"
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
-    run_llm_pipeline_with_ref(model_id=model_id, 
-                              prompts=[prompt], 
-                              generation_config=generation_config, 
-                              tmp_path=tmp_path,
-                              use_cb=use_cb)
+    generate_and_compare(model=model_id, 
+                         prompts=[prompt], 
+                         generation_config=generation_config, 
+                         tmp_path=tmp_path,
+                         pipeline_type=pipeline_type)
 
 
 @pytest.mark.precommit
@@ -104,7 +105,7 @@ def test_greedy(tmp_path, generation_config, prompt, use_cb):
 def test_beam_search(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -120,7 +121,7 @@ def test_beam_search(tmp_path, generation_config):
 def test_beam_search_with_stop_string(tmp_path, generation_config):
     prompts = [ "What is OpenVINO?" ]
     model_id : str = "facebook/opt-125m"
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 @pytest.mark.precommit
@@ -134,7 +135,7 @@ def test_echo(tmp_path, generation_config):
     model_id : str = "facebook/opt-125m"
     # TODO: support in stateful mode and remove 'use_cb=True' and this test at all
     # as we can enable new parameters set in other tests
-    run_llm_pipeline_with_ref(model_id, prompts, generation_config, tmp_path, use_cb=True)
+    generate_and_compare(model_id, prompts, generation_config, tmp_path=tmp_path)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF
