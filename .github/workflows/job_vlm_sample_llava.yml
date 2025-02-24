@@ -19,7 +19,7 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 
 jobs:
   visual_language_chat_sample-ubuntu-llava:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:

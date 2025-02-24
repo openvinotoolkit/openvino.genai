@@ -246,7 +246,7 @@ jobs:
           && python samples\python\text_generation\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
   cpp-speculative_decoding_lm-ubuntu:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -303,7 +303,7 @@ jobs:
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -367,7 +367,7 @@ jobs:
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
 
   cpp-Phi-1_5:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -425,7 +425,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-22.04-8-cores
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -621,7 +621,7 @@ jobs:
           timeout 60s  python ./samples/python/text_generation/benchmark_genai.py -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" -nw 2 -n 3 -mt 50 -d CPU
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -727,7 +727,7 @@ jobs:
       model_dir: llava_v1_6_mistral_7b_ov
 
   visual_language_chat_sample-ubuntu-internvl2:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -759,7 +759,7 @@ jobs:
         timeout-minutes: 4
 
   visual_language_chat_sample-ubuntu-qwen2vl:
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -789,7 +789,7 @@ jobs:
         timeout-minutes: 4
 
   cpp-continuous-batching-ubuntu:
-    runs-on: ubuntu-22.04-8-cores
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash

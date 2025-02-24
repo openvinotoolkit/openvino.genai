@@ -74,7 +74,7 @@ jobs:
         revision: latest_available_commit
 
   stable_diffusion_1_5_cpp-linux:
-    runs-on: ubuntu-22.04-8-cores
+    runs-on: ubuntu-22.04
     needs: [ openvino_download_linux ]
     defaults:
       run:
