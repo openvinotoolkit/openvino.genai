@@ -25,6 +25,7 @@
       <td>
         <ul>
           <li><a href="https://huggingface.co/google/gemma-2b-it"><code>google/gemma-2b-it</code></a></li>
+          <li><a href="https://huggingface.co/google/gemma-7b-it"><code>google/gemma-7b-it</code></a></li>
         </ul>
       </td>
     </tr>
