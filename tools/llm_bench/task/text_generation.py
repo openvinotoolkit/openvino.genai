@@ -210,8 +210,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
         log.warning(
-            "Enabled input prompt permutations. It means that generation results can be vary on different steps. "
-            "If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behavior"
+            "Enabled input prompt permutations. It means that generated results may vary on different steps. "
+            "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
         )
         from openvino_genai import TokenizedInputs
         import openvino as ov
@@ -388,8 +388,8 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
         log.warning(
-            "Enabled input prompt permutations. It means that generation results can be vary on different steps. "
-            "If it does not expected please specify --disable_prompr_permutation in your benchmarking command to disable this behavior"
+            "Enabled input prompt permutations. It means that generated results may vary on different steps. "
+            "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
         )
         from openvino_genai import TokenizedInputs
         import openvino as ov

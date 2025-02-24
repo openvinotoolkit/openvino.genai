@@ -7,6 +7,8 @@
 #include <vector>
 #include <filesystem>
 
+#include "utils.hpp"
+#include "lm_encoding.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -45,11 +47,8 @@ public:
 
     void set_stop_token_ids(const std::set<int64_t>& stop_token_ids);
 
-    // returns tokenized chat history
-    std::vector<int64_t> get_tokenized_history() const;
-
-    // add new results to tokenized history
-    void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len);
+    // get reflection of tokens contained in the kv cache
+    KVCacheState& get_kv_cache_state();
 
     // returns amount of elements, which need to remove from the end of the KV cache
     size_t get_num_tokens_to_remove_from_hist() const;
