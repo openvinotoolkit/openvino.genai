@@ -46,9 +46,16 @@ int32_t main(int32_t argc, char* argv[]) try {
     pipe.reshape(1, width, height, pipe.get_generation_config().guidance_scale);
 
     //
-    // Step 3: Compile the pipeline ise the specified devices, and properties (like cache dir)
+    // Step 3: Compile the pipeline with the specified devices, and properties (like cache dir)
     //
     ov::AnyMap properties = {ov::cache_dir(ov_cache_dir)};
+
+    // Note that if there are device-specific properties that are needed, they can
+    // be added using ov::device::properties groups, like this:
+    //ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
+    //                         ov::device::properties("GPU", ov::cache_dir("gpu_cache")),
+    //                         ov::device::properties("NPU", ov::cache_dir("npu_cache"))};
+
     pipe.compile(text_encoder_device, unet_device, vae_decoder_device, properties);
 
 
