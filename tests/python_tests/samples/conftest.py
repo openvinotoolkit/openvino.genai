@@ -53,7 +53,7 @@ MODELS = {
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },   
     "dolly-v2-7b": {
-        "name": "dolly-v2-7b",
+        "name": "databricks/dolly-v2-7b",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     }
 }
