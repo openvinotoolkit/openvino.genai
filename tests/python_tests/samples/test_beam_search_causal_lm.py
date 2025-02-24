@@ -37,7 +37,7 @@ class TestBeamSearchCausalLM:
 
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.parametrize( "convert_model", ["SmolLM2-135M"], indirect=True,)
+    @pytest.mark.parametrize("convert_model", ["SmolLM2-135M"], indirect=True)
     @pytest.mark.parametrize("sample_args",
         [
             ["Why is the Sun yellow?"],
