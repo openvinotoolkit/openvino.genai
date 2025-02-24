@@ -441,13 +441,8 @@ jobs:
       - name: Test whisper_speech_recognition.py
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         timeout-minutes: 2
-        run: |
-          New-Item -ItemType Directory -Force -Path ${{ env.NUMBA_CACHE_DIR }}
-          Get-Acl ${{ env.NUMBA_CACHE_DIR }}
-          python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
+        run: python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
-        env:
-          NUMBA_CACHE_DIR: ${{ env.SRC_DIR }}/.NUMBA_CACHE_DIR
 
       - name: C++ Tests Prerequisites
         run: python -m pip uninstall openvino openvino-tokenizers openvino-genai -y
