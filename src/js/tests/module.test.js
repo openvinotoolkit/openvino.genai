@@ -1,4 +1,4 @@
-import { LLMPipeline } from '../init.js';
+import { LLMPipeline } from '../dist/index.js';
 
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
