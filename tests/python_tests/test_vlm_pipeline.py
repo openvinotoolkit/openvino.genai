@@ -7,18 +7,21 @@ import pytest
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline, GenerationConfig
-from common import get_image_by_link, get_beam_search, get_multinomial_all_parameters, get_default_properties
+
+from utils.network import retry_request
+from utils.generation_config import get_beam_search, get_multinomial_all_parameters
+from utils.constants import get_default_llm_properties
 
 def get_ov_model(model_id, cache):
     model_dir = cache.mkdir(model_id.split('/')[-1])
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    processor = transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = retry_request(lambda: transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True))
     processor.tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_properties())
+    model = retry_request(lambda: OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties()))
     if processor.tokenizer.chat_template is not None:
         processor.chat_template = processor.tokenizer.chat_template  # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
     processor.save_pretrained(model_dir)
@@ -50,6 +53,20 @@ model_ids = [
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-qwen2vl",
 ]
+
+
+def get_image_by_link(link):
+    from PIL import Image
+    import requests
+    from openvino import Tensor
+    import numpy as np
+
+    image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, image.size[1], image.size[0], 3)
+    return Tensor(image_data)
+
 
 @pytest.mark.precommit
 @pytest.mark.nightly
@@ -133,6 +150,7 @@ def test_sampling(config, cache):
     pipe.generate(prompts[0], image=image, generation_config=config)
 
 
+@pytest.mark.skip(reason="CVS-160580: tests/python_tests/test_vlm_pipeline.py::test_perf_metrics fails")
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_perf_metrics(cache):

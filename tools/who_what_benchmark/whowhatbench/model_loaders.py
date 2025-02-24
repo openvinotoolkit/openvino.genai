@@ -1,7 +1,7 @@
 import logging
 import json
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 from diffusers import DiffusionPipeline, AutoPipelineForImage2Image, AutoPipelineForInpainting
 
 
@@ -19,7 +19,10 @@ class GenAIModelWrapper:
         self.model_type = model_type
 
         if model_type == "text" or model_type == "visual-text":
-            self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            try:
+                self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            except Exception:
+                self.config = AutoConfig.from_pretrained(model_dir)
         elif model_type == "text-to-image":
             self.config = DiffusionPipeline.load_config(
                 model_dir, trust_remote_code=True)
@@ -101,17 +104,27 @@ def load_text_model(
             model = OVModelForCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device=device, ov_config=ov_config
             )
-        except ValueError:
-            config = AutoConfig.from_pretrained(
-                model_id, trust_remote_code=True)
-            model = OVModelForCausalLM.from_pretrained(
-                model_id,
-                config=config,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                ov_config=ov_config,
-            )
+        except Exception:
+            try:
+                config = AutoConfig.from_pretrained(
+                    model_id, trust_remote_code=True)
+                model = OVModelForCausalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    trust_remote_code=True,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                )
+            except Exception:
+                config = AutoConfig.from_pretrained(model_id)
+                model = OVModelForCausalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                )
 
     return model
 
@@ -204,6 +217,11 @@ def load_visual_text_model(
             model.get_vision_tower().load_model()
         except Exception:
             pass
+
+        if "internvl" in model.config.model_type:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            img_context_token_id = tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
+            model.img_context_token_id = img_context_token_id
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_visual_text_genai_pipeline(model_id, device, ov_config)

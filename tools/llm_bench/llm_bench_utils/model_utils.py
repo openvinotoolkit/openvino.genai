@@ -1,13 +1,29 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import argparse
 import os
 import json
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
 import librosa
+
+
+KNOWN_PRECISIONS = [
+    'FP32', 'FP16',
+    'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
+    'OV_FP32-INT8', 'OV_FP16-INT8',
+    'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM', 'OV_FP16-INT8_ASYM_HYBRID',
+    'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
+    'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
+    'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
+    'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
+
+
+KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt']
+
+
+OTHER_IGNORE_MODEL_PATH_PARTS = ['compressed_weights']
 
 
 def get_param_from_file(args, input_key):
@@ -75,23 +91,6 @@ def set_default_param_for_ov_config(ov_config):
         ov_config['CACHE_DIR'] = ''
 
 
-def add_stateful_model_arguments(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        '--stateful',
-        action='store_true',
-        default=None,
-        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model. '
-        'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
-    )
-
-    parser.add_argument(
-        '--disable-stateful',
-        action="store_true",
-        default=None,
-        help="Disable stateful transformation for model conversion"
-    )
-
-
 def analyze_args(args):
     model_args = {}
     model_args['prompt'] = args.prompt
@@ -104,9 +103,6 @@ def analyze_args(args):
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
-    model_args['fuse_decoding_strategy'] = args.fuse_decoding_strategy
-    model_args['stateful'] = args.stateful
-    model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
@@ -210,6 +206,7 @@ def get_use_case(model_name_or_path):
         raise RuntimeError('==Failure FOUND==: no use_case found')
     else:
         log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
+    return case, model_name
 
 
 def get_model_name(model_name_or_path):
@@ -222,6 +219,17 @@ def get_model_name(model_name_or_path):
                 if model_name.lower().startswith(model_id):
                     return case, model_name
     return None, None
+
+
+def get_model_name_with_path_part(model_name_or_path):
+    IGNORE_MODEL_PATH_PARTS = [x.lower() for x in (KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS)]
+    model_path = Path(model_name_or_path)
+    model_name = None
+    for path_part in reversed(model_path.parts):
+        if not path_part.lower() in IGNORE_MODEL_PATH_PARTS:
+            model_name = path_part
+            break
+    return model_name
 
 
 def get_config(config):
@@ -269,19 +277,10 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 
 
 def get_model_precision(model_name_list):
-    precision_list = [
-        'FP32', 'FP16',
-        'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
-        'OV_FP32-INT8', 'OV_FP16-INT8',
-        'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM',
-        'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
-        'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
-        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
-        'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
     model_precision = 'unknown'
     # Search from right to left of model path
     for i in range(len(model_name_list) - 1, -1, -1):
-        for precision in precision_list:
+        for precision in KNOWN_PRECISIONS:
             if model_name_list[i] == precision:
                 model_precision = precision
                 break

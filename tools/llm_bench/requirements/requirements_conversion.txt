@@ -1,0 +1,4 @@
+einops
+transformers_stream_generator
+bitsandbytes
+-r ../requirements.txt

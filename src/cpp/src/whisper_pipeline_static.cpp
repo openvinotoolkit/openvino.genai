@@ -299,7 +299,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     int64_t output_token = decode(encoder_hidden_state, models.decoder, init_ids, config, raw_metrics, true, return_timestamps);
     std::vector<int64_t> output_tokens{output_token};
 
-    if (!return_timestamps && streamer && streamer->put(output_token)) {
+    if (!return_timestamps && streamer && streamer->write(output_token) != ov::genai::StreamingStatus::RUNNING) {
         return {true, output_tokens};
     }
 
@@ -325,7 +325,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
         output_tokens.push_back(output_token);
 
-        if (!return_timestamps && streamer && streamer->put(output_token)) {
+        if (!return_timestamps && streamer && streamer->write(output_token) != ov::genai::StreamingStatus::RUNNING) {
             return {true, output_tokens};
         }
     }
@@ -586,6 +586,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         streamer_ptr = *streamer_obj;
     } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
         streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
+    } else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
     }
 
     size_t max_new_tokens = config.get_max_new_tokens();
@@ -661,7 +663,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer_ptr && streamer_ptr->put_chunk(extracted_segments.non_timestamp_tokens)) {
+            if (streamer_ptr && streamer_ptr->write_chunk(extracted_segments.non_timestamp_tokens) != StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

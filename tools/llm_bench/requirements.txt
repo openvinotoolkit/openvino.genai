@@ -5,20 +5,15 @@ numpy
 openvino
 openvino-tokenizers
 openvino_genai
-auto-gptq>=0.5.1 # for gptq
 pillow
 torch
 transformers>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/huggingface/optimum-intel.git@main
-git+https://github.com/openvinotoolkit/nncf.git@develop
+git+https://github.com/huggingface/optimum-intel.git@main#egg=optimum-intel
+git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
 packaging
 psutil
 timm
 tiktoken
-onnx<=1.17.0
-einops
-transformers_stream_generator
-bitsandbytes
 librosa # For Whisper

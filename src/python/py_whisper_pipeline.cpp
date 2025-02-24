@@ -22,6 +22,7 @@ using ov::genai::OptionalWhisperGenerationConfig;
 using ov::genai::PerfMetrics;
 using ov::genai::RawSpeechInput;
 using ov::genai::StreamerBase;
+using ov::genai::StreamingStatus;
 using ov::genai::StreamerVariant;
 using ov::genai::Tokenizer;
 using ov::genai::WhisperDecodedResultChunk;
@@ -31,7 +32,7 @@ using ov::genai::WhisperPerfMetrics;
 using ov::genai::WhisperPipeline;
 using ov::genai::WhisperRawPerfMetrics;
 using PyBindChunkStreamerVariant =
-    std::variant<std::function<bool(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
+    std::variant<std::function<std::optional<uint16_t>(py::str)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -227,17 +228,31 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
 class ConstructableChunkStreamer : public ChunkStreamerBase {
     bool put(int64_t token) override {
-        PYBIND11_OVERRIDE_PURE(bool,               // Return type
-                               ChunkStreamerBase,  // Parent class
-                               put,                // Name of function in C++ (must match Python name)
-                               token               // Argument(s)
+        PYBIND11_OVERRIDE(bool,               // Return type
+                         ChunkStreamerBase,  // Parent class
+                         put,                // Name of function in C++ (must match Python name)
+                         token               // Argument(s)
+        );
+    }
+    StreamingStatus write(int64_t token) override {
+        PYBIND11_OVERRIDE(StreamingStatus,   // Return type
+                          ChunkStreamerBase,  // Parent class
+                          write,                // Name of function in C++ (must match Python name)
+                          token               // Argument(s)
         );
     }
     bool put_chunk(std::vector<int64_t> tokens) override {
-        PYBIND11_OVERRIDE_PURE(bool,               // Return type
-                               ChunkStreamerBase,  // Parent class
-                               put_chunk,          // Name of function in C++ (must match Python name)
-                               tokens              // Argument(s)
+        PYBIND11_OVERRIDE(bool,               // Return type
+                          ChunkStreamerBase,  // Parent class
+                          put_chunk,          // Name of function in C++ (must match Python name)
+                          tokens              // Argument(s)
+        );
+    }
+    StreamingStatus write_chunk(std::vector<int64_t> tokens) override {
+        PYBIND11_OVERRIDE(StreamingStatus,          // Return type
+                          ChunkStreamerBase,  // Parent class
+                          write_chunk,          // Name of function in C++ (must match Python name)
+                          tokens              // Argument(s)
         );
     }
     void end() override {
@@ -247,13 +262,23 @@ class ConstructableChunkStreamer : public ChunkStreamerBase {
 
 ChunkStreamerVariant pystreamer_to_chunk_streamer(const PyBindChunkStreamerVariant& py_streamer) {
     return std::visit(
-        pyutils::overloaded{[](const std::function<bool(py::str)>& py_callback) {
+        pyutils::overloaded{[](const std::function<std::optional<uint16_t>(py::str)>& py_callback) {
                                 // Wrap python streamer with manual utf-8 decoding. Do not rely
                                 // on pybind automatic decoding since it raises exceptions on incomplete
                                 // strings.
-                                return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> bool {
+                                return static_cast<ChunkStreamerVariant>([py_callback](std::string subword) -> ov::genai::StreamingStatus {
+                                    py::gil_scoped_acquire acquire;
                                     auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                                    return py_callback(py::reinterpret_borrow<py::str>(py_str));
+                                    std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
+                                    if (callback_output.has_value()) {
+                                        if (*callback_output == (uint16_t)StreamingStatus::RUNNING)
+                                            return StreamingStatus::RUNNING;
+                                        else if (*callback_output == (uint16_t)StreamingStatus::CANCEL)
+                                            return StreamingStatus::CANCEL;
+                                        return StreamingStatus::STOP;
+                                    } else {
+                                        return StreamingStatus::RUNNING;
+                                    }
                                 });
                             },
                             [](std::shared_ptr<ChunkStreamerBase> streamer_cls) {
@@ -278,8 +303,12 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
     ChunkStreamerVariant streamer = pystreamer_to_chunk_streamer(py_streamer);
-
-    return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
+    ov::genai::WhisperDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(raw_speech_input, updated_config, streamer);
+    }
+    return py::cast(res);
 }
 
 }  // namespace
@@ -297,10 +326,20 @@ void init_whisper_pipeline(py::module_& m) {
              "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
              "should be stopped, if return true generation stops",
              py::arg("token"))
+        .def("write",
+             &ChunkStreamerBase::write,
+             "Write is called every time new token is generated. Returns a StreamingStatus flag to indicate whether generation "
+             "should be stopped",
+             py::arg("token"))
         .def("put_chunk",
              &ChunkStreamerBase::put_chunk,
-             "Put is called every time new token chunk is generated. Returns a bool flag to indicate whether "
+             "put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether "
              "generation should be stopped, if return true generation stops",
+             py::arg("tokens"))
+        .def("write_chunk",
+             &ChunkStreamerBase::write_chunk,
+             "write_chunk is called every time new token chunk is generated. Returns a StreamingStatus flag to indicate whether "
+             "generation should be stopped",
              py::arg("tokens"))
         .def("end",
              &ChunkStreamerBase::end,

@@ -265,10 +265,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
-    } else if (py::isinstance<py::object>(py_obj)) {
-        return py_obj;
     }
-    OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
+    OPENVINO_THROW("Property \"", property_name, "\" has unsupported type. Please, add type support to 'py_object_to_any' function");
 }
 
 } // namespace
@@ -316,20 +314,29 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     ov::genai::StreamerVariant streamer = std::monostate();
 
     std::visit(overloaded {
-    [&streamer](const std::function<bool(py::str)>& py_callback){
-        // Wrap python streamer with manual utf-8 decoding. Do not rely
-        // on pybind automatic decoding since it raises exceptions on incomplete strings.
-        auto callback_wrapped = [py_callback](std::string subword) -> bool {
-            py::gil_scoped_acquire acquire;
-            auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-            return py_callback(py::reinterpret_borrow<py::str>(py_str));
-        };
-        streamer = callback_wrapped;
-    },
-    [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-        streamer = streamer_cls;
-    },
-    [](std::monostate none){ /*streamer is already a monostate */ }
+        [&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback){
+            // Wrap python streamer with manual utf-8 decoding. Do not rely
+            // on pybind automatic decoding since it raises exceptions on incomplete strings.
+            auto callback_wrapped = [py_callback](std::string subword) -> ov::genai::StreamingStatus {
+                py::gil_scoped_acquire acquire;
+                auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
+                if (callback_output.has_value()) {
+                    if (*callback_output == (uint16_t)StreamingStatus::RUNNING)
+                        return StreamingStatus::RUNNING;
+                    else if (*callback_output == (uint16_t)StreamingStatus::CANCEL)
+                        return StreamingStatus::CANCEL;
+                    return StreamingStatus::STOP;
+                } else {
+                    return StreamingStatus::RUNNING;
+                }
+            };
+            streamer = callback_wrapped;
+        },
+        [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
+            streamer = streamer_cls;
+        },
+        [](std::monostate none){ /*streamer is already a monostate */ }
     }, py_streamer);
     return streamer;
 }

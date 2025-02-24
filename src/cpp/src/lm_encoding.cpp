@@ -13,6 +13,7 @@
 #include "debug_utils.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/streamer_base.hpp"
 
 namespace {
 
@@ -73,7 +74,7 @@ void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<i
 namespace ov {
 namespace genai {
 
-std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
+ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::InferRequest& m_llm,
     const ov::Tensor& input_ids,
     const ov::Tensor& attention_mask,
@@ -98,8 +99,9 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
                 for (const auto& generated_token_id : generation_outputs.begin()->second.generated_ids) {
-                    if (streamer_ptr->put(generated_token_id)) {
-                        handle->drop();
+                    auto streaming_status = streamer_ptr->write(generated_token_id);
+                    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                         break;
                     }
                 }
@@ -110,7 +112,7 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups]() {
         auto removed_it = std::remove_if(active_sequence_groups.begin(), active_sequence_groups.end(),
             [](SequenceGroup::Ptr sg) -> bool {
-                return sg->has_finished() || sg->handle_dropped();
+                return sg->has_finished() || sg->handle_stopped() || sg->handle_cancelled();
             });
         active_sequence_groups.erase(removed_it, active_sequence_groups.end());
     };
@@ -120,8 +122,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
 
     // Initialize results and performance metrics.
 
-    EncodedResults results;
-    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    ov::genai::utils::GenerationFinishInfo finish_info;
+    auto& raw_perf_counters = finish_info.results.perf_metrics.raw_metrics;
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
@@ -211,7 +213,8 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         }
 
         if (m_embedding.has_value()) {
-            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids);
+            constexpr bool return_remote_tensor = true;
+            const ov::Tensor& embed_prompt_tensor = (*m_embedding).infer(new_input_ids, return_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
@@ -257,25 +260,25 @@ std::pair<EncodedResults, std::optional<int64_t>> get_lm_encoded_results(
         auto sampling_params = sequence_group->get_sampling_parameters();
         const auto& sequences = sequence_group->get_finished_sequences();
         size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
+        finish_info.streaming_finish_status = sequence_group->get_generation_stream()->get_status();
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
 
-            results.tokens.push_back(sequence->get_generated_ids());
-            results.scores.push_back(score);
+            finish_info.results.tokens.push_back(sequence->get_generated_ids());
+            finish_info.results.scores.push_back(score);
         }
     }
 
     for (SequenceGroup::Ptr sequence_group : sequence_groups)
         sampler.clear_request_info(sequence_group->get_request_id());
 
-    // it is not saved in KV cache, we need to add it for some cases
-    std::optional<int64_t> last_token_of_best_sequence = std::nullopt;
-    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH || sequence_groups[0]->handle_dropped())
-        last_token_of_best_sequence = results.tokens[0].back();
+    // last generated token is not saved in KV cache, we need to add it for some cases
+    if (sequence_groups[0]->get_finished_sequences()[0]->get_finish_reason() == GenerationFinishReason::LENGTH)
+        finish_info.probably_disappeared_token = finish_info.results.tokens[0].back();
 
-    return {results, last_token_of_best_sequence};
+    return finish_info;
 }
 
 }  // namespace genai

@@ -7,13 +7,13 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/embedding_model.hpp"
 
 #include "sampler.hpp"
-#include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
 
@@ -21,9 +21,6 @@
 using namespace ov::genai;
 
 namespace {
-   
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 } // namespace
 
@@ -95,7 +92,7 @@ public:
         );
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
         auto language_model = compiled_language_model.get_runtime_model();
-        m_kv_cache_seq_length_axis = ov::genai::utils::get_seq_len_axis(language_model);
+        m_kv_cache_seq_length_axis = ov::genai::utils::get_kv_axes_pos(language_model).seq_len;
 
         m_language = compiled_language_model.create_infer_request();
 
@@ -158,9 +155,16 @@ public:
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         auto& raw_vlm_counters = perf_metrics.vlm_raw_metrics;
+
+        if (!m_is_chat_conversation) {
+            m_language.reset_state();
+            m_language.get_tensor("attention_mask").set_shape({1, 0});
+        }
+
         // If stop_token_ids were not provided, take value from default m_generation_config
         if (generation_config.stop_token_ids.empty())
             generation_config.stop_token_ids = m_generation_config.stop_token_ids;
+
         // If eos_token_id was not provided, take value from default m_generation_config
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
@@ -193,19 +197,7 @@ public:
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size);
         requests.push_back(sequence_group);
 
-        std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
-            [&m_tokenizer = m_tokenizer](
-                const std::function<bool(std::string)>& callback
-            ) -> std::shared_ptr<StreamerBase> {
-                return std::make_shared<TextCallbackStreamer>(m_tokenizer, callback);
-            },
-            [](const std::shared_ptr<StreamerBase>& ptr) {
-                return ptr;
-            },
-            [](std::monostate) {
-                return std::shared_ptr<StreamerBase>{nullptr};
-            },
-        }, streamer);
+        std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
         OPENVINO_ASSERT(streamer_ptr == nullptr || generation_config.num_return_sequences == 1 &&
             (generation_config.is_greedy_decoding() || generation_config.is_multinomial()),
@@ -222,10 +214,10 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        ov::genai::EncodedResults encoded_result;
-        std::optional<int64_t> last_disappeared_token;
-        std::tie(encoded_result, last_disappeared_token) = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
+        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
                                                                                              position_ids, m_embedding, rope_delta);
+        ov::genai::EncodedResults& encoded_result = finish_info.results;
+
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -235,16 +227,12 @@ public:
         }
         auto decode_end_time = std::chrono::steady_clock::now();
 
-        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], last_disappeared_token, generation_config.is_beam_search(),
+        m_inputs_embedder->update_tokenized_history(encoded_result.tokens[0], finish_info.probably_disappeared_token, generation_config.is_beam_search(),
                                                     m_language.get_tensor("attention_mask").get_shape()[1] - (history_size + inputs_embeds_size));
 
         std::string decoded_results = decoded.texts.at(0);
-        if (m_is_chat_conversation) {
+        if (m_is_chat_conversation)
             m_inputs_embedder->update_chat_history(decoded_results);
-        } else {
-            m_language.reset_state();
-            m_language.get_tensor("attention_mask").set_shape({1, 0});
-        }
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
@@ -264,10 +252,6 @@ public:
         decoded.perf_metrics.m_evaluated = false;
         decoded.perf_metrics.evaluate_statistics(generate_start_time);
 
-        if (!m_is_chat_conversation) {
-            m_language.get_tensor("attention_mask").set_shape({0, 0});
-        }
-
         return decoded;
     }
 
@@ -285,7 +269,15 @@ public:
         if (config_map.end() != image) {
             rgbs = {image->second.as<ov::Tensor>()};
         } if (config_map.end() != images) {
-            rgbs = images->second.as<std::vector<ov::Tensor>>();
+            if (images->second.is<std::vector<ov::Tensor>>()) {
+                rgbs = images->second.as<std::vector<ov::Tensor>>();
+            }
+            else if (images->second.is<ov::Tensor>()){
+                rgbs = {images->second.as<ov::Tensor>()};
+            }
+            else {
+                OPENVINO_THROW("Unknown images type.");
+            }
         }
         ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();

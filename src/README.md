@@ -8,7 +8,7 @@ It hides the complexity of the generation process and minimizes the amount of co
 > **NOTE**: Please make sure that you are following the versions compatibility rules, refer to the [OpenVINO™ GenAI Dependencies](#openvino-genai-dependencies) for more information.
 
 The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
-To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
+To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html).
 
 To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](./docs/BUILD.md).
 
@@ -172,8 +172,7 @@ int main(int argc, char* argv[]) {
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
-        // false means continue generation.
-        return false;
+        return ov::genai::StreamingStatus::RUNNING;
     };
     std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
 }
@@ -233,7 +232,7 @@ custom_streamer = CustomStreamer()
 
 pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
 ```
-For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/text_generation/README.md) sample.
+For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](../samples/python/text_generation/README.md) sample.
 
 
 Continuous batching with LLMPipeline:

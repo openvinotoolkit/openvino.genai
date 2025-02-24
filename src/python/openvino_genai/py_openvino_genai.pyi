@@ -5,7 +5,7 @@ from __future__ import annotations
 import openvino._pyopenvino
 import os
 import typing
-__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'T5EncoderModel', 'Text2ImagePipeline', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__ = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'T5EncoderModel', 'Text2ImagePipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -96,9 +96,13 @@ class AdapterConfig:
         ...
     def get_adapters(self) -> list[Adapter]:
         ...
+    def get_adapters_and_alphas(self) -> list[tuple[Adapter, float]]:
+        ...
     def get_alpha(self, adapter: Adapter) -> float:
         ...
     def remove(self, adapter: Adapter) -> AdapterConfig:
+        ...
+    def set_adapters_and_alphas(self, adapters: list[tuple[Adapter, float]]) -> None:
         ...
     def set_alpha(self, adapter: Adapter, alpha: float) -> AdapterConfig:
         ...
@@ -360,7 +364,15 @@ class ChunkStreamerBase:
         """
     def put_chunk(self, tokens: list[int]) -> bool:
         """
-        Put is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
+        put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
+        """
+    def write(self, token: int) -> StreamingStatus:
+        """
+        Write is called every time new token is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
+        """
+    def write_chunk(self, tokens: list[int]) -> StreamingStatus:
+        """
+        write_chunk is called every time new token chunk is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
         """
 class ContinuousBatchingPipeline:
     """
@@ -379,10 +391,13 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
+    def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], bool] | StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: list[str], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompt: str, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -444,8 +459,9 @@ class EncodedGenerationResult:
             RUNNING = 0 - Default status for ongoing generation.
             FINISHED = 1 - Status set when generation has been finished.
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-            DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
-            DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+            CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
+            STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+            DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
         perf_metrics:
                             Performance metrics for each generation result.
     
@@ -524,7 +540,7 @@ class FluxTransformer2DModel:
         """
     def get_config(self) -> FluxTransformer2DModel.Config:
         ...
-    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> FluxTransformer2DModel:
         ...
@@ -675,6 +691,8 @@ class GenerationFinishReason:
 class GenerationHandle:
     def can_read(self) -> bool:
         ...
+    def cancel(self) -> None:
+        ...
     def drop(self) -> None:
         ...
     def get_status(self) -> GenerationStatus:
@@ -682,6 +700,8 @@ class GenerationHandle:
     def read(self) -> dict[int, GenerationOutput]:
         ...
     def read_all(self) -> list[GenerationOutput]:
+        ...
+    def stop(self) -> None:
         ...
 class GenerationOutput:
     finish_reason: GenerationFinishReason
@@ -702,8 +722,9 @@ class GenerationResult:
             RUNNING = 0 - Default status for ongoing generation.
             FINISHED = 1 - Status set when generation has been finished.
             IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
-            DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
-            DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+            CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
+            STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+            DROPPED_BY_HANDLE = STOP - Status set when generation handle is dropped. Deprecated. Please, use STOP instead.
         perf_metrics:
                             Performance metrics for each generation result.
     
@@ -733,16 +754,16 @@ class GenerationStatus:
     
       IGNORED
     
-      DROPPED_BY_PIPELINE
+      CANCEL
     
-      DROPPED_BY_HANDLE
+      STOP
     """
-    DROPPED_BY_HANDLE: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.DROPPED_BY_HANDLE: 4>
-    DROPPED_BY_PIPELINE: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.DROPPED_BY_PIPELINE: 3>
+    CANCEL: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.CANCEL: 3>
     FINISHED: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.FINISHED: 1>
     IGNORED: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.IGNORED: 2>
     RUNNING: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.RUNNING: 0>
-    __members__: typing.ClassVar[dict[str, GenerationStatus]]  # value = {'RUNNING': <GenerationStatus.RUNNING: 0>, 'FINISHED': <GenerationStatus.FINISHED: 1>, 'IGNORED': <GenerationStatus.IGNORED: 2>, 'DROPPED_BY_PIPELINE': <GenerationStatus.DROPPED_BY_PIPELINE: 3>, 'DROPPED_BY_HANDLE': <GenerationStatus.DROPPED_BY_HANDLE: 4>}
+    STOP: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.STOP: 4>
+    __members__: typing.ClassVar[dict[str, GenerationStatus]]  # value = {'RUNNING': <GenerationStatus.RUNNING: 0>, 'FINISHED': <GenerationStatus.FINISHED: 1>, 'IGNORED': <GenerationStatus.IGNORED: 2>, 'CANCEL': <GenerationStatus.CANCEL: 3>, 'STOP': <GenerationStatus.STOP: 4>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -787,6 +808,14 @@ class Image2ImagePipeline:
         ...
     @staticmethod
     def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, t5_encoder_model: T5EncoderModel, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
     @staticmethod
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
@@ -848,6 +877,8 @@ class Image2ImagePipeline:
         """
     def get_generation_config(self) -> ImageGenerationConfig:
         ...
+    def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
+        ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
@@ -879,6 +910,94 @@ class ImageGenerationConfig:
         ...
     def validate(self) -> None:
         ...
+class ImageGenerationPerfMetrics:
+    """
+    
+        Holds performance metrics for each generate call.
+    
+        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        - Generate iteration duration, ms
+        - Inference duration for unet model, ms
+        - Inference duration for transformer model, ms
+    
+        Additional fields include:
+        - Load time, ms
+        - Generate total duration, ms
+        - inference durations for each encoder, ms
+        - inference duration of vae_encoder model, ms
+        - inference duration of vae_decoder model, ms
+    
+        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        If mean and std were already calculated, getters return cached values.
+    
+        :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
+        :type get_text_encoder_infer_duration: Dict[str, float]
+    
+        :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
+        :type get_vae_encoder_infer_duration: float
+    
+        :param get_vae_decoder_infer_duration: Returns the inference duration of vae decoder in milliseconds.
+        :type get_vae_decoder_infer_duration: float
+    
+        :param get_load_time: Returns the load time in milliseconds.
+        :type get_load_time: float
+    
+        :param get_generate_duration: Returns the generate duration in milliseconds.
+        :type get_generate_duration: float
+    
+        :param get_inference_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
+        :type get_inference_duration: float
+    
+        :param get_first_and_other_iter_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
+        :type get_first_and_other_iter_duration: tuple
+    
+        :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
+        :type get_iteration_duration: MeanStdPair
+    
+        :param get_first_and_second_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+        :type get_first_and_second_unet_infer_duration: tuple
+    
+        :param get_unet_infer_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
+        :type get_unet_infer_duration: MeanStdPair
+    
+        :param get_first_and_other_trans_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
+        :type get_first_and_other_trans_infer_duration: tuple
+    
+        :param get_transformer_infer_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
+        :type get_transformer_infer_duration: MeanStdPair
+    
+        :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
+        :type raw_metrics: RawImageGenerationPerfMetrics
+    """
+    def __init__(self) -> None:
+        ...
+    def get_first_and_other_iter_duration(self) -> tuple:
+        ...
+    def get_first_and_other_trans_infer_duration(self) -> tuple:
+        ...
+    def get_first_and_other_unet_infer_duration(self) -> tuple:
+        ...
+    def get_generate_duration(self) -> float:
+        ...
+    def get_inference_duration(self) -> float:
+        ...
+    def get_iteration_duration(self) -> MeanStdPair:
+        ...
+    def get_load_time(self) -> float:
+        ...
+    def get_text_encoder_infer_duration(self) -> dict[str, float]:
+        ...
+    def get_transformer_infer_duration(self) -> MeanStdPair:
+        ...
+    def get_unet_infer_duration(self) -> MeanStdPair:
+        ...
+    def get_vae_decoder_infer_duration(self) -> float:
+        ...
+    def get_vae_encoder_infer_duration(self) -> float:
+        ...
+    @property
+    def raw_metrics(self) -> RawImageGenerationPerfMetrics:
+        ...
 class InpaintingPipeline:
     """
     This class is used for generation with inpainting models.
@@ -891,6 +1010,14 @@ class InpaintingPipeline:
         ...
     @staticmethod
     def stable_diffusion(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, t5_encoder_model: T5EncoderModel, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
+        ...
+    @staticmethod
+    @typing.overload
+    def stable_diffusion_3(scheduler: Scheduler, clip_text_model_1: CLIPTextModelWithProjection, clip_text_model_2: CLIPTextModelWithProjection, transformer: SD3Transformer2DModel, vae: AutoencoderKL) -> InpaintingPipeline:
         ...
     @staticmethod
     def stable_diffusion_xl(scheduler: Scheduler, clip_text_model: CLIPTextModel, clip_text_model_with_projection: CLIPTextModelWithProjection, unet: UNet2DConditionModel, vae: AutoencoderKL) -> InpaintingPipeline:
@@ -952,6 +1079,8 @@ class InpaintingPipeline:
         """
     def get_generation_config(self) -> ImageGenerationConfig:
         ...
+    def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
+        ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
@@ -962,7 +1091,7 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -1048,7 +1177,7 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
@@ -1253,6 +1382,31 @@ class PipelineMetrics:
     @property
     def scheduled_requests(self) -> int:
         ...
+class RawImageGenerationPerfMetrics:
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param unet_inference_durations: Durations for each unet inference in microseconds.
+        :type unet_inference_durations: List[float]
+    
+        :param transformer_inference_durations: Durations for each transformer inference in microseconds.
+        :type transformer_inference_durations: List[float]
+    
+        :param iteration_durations: Durations for each step iteration in microseconds.
+        :type iteration_durations: List[float]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def iteration_durations(self) -> list[float]:
+        ...
+    @property
+    def transformer_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def unet_inference_durations(self) -> list[float]:
+        ...
 class RawPerfMetrics:
     """
     
@@ -1357,7 +1511,7 @@ class SD3Transformer2DModel:
         """
     def get_config(self) -> SD3Transformer2DModel.Config:
         ...
-    def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: int, height: int, width: int, tokenizer_model_max_length: int) -> SD3Transformer2DModel:
         ...
@@ -1521,6 +1675,50 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
+    def write(self, token: int) -> StreamingStatus:
+        """
+        Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
+        """
+class StreamingStatus:
+    """
+    Members:
+    
+      RUNNING
+    
+      CANCEL
+    
+      STOP
+    """
+    CANCEL: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.CANCEL: 2>
+    RUNNING: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.RUNNING: 0>
+    STOP: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.STOP: 1>
+    __members__: typing.ClassVar[dict[str, StreamingStatus]]  # value = {'RUNNING': <StreamingStatus.RUNNING: 0>, 'CANCEL': <StreamingStatus.CANCEL: 2>, 'STOP': <StreamingStatus.STOP: 1>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: int) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: int) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
 class T5EncoderModel:
     """
     T5EncoderModel class.
@@ -1642,11 +1840,28 @@ class Text2ImagePipeline:
         """
     def get_generation_config(self) -> ImageGenerationConfig:
         ...
+    def get_performance_metrics(self) -> ImageGenerationPerfMetrics:
+        ...
     def reshape(self, num_images_per_prompt: int, height: int, width: int, guidance_scale: float) -> None:
         ...
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
+        ...
+class TextStreamer(StreamerBase):
+    """
+    
+    TextStreamer is used to decode tokens into text and call a user-defined callback function.
+    
+    tokenizer: Tokenizer object to decode tokens into text.
+    callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
+    
+    """
+    def __init__(self, tokenizer: Tokenizer, callback: typing.Callable[[str], bool | StreamingStatus]) -> None:
+        ...
+    def end(self) -> None:
+        ...
+    def write(self, token: int) -> StreamingStatus:
         ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
@@ -1655,8 +1870,23 @@ class TokenizedInputs:
         ...
 class Tokenizer:
     """
-    openvino_genai.Tokenizer object is used to initialize Tokenizer
-               if it's located in a different path than the main model.
+    
+        The class is used to encode prompts and decode resulting tokens
+    
+        Chat tempalte is initialized from sources in the following order
+        overriding the previos value:
+        1. chat_template entry from tokenizer_config.json
+        2. chat_template entry from processor_config.json
+        3. chat_template entry from chat_template.json
+        4. chat_tempalte entry from rt_info section of openvino.Model
+        5. If the tempalte is known to be not supported by GenAI, it's
+            replaced with a simplified supported version.
+        6. Patch chat_tempalte replacing not supported instructions with
+            eqvivalents.
+        7. If the template was not in the list of not supported GenAI
+            templates from (5), it's blindly replaced with
+            simplified_chat_template entry from rt_info section of
+            openvino.Model if the entry exists.
     """
     chat_template: str
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
@@ -1827,7 +2057,7 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
-    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -1850,7 +2080,7 @@ class VLMPipeline:
             :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], bool] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
@@ -2128,7 +2358,7 @@ class WhisperPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], bool] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         

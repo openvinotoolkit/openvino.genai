@@ -216,11 +216,11 @@ protected:
             if (m_tokenized_history.empty()) {
                 encoded_input_ids = new_chat_tokens;
 
-            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_kv_cache_need_to_update()) {
-                // does_kv_cache_need_to_update will be true here if beam search is activated
+            } else if (trusted_history_length != SIZE_MAX || m_kv_history_manager.does_history_cache_need_to_update()) {
+                // does_history_cache_need_to_update will be true here if beam search is activated
                 // in beam search mode we want to remove all history about last model answer from kv cache and add the best answer directly
                 // if we have difference in model answer and decoded answer it anyway will be less then entire history, so let's use data from m_kv_history_manager
-                if (m_kv_history_manager.does_kv_cache_need_to_update()) {
+                if (m_kv_history_manager.does_history_cache_need_to_update()) {
                     trusted_history_length = m_kv_history_manager.trusted_history_length;
                 } else {
                     m_kv_history_manager.num_tokens_to_remove_from_kv_cache = m_tokenized_history.size() - trusted_history_length;
@@ -1508,8 +1508,16 @@ public:
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
             m_templated_chat_history = std::move(new_templated_chat_history);
         } else {
+            std::string templated_prompt;
+            if (m_apply_chat_template) {
+                ChatHistory history({{{"role", "user"}, {"content", images_prompt.str()}}});
+                constexpr bool add_generation_prompt = true;
+                templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            } else {
+                templated_prompt = images_prompt.str();
+            }
             auto start_tokenizer_time = std::chrono::steady_clock::now();
-            new_chat_tokens = phi3_v::split_tokenize(images_prompt.str(), m_tokenizer);
+            new_chat_tokens = phi3_v::split_tokenize(templated_prompt, m_tokenizer);
             auto end_tokenizer_time = std::chrono::steady_clock::now();
             metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         }

@@ -23,7 +23,7 @@ def streamer(subword: str) -> bool:
     print(subword, end='', flush=True)
 
     # No value is returned as in this example we don't want to stop the generation in this method.
-    # "return None" will be treated the same as "return False".
+    # "return None" will be treated the same as "return openvino_genai.StreamingStatus.RUNNING".
 
 
 def read_image(path: str) -> Tensor:
@@ -36,7 +36,7 @@ def read_image(path: str) -> Tensor:
 
     '''
     pic = Image.open(path).convert("RGB")
-    image_data = np.array(pic.getdata()).reshape(1, pic.size[1], pic.size[0], 3).astype(np.uint8)
+    image_data = np.array(pic)
     return Tensor(image_data)
 
 

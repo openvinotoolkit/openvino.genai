@@ -21,6 +21,7 @@
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 #include "whisper_utils.hpp"
+#include "openvino/genai/streamer_base.hpp"
 
 using ov::genai::MicroSeconds;
 
@@ -66,8 +67,9 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         for (const auto& gen_token : token.begin()->second.generated_ids) {
-            if (streamer_ptr->put(gen_token)) {
-                handle->drop();
+            auto streaming_status = streamer_ptr->write(gen_token);
+            if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
+                streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
                 break;
             }
         }
@@ -102,7 +104,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     stream_generated_tokens();
 
     // "Generation" phase
-    while (!sequence_group->has_finished() && !sequence_group->handle_dropped()) {
+    while (!sequence_group->has_finished() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         std::map<size_t, std::vector<int64_t>> batch_to_generated_ids{};
 
         sequence_group->schedule_tokens(1);
@@ -182,7 +184,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     sampler.clear_request_info(sequence_group->get_request_id());
 
-    return {results, sequence_group->handle_dropped()};
+    return {results, (sequence_group->handle_stopped() || sequence_group->handle_cancelled())};
 }
 
 ov::Tensor encode(ov::InferRequest& request,
@@ -340,7 +342,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                  extracted_segments.non_timestamp_tokens.begin(),
                                  extracted_segments.non_timestamp_tokens.end());
 
-            if (streamer && streamer->put_chunk(extracted_segments.non_timestamp_tokens)) {
+            if (streamer && streamer->write_chunk(extracted_segments.non_timestamp_tokens) != ov::genai::StreamingStatus::RUNNING) {
                 cancelled = true;
                 break;
             }

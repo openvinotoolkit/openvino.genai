@@ -56,12 +56,12 @@ class IterableStreamer(openvino_genai.StreamerBase):
     
     def get_stop_flag(self):
         """
-        Checks whether the generation process should be stopped.
+        Checks whether the generation process should be stopped or cancelled.
         
         Returns:
-            bool: Always returns False in this implementation.
+            openvino_genai.StreamingStatus: Always returns RUNNING in this implementation.
         """
-        return False
+        return openvino_genai.StreamingStatus.RUNNING
     
     def put_word(self, word: str):
         """
@@ -72,7 +72,7 @@ class IterableStreamer(openvino_genai.StreamerBase):
         """
         self.text_queue.put(word)
 
-    def put(self, token_id: int) -> bool:
+    def write(self, token_id: int) -> openvino_genai.StreamingStatus:
         """
         Processes a token and manages the decoding buffer. Adds decoded text to the queue.
         
@@ -106,12 +106,12 @@ class IterableStreamer(openvino_genai.StreamerBase):
                 self.print_len = print_until
         self.put_word(word)
 
-        if self.get_stop_flag():
+        stop_flag = self.get_stop_flag()
+        if stop_flag != openvino_genai.StreamingStatus.RUNNING:
             # When generation is stopped from streamer then end is not called, need to call it here manually.
             self.end()
-            return True  # True means stop generation
-        else:
-            return False  # False means continue generation
+
+        return stop_flag
 
     def end(self):
         """
@@ -132,12 +132,12 @@ class ChunkStreamer(IterableStreamer):
         super().__init__(tokenizer)
         self.tokens_len = tokens_len
 
-    def put(self, token_id: int) -> bool:
+    def write(self, token_id: int) -> openvino_genai.StreamingStatus:
         if (len(self.tokens_cache) + 1) % self.tokens_len != 0:
             self.tokens_cache.append(token_id)
             self.decoded_lengths.append(-1)
-            return False
-        return super().put(token_id)
+            return openvino_genai.StreamingStatus.RUNNING
+        return super().write(token_id)
 
 
 def main():

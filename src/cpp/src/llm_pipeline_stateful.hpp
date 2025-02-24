@@ -14,7 +14,6 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
 
     // Chat scenario specific parameters
     bool is_chat_conversation = false;
-    bool m_trust_encoded_history = true;
     ChatHistory m_history;
     std::string m_templated_chat_history = {};
     std::vector<int64_t> m_tokenized_chat_history;
@@ -24,8 +23,11 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // If sequence contains some symbols, which could be ambiguously encoded by tokenizer, we need to trim kv cache
     // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
     // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
-    ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0};
-    size_t m_kv_cache_seq_length_axis = 2;
+    ov::genai::utils::HistoryRemoveManager m_kv_history_manager = {0, 0, 2};
+    // Finish reason of last generation for chat scenario
+    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
+    // if True, full history will be used as prompt on each chat generation
+    bool m_use_full_chat_history = false;
 
     void reset_kv_state();
 public:

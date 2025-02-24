@@ -141,7 +141,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     if (!const_node) { return false; }
 
     op::util::VariableInfo var_info{const_node->get_output_shape(0), const_node->get_output_element_type(0), MAX_LENGTH_VAR_ID};
-    auto variable_1 = std::make_shared<op::util::Variable>(var_info);
+    auto max_length_var = std::make_shared<op::util::Variable>(var_info);
 
     size_t num_added_tokens = num_segments - number_of_main_tokens_inputs;
     // Constant which stores number of added_tokens.
@@ -159,7 +159,7 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
 
     // Save targets before adding new target with ReadValue to avoid recursion.
     auto target_inputs = const_node->output(0).get_target_inputs();
-    auto max_length_rv = std::make_shared<v6::ReadValue>(default_max_length_const, variable_1);
+    auto max_length_rv = std::make_shared<v6::ReadValue>(default_max_length_const, max_length_var);
     auto subtract_node = std::make_shared<v1::Subtract>(max_length_rv, num_added_tokens_const);
     
     for (auto target_input : target_inputs) {
@@ -186,34 +186,38 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
         subtract_node->input(1).replace_source_output(select_node->output(0));
     }
     
-    model->add_sinks({std::make_shared<v6::Assign>(max_length_rv, variable_1)});
-    model->add_variables({variable_1});
+    model->add_sinks({std::make_shared<v6::Assign>(max_length_rv, max_length_var)});
+    model->add_variables({max_length_var});
 
-    std::shared_ptr<ov::Node> ragged_to_dense_node;
+    std::vector<std::shared_ptr<ov::Node>> ragged_to_dense_nodes;
     for (auto node: model->get_ordered_ops()) {
         if (strcmp(node->get_type_info().name, "RaggedToDense") == 0) {
-            ragged_to_dense_node = node;
+            ragged_to_dense_nodes.emplace_back(node);
         }
     }
-    
-    if (!ragged_to_dense_node || ragged_to_dense_node->input_value(3).get_element_type() != ov::element::i32) {
+
+    if (ragged_to_dense_nodes.size() < 1) {
         return true;  // true since at this point we already have modified the graph.s
     }
-   
-    auto variable_2 = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{1}, ov::element::boolean, PAD_TO_LONGEST_VAR_ID});
-
+    
     // By default do not pad to max_length
+    auto pad_to_max_length_var = std::make_shared<op::util::Variable>(op::util::VariableInfo{ov::Shape{1}, ov::element::boolean, PAD_TO_MAX_LENGTH_VAR_ID});
     auto default_false_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{1}, std::vector{false});
-    auto pad_to_max_length_rv = std::make_shared<v6::ReadValue>(default_false_const, variable_2);
+    auto pad_to_max_length_rv = std::make_shared<v6::ReadValue>(default_false_const, pad_to_max_length_var);
+    model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, pad_to_max_length_var)});
+    model->add_variables({pad_to_max_length_var});
     
     auto zero_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector{0});
     auto select_node = std::make_shared<v1::Select>(pad_to_max_length_rv, max_length_rv, zero_constant);
 
-    auto max_op = std::make_shared<v1::Maximum>(ragged_to_dense_node->input_value(3), select_node);
-    ragged_to_dense_node->input(3).replace_source_output(max_op->output(0));
+    for (auto ragged_to_dense_node : ragged_to_dense_nodes) {
+        if (!ragged_to_dense_node) {
+            return true;  // true since at this point we already have modified the graph.s
+        }
+        
+        auto max_op = std::make_shared<v1::Maximum>(ragged_to_dense_node->input_value(3), select_node);
+        ragged_to_dense_node->input(3).replace_source_output(max_op->output(0));
+    }
 
-    model->add_sinks({std::make_shared<v6::Assign>(pad_to_max_length_rv, variable_2)});
-    model->add_variables({variable_2});
-    
     return true;
 }
