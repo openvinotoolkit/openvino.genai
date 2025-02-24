@@ -105,7 +105,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 ): StatefulLLMPipeline(
        genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config),
        tokenizer, config,
-       utils::from_config_json_if_exists(models_path)
+       utils::from_config_json_if_exists(models_path),
+       models_path
    ) {
 }
 
