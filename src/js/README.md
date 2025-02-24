@@ -27,17 +27,17 @@ Then you can use OpenVINO™ GenAI JavaScript Bindings in one of the following w
 #### Option 1 - using npm:
 
 To use this package locally use `npm link` in `src/js/` directory
-and `npm link genai-node` in the folder where you want to add this package as a dependency
+and `npm link openvino-genai-node` in the folder where you want to add this package as a dependency
 
 #### Option 2 - using package.json:
 
-Add the `genai-node` package manually by specifying the path to the `src/js/` directory in your `package.json`:
+Add the `openvino-genai-node` package manually by specifying the path to the `src/js/` directory in your `package.json`:
 
 ```
-"genai-node": "file:*path-to-current-directory*"
+"openvino-genai-node": "file:*path-to-current-directory*"
 ```
 
 ### Verify the installation:
 ```sh
-node -e "const { Pipeline } = require('genai-node'); console.log(Pipeline);"
+node -e "const { Pipeline } = require('openvino-genai-node'); console.log(Pipeline);"
 ```
