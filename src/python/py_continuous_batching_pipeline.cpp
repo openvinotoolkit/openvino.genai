@@ -206,14 +206,16 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("score", &GenerationOutput::score)
         .def_readwrite("finish_reason", &GenerationOutput::finish_reason);
 
-    py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
+    auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
-        .def("drop", &GenerationHandleImpl::drop)
         .def("stop", &GenerationHandleImpl::stop)
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
+    OPENVINO_SUPPRESS_DEPRECATED_START
+    generation_handle.def("drop", &GenerationHandleImpl::drop);
+    OPENVINO_SUPPRESS_DEPRECATED_END
 
     // Binding for StopCriteria
     py::enum_<AggregationMode>(m, "AggregationMode",
