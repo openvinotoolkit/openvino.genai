@@ -36,12 +36,8 @@ class TestGreedyCausalLM:
     
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["phi-1_5"], indirect=True)
-    @pytest.mark.parametrize("sample_args",
-        [
-            ["Alan Turing was a"],
-        ],
-    )
+    @pytest.mark.parametrize("convert_model", ["phi-1_5", "redpajama-3b-chat"], indirect=True)
+    @pytest.mark.parametrize("sample_args", [["Alan Turing was a"]])
     def test_sample_greedy_causal_lm_refs(self, request, convert_model, sample_args):
         # Python test
         py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")

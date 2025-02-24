@@ -47,7 +47,11 @@ MODELS = {
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    }
+    },
+    "redpajama-3b-chat": {
+        "name": "ikala/redpajama-3b-chat",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
 }
 
 TEST_FILES = {
