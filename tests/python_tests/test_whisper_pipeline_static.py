@@ -1,6 +1,7 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from utils.network import retry_request
 from test_whisper_pipeline import get_whisper_models_list, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
 from transformers import WhisperProcessor, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
@@ -19,7 +20,7 @@ config = {"NPU_USE_NPUW" : "YES",
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params
 
-    processor = WhisperProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
 
@@ -38,7 +39,7 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
 
-        opt_model = OVModelForSpeechSeq2Seq.from_pretrained(
+        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
             model_id,
             export=True,
             trust_remote_code=True,
@@ -46,7 +47,7 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
             compile=False,
             device="CPU",
             load_in_8bit=False,
-        )
+        ))
         opt_model.generation_config.save_pretrained(path)
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
