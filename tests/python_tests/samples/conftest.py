@@ -47,6 +47,14 @@ MODELS = {
     "TinyStories-1M": {
         "name": "roneneldan/TinyStories-1M",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },
+    "dolly-v2-3b": {
+        "name": "databricks/dolly-v2-3b",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    },   
+    "dolly-v2-7b": {
+        "name": "dolly-v2-7b",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     }
 }
 
@@ -82,6 +90,7 @@ def setup_and_teardown(request, tmp_path_factory):
             shutil.rmtree(ov_cache)
         else:
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
+
 
 @pytest.fixture(scope="session")
 def convert_model(request):
