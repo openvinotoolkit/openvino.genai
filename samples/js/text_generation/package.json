@@ -1,11 +1,11 @@
 {
-  "name": "genai-node-demo",
+  "name": "openvino-genai-node-demo",
   "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
     "openvino-node": "^2025.0.0",
-    "genai-node": "file:../../../src/js/"
+    "openvino-genai-node": "file:../../../src/js/"
   },
   "engines": {
     "node": ">=21.0.0"
