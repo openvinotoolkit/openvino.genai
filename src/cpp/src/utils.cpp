@@ -288,7 +288,7 @@ ov::Core singleton_core() {
     return core;
 }
 
-size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens) {
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
     while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
@@ -297,12 +297,7 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
         idx++;
     }
 
-    // encoded_history after decode of tokenizer could lose one last token (eos/stop token)
-    if ((idx == tokenized_history.size() && idx == encoded_history.get_size()) ||
-        (encoded_history.get_size() < tokenized_history.size() && idx == tokenized_history.size() - 1 && stop_tokens.find(tokenized_history.back()) != stop_tokens.end()))
-        return SIZE_MAX;
-    else
-        return idx;
+    return idx;
 }
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
