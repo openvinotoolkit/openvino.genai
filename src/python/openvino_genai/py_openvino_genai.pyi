@@ -1176,7 +1176,7 @@ class LLMPipeline:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, models: str, weights: openvino._pyopenvino.Tensor, tokenizer : Tokenizer, device: str, generation_config: GenerationConfig | None = None, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer : Tokenizer, device: str, generation_config: GenerationConfig = GenerationConfig(), **kwargs) -> None:
         """
                     LLMPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
