@@ -27,6 +27,21 @@ ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap&
         return std::nullopt;
     }
 }
+
+ov::InferRequest init_model(ov::CompiledModel& compiled) {
+    ov::InferRequest request = compiled.create_infer_request();
+
+    try {
+        ov::RemoteContext context = compiled.get_context();
+        ov::Shape output_shape = request.get_output_tensor().get_shape();
+        ov::RemoteTensor remote = context.create_tensor(ov::element::f32, output_shape);
+        request.set_tensor("last_hidden_state", remote);
+        return request;
+    } catch (const ov::Exception&) {
+        return request;
+    }
+}
+
 }  // namespace
 
 namespace ov {
@@ -44,7 +59,7 @@ public:
         ov::CompiledModel compiled_model =
             core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
-        m_encoder = compiled_model.create_infer_request();
+        m_encoder = init_model(compiled_model);
 
         m_decoder = WhisperDecoder::from_path(models_path, device, properties);
 
