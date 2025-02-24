@@ -438,12 +438,9 @@ jobs:
         run: python ${{ env.SRC_DIR }}/samples/python/text_generation/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0 0
         working-directory: ${{ env.MODELS_DIR }}
 
-      # whisper_speech_recognition.py hangs on a windows due to librosa issue: https://librosa.org/doc/latest/troubleshooting.html#import-librosa-hangs-indefinitely
-      # fix with setting NUMBA_CACHE_DIR doesn't work. 
-      # current WA is to set timeout-minutes: 2 as it looks like librosa hangs for ~1 min only
       - name: Test whisper_speech_recognition.py
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
-        timeout-minutes: 2
+        timeout-minutes: 1
         run: python ${{ env.SRC_DIR }}/samples/python/whisper_speech_recognition/whisper_speech_recognition.py ./whisper-tiny/ how_are_you_doing_today.wav
         working-directory: ${{ env.MODELS_DIR }}
 
