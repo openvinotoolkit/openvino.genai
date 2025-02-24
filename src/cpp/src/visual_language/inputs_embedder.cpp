@@ -282,7 +282,7 @@ protected:
                     reshaped_image.set_shape({1, image_shape.at(0), image_shape.at(1), image_shape.at(2)});
                     break;
                 case 4: break;
-                default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout");
+                default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout, given image rank is ", image_shape.size());
             }
             ov::Shape reshaped_image_shape = reshaped_image.get_shape();
             for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
