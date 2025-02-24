@@ -212,6 +212,16 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& text_encode_device,
+                                                                const std::string& denoise_device,
+                                                                const std::string& vae_decode_device,
+                                                                Properties&&... properties) {
+        return compile(text_encode_device,
+                       denoise_device,
+                       vae_decode_device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     /**
      * Generates image(s) based on prompt and other image generation parameters
      * @param positive_prompt Prompt to generate image(s) from
