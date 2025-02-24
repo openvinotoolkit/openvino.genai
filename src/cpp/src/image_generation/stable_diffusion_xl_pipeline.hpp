@@ -13,58 +13,58 @@ class StableDiffusionXLPipeline : public StableDiffusionPipeline {
 public:
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         StableDiffusionPipeline(pipeline_type) {
-            const std::filesystem::path model_index_path = root_dir / "model_index.json";
-            std::ifstream file(model_index_path);
-            OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
+        std::ifstream file(model_index_path);
+        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
 
-            nlohmann::json data = nlohmann::json::parse(file);
-            using utils::read_json_param;
+        nlohmann::json data = nlohmann::json::parse(file);
+        using utils::read_json_param;
 
-            set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
+        set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-            const std::string text_encoder = data["text_encoder"][1].get<std::string>();
-            if (text_encoder == "CLIPTextModel") {
-                m_clip_text_encoder =
-                    std::make_shared<CLIPTextModel>(root_dir / "text_encoder");
+        const std::string text_encoder = data["text_encoder"][1].get<std::string>();
+        if (text_encoder == "CLIPTextModel") {
+            m_clip_text_encoder =
+                std::make_shared<CLIPTextModel>(root_dir / "text_encoder");
+        } else {
+            OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
+        }
+
+        const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
+        if (text_encoder_2 == "CLIPTextModelWithProjection") {
+            m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
+                root_dir / "text_encoder_2");
+        } else {
+            OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
+        }
+
+        const std::string unet = data["unet"][1].get<std::string>();
+        if (unet == "UNet2DConditionModel") {
+            m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet");
+        } else {
+            OPENVINO_THROW("Unsupported '", unet, "' UNet type");
+        }
+
+        const std::string vae = data["vae"][1].get<std::string>();
+        if (vae == "AutoencoderKL") {
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
+            else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE ||
+                        m_pipeline_type == PipelineType::INPAINTING) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder",
+                                                        root_dir / "vae_decoder");
             } else {
-                OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
+                OPENVINO_ASSERT("Unsupported pipeline type");
             }
+        } else {
+            OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
+        }
 
-            const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
-            if (text_encoder_2 == "CLIPTextModelWithProjection") {
-                m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
-                    root_dir / "text_encoder_2");
-            } else {
-                OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
-            }
+        // initialize generation config
+        initialize_generation_config(data["_class_name"].get<std::string>());
 
-            const std::string unet = data["unet"][1].get<std::string>();
-            if (unet == "UNet2DConditionModel") {
-                m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet");
-            } else {
-                OPENVINO_THROW("Unsupported '", unet, "' UNet type");
-            }
-
-            const std::string vae = data["vae"][1].get<std::string>();
-            if (vae == "AutoencoderKL") {
-                if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                    m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
-                else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE ||
-                         m_pipeline_type == PipelineType::INPAINTING) {
-                    m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder",
-                                                            root_dir / "vae_decoder");
-                } else {
-                    OPENVINO_ASSERT("Unsupported pipeline type");
-                }
-            } else {
-                OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
-            }
-
-            // initialize generation config
-            initialize_generation_config(data["_class_name"].get<std::string>());
-
-            // initialize force_zeros_for_empty_prompt, which is SDXL specific
-            read_json_param(data, "force_zeros_for_empty_prompt", m_force_zeros_for_empty_prompt);
+        // initialize force_zeros_for_empty_prompt, which is SDXL specific
+        read_json_param(data, "force_zeros_for_empty_prompt", m_force_zeros_for_empty_prompt);
     }
 
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) :
