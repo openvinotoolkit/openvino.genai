@@ -379,6 +379,9 @@ jobs:
           packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          
+      - name: Fix C++ samples permissions
+        run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
 
       - name: Test Samples (Python and C++)
         run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
