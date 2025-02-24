@@ -32,7 +32,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::ge
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
 
-target_compile_definitions(${TEST_TARGET_NAME} PRIVATE GTEST_LINKED_AS_SHARED_LIBRARY=1)
+# target_compile_definitions(${TEST_TARGET_NAME} PRIVATE GTEST_LINKED_AS_SHARED_LIBRARY=0)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:4207,4286)
