@@ -421,12 +421,12 @@ jobs:
       matrix:
         build-type: [Release]
         test:
+          - name: 'LLM'
+            marker: 'llm'
+            cmd: 'tests/python_tests/samples'
           - name: 'Whisper'
-            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-          - name: 'Cacheopt E2E'
-            cmd: 'tests/python_tests/test_kv_cache_eviction.py'
-          - name: 'LLM & VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_kv_cache_eviction.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+            marker: 'whisper'
+            cmd: 'tests/python_tests/samples'
     needs: [ openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples ]
     timeout-minutes: 45
     defaults:
