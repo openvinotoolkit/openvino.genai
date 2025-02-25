@@ -11,7 +11,7 @@ from test_utils import run_sample
 class TestEncryptedLM:
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["Qwen/Qwen2.5-0.5B-Instruct"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["Qwen2.5-0.5B-Instruct"], indirect=True)
     @pytest.mark.parametrize("sample_args", ["Why is the sun yellow?"])
 
     def test_sample_encrypted_lm(self, convert_model, sample_args):
