@@ -168,12 +168,26 @@ For more information please refer to the [OpenVINO Tokenizers instructions](http
 
 1. Download and extract OpenVINO GenAI Archive
 Visit the [OpenVINO Download Page](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/download.html?PACKAGE=OPENVINO_GENAI&VERSION=NIGHTLY&OP_SYSTEM=WINDOWS&DISTRIBUTION=ARCHIVE) and select the latest release or Nightly Build and click “Download Archives with GenAI”
-2. Build samples
-Open a command window and run the setupvars.bat file from the unzipped downloaded OpenVINO with GenAI folder.
-```sh
-    <OPENVINO_GENAI_ARCHIVE_DIR>\setupvars.bat
-```
-In the same command window, after the OpenVINO environment is initialized, navigate to the folder samples/cpp/, and run build_samples_msvc.bat or build_samples.ps1
+2. Set up the environment and build the samples
+    Linux and macOS:
+    ```sh
+    source <INSTALL_DIR>/setupvars.sh
+    <INSTALL_DIR>/samples/cpp/build_samples.sh
+    ```
+
+    Windows Command Prompt:
+    ```cmd
+    <INSTALL_DIR>\setupvars.bat
+    <INSTALL_DIR>\samples\cpp\build_samples_msvc.bat
+    ```
+
+    Windows PowerShell:
+    ```cmd
+    .<INSTALL_DIR>\setupvars.ps1
+    .<INSTALL_DIR>\samples\cpp\build_samples.ps1
+    ```
+GenAI samples are also built along with the entire OpenVINO GenAI using the standard building process 
+
 
 ### Build OpenVINO GenAI Wheel
 
