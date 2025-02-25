@@ -36,6 +36,7 @@ public:
         scheduler_config, 
         device, 
         properties} {
+        // TODO: Implement the constructor of ContinuousBatchingPipeline from ModelsMap
         OPENVINO_THROW("Not implemented.");
     }
 

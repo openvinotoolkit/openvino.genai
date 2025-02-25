@@ -58,10 +58,6 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  ov::genai::GenerationConfig sampling_params) override;
-    GenerationHandle add_request(uint64_t request_id,
-                                 const std::string& prompt,
-                                 const std::vector<ov::Tensor>& rgbs,
-                                 ov::genai::GenerationConfig sampling_params) override;
 
     bool has_non_finished_requests() override;
 

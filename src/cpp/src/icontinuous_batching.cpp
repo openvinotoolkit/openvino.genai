@@ -180,6 +180,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return results;
 }
 
+GenerationHandle 
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                        const std::string& prompt,
+                                        const std::vector<ov::Tensor>& rgbs,
+                                        GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    ov::genai::VLMPerfMetrics metrics;
+    auto inputs = m_inputs_embedder->get_inputs_embeds(prompt, rgbs, metrics);
+    return add_request(request_id, inputs, sampling_params);
+}
+
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
     const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
     const GenerationHandle& handle
