@@ -8,7 +8,7 @@ properties([
         booleanParam(defaultValue: true,
                      description: 'Whether to propagate commit status to GitHub',
                      name: 'propagateStatus'),
-        booleanParam(defaultValue: false,
+        booleanParam(defaultValue: true,
                description: 'If true, forces running pre-commit scope',
                name: 'forceRunPrecommitScope'),
         string(defaultValue: '',
