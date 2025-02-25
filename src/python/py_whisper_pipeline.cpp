@@ -223,6 +223,8 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     return res_config;
 }
 
+OPENVINO_SUPPRESS_DEPRECATED_START
+
 class ConstructableChunkStreamer : public ChunkStreamerBase {
     bool put(int64_t token) override {
         PYBIND11_OVERRIDE(bool,               // Return type
@@ -256,6 +258,8 @@ class ConstructableChunkStreamer : public ChunkStreamerBase {
         PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
     }
 };
+
+OPENVINO_SUPPRESS_DEPRECATED_END
 
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
