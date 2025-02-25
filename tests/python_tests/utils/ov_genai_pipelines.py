@@ -42,7 +42,7 @@ class PipelineType(Enum):
     CONTINIOUS_BATCHING = 3
     SPECULATIVE_DECODING = 4
     PROMPT_LOOKUP_DECODING = 5
-    AUTO = 0
+    AUTO = 6
 
 
 class StreamerWithResults:
