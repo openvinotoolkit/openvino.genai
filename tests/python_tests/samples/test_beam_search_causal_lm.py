@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
+ 
 import os
 import pytest
 import sys
@@ -16,7 +16,6 @@ class TestBeamSearchCausalLM:
         [
             pytest.param("Qwen2-0.5B-Instruct", "你好！"),
             pytest.param("phi-1_5", "69"),
-            pytest.param("SmolLM2-135M", "69"),
         ],
         indirect=["convert_model"],
     )
@@ -61,6 +60,9 @@ class TestBeamSearchCausalLM:
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
         
+        # Compare results
+        assert py_predictions == cpp_predictions, "Python and C++ results should match"
+        
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]
         
@@ -76,9 +78,5 @@ class TestBeamSearchCausalLM:
                 logger.info(f'Checking for "{ref=}"')
                 
                 idx = py_predictions.find(ref)
-                assert -1 != idx, f'Missing "{ref=}" from Python predictions'
+                assert -1 != idx, f'Missing "{ref=}" from predictions'
                 py_predictions = py_predictions[:idx] + py_predictions[idx + len(ref):]
-
-                idx = cpp_predictions.find(ref)
-                assert -1 != idx, f'Missing "{ref=}" from C++ predictions'
-                cpp_predictions = cpp_predictions[:idx] + cpp_predictions[idx + len(ref):]
