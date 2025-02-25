@@ -468,14 +468,11 @@ jobs:
           packages: "openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
-      
-      # build could use different wheel and cpack OpenVINO packages 
-      # and it's important to compare sample results based on the same OpenVINO version
+
       - name: Test Samples (Python and C++)
-        run: |
-          . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -v ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
+          PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
