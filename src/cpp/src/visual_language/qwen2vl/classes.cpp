@@ -251,9 +251,6 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     m_vision_embeddings_merger = compiled_model.create_infer_request();
 }
 
-// forward declaration
-const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
-
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const VLMConfig& vlm_config,
     const ModelsMap& models_map,
@@ -263,8 +260,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     auto compiled_model = utils::singleton_core().compile_model(
-        get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-        get_model_weights_pair(models_map, "vision_embeddings_merger").second,
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second,
         device,
         device_config
     );

@@ -383,6 +383,9 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: int, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
+    def add_request(self, request_id: int, prompt: str, images: list[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
     def generate(self, input_ids: list[openvino._pyopenvino.Tensor], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[EncodedGenerationResult]:
         ...
     @typing.overload
@@ -390,6 +393,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: list[str], images: list[list[openvino._pyopenvino.Tensor]], generation_config: list[GenerationConfig], streamer: typing.Callable[[str], int | None] | StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -1167,6 +1173,17 @@ class LLMPipeline:
                     Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, generation_config: GenerationConfig = ..., **kwargs) -> None:
+        """
+                    LLMPipeline class constructor.
+                    model (str): Pre-read model.
+                    weights (ov.Tensor): Pre-read model weights.
+                    tokenizer (str): Genai Tokenizers.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+                    generation_config {ov_genai.GenerationConfig} Genai GenerationConfig. Default is an empty config.
+                    kwargs: Device properties.
+        """
     def finish_chat(self) -> None:
         ...
     def generate(self, inputs: openvino._pyopenvino.Tensor | TokenizedInputs | str | list[str], generation_config: GenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> EncodedResults | DecodedResults:
@@ -1881,7 +1898,11 @@ class Tokenizer:
             openvino.Model if the entry exists.
     """
     chat_template: str
+    @typing.overload
     def __init__(self, tokenizer_path: os.PathLike, properties: dict[str, typing.Any] = {}, **kwargs) -> None:
+        ...
+    @typing.overload
+    def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
     def apply_chat_template(self, history: list[dict[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
         """

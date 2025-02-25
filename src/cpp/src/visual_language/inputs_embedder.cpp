@@ -19,8 +19,6 @@
 
 namespace ov::genai {
 
-const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
-
 // Base InputsEmbedder class
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
@@ -76,16 +74,16 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(
-        get_model_weights_pair(models_map, "vision_embeddings").first,
-        get_model_weights_pair(models_map, "vision_embeddings").second,
+        utils::get_model_weights_pair(models_map, "vision_embeddings").first,
+        utils::get_model_weights_pair(models_map, "vision_embeddings").second,
         config_dir_path,
         m_vlm_config.model_type,
         device,
         device_config
     ),
     m_embedding(
-        get_model_weights_pair(models_map, "text_embeddings").first,
-        get_model_weights_pair(models_map, "text_embeddings").second,
+        utils::get_model_weights_pair(models_map, "text_embeddings").first,
+        utils::get_model_weights_pair(models_map, "text_embeddings").second,
         m_vlm_config.scale_emb,
         device,
         device_config

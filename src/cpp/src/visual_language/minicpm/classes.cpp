@@ -552,9 +552,6 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
 }
 
-// forward declaration
-const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
-
 InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const VLMConfig& vlm_config,
     const ModelsMap& models_map,
@@ -564,8 +561,8 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     m_resampler = utils::singleton_core().compile_model(
-        get_model_weights_pair(models_map, "resampler").first,
-        get_model_weights_pair(models_map, "resampler").second,
+        utils::get_model_weights_pair(models_map, "resampler").first,
+        utils::get_model_weights_pair(models_map, "resampler").second,
         device,
         device_config
     ).create_infer_request();
