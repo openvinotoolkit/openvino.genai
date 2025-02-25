@@ -202,7 +202,7 @@ public:
      */
     void compile(const std::string& text_encode_device,
                  const std::string& denoise_device,
-                 const std::string& vae_decode_device,
+                 const std::string& vae_device,
                  const ov::AnyMap& properties = {});
 
     template <typename... Properties>
