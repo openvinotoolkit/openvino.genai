@@ -347,7 +347,7 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
-class ChunkStreamerBase:
+class ChunkStreamerBase(StreamerBase):
     """
     
         Base class for chunk streamers. In order to use inherit from from this class.
@@ -365,14 +365,6 @@ class ChunkStreamerBase:
     def put_chunk(self, tokens: list[int]) -> bool:
         """
         put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
-        """
-    def write(self, token: int) -> StreamingStatus:
-        """
-        Write is called every time new token is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
-        """
-    def write_chunk(self, tokens: list[int]) -> StreamingStatus:
-        """
-        write_chunk is called every time new token chunk is generated. Returns a StreamingStatus flag to indicate whether generation should be stopped
         """
 class ContinuousBatchingPipeline:
     """
@@ -1663,7 +1655,7 @@ class StopCriteria:
 class StreamerBase:
     """
     
-        Base class for streamers. In order to use inherit from from this class and implement put, and methods.
+        Base class for streamers. In order to use inherit from from this class and implement write and end methods.
     """
     def __init__(self) -> None:
         ...
@@ -1675,9 +1667,9 @@ class StreamerBase:
         """
         Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops
         """
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int | list[int]) -> StreamingStatus:
         """
-        Write is called every time new token is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
+        Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled
         """
 class StreamingStatus:
     """
@@ -1861,7 +1853,7 @@ class TextStreamer(StreamerBase):
         ...
     def end(self) -> None:
         ...
-    def write(self, token: int) -> StreamingStatus:
+    def write(self, token: int | list[int]) -> StreamingStatus:
         ...
 class TokenizedInputs:
     attention_mask: openvino._pyopenvino.Tensor
@@ -2358,7 +2350,7 @@ class WhisperPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | ChunkStreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
+    def generate(self, raw_speech_input: list[float], generation_config: WhisperGenerationConfig | None = None, streamer: typing.Callable[[str], int | None] | StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         

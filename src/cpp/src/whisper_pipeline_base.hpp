@@ -4,11 +4,9 @@
 #pragma once
 
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "utils.hpp"
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
-
-#include "utils.hpp"
-
 
 namespace ov {
 namespace genai {
@@ -30,7 +28,7 @@ public:
 
     virtual WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                            OptionalWhisperGenerationConfig generation_config,
-                                           ChunkStreamerVariant streamer) = 0;
+                                           const std::shared_ptr<StreamerBase> streamer) = 0;
 
     virtual ~WhisperPipelineImplBase() = default;
 };
