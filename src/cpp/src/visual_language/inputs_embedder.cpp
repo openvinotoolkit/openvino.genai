@@ -1962,6 +1962,7 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
 }
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
+    const std::lock_guard<std::mutex> lock(m_inputs_embedder_mutex);
     return m_impl->get_inputs_embeds(prompt, images, metrics);
 }
 
