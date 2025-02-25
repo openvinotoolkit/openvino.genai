@@ -430,12 +430,12 @@ void init_image_generation_pipelines(py::module_& m) {
             },
             py::arg("text_encode_device"), "device to run the text encoder(s) on",
             py::arg("denoise_device"), "device to run denoise steps on",
-            py::arg("vae_decode_device"), "device to run vae decoder on",
+            py::arg("vae_device"), "device to run vae decoder on",
             R"(
                 Compiles the model.
                 text_encode_device (str): Device to run the text encoder(s) on (e.g., CPU, GPU).
                 denoise_device (str): Device to run denoise steps on.
-                vae_decode_device (str): Device to run vae decoder on.
+                vae_device (str): Device to run vae decoder on.
                 kwargs: Device properties.
             )")
         .def(
