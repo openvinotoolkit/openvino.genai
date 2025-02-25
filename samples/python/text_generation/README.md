@@ -129,10 +129,19 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
 - **Main Feature:** Lightweight fine-tuning with LoRA for efficient text generation
 - **Run Command:**
   ```bash
-  ./lora_greedy_causal_lm <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> "<PROMPT>"
+  python lora_greedy_causal_lm.py model_dir adapter_safetensors_file prompt
   ```
 
-### 8. LLMs benchmarking sample (`benchmark_genai`)
+### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
+- **Description:** 
+LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
+- **Main Feature:** Read model directly from memory buffer
+- **Run Command:**
+  ```bash
+  python encrypted_model_causal_lm.py model_dir prompt
+  ```
+
+### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 
 This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
