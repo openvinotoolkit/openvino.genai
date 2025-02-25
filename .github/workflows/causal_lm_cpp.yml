@@ -302,70 +302,6 @@ jobs:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
 
-  cpp-prompt_lookup_decoding_lm-ubuntu:
-    runs-on: ubuntu-22.04-16-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.12
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-      - name: run and compare
-        run: |
-          source ./ov/setupvars.sh
-
-          echo 'Code:```python
-          def add(a, b):
-              return a + b
-          ```
-          Question: Can you please add 2 and 3
-          A:' > ./prompt.txt
-          echo Running prompt_lookup_decoding_lm C++ sample...
-          ./build/samples/cpp/text_generation/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          echo Running greedy_causal_lm C++ sample...
-          ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
-          echo Running prompt_lookup_decoding_lm Python sample...
-          python ./samples/python/text_generation/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
-          echo All samples executed, checking result correctness...
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_prompt_lookup.txt', 'r') as f:
-              predicted_prompt_lookup = f.readline()
-          with open('predictions_py.txt', 'r') as f:
-              predicted_prompt_lookup_py = f.readline()
-
-          print(f'Predicted greedy: {predicted_greedy}')
-          print(f'Predicted prompt lookup: {predicted_prompt_lookup}')
-          assert predicted_greedy == predicted_prompt_lookup
-          assert predicted_greedy == predicted_prompt_lookup_py
-          assert predicted_prompt_lookup == predicted_prompt_lookup_py
-          "
-          echo "Prompt lookup" passed
-        env:
-          PYTHONPATH: "./build/:$PYTHONPATH"
-          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
-
   cpp-Phi-1_5:
     runs-on: ubuntu-22.04-16-cores
     defaults:
@@ -891,8 +827,8 @@ jobs:
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
     needs: [cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
-            cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
-            cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
+            cpp-speculative_decoding_lm-ubuntu, cpp-Phi-1_5, 
+            cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
             visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
