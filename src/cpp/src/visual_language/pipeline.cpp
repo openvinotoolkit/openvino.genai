@@ -37,8 +37,6 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
 public:
-    // A config to follow for LLM input construction.
-    VLMConfig m_vlm_config;
     // A config to follow for text generation.
     GenerationConfig m_generation_config;
     // A tokenizer encoding a prompt.
@@ -54,7 +52,7 @@ public:
     ov::InferRequest m_language;
     // True if chat mode is activated to save conversation
     // history between generate() calls.
-    bool m_is_chat_conversation;
+    bool m_is_chat_conversation = false;
     // InputsEmbedder
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     // Load pipeline time
@@ -69,19 +67,12 @@ public:
         const std::string& device,
         const ov::AnyMap& properties
     ) :
-        m_vlm_config{
-            utils::from_config_json_if_exists<VLMConfig>(
-                models_dir, "config.json"
-            )
-        },
         m_generation_config{
             utils::from_config_json_if_exists<GenerationConfig>(
                 models_dir, "generation_config.json"
             )
-        },
-        m_is_chat_conversation{false} {
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(
-            m_vlm_config, models_dir, device, properties);
+        } {
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, device, properties);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
@@ -114,16 +105,8 @@ public:
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
     ) :
-        m_vlm_config{
-            utils::from_config_json_if_exists<VLMConfig>(
-                config_dir_path, "config.json"
-            )
-        },
-        m_generation_config{generation_config},
-        m_is_chat_conversation{false} {
-        
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(
-            m_vlm_config, models_map, tokenizer, config_dir_path, device, properties);
+        m_generation_config{generation_config} {
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
@@ -168,8 +151,6 @@ public:
         if (generation_config.eos_token_id == -1)
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
-        
-        m_inputs_embedder->set_stop_token_ids(generation_config.stop_token_ids);
 
         m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
 

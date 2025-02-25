@@ -9,6 +9,8 @@
 #include "visual_language/embedding_model.hpp"
 #include "openvino/opsets/opset13.hpp"
 
+#include "visual_language/qwen2vl/classes.hpp"
+
 #include "utils.hpp"
 #include <regex>
 
@@ -16,222 +18,157 @@ namespace ov::genai {
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
-class InputsEmbedder::IInputsEmbedder {
-protected:
-    // VLM config
-    VLMConfig m_vlm_config;
-    // An encoder to infer embeddings of an image.
-    VisionEncoder m_vision_encoder;
-    // A model to compute token embeddings.
-    // Input shape: [N, conversation length].
-    // Output shape: [1, conversation length, hidden_size].
-    EmbeddingsModel m_embedding;
-    // A tokenizer encoding a prompt.
-    Tokenizer m_tokenizer;
-    // True if chat mode is activated to save conversation
-    // history between generate() calls.
-    bool m_is_chat_conversation = false;
-    // Chat history
-    ChatHistory m_history;
-    // If sequence contains some symbols, which could be ambiguous encoded by tokenizer, we need to trim kv cache
-    // If we use beam search sampling with chat mode we need to remove last answer of the model from kv cache and add best answer to history 
-    // so, let's keep info about amount of tokens to trim from kv cache and amount of tokens to keep in history
-    ov::genai::KVCacheTrimManager m_kv_history_trim_manager = {0, 2};
-    // True if chat template should be applied for non-chat scenario
-    bool m_apply_chat_template = true;
-    // Finish reason of last generation for chat scenario
-    ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
-    // reflection of tokens contained in the kv cache
-    KVCacheState m_kv_cache_state;
+// Base InputsEmbedder
 
-    std::set<int64_t> m_stop_token_ids;
-public:
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) = 0;
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
+    ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
+    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
+    return {position_ids, std::nullopt};
+}
 
-    virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
-        ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
-        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), history_size);
-        return {position_ids, std::nullopt};
-    }
-
-    EmbeddingsModel get_embedding_model() const {
-        return m_embedding;
-    }
-
-    Tokenizer get_tokenizer() const {
-        return m_tokenizer;
-    }
-
-    KVCacheState& get_kv_cache_state() {
-        return m_kv_cache_state;
-    }
-
-    size_t get_num_tokens_to_remove_from_hist() const {
-        return m_kv_history_trim_manager.num_tokens_to_trim;
-    }
-
-    void set_stop_token_ids(const std::set<int64_t>& stop_token_ids) {
-        m_stop_token_ids = stop_token_ids;
-    }
-
-    void set_apply_chat_template_status(bool apply_chat_template) {
-        m_apply_chat_template = apply_chat_template;
-    }
-
-    virtual void start_chat(const std::string& system_message) {
-        m_is_chat_conversation = true;
-        m_kv_history_trim_manager.reset();
-        if (!m_kv_cache_state.get_state().empty()) {
-            m_history.clear();
-            m_kv_cache_state.reset_state();
-        }
-        if (system_message.empty()) {
-            return;
-        }
-        m_history = {{{"role", "system"}, {"content", system_message}}};
-    }
-
-    void update_chat_history(const std::string& decoded_results) {
-        // Tail of chat template is missing in KV cache.
-        // Find the tail to concatenate it with the next input prompt.
-        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
-        m_kv_history_trim_manager.reset();
-    }
-
-    virtual void finish_chat() {
-        m_is_chat_conversation = false;
-        m_kv_history_trim_manager.reset();
-
+void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
+    m_is_chat_conversation = true;
+    m_kv_history_trim_manager.reset();
+    if (!m_kv_cache_state.get_state().empty()) {
         m_history.clear();
         m_kv_cache_state.reset_state();
     }
+    if (system_message.empty()) {
+        return;
+    }
+    m_history = {{{"role", "system"}, {"content", system_message}}};
+}
 
-protected:
-    IInputsEmbedder(
+void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results) {
+    // Tail of chat template is missing in KV cache.
+    // Find the tail to concatenate it with the next input prompt.
+    m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
+    m_kv_history_trim_manager.reset();
+}
+
+void InputsEmbedder::IInputsEmbedder::finish_chat() {
+    m_is_chat_conversation = false;
+    m_kv_history_trim_manager.reset();
+
+    m_history.clear();
+    m_kv_cache_state.reset_state();
+}
+
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap device_config) :
-        m_vlm_config{vlm_config},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
-        m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
-        m_tokenizer{model_dir, device_config} { }
+    m_vlm_config{vlm_config},
+    m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config),
+    m_embedding(model_dir, m_vlm_config.scale_emb, device, device_config),
+    m_tokenizer{model_dir, device_config} { }
     
-    IInputsEmbedder(
+InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap device_config) :
-        m_vlm_config{vlm_config},
-        m_vision_encoder(
-            get_model_weights_pair(models_map, "vision_embeddings").first,
-            get_model_weights_pair(models_map, "vision_embeddings").second,
-            config_dir_path,
-            m_vlm_config.model_type,
-            device,
-            device_config
-        ),
-        m_embedding(
-            get_model_weights_pair(models_map, "text_embeddings").first,
-            get_model_weights_pair(models_map, "text_embeddings").second,
-            m_vlm_config.scale_emb,
-            device,
-            device_config
-        ),
-        m_tokenizer(tokenizer) { }
+    m_vlm_config{vlm_config},
+    m_vision_encoder(
+        get_model_weights_pair(models_map, "vision_embeddings").first,
+        get_model_weights_pair(models_map, "vision_embeddings").second,
+        config_dir_path,
+        m_vlm_config.model_type,
+        device,
+        device_config
+    ),
+    m_embedding(
+        get_model_weights_pair(models_map, "text_embeddings").first,
+        get_model_weights_pair(models_map, "text_embeddings").second,
+        m_vlm_config.scale_emb,
+        device,
+        device_config
+    ),
+    m_tokenizer(tokenizer) { }
 
-    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-        if (m_is_chat_conversation) {
-            m_history.push_back({{"role", "user"}, {"content", prompt}});
+ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
+    if (m_is_chat_conversation) {
+        m_history.push_back({{"role", "user"}, {"content", prompt}});
+        constexpr bool add_generation_prompt = true;
+        std::string new_templated_chat_history;
+        new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
+        ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        return new_chat_tokens;
+    } else {
+        ov::Tensor encoded_input_ids;
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
+        if (m_apply_chat_template) {
+            std::string templated_prompt;
+            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
-            std::string new_templated_chat_history;
-            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-            auto start_tokenizer_time = std::chrono::steady_clock::now();
-            ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false)).input_ids;
-            auto end_tokenizer_time = std::chrono::steady_clock::now();
-            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-            return new_chat_tokens;
+
+            templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
         } else {
-            ov::Tensor encoded_input_ids;
-            auto start_tokenizer_time = std::chrono::steady_clock::now();
-            if (m_apply_chat_template) {
-                std::string templated_prompt;
-                ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-                constexpr bool add_generation_prompt = true;
+            encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
+        }
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        return encoded_input_ids;
+    }
+}
 
-                templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-                encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
-            } else {
-                encoded_input_ids = m_tokenizer.encode(prompt).input_ids;
-            }
-            auto end_tokenizer_time = std::chrono::steady_clock::now();
-            metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-            return encoded_input_ids;
+ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
+    ov::Tensor encoded_inputs;
+    if (m_is_chat_conversation) {
+        ov::genai::align_kv_cache_and_history(m_kv_history_trim_manager, new_chat_tokens, m_kv_cache_state);
+        encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
+    } else {
+        encoded_inputs = new_chat_tokens;
+    }
+
+    return encoded_inputs;
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
+    const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
+    auto new_input_ids = update_history(new_chat_tokens);
+    m_kv_cache_state.add_inputs(new_input_ids);
+
+    return new_input_ids;
+}
+
+/**
+* @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
+*
+* @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or [HWC].
+* @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
+*/
+std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
+    std::vector<ov::Tensor> single_image_tensors;
+    for (const auto& image : images) {
+        ov::Tensor reshaped_image = image;
+        ov::Shape image_shape = image.get_shape();
+        switch (image_shape.size()) {
+            case 3:
+                reshaped_image.set_shape({1, image_shape.at(0), image_shape.at(1), image_shape.at(2)});
+                break;
+            case 4: break;
+            default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout, given image shape is ", image_shape);
+        }
+        ov::Shape reshaped_image_shape = reshaped_image.get_shape();
+        for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
+            ov::Tensor single_image{
+                reshaped_image.get_element_type(),
+                {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
+                reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
+            };
+            single_image_tensors.push_back(std::move(single_image));
         }
     }
-
-    ov::Tensor update_history(const ov::Tensor& new_chat_tokens) {
-        ov::Tensor encoded_inputs;
-        if (m_is_chat_conversation) {
-            ov::genai::align_kv_cache_and_history(m_kv_history_trim_manager, new_chat_tokens, m_kv_cache_state);
-            encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
-        } else {
-            encoded_inputs = new_chat_tokens;
-        }
-
-        return encoded_inputs;
-    }
-
-    ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-        const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
-        auto new_input_ids = update_history(new_chat_tokens);
-        m_kv_cache_state.add_inputs(new_input_ids);
-
-        return new_input_ids;
-    }
-
-    /**
-    * @brief Unpads an image tensor of a padded and resized image.
-    * Used for packing image features of llava_next models.
-    *
-    * @param tensor An image tensor with a shape (embed_dim, height, width)
-    * @param original_size A size of original image
-    * @return An unpadded image tensor with a shape (embed_dim, new_height, new_width)
-    */
-
-    /**
-    * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
-    *
-    * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or [HWC].
-    * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
-    */
-    std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images) {
-        std::vector<ov::Tensor> single_image_tensors;
-        for (const auto& image : images) {
-            ov::Tensor reshaped_image = image;
-            ov::Shape image_shape = image.get_shape();
-            switch (image_shape.size()) {
-                case 3:
-                    reshaped_image.set_shape({1, image_shape.at(0), image_shape.at(1), image_shape.at(2)});
-                    break;
-                case 4: break;
-                default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout, given image shape is ", image_shape);
-            }
-            ov::Shape reshaped_image_shape = reshaped_image.get_shape();
-            for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
-                ov::Tensor single_image{
-                    reshaped_image.get_element_type(),
-                    {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
-                    reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
-                };
-                single_image_tensors.push_back(std::move(single_image));
-            }
-        }
-        return single_image_tensors;
-    }
-};
+    return single_image_tensors;
+}
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
     // A resampler model to resample image embeddings.
@@ -1519,410 +1456,11 @@ public:
     }
 };
 
-class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
-    // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
-    // Inputs:
-    //  - hidden_states: [N, embed_dim]
-    //  - rotary_pos_emb: [?, 40]
-    //  - attention_mask: [1, ?, ?]
-    // Output: [N, hidden_size]
-    ov::InferRequest m_vision_embeddings_merger;
-
-    ov::Tensor m_position_ids;
-    int64_t m_rope_delta = 0;
-
-public:
-    InputsEmbedderQwen2VL(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config) :
-        IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-            auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_merger_model.xml", device, device_config);
-            ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
-            m_vision_embeddings_merger = compiled_model.create_infer_request();
-        }
-
-    InputsEmbedderQwen2VL(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer, 
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config) :
-        IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-            m_vision_embeddings_merger = utils::singleton_core().compile_model(
-                get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-                get_model_weights_pair(models_map, "vision_embeddings_merger").second,
-                device,
-                device_config
-            ).create_infer_request();
-        }
-    
-    virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) override {
-        std::string formatted_prompt;
-
-        std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
-        std::vector<ov::Tensor> image_embeds;
-        std::vector<std::array<size_t, 3>> images_grid_thw;
-        image_embeds.reserve(single_images.size());
-        images_grid_thw.reserve(single_images.size());
-        
-        for (const auto& image : single_images) {
-            EncodedImage encoded_image = m_vision_encoder.encode(image);
-            ov::Tensor single_image_embeds = encoded_image.resized_source;
-            image_embeds.push_back(std::move(single_image_embeds));
-
-            size_t grid_t = 1;
-            size_t grid_h = encoded_image.resized_source_size.height;
-            size_t grid_w = encoded_image.resized_source_size.width;
-            images_grid_thw.push_back({grid_t, grid_h, grid_w});
-
-            size_t merge_length = std::pow(m_vision_encoder.m_processor_config.merge_size, 2);
-            size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
-
-            formatted_prompt += m_vlm_config.vision_start_token;
-            for (int i = 0; i < num_image_pad_tokens; i++) {
-                formatted_prompt += m_vlm_config.image_pad_token;
-            }
-            formatted_prompt += m_vlm_config.vision_end_token;
-        }
-        formatted_prompt += prompt;
-
-        ov::Tensor input_ids = get_encoded_input_ids(formatted_prompt, metrics);
-        ov::Tensor text_embeds = m_embedding.infer(input_ids);
-
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
-        ov::Tensor encoded_image_pad_token = m_tokenizer.encode(m_vlm_config.image_pad_token, ov::genai::add_special_tokens(false)).input_ids;
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-        metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-        int64_t vision_start_token_id = encoded_vision_start_token.data<int64_t>()[encoded_vision_start_token.get_size() - 1];
-        int64_t image_pad_token_id = encoded_image_pad_token.data<int64_t>()[encoded_image_pad_token.get_size() - 1];
-
-        m_position_ids = create_position_ids(input_ids, images_grid_thw, vision_start_token_id);
-
-        int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
-        m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
-
-        if (images.empty()) {
-            return text_embeds;
-        }
-
-        return merge_text_and_image_embeddings_qwen2vl(input_ids, text_embeds, image_embeds, images_grid_thw, image_pad_token_id);
-    }
-
-    virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override {
-        if (history_size != 0) {
-            ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
-            int64_t new_pos_id = static_cast<int64_t>(history_size + m_rope_delta);
-            for (size_t dim = 0; dim < 3; ++dim) {
-                int64_t* pos_data = position_ids.data<int64_t>() + dim * inputs_embeds_size;
-                std::iota(pos_data, pos_data + inputs_embeds_size, new_pos_id);
-            }
-            return {position_ids, m_rope_delta};
-        }
-        return {m_position_ids, m_rope_delta};
-    }
-
-    virtual void start_chat(const std::string& system_message) override {
-        IInputsEmbedder::start_chat(system_message);
-        m_position_ids = ov::Tensor();
-        m_rope_delta = 0;
-    }
-
-    virtual void finish_chat() override {
-        IInputsEmbedder::finish_chat();
-        m_position_ids = ov::Tensor();
-        m_rope_delta = 0;
-    }
-protected:
-    ov::Tensor merge_text_and_image_embeddings_qwen2vl(
-        const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
-        const std::vector<ov::Tensor>& image_embeds,
-        const std::vector<std::array<size_t, 3>> images_grid_thw,
-        const int64_t image_pad_token_id
-    ) {
-        // Calculate cumulative sequence lengths for attention mask
-        std::vector<int32_t> cu_seqlens;
-        cu_seqlens.push_back(0);
-        int32_t cumsum = 0;
-        for (const auto& grid_thw : images_grid_thw) {
-            size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-            for (size_t t = 0; t < grid_thw.at(0); ++t) {
-                cumsum += slice_len;
-                cu_seqlens.push_back(cumsum);
-            }
-        }
-
-        // Create attention mask for vision embeddings merger model
-        size_t hidden_states_size = cumsum;
-        ov::Tensor attention_mask{ov::element::f32, {1, hidden_states_size, hidden_states_size}};
-        float* attention_mask_data = attention_mask.data<float>();
-        std::fill_n(attention_mask_data, attention_mask.get_size(), -std::numeric_limits<float>::infinity());
-
-        for (size_t i = 1; i < cu_seqlens.size(); ++i) {
-            size_t start = cu_seqlens[i-1];
-            size_t end = cu_seqlens[i];
-            for (size_t row = start; row < end; ++row) {
-                for (size_t col = start; col < end; ++col) {
-                    attention_mask_data[row * hidden_states_size + col] = 0.0f;
-                }
-            }
-        }
-
-        // Concatenate image embeddings 
-        ov::Tensor concatenated_images;
-        if (image_embeds.size() == 1) {
-            concatenated_images = image_embeds.at(0);
-        } else {
-            size_t total_length = 0;
-            for (const auto& embed : image_embeds) {
-                total_length += embed.get_shape().at(0);
-            }
-            size_t hidden_dim = image_embeds.at(0).get_shape().at(1);
-            
-            concatenated_images = ov::Tensor(image_embeds.at(0).get_element_type(), {total_length, hidden_dim});
-            float* concat_data = concatenated_images.data<float>();
-            
-            size_t offset = 0;
-            for (const auto& embed : image_embeds) {
-                size_t embed_size = embed.get_shape().at(0) * embed.get_shape().at(1);
-                std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
-                offset += embed_size;
-            }
-        }
-
-        ov::Tensor rotary_pos_emb = get_rotary_pos_emb(images_grid_thw);
-
-        m_vision_embeddings_merger.set_tensor("hidden_states", concatenated_images);
-        m_vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
-        m_vision_embeddings_merger.set_tensor("rotary_pos_emb", rotary_pos_emb);
-        m_vision_embeddings_merger.infer();
-        ov::Tensor processed_vision_embeds = m_vision_embeddings_merger.get_output_tensor();
-
-        ov::Tensor merged_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        std::memcpy(merged_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-
-        auto text_embeds_shape = text_embeds.get_shape();
-        size_t batch_size = text_embeds_shape.at(0);
-        size_t seq_length = text_embeds_shape.at(1);
-        size_t hidden_size = text_embeds_shape.at(2);
-
-        const int64_t* input_ids_data = input_ids.data<const int64_t>();
-        float* merged_embeds_data = merged_embeds.data<float>();
-        const float* vision_embeds_data = processed_vision_embeds.data<const float>();
-        
-        size_t vision_embed_idx = 0;
-        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-            for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
-                size_t flat_idx = batch_idx * seq_length + seq_idx;
-                if (input_ids_data[flat_idx] == image_pad_token_id) {
-                    std::copy_n(
-                        vision_embeds_data + vision_embed_idx * hidden_size,
-                        hidden_size,
-                        merged_embeds_data + flat_idx * hidden_size
-                    );
-                    ++vision_embed_idx;
-                }
-            }
-        }
-        return merged_embeds;
-    }
-
-    ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {  
-        const size_t spatial_merge_size = m_vision_encoder.m_processor_config.merge_size;
-
-        std::vector<std::vector<size_t>> all_pos_ids;
-        size_t total_positions = 0;
-        size_t max_grid_size = 0;
-
-        for (const auto& grid_thw : grids_thw) {
-            size_t t = grid_thw.at(0);
-            size_t h = grid_thw.at(1);
-            size_t w = grid_thw.at(2);
-
-            total_positions += t * h * w;
-            max_grid_size = std::max({max_grid_size, h, w});
-            
-            // Create height position IDs
-            std::vector<size_t> hpos_ids(h * w);
-            for (size_t hi = 0; hi < h; ++hi) {
-                for (size_t wi = 0; wi < w; ++wi) {
-                    size_t idx = hi * w + wi;
-                    hpos_ids[idx] = hi;
-                }
-            }
-
-            // Reshape hpos_ids according to spatial merge size
-            std::vector<size_t> reshaped_hpos;
-            size_t h_blocks = h / spatial_merge_size;
-            size_t w_blocks = w / spatial_merge_size;
-            reshaped_hpos.reserve(h * w);
-
-            for (size_t hb = 0; hb < h_blocks; ++hb) {
-                for (size_t wb = 0; wb < w_blocks; ++wb) {
-                    for (size_t hs = 0; hs < spatial_merge_size; ++hs) {
-                        for (size_t ws = 0; ws < spatial_merge_size; ++ws) {
-                            reshaped_hpos.push_back(hb * spatial_merge_size + hs);
-                        }
-                    }
-                }
-            }
-
-            // Create width position IDs
-            std::vector<size_t> wpos_ids(h * w);
-            for (size_t hi = 0; hi < h; ++hi) {
-                for (size_t wi = 0; wi < w; ++wi) {
-                    size_t idx = hi * w + wi;
-                    wpos_ids[idx] = wi;
-                }
-            }
-
-            // Reshape wpos_ids according to spatial merge size
-            std::vector<size_t> reshaped_wpos;
-            reshaped_wpos.reserve(h * w);
-
-            for (size_t hb = 0; hb < h_blocks; ++hb) {
-                for (size_t wb = 0; wb < w_blocks; ++wb) {
-                    for (size_t hs = 0; hs < spatial_merge_size; ++hs) {
-                        for (size_t ws = 0; ws < spatial_merge_size; ++ws) {
-                            reshaped_wpos.push_back(wb * spatial_merge_size + ws);
-                        }
-                    }
-                }
-            }
-
-            // Stack and repeat for each t
-            for (size_t i = 0; i < t; ++i) {
-                for (size_t j = 0; j < reshaped_hpos.size(); ++j) {
-                    all_pos_ids.push_back({reshaped_hpos[j], reshaped_wpos[j]});
-                }
-            }
-        }
-
-        // Calculate rotary embeddings for max_grid_size
-        const size_t dim = m_vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
-        const float theta = 10000.0f;
-        
-        std::vector<float> inv_freq(dim / 2);
-        for (size_t i = 0; i < dim / 2; ++i) {
-            inv_freq[i] = 1.0f / std::pow(theta, static_cast<float>(i) / static_cast<float>(dim / 2));
-        }
-
-        std::vector<std::vector<float>> freqs(max_grid_size);
-        for (size_t i = 0; i < max_grid_size; ++i) {
-            freqs[i].resize(dim / 2);
-            for (size_t j = 0; j < dim / 2; ++j) {
-                freqs[i][j] = static_cast<float>(i) * inv_freq[j];
-            }
-        }
-
-        ov::Tensor rotary_pos_emb(ov::element::f32, {all_pos_ids.size(), dim});
-        float* output_data = rotary_pos_emb.data<float>();
-
-        for (size_t i = 0; i < all_pos_ids.size(); ++i) {
-            const auto& pos = all_pos_ids.at(i);
-            size_t h_idx = pos.at(0);
-            size_t w_idx = pos.at(1);
-            std::copy_n(freqs[h_idx].begin(), dim / 2, output_data + i * dim);
-            std::copy_n(freqs[w_idx].begin(), dim / 2, output_data + i * dim + dim / 2);
-        }
-
-        return rotary_pos_emb;
-    }
-
-    ov::Tensor create_position_ids(
-        const ov::Tensor& input_ids_tensor,
-        const std::vector<std::array<size_t, 3>>& images_grid_thw,
-        const int64_t vision_start_token_id
-    ) {
-        const size_t spatial_merge_size = m_vision_encoder.m_processor_config.merge_size;
-        
-        const int64_t* input_ids = input_ids_tensor.data<int64_t>();
-        size_t batch_size = input_ids_tensor.get_shape().at(0);
-        size_t seq_len = input_ids_tensor.get_shape().at(1);
-
-        std::vector<size_t> vision_start_indices;
-        for (size_t i = 0; i < seq_len; ++i) {
-            if (input_ids[i] == vision_start_token_id) {
-                vision_start_indices.push_back(i);
-            }
-        }
-
-        ov::Tensor position_ids{ov::element::i64, {3, batch_size, seq_len}};
-        int64_t* pos_data = position_ids.data<int64_t>();
-        
-        size_t st = 0;
-        int64_t next_pos = 0;
-        size_t grid_idx = 0;
-
-        for (size_t i = 0; i < vision_start_indices.size(); ++i) {
-            size_t ed = vision_start_indices.at(i);
-
-            // Process text tokens before image
-            if (st < ed) {
-                for (size_t pos = st; pos < ed; ++pos) {
-                    pos_data[pos] = next_pos;               // temporal
-                    pos_data[seq_len + pos] = next_pos;     // height
-                    pos_data[2 * seq_len + pos] = next_pos; // width
-                    next_pos++;
-                }
-            }
-
-            // Process image start token
-            pos_data[ed] = next_pos;               // temporal
-            pos_data[seq_len + ed] = next_pos;     // height
-            pos_data[2 * seq_len + ed] = next_pos; // width
-            next_pos++;
-            ed++;
-
-            // Process image token with grid
-            if (grid_idx < images_grid_thw.size()) {
-                const auto& grid = images_grid_thw.at(grid_idx);
-                size_t llm_grid_h = grid.at(1) / spatial_merge_size;
-                size_t llm_grid_w = grid.at(2) / spatial_merge_size;
-                size_t ed_image = ed + llm_grid_h * llm_grid_w;
-
-                // Fill temporal dimension
-                std::fill_n(pos_data + ed, llm_grid_h * llm_grid_w, next_pos);
-
-                // Fill height and width dimensions
-                int64_t* height_data = pos_data + seq_len + ed;
-                int64_t* width_data = pos_data + 2 * seq_len + ed;
-                for (size_t h = 0; h < llm_grid_h; ++h) {
-                    std::fill_n(height_data + h * llm_grid_w, llm_grid_w, next_pos + h);
-                    for (size_t w = 0; w < llm_grid_w; ++w) {
-                        width_data[h * llm_grid_w + w] = next_pos + w;
-                    }
-                }
-
-                next_pos += std::max(llm_grid_h, llm_grid_w);
-                st = ed_image;
-                grid_idx++;
-            }
-        }
-
-        // Process remaining text tokens
-        if (st < seq_len) {
-            for (size_t pos = st; pos < seq_len; ++pos) {
-                pos_data[pos] = next_pos;               // temporal
-                pos_data[seq_len + pos] = next_pos;     // height
-                pos_data[2 * seq_len + pos] = next_pos; // width
-                next_pos++;
-            }
-        }
-
-        return position_ids;
-    }
-};
-
-InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
-                               const std::filesystem::path& model_dir,
+InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
@@ -1940,12 +1478,13 @@ InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
     }
 }
 
-InputsEmbedder::InputsEmbedder(const VLMConfig& vlm_config,
-                               const ModelsMap& models_map,
+InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const Tokenizer& tokenizer,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
                                const ov::AnyMap device_config) {
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
@@ -1971,10 +1510,6 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(c
 
 EmbeddingsModel InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
-}
-
-void InputsEmbedder::set_stop_token_ids(const std::set<int64_t>& stop_token_ids) {
-    return m_impl->set_stop_token_ids(stop_token_ids);
 }
 
 KVCacheState& InputsEmbedder::get_kv_cache_state() {

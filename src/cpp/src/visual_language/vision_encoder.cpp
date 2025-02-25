@@ -5,38 +5,11 @@
 #include "visual_language/clip.hpp"
 #include "utils.hpp"
 
-using namespace ov::genai;
+
+#include "visual_language/qwen2vl/classes.hpp"
+namespace ov::genai {
 
 namespace {
-/**
- * @brief Converts an OpenVINO image tensor (1HWC) to a clip_image_u8 structure.
- *
- * @param image_tensor An OpenVINO tensor (1HWC) containing the image data.
- * @return A clip_image_u8 structure containing the image data.
- */
-clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
-    clip_image_u8 image{
-        int(image_tensor.get_shape().at(2)),
-        int(image_tensor.get_shape().at(1)),
-        {image_tensor.data<uint8_t>(), image_tensor.data<uint8_t>() + image_tensor.get_size()}
-    };
-    return image;
-}
-
-/**
- * @brief Converts a clip_image_f32 structure to an OpenVINO image tensor (1CHW).
- *
- * @param image A clip_image_f32 structure containing the image data.
- * @return An OpenVINO tensor containing the image data (1CHW).
- */
-ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
-    ov::Tensor image_tensor{
-        ov::element::f32,
-        {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}
-    };
-    std::memcpy(image_tensor.data<float>(), image.buf.data(), image.buf.size() * sizeof(float));
-    return image_tensor;
-}
 
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
@@ -79,7 +52,7 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
     const std::pair<int, int> original_size{img.nx, img.ny};
     const int original_width = img.nx;
     const int original_height = img.ny;
-    const float log_ratio = log(1.0f * original_width / original_height);
+    const float log_ratio = logf(1.0f * original_width / original_height);
     const float ratio = 1.0f * original_width * original_height / (scale_resolution * scale_resolution);
     const int multiple = std::min(int(ceil(ratio)), max_slice_nums);
 
@@ -306,7 +279,7 @@ ov::Tensor prepare_vis_position_ids(
 
 EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source = tensor_to_clip_image_u8(img);
-    std::vector<std::vector<clip_image_u8>> imgs = ::slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
+    std::vector<std::vector<clip_image_u8>> imgs = slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
     std::vector<std::vector<ImageSize>> sizes;
     const size_t channels = 3;
@@ -841,167 +814,176 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
 }
 }  // namespace phi3_v
 
-ImageSize smart_resize_qwen2vl(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
-    if (height < factor || width < factor) {
-        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
-    }
-    if (std::max(height, width) / std::min(height, width) > 200) {
-        OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
-    }
+} // namespace
 
-    size_t h_bar = std::round(static_cast<float>(height) / factor) * factor;
-    size_t w_bar = std::round(static_cast<float>(width) / factor) * factor; 
-
-    if (h_bar * w_bar > max_pixels) {
-        double beta = std::sqrt((height * width) / static_cast<double>(max_pixels));
-        h_bar = std::floor(height / beta / factor) * factor;
-        w_bar = std::floor(width / beta / factor) * factor;
-    } else if (h_bar * w_bar < min_pixels) {
-        double beta = std::sqrt(min_pixels / static_cast<double>(height * width));
-        h_bar = std::ceil(height * beta / factor) * factor;
-        w_bar = std::ceil(width * beta / factor) * factor;
-    }
-    
-    return ImageSize{h_bar, w_bar};
-}
-
-ov::Tensor reshape_image_patches_qwen2vl(
-    const ov::Tensor& patches,
-    const size_t grid_t,
-    const size_t grid_h,
-    const size_t grid_w,
-    const size_t channel,
-    const size_t temporal_patch_size,
-    const size_t patch_size,
-    const size_t spatial_merge_size
-) {
-    ov::Shape output_shape{
-        grid_t,                      
-        temporal_patch_size,         
-        channel,                     
-        grid_h / spatial_merge_size, 
-        spatial_merge_size,          
-        patch_size,                  
-        grid_w / spatial_merge_size, 
-        spatial_merge_size,          
-        patch_size                   
-    };
-    
-    ov::Tensor reshaped_patches(patches.get_element_type(), output_shape);
-
-    const float* input_data = patches.data<float>();
-    float* output_data = reshaped_patches.data<float>();
-
-    size_t input_idx = 0;
-    
-    for (size_t gt = 0; gt < output_shape.at(0); ++gt) {
-        for (size_t tp = 0; tp < output_shape.at(1); ++tp) {
-            for (size_t c = 0; c < output_shape.at(2); ++c) {
-                for (size_t gh = 0; gh < output_shape.at(3); ++gh) {
-                    for (size_t ms1 = 0; ms1 < output_shape.at(4); ++ms1) {
-                        for (size_t p1 = 0; p1 < output_shape.at(5); ++p1) {
-                            for (size_t gw = 0; gw < output_shape.at(6); ++gw) {
-                                for (size_t ms2 = 0; ms2 < output_shape.at(7); ++ms2) {
-                                    for (size_t p2 = 0; p2 < output_shape.at(8); ++p2) {
-                                        size_t output_idx = gt;
-                                        output_idx = output_idx * output_shape.at(1) + tp;
-                                        output_idx = output_idx * output_shape.at(2) + c;
-                                        output_idx = output_idx * output_shape.at(3) + gh;
-                                        output_idx = output_idx * output_shape.at(4) + ms1;
-                                        output_idx = output_idx * output_shape.at(5) + p1;
-                                        output_idx = output_idx * output_shape.at(6) + gw;
-                                        output_idx = output_idx * output_shape.at(7) + ms2;
-                                        output_idx = output_idx * output_shape.at(8) + p2;
-
-                                        output_data[output_idx] = input_data[input_idx];
-                                        input_idx++;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    return reshaped_patches;
-}
-
-ov::Tensor transpose_image_patches_qwen2vl(const ov::Tensor& reshaped_patches) {
-    // Input dimensions order:  [0,1,2,3,4,5,6,7,8]
-    // Output dimensions order: [0,3,6,4,7,2,1,5,8]
-    auto input_shape = reshaped_patches.get_shape();
-    
-    ov::Shape output_shape = {
-        input_shape.at(0), // grid_t
-        input_shape.at(3), // grid_h / spatial_merge_size
-        input_shape.at(6), // grid_w / spatial_merge_size
-        input_shape.at(4), // spatial_merge_size
-        input_shape.at(7), // spatial_merge_size
-        input_shape.at(2), // channel
-        input_shape.at(1), // temporal_patch_size
-        input_shape.at(5), // patch_size
-        input_shape.at(8)  // patch_size
-    };
-
-    ov::Tensor transposed_patches(reshaped_patches.get_element_type(), output_shape);
-    
-    const float* src = reshaped_patches.data<float>();
-    float* dst = transposed_patches.data<float>();
-    
-    size_t shape_size = input_shape.size();
-    std::vector<size_t> input_strides(shape_size);
-    std::vector<size_t> output_strides(shape_size);
-    
-    input_strides[shape_size - 1] = 1;
-    output_strides[shape_size - 1] = 1;
-    for(int i = 7; i >= 0; i--) {
-        input_strides[i] = input_strides[i+1] * input_shape[i+1];
-        output_strides[i] = output_strides[i+1] * output_shape[i+1];
-    }
-
-    size_t total_elements = reshaped_patches.get_size();
-    for(size_t idx = 0; idx < total_elements; idx++) {
-        size_t remaining = idx;
-        std::vector<size_t> input_indices(shape_size);
-        for(int i = 0; i < shape_size; i++) {
-            input_indices[i] = remaining / input_strides[i];
-            remaining %= input_strides[i];
-        }
-        
-        std::vector<size_t> output_indices = {
-            input_indices.at(0),
-            input_indices.at(3),
-            input_indices.at(6),
-            input_indices.at(4),
-            input_indices.at(7),
-            input_indices.at(2),
-            input_indices.at(1),
-            input_indices.at(5),
-            input_indices.at(8)
-        };
-        
-        size_t dst_idx = 0;
-        for(int i = 0; i < shape_size; i++) {
-            dst_idx += output_indices[i] * output_strides[i];
-        }
-        
-        dst[dst_idx] = src[idx];
-    }
-    
-    return transposed_patches;
-}
-}
-
-VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config) :
-    model_type(model_type) {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml",
-                                                                device,
-                                                                device_config);
+VisionEncoder::IVisionEncoder::IVisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
+    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_vision_encoder = compiled_model.create_infer_request();
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+}
+
+VisionEncoder::IVisionEncoder::IVisionEncoder(
+    const std::string& model,
+    const ov::Tensor& weights,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap device_config) {
+    m_vision_encoder = utils::singleton_core().compile_model(model, weights, device, device_config).create_infer_request();
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
+}
+
+ProcessorConfig VisionEncoder::IVisionEncoder::get_processor_config() const {
+    return m_processor_config;
+}
+
+class VisionEncoderMiniCPM : public VisionEncoder::IVisionEncoder {
+public:
+    using IVisionEncoder::IVisionEncoder;
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override {
+        // TODO
+        ProcessorConfig config = from_any_map(config_map, m_processor_config);
+
+        clip_ctx ctx_clip;
+        ctx_clip.image_size = m_processor_config.image_size;
+        std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
+        std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
+        return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_vision_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    }
+
+private:
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
+};
+
+class VisionEncoderLLaVA : public VisionEncoder::IVisionEncoder {
+public:
+    using IVisionEncoder::IVisionEncoder;
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override {
+        // TODO
+        ProcessorConfig config = from_any_map(config_map, m_processor_config);
+
+        ov::Tensor pixel_values = get_pixel_values_llava(image, config);
+
+        m_vision_encoder.set_tensor("pixel_values", pixel_values);
+        m_vision_encoder.infer();
+
+        const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+        ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+        std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+    
+        ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    
+        return {std::move(image_features), resized_source_size};
+    }
+
+private:
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
+};
+
+class VisionEncoderLLaVANext : public VisionEncoder::IVisionEncoder {
+public:
+    using IVisionEncoder::IVisionEncoder;
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override {
+        // TODO
+        ProcessorConfig config = from_any_map(config_map, m_processor_config);
+
+        ov::Tensor pixel_values = get_pixel_values_llava_next(image, config);
+
+        m_vision_encoder.set_tensor("pixel_values", pixel_values);
+        m_vision_encoder.infer();
+    
+        const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+        ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+        std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+    
+        ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    
+        // Gen number of patches
+        ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)};
+        auto best_resolution = select_best_resolution({original_image_size.width, original_image_size.height}, config.image_grid_pinpoints);
+        int num_patches_w = best_resolution.first / config.size_shortest_edge;
+        int num_patches_h = best_resolution.second / config.size_shortest_edge;
+    
+        EncodedImage encoded_image;
+        encoded_image.resized_source = std::move(image_features);
+        encoded_image.resized_source_size = resized_source_size;
+        encoded_image.patches_grid = {num_patches_h, num_patches_w};
+        return encoded_image;
+    }
+
+private:
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
+};
+
+class VisionEncoderInternVLChat : public VisionEncoder::IVisionEncoder {
+public:
+    using IVisionEncoder::IVisionEncoder;
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override {
+        // TODO
+        ProcessorConfig config = from_any_map(config_map, m_processor_config);
+
+        ov::Tensor pixel_values = get_pixel_values_internvl(image, config);
+
+        m_vision_encoder.set_tensor("pixel_values", pixel_values);
+        m_vision_encoder.infer();
+    
+        const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
+        ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+        std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+    
+        ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    
+        return {std::move(image_features), resized_source_size};
+    }
+
+private:
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
+};
+
+
+class VisionEncoderPhi3V : public VisionEncoder::IVisionEncoder {
+public:
+    using IVisionEncoder::IVisionEncoder;
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override {
+        // TODO
+        ProcessorConfig config = from_any_map(config_map, m_processor_config);
+
+        const auto& [pixel_values, image_size] = phi3_v::get_pixel_values_phi3_v(image, config);
+        m_vision_encoder.set_input_tensor(pixel_values);
+        m_vision_encoder.infer();
+        return {m_vision_encoder.get_output_tensor(), image_size};
+    }
+
+private:
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
+};
+
+VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap properties) {
+    if (model_type == VLMModelType::MINICPM) {
+        m_impl = std::make_shared<VisionEncoderMiniCPM>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::LLAVA) {
+        m_impl = std::make_shared<VisionEncoderLLaVA>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::LLAVA_NEXT) {
+        m_impl = std::make_shared<VisionEncoderLLaVANext>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::INTERNVL_CHAT) {
+        m_impl = std::make_shared<VisionEncoderInternVLChat>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::PHI3_V) {
+        m_impl = std::make_shared<VisionEncoderPhi3V>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::QWEN2_VL) {
+        m_impl = std::make_shared<VisionEncoderQwen2VL>(model_dir, device, properties);
+    } else {
+        OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
+    }
 }
 
 VisionEncoder::VisionEncoder(
@@ -1011,175 +993,30 @@ VisionEncoder::VisionEncoder(
     const VLMModelType model_type,
     const std::string& device,
     const ov::AnyMap device_config
-) :
-    model_type(model_type) {
-        m_vision_encoder = utils::singleton_core().compile_model(model, weights, device, device_config).create_infer_request();
-        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(
-            config_dir_path, "preprocessor_config.json"
-        );
-}
-
-EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfig& config) {
+) {
     if (model_type == VLMModelType::MINICPM) {
-        return encode_minicpm(image, config);
+        m_impl = std::make_shared<VisionEncoderMiniCPM>(model, weights, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA) {
-        return encode_llava(image, config);
+        m_impl = std::make_shared<VisionEncoderLLaVA>(model, weights, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::LLAVA_NEXT) {
-        return encode_llava_next(image, config);
+        m_impl = std::make_shared<VisionEncoderLLaVANext>(model, weights, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::INTERNVL_CHAT) {
-        return encode_internvl(image, config);
-    }  else if (model_type == VLMModelType::PHI3_V) {
-        return encode_phi3_v(image, config);
+        m_impl = std::make_shared<VisionEncoderInternVLChat>(model, weights, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::PHI3_V) {
+        m_impl = std::make_shared<VisionEncoderPhi3V>(model, weights, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN2_VL) {
-        return encode_qwen2vl(image, config);
+        m_impl = std::make_shared<VisionEncoderQwen2VL>(model, weights, config_dir_path, device, device_config);
     } else {
-        OPENVINO_THROW("Unsupported type of VisionEncoder");
+        OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
 }
 
-EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    return encode(image, from_any_map(
-        config_map, m_processor_config
-    ));
+EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ov::AnyMap& properties) {
+    m_impl->encode(image, properties);
 }
 
-EncodedImage VisionEncoder::encode_minicpm(const ov::Tensor& image, const ProcessorConfig& config) {
-    clip_ctx ctx_clip;
-    ctx_clip.image_size = m_processor_config.image_size;
-    std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
-    std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
-    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_vision_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+ProcessorConfig VisionEncoder::get_processor_config() const {
+    return m_impl->get_processor_config();
 }
 
-EncodedImage VisionEncoder::encode_llava(const ov::Tensor& image, const ProcessorConfig& config) {
-    ov::Tensor pixel_values = get_pixel_values_llava(image, config);
-
-    m_vision_encoder.set_tensor("pixel_values", pixel_values);
-    m_vision_encoder.infer();
-
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
-    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
-    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
-
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
-
-    return {std::move(image_features), resized_source_size};
-}
-
-EncodedImage VisionEncoder::encode_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
-    ov::Tensor pixel_values = get_pixel_values_llava_next(image, config);
-
-    m_vision_encoder.set_tensor("pixel_values", pixel_values);
-    m_vision_encoder.infer();
-
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
-    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
-    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
-
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
-
-    // Gen number of patches
-    ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)};
-    auto best_resolution = select_best_resolution({original_image_size.width, original_image_size.height}, config.image_grid_pinpoints);
-    int num_patches_w = best_resolution.first / config.size_shortest_edge;
-    int num_patches_h = best_resolution.second / config.size_shortest_edge;
-
-    EncodedImage encoded_image;
-    encoded_image.resized_source = std::move(image_features);
-    encoded_image.resized_source_size = resized_source_size;
-    encoded_image.patches_grid = {num_patches_h, num_patches_w};
-    return encoded_image;
-}
-
-EncodedImage VisionEncoder::encode_internvl(const ov::Tensor& image, const ProcessorConfig& config) {
-    ov::Tensor pixel_values = get_pixel_values_internvl(image, config);
-
-    m_vision_encoder.set_tensor("pixel_values", pixel_values);
-    m_vision_encoder.infer();
-
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
-    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
-    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
-
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
-
-    return {std::move(image_features), resized_source_size};
-}
-
-EncodedImage VisionEncoder::encode_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
-    const auto& [pixel_values, image_size] = phi3_v::get_pixel_values_phi3_v(image, config);
-    m_vision_encoder.set_input_tensor(pixel_values);
-    m_vision_encoder.infer();
-    return {m_vision_encoder.get_output_tensor(), image_size};
-}
-
-EncodedImage VisionEncoder::encode_qwen2vl(const ov::Tensor& image, const ProcessorConfig& config) {
-    ov::Shape image_shape = image.get_shape();
-    auto original_height = image_shape.at(1);
-    auto original_width = image_shape.at(2);
-
-    ImageSize target_image_size = smart_resize_qwen2vl(
-        original_height, 
-        original_width, 
-        config.patch_size * config.merge_size,
-        config.min_pixels,
-        config.max_pixels
-    );
-
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    clip_image_u8 resized_image;
-    bicubic_resize(input_image, resized_image, target_image_size.width, target_image_size.height);
-
-    clip_ctx ctx;
-    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
-    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
-    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
-
-    ov::Tensor patches = clip_image_f32_to_tensor(normalized_image);
-
-    // For single patch tile it to match temporal_patch_size
-    if (patches.get_shape().at(0) == 1) {
-        auto orig_shape = patches.get_shape();
-        ov::Tensor tiled_patches(patches.get_element_type(),
-                                 {config.temporal_patch_size, orig_shape.at(1), orig_shape.at(2), orig_shape.at(3)});
-        
-        for (size_t i = 0; i < config.temporal_patch_size; i++) {
-            std::memcpy(
-                tiled_patches.data<float>() + i * patches.get_byte_size() / sizeof(float),
-                patches.data<float>(),
-                patches.get_byte_size()
-            );
-        }
-        patches = std::move(tiled_patches);
-    }
-
-    auto patches_shape = patches.get_shape();
-    size_t channel = patches_shape.at(1);
-    
-    size_t grid_t = patches_shape.at(0) / config.temporal_patch_size;
-    size_t grid_h = target_image_size.height / config.patch_size;
-    size_t grid_w = target_image_size.width / config.patch_size;
-
-    ov::Tensor reshaped_patches = reshape_image_patches_qwen2vl(
-        patches, grid_t, grid_h, grid_w, channel, config.temporal_patch_size, config.patch_size, config.merge_size
-    );
-    ov::Tensor transposed_patches = transpose_image_patches_qwen2vl(reshaped_patches);
-
-    ov::Shape flattened_patches_shape{
-        grid_t * grid_h * grid_w,
-        channel * config.temporal_patch_size * config.patch_size * config.patch_size
-    };
-    ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
-    std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
-
-    m_vision_encoder.set_tensor("hidden_states", flattened_patches);
-    m_vision_encoder.infer();
-
-    const ov::Tensor& infer_output = m_vision_encoder.get_output_tensor();
-    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
-    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
-
-    ImageSize resized_source_size{grid_h, grid_w};
-
-    return {std::move(image_features), resized_source_size};
-}
+} // namespace ov::genai
