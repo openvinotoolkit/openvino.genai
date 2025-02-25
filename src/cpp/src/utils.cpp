@@ -338,6 +338,9 @@ void trim_kv_cache(ov::InferRequest request, uint64_t remove_from_end, size_t se
         return;
 
     auto states = request.query_state();
+    
+    OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
+
     for (auto& state : states) {
         if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
             continue;
@@ -403,6 +406,28 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 }
+
+const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key) {
+    auto it = models_map.find(key);
+    if (it != models_map.end()) {
+        return it->second;
+    }
+    OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
+    ov::AnyMap plugin_config = properties;
+    auto it = plugin_config.find(ov::genai::scheduler_config.name());
+    SchedulerConfig scheduler_config;
+    if (it != plugin_config.end()) {
+        scheduler_config = it->second.as<SchedulerConfig>();
+        plugin_config.erase(it);
+    } else if (default_config.has_value()) {
+        scheduler_config = *default_config;
+    }
+    return {plugin_config, scheduler_config};
+};
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
