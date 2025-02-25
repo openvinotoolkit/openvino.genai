@@ -12,7 +12,7 @@ from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipel
 
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results
-from utils.hugging_face import download_and_convert_model
+from utils.hugging_face import download_and_convert_model, run_hugging_face
 
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
