@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -37,10 +37,17 @@ struct ModelDesc {
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
+    // Metrics
     SpeculativeDecodingMetrics m_sd_metrics;
+    PerfMetrics m_perf_metrics;
+
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
+
+    void drop_requests();
+    bool is_requests_empty();
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     
 public:
     SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);

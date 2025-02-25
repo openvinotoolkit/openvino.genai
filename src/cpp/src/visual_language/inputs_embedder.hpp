@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -7,6 +7,8 @@
 #include <vector>
 #include <filesystem>
 
+#include "utils.hpp"
+#include "lm_encoding.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -34,17 +36,19 @@ public:
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics);
 
+    // compute position ids for language model input
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel get_embedding_model() const;
 
     // returns tokenizer
     Tokenizer get_tokenizer() const;
 
-    // returns tokenized chat history
-    std::vector<int64_t> get_tokenized_history() const;
+    void set_stop_token_ids(const std::set<int64_t>& stop_token_ids);
 
-    // add new results to tokenized history
-    void update_tokenized_history(const std::vector<int64_t>& encoded_result, std::optional<int64_t> last_disappeared_token, bool is_beam_search, size_t last_answer_len);
+    // get reflection of tokens contained in the kv cache
+    KVCacheState& get_kv_cache_state();
 
     // returns amount of elements, which need to remove from the end of the KV cache
     size_t get_num_tokens_to_remove_from_hist() const;
@@ -54,6 +58,9 @@ public:
 
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results);
+
+    // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
+    void set_apply_chat_template_status(bool apply_chat_template);
 
     // finishes chat and clears a chat history 
     void finish_chat();
@@ -65,6 +72,8 @@ private:
     friend class InputsEmbedderLLaVA;
     friend class InputsEmbedderLLaVANext;
     friend class InputsEmbedderInternVLChat;
+    friend class InputsEmbedderPhi3V;
+    friend class InputsEmbedderQwen2VL;
 };
 
 } // namespace ov::genai

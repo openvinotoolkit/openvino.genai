@@ -17,14 +17,14 @@
 
 'category: LLM':
 - 'src/cpp/include/openvino/genai/llm_pipeline.hpp'
+- 'src/cpp/include/openvino/genai/text_streamer.hpp'
 - 'src/cpp/src/llm_pipeline.cpp'
 - 'src/cpp/src/lm_encoding.hpp'
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/cpp/src/llm_pipeline_base.hpp'
 - 'src/cpp/src/llm_pipeline_static.hpp'
 - 'src/cpp/src/llm_pipeline_static.cpp'
-- 'src/cpp/src/text_callback_streamer.cpp'
-- 'src/cpp/src/text_callback_streamer.hpp'
+- 'src/cpp/src/text_streamer.cpp'
 - 'src/python/py_llm_pipeline.cpp'
 - 'tests/python_tests/test_llm_pipeline.py'
 
@@ -64,6 +64,7 @@
 - 'src/cpp/src/whisper_pipeline_static.hpp'
 - 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_pipeline.py'
+- 'tests/python_tests/test_whisper_pipeline_static.py'
 
 'category: Python API':
 - 'src/python/**/*'
@@ -98,12 +99,11 @@
 - 'src/cpp/src/continuous_batching_impl.cpp'
 - 'src/cpp/src/continuous_batching_pipeline.cpp'
 - 'src/cpp/src/debug_utils.hpp'
-- 'src/cpp/src/device_config.hpp'
 - 'src/cpp/src/generation_handle.cpp'
 - 'src/cpp/src/generation_stream.hpp'
 - 'src/cpp/src/model_runner.hpp'
-- 'src/cpp/src/utils/paged_attention_transformations.cpp'
-- 'src/cpp/src/utils/paged_attention_transformations.hpp'
+- 'src/cpp/src/paged_attention_transformations.cpp'
+- 'src/cpp/src/paged_attention_transformations.hpp'
 - 'src/cpp/src/scheduler.hpp'
 - 'src/cpp/src/sequence_group.cpp'
 - 'src/cpp/src/sequence_group.hpp'

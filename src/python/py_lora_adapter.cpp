@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -26,7 +26,7 @@ void init_lora_adapter(py::module_& m) {
             path (os.PathLike): Path to adapter file in safetensors format.
         )")
         .def(
-            "__bool__", 
+            "__bool__",
             [](ov::genai::Adapter& self
             ) {
                 return bool(self);
@@ -47,7 +47,7 @@ void init_lora_adapter(py::module_& m) {
         py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
 
     adapter_config.def(py::init([](
-        const ov::genai::Adapter& adapter, 
+        const ov::genai::Adapter& adapter,
         float alpha,
          ov::genai::AdapterConfig::Mode mode) {
             return std::make_unique<ov::genai::AdapterConfig>(adapter, alpha, mode);
@@ -55,17 +55,17 @@ void init_lora_adapter(py::module_& m) {
         py::arg("adapter"),
         py::arg("alpha"),
         py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
-    
+
     adapter_config.def(py::init([](
-        const ov::genai::Adapter& adapter, 
+        const ov::genai::Adapter& adapter,
         ov::genai::AdapterConfig::Mode mode) {
             return std::make_unique<ov::genai::AdapterConfig>(adapter, mode);
         }),
         py::arg("adapter"),
         py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
-    
+
     adapter_config.def(py::init([](
-        const std::vector<ov::genai::Adapter>& adapters, 
+        const std::vector<ov::genai::Adapter>& adapters,
         ov::genai::AdapterConfig::Mode mode) {
             return std::make_unique<ov::genai::AdapterConfig>(adapters, mode);
         }),
@@ -73,14 +73,14 @@ void init_lora_adapter(py::module_& m) {
         py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
 
     adapter_config.def(py::init([](
-        const std::vector<std::pair<ov::genai::Adapter, float>>& adapters, 
+        const std::vector<std::pair<ov::genai::Adapter, float>>& adapters,
         ov::genai::AdapterConfig::Mode mode) {
             return std::make_unique<ov::genai::AdapterConfig>(adapters, mode);
         }),
         py::arg("adapters"),
         py::arg_v("mode", ov::genai::AdapterConfig::Mode::MODE_AUTO, "AdapterConfig.Mode.MODE_AUTO"));
     adapter_config.def(
-        "__bool__", 
+        "__bool__",
         [](ov::genai::AdapterConfig& self
         ) {
             return bool(self);
@@ -92,4 +92,6 @@ void init_lora_adapter(py::module_& m) {
     adapter_config.def("get_adapters", &ov::genai::AdapterConfig::get_adapters);
     adapter_config.def("add", static_cast<ov::genai::AdapterConfig& (ov::genai::AdapterConfig::*)(const ov::genai::Adapter&, float)>(&ov::genai::AdapterConfig::add), py::arg("adapter"), py::arg("alpha"));
     adapter_config.def("add", static_cast<ov::genai::AdapterConfig& (ov::genai::AdapterConfig::*)(const ov::genai::Adapter&)>(&ov::genai::AdapterConfig::add), py::arg("adapter"));
+    adapter_config.def("get_adapters_and_alphas", &ov::genai::AdapterConfig::get_adapters_and_alphas);
+    adapter_config.def("set_adapters_and_alphas", &ov::genai::AdapterConfig::set_adapters_and_alphas, py::arg("adapters"));
 }

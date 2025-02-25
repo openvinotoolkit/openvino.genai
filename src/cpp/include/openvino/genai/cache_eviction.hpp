@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -23,7 +23,7 @@ namespace ov::genai {
     class CacheEvictionConfig {
     public:
         CacheEvictionConfig() {};
-        CacheEvictionConfig(size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode_) : aggregation_mode(aggregation_mode_), m_start_size(start_size), m_recent_size(recent_size), m_max_cache_size(max_cache_size) {
+        CacheEvictionConfig(size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode_, bool apply_rotation_ = false) : aggregation_mode(aggregation_mode_), apply_rotation(apply_rotation_), m_start_size(start_size), m_recent_size(recent_size), m_max_cache_size(max_cache_size) {
             OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
             OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
             OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
@@ -60,6 +60,12 @@ namespace ov::genai {
 
         /** The mode used to compute the importance of tokens for eviction */
         AggregationMode aggregation_mode = AggregationMode::NORM_SUM;
+
+        /** Whether to apply cache rotation (RoPE-based) after each eviction.
+         *  Set this to false if your model has different RoPE scheme from the one used in the
+         *  original llama model and you experience accuracy issues with cache eviction enabled
+         *  and apply_rotation=true.**/
+        bool apply_rotation = false;
     private:
         /** Number of tokens in the *beginning* of KV cache that should be retained
  * in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for
@@ -72,12 +78,12 @@ namespace ov::genai {
         std::size_t m_recent_size = 128;
 
         /**
-         * @brief Maximum cache size (in tokens) that can be occupied by a sequence with cache eviction enabled.
+         * Maximum cache size (in tokens) that can be occupied by a sequence with cache eviction enabled.
          * Actual occupied size may differ from this by no larger than (block_size) tokens.
          * Eviction area is computed from this size and the "start"/"recent" area sizes.
-         * @return Total cache size (in tokens) allowed to be occupied by a sequence.
          */
         std::size_t m_max_cache_size = 672;
         std::size_t m_evictable_size = 512;
+
     };
 }

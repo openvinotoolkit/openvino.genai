@@ -1,13 +1,13 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino-tokenizers~=2025.0.0.0.dev
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@753f84db6e0966580eb9eaa74a808213be730631
+openvino-tokenizers~=2025.1.0.0.dev
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main
 numpy<2.0.0; sys_platform == 'darwin'
-einops==0.8.0  # For Qwen
+einops==0.8.1  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
-diffusers==0.32.1 # For image generation pipelines
-timm==1.0.12  # For exporting InternVL2
+diffusers==0.32.2 # For image generation pipelines
+timm==1.0.15  # For exporting InternVL2
 torchvision  # For visual language models
 transformers>=4.43 # For Whisper
 hf_transfer # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1

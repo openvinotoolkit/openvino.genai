@@ -1,9 +1,9 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include <openvino/openvino.hpp>
+#include <openvino/runtime/core.hpp>
 
 namespace ov {
 namespace genai {

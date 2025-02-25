@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "processor_config.hpp"
@@ -33,7 +33,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
         crop_size_height = parsed.at("crop_size").at("height");
         crop_size_width = parsed.at("crop_size").at("width");
     }
-    if (parsed.contains("size")) {
+    if (parsed.contains("size") && parsed.at("size").contains("shortest_edge")) {
         size_shortest_edge = parsed.at("size").at("shortest_edge");
     }
 
@@ -41,4 +41,14 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     if (parsed.contains("image_grid_pinpoints")) {
         image_grid_pinpoints = parsed.at("image_grid_pinpoints").get<std::vector<std::pair<int, int>>>();
     }
+    read_json_param(parsed, "num_crops", phi3_v.num_crops);
+    if (parsed.contains("img_processor")) {
+        phi3_v.num_img_tokens = parsed.at("img_processor").at("num_img_tokens");
+    }
+
+    // Setting qwen2vl config params
+    read_json_param(parsed, "min_pixels", min_pixels);
+    read_json_param(parsed, "max_pixels", max_pixels);
+    read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
+    read_json_param(parsed, "merge_size", merge_size);
 }

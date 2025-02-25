@@ -14,7 +14,9 @@ import shutil
 import json
 
 import openvino_genai as ov_genai
-from common import get_default_properties
+from common import delete_rt_info
+from utils.network import retry_request
+from utils.constants import get_default_llm_properties
 
 def get_models_list():
     precommit_models = [
@@ -26,7 +28,7 @@ def get_models_list():
         "facebook/opt-125m",
         "microsoft/phi-1_5",
         "microsoft/phi-2",
-        "THUDM/chatglm2-6b",
+        "THUDM/chatglm3-6b",
         "Qwen/Qwen2-0.5B-Instruct",
         "Qwen/Qwen-7B-Chat",
         "Qwen/Qwen1.5-7B-Chat",
@@ -55,7 +57,6 @@ def get_models_list():
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
 
-    # pytest.set_trace()
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
@@ -88,11 +89,14 @@ def read_model(params, **tokenizer_kwargs):
 
     from optimum.intel.openvino import OVModelForCausalLM
     from transformers import AutoTokenizer
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+    
+    if "padding_side" in tokenizer_kwargs:
+        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
     if (models_path / "openvino_model.xml").exists():
-        opt_model = OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
-                                                       compile=False, device='CPU', ov_config=get_default_properties())
+        opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(models_path, trust_remote_code=True,
+                                                       compile=False, device='CPU', ov_config=get_default_llm_properties()))
     else:
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(hf_tokenizer,
                                                                              with_detokenizer=True,
@@ -103,8 +107,8 @@ def read_model(params, **tokenizer_kwargs):
         # to store tokenizer config jsons with special tokens
         hf_tokenizer.save_pretrained(models_path)
 
-        opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True,
-                                                       compile=False, device='CPU', load_in_8bit=False, ov_config=get_default_properties())
+        opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True,
+                                                       compile=False, device='CPU', load_in_8bit=False, ov_config=get_default_llm_properties()))
         opt_model.generation_config.save_pretrained(models_path)
         opt_model.config.save_pretrained(models_path)
         opt_model.save_pretrained(models_path)
@@ -114,7 +118,7 @@ def read_model(params, **tokenizer_kwargs):
         models_path,
         hf_tokenizer,
         opt_model,
-        ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_properties()),
+        ov_genai.LLMPipeline(models_path, 'CPU', ENABLE_MMAP=False, **get_default_llm_properties()),
     )
 
 
@@ -132,53 +136,18 @@ def model_tmp_path(tmpdir_factory):
     yield model_id, Path(temp_path)
 
 
-@pytest.fixture(scope="module")
-def model_tokenizers_tmp_path(tmpdir_factory):
-    model_id, models_path, _, _, _ = read_model(get_models_list()[0])
-    temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
-
-    # If tokens were not found in IR, it fallback to reading from config.
-    # There was no easy way to add tokens to IR in tests, so we remove them
-    # and set tokens in configs and to check if they are read and validated correctly.
-    import openvino as ov
-
-    core = ov.Core()
-
-    # copy openvino converted model and tokenizers
-    for pattern in ['*.xml', '*.bin']:
-        for src_file in models_path.glob(pattern):
-
-            # Update files if they are openvino_tokenizer.xml or openvino_detokenizer.xml
-            if src_file.name in ['openvino_tokenizer.xml', 'openvino_detokenizer.xml']:
-                if src_file.exists():
-                    # Load the XML content
-                    ov_model = core.read_model(src_file)
-                    # Add empty rt_info so that tokens will be read from config instead of IR
-                    ov_model.set_rt_info("pad_token_id", "")
-                    ov_model.set_rt_info("eos_token_id", "")
-                    ov_model.set_rt_info("chat_template", "")
-                    ov.save_model(ov_model, str(temp_path / src_file.name))
-
-            if src_file in ['openvino_tokenizer.bin', 'openvino_detokenizer.bin']:
-                continue
-
-            if src_file.is_file():
-                shutil.copy(src_file, temp_path / src_file.name)
-
-    yield model_id, Path(temp_path)
-
-
 def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
     # Load LLMPipeline where all configs are cleared.
     # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
+    delete_rt_info(configs, temp_path)
 
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
 
-    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_properties())
+    ov_pipe = ov_genai.LLMPipeline(temp_path, 'CPU', **get_default_llm_properties())
 
     for _, config_name in configs:
         os.remove(temp_path / config_name)
@@ -188,4 +157,4 @@ def load_genai_pipe_with_configs(configs: List[Tuple], temp_path):
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
-    return ov_genai.LLMPipeline(path, 'CPU', scheduler_config=ov_genai.SchedulerConfig(), **get_default_properties())
+    return ov_genai.LLMPipeline(path, 'CPU', scheduler_config=ov_genai.SchedulerConfig(), **get_default_llm_properties())

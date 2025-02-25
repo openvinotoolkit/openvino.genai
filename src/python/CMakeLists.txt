@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -34,9 +34,6 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
           "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
      DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
 
-configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/__version__.py.in"
-               "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" @ONLY)
-
 if(OpenVINODeveloperPackage_FOUND)
     # TODO: commit changes separately
     # ov_add_clang_format_target(${TARGET_NAME}_clang FOR_TARGETS ${TARGET_NAME})
@@ -69,17 +66,11 @@ endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
               "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
               "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
-              "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
         DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 install(TARGETS ${TARGET_NAME}
         LIBRARY DESTINATION python/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
-
-install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
-        DESTINATION openvino_genai
-        COMPONENT wheel_genai
-        EXCLUDE_FROM_ALL)
 
 install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
               "${OpenVINOGenAI_SOURCE_DIR}/third-party-programs.txt"
@@ -154,7 +145,8 @@ if(pybind11_stubgen_AVAILABLE)
     endif()
 
     set(stub_files_location "${OpenVINOGenAI_BINARY_DIR}/src/python")
-    set(generated_files ${stub_files_location}/openvino_genai/__init__.pyi
+    set(init_pyi_file "${stub_files_location}/openvino_genai/__init__.pyi")
+    set(generated_files ${init_pyi_file}
                         ${stub_files_location}/openvino_genai/py_openvino_genai.pyi)
     set_source_files_properties(${generated_files} PROPERTIES GENERATED ON)
 
@@ -184,6 +176,9 @@ if(pybind11_stubgen_AVAILABLE)
                                             "${CMAKE_BINARY_DIR}/openvino_genai/py_openvino_genai.pyi"
         COMMAND "${CMAKE_COMMAND}" -E env PYTHONPATH=${CMAKE_BINARY_DIR}:${openvino_pythonpath}:$ENV{PYTHONPATH}
                 ${pybind11_stubgen} --output-dir ${stub_files_location} openvino_genai
+        COMMAND "${CMAKE_COMMAND}"
+                -D init_pyi_file=${init_pyi_file}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/clean_version.cmake"
         ${validation_command}
         ${copy_to_source_command}
         COMMAND "${CMAKE_COMMAND}" -E copy ${generated_files} "${CMAKE_BINARY_DIR}/openvino_genai/"
@@ -192,6 +187,7 @@ if(pybind11_stubgen_AVAILABLE)
             ${python_sources}
             ${validation_dependencies}
             "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/clean_version.cmake"
             "${CMAKE_CURRENT_SOURCE_DIR}/compare_pyi.cmake"
         COMMENT "[${pybind11_stubgen_dep}] Generate .pyi files"
         VERBATIM)

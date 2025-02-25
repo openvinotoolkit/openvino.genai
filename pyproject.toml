@@ -1,6 +1,6 @@
 [project]
 name = "openvino-genai"
-version = "2025.0.0.0"
+version = "2025.1.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
 requires-python = ">=3.9"
 readme = { file = "src/README.md", content-type="text/markdown" }
@@ -30,8 +30,10 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino_tokenizers~=2025.0.0.0.dev"
+    "openvino_tokenizers~=2025.1.0.0.dev"
 ]
+[project.optional-dependencies]
+testing = ["pytest>=6.0"]
 
 [tool.py-build-cmake.module]
 directory = "src/python"
@@ -47,14 +49,15 @@ find_python3 = true
 build_args = ["--parallel", "--target", "py_openvino_genai_stub"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
-options = {"BUILD_TOKENIZERS" = "OFF"}
+options = {"BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" = "OFF"}
 
 [build-system]
 requires = [
-    "py-build-cmake==0.3.4",
-    "openvino~=2025.0.0.0.dev",
+    "py-build-cmake==0.4.2",
+    "openvino~=2025.1.0.0.dev",
     "pybind11-stubgen==2.5.1",
-    "cmake~=3.23.0"
+    "cmake~=3.23.0; platform_system != 'Darwin' or platform_machine == 'x86_64'",
+    "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]
 build-backend = "py_build_cmake.build"
 

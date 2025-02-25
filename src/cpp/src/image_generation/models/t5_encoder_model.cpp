@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
@@ -8,6 +8,7 @@
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -58,7 +59,7 @@ T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length)
 
 T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *extract_adapters_from_properties(properties));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "T5 encoder model");
     m_request = compiled_model.create_infer_request();
     // release the original model

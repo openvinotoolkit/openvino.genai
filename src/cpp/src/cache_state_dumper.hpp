@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -40,15 +40,15 @@ public:
      * @param block_mgr A block manager owning the caches.
      * @param sequence_groups Sequence groups currently utilizing the cache.
      */
-    void dump_cache_state(const BlockManager &block_mgr, const std::vector <SequenceGroup::Ptr> &sequence_groups,
+    void dump_cache_state(const std::shared_ptr<BlockManager> block_mgr, const std::vector <SequenceGroup::Ptr> &sequence_groups,
                           size_t dump_count) {
-        for (size_t layer_idx = 0; layer_idx < block_mgr.m_num_layers; layer_idx++) {
+        for (size_t layer_idx = 0; layer_idx < block_mgr->m_num_layers; layer_idx++) {
             auto per_layer_folder = get_per_layer_folder(layer_idx);
             auto file_path = (per_layer_folder / (m_run_id + ".txt")).string();
             std::ofstream out_stream(file_path, std::ios::out);
             OPENVINO_ASSERT(out_stream.is_open());
 
-            out_stream << block_mgr.m_allocator.m_total_num_blocks << std::endl;
+            out_stream << block_mgr->m_allocator.m_total_num_blocks << std::endl;
             out_stream << sequence_groups.size() << std::endl;
             for (const auto &seq_group_ptr: sequence_groups) {
                 out_stream << seq_group_ptr->get_request_id() << ' ';
@@ -57,7 +57,7 @@ public:
                 }
                 out_stream << std::endl;
             }
-            for (const auto &seq_id_and_blocks: block_mgr.m_block_table) {
+            for (const auto &seq_id_and_blocks: block_mgr->m_block_table) {
                 for (const auto &block: seq_id_and_blocks.second[layer_idx]) {
                     const size_t seq_id = seq_id_and_blocks.first;
                     out_stream << seq_id << " " << block->get_index() << " " << block->get_references_count()
@@ -70,7 +70,7 @@ public:
             std::ofstream out_stream_cache_usage;
 
             out_stream_cache_usage.open(cache_usage_file_path, std::ios::app);
-            out_stream_cache_usage << dump_count << ' ' << block_mgr.get_used_percentage() << std::endl;
+            out_stream_cache_usage << dump_count << ' ' << block_mgr->get_used_percentage() << std::endl;
             out_stream_cache_usage.flush();
             dump_count++;
         }

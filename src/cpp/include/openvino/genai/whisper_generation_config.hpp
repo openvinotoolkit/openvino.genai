@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <optional>
 
+#include "generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 
@@ -15,27 +16,13 @@ namespace genai {
 /**
  * @brief Structure to keep whisper generation config parameters.
  */
-class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig {
+class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig : public GenerationConfig {
 public:
-    WhisperGenerationConfig() = default;
+    WhisperGenerationConfig();
     explicit WhisperGenerationConfig(const std::filesystem::path& json_path);
-
-    // Generic
-
-    // the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-    // `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
-    size_t max_new_tokens = SIZE_MAX;
-    // the maximum numbers of tokens to generate, excluding the number of tokens in the prompt.
-    // max_new_tokens has priority over max_length.
-    size_t max_length = SIZE_MAX;
-
-    // Whisper specific
 
     // Corresponds to the ”<|startoftranscript|>” token.
     int64_t decoder_start_token_id = 50258;
-
-    // End of stream token id.
-    int64_t eos_token_id = 50257;
 
     // Padding token id.
     int64_t pad_token_id = 50257;
@@ -109,12 +96,6 @@ public:
 
     // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
-
-    /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
-     * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
-     */
-    void set_eos_token_id(int64_t tokenizer_eos_token_id);
-    size_t get_max_new_tokens(size_t prompt_length = 0) const;
 
     void update_generation_config(const ov::AnyMap& config_map = {});
 

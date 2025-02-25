@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
@@ -181,14 +181,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     if bench_hook is not None:
@@ -215,6 +207,19 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
+    enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
+    if enable_prompt_permutations:
+        log.warning(
+            "Enabled input prompt permutations. It means that generated results may vary on different steps. "
+            "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
+        )
+        from openvino_genai import TokenizedInputs
+        import openvino as ov
+
+        input_ids = input_data.input_ids.data
+        input_ids[:, 0] = num + 1
+        attention_mask = input_data.attention_mask
+        input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     num_input_tokens = input_data.input_ids.shape[1]
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
@@ -225,16 +230,19 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         log.info(out_str)
     gen_config = model.get_generation_config()
     gen_config.max_new_tokens = max_gen_tokens
+    gen_config.ignore_eos = True
     gen_config.rng_seed = args["seed"]
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get('num_assistant_tokens', None):
-            gen_config.num_assistant_tokens = args['num_assistant_tokens']
+            gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
             config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
         if args.get('assistant_confidence_threshold', None):
-            gen_config.assistant_confidence_threshold = args['assistant_confidence_threshold']
+            gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
         log.info(config_info)
     start = time.perf_counter()
@@ -333,20 +341,12 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
+    if num > 0 and not enable_prompt_permutations:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
@@ -382,6 +382,22 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     gen_config.max_new_tokens = max_gen_tokens
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
+    gen_config.ignore_eos = True
+    if hasattr(gen_config, 'apply_chat_template'):
+        gen_config.apply_chat_template = False
+    enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
+    if enable_prompt_permutations:
+        log.warning(
+            "Enabled input prompt permutations. It means that generated results may vary on different steps. "
+            "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
+        )
+        from openvino_genai import TokenizedInputs
+        import openvino as ov
+
+        input_ids = input_data.input_ids.data
+        input_ids[:, 0] = num + 1
+        attention_mask = input_data.attention_mask
+        input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     if args.get('draft_model', ''):
         config_info = "Speculative decoding config: "
         if args.get("num_assistant_tokens", None):
@@ -455,20 +471,12 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if num > 0:
+    if num > 0 and not enable_prompt_permutations:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
             metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-            if not args.get("use_cb", False):
-                if num == 1:
-                    # if the device is CPU, throw exception
-                    if args['devices'].lower().startswith('cpu') is True:
-                        assert (result_md5_list == prev_md5)
-                else:
-                    # throw exception
-                    assert (result_md5_list == prev_md5)
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     streamer.reset()

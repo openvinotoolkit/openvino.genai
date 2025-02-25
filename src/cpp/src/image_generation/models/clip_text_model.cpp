@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
@@ -85,16 +85,13 @@ CLIPTextModel& CLIPTextModel::reshape(int batch_size) {
 
 CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model;
     std::optional<AdapterConfig> adapters;
-    if (auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
         adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("lora_te"));
         m_adapter_controller = AdapterController(m_model, *adapters, device);
-        compiled_model = core.compile_model(m_model, device, *filtered_properties);
-    } else {
-        compiled_model = core.compile_model(m_model, device, properties);
     }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
     m_request = compiled_model.create_infer_request();
     // release the original model

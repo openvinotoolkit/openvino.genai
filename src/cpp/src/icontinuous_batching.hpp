@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -9,6 +9,7 @@
 #include "sampler.hpp"
 #include "model_runner.hpp"
 #include "scheduler.hpp"
+#include "threaded_streamer.hpp"
 
 namespace ov::genai {
 
@@ -21,7 +22,7 @@ protected:
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed and some special tokens.
-    ov::genai::GenerationConfig m_generation_config;
+    GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;
 
@@ -42,17 +43,22 @@ protected:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 
+    float m_load_time_ms = 0.0f;
+    // to access m_load_time_ms
+    friend class ContinuousBatchingPipeline;
+
+    void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
-    ov::genai::GenerationConfig get_config() const;
+    GenerationConfig get_config() const;
     PipelineMetrics get_metrics() const;
-    ov::genai::Tokenizer get_tokenizer();
+    Tokenizer get_tokenizer();
 
     /**
      * Adds requests to awaiting queue using encoded inputs
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
-                                         ov::genai::GenerationConfig sampling_params) = 0;
+                                         GenerationConfig sampling_params) = 0;
 
     /**
      * Adds request to running queue based on string input
@@ -60,7 +66,7 @@ public:
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
-                                         ov::genai::GenerationConfig sampling_params) = 0;
+                                         GenerationConfig sampling_params) = 0;
     
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
@@ -85,7 +91,7 @@ public:
      */
     std::vector<GenerationResult>
     generate(const std::vector<std::string>& prompts,
-             std::vector<ov::genai::GenerationConfig> sampling_params,
+             std::vector<GenerationConfig> sampling_params,
              const StreamerVariant& streamer);
 
     /**

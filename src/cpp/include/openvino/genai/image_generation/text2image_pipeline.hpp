@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -220,6 +220,8 @@ public:
      * @returns An image decoding with VAE auto encoder
      */
     ov::Tensor decode(const ov::Tensor latent);
+
+    ImageGenerationPerfMetrics get_performance_metrics();
 
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;

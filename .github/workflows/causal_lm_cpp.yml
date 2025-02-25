@@ -16,72 +16,21 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17726-9ab2c1a18e7/l_openvino_toolkit_ubuntu20_2025.0.0.dev20241230_x86_64.tgz
-  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17726-9ab2c1a18e7/l_openvino_toolkit_ubuntu22_2025.0.0.dev20241230_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17726-9ab2c1a18e7/m_openvino_toolkit_macos_12_6_2025.0.0.dev20241230_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.0.0-17726-9ab2c1a18e7/w_openvino_toolkit_windows_2025.0.0.dev20241230_x86_64.zip
-jobs:
-  cpp-multinomial-greedy_causal_lm-ubuntu:
-    runs-on: ubuntu-20.04-8-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.9
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
-          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T
-          wget https://huggingface.co/smangrul/tinyllama_lora_sql/resolve/main/adapter_model.safetensors?download=true -O adapter_model.safetensors
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
-        env:
-          PYTHONPATH: "./build"
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 25s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
-        env:
-          PYTHONPATH: "./build"
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/text_generation/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-          | diff <(timeout 25s samples/python/text_generation/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
-        env:
-          PYTHONPATH: "./build"
-      - run: >
-          . ./ov/setupvars.sh
-          && samples/python/text_generation/lora.py ./TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T/ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
-        env:
-          PYTHONPATH: "./build"
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_ubuntu20_2025.1.0.dev20250211_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_ubuntu22_2025.1.0.dev20250211_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_macos_12_6_2025.1.0.dev20250211_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2025.1.0-18141-b0a120c9684/openvino_toolkit_windows_2025.1.0.dev20250211_x86_64.zip
 
+jobs:
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
       matrix:
         executable:
           [
-            ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm,
-            python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py,
+            ./build/samples/cpp/text_generation/beam_search_causal_lm,
+            python ./samples/python/text_generation/beam_search_causal_lm.py,
           ]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -119,7 +68,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('Why is the Sun yellow?', return_tensors='pt')
+          prompt = 'Why is the Sun yellow?'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -135,7 +87,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('69', return_tensors='pt')
+          prompt = '69'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -151,7 +106,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('Hi', return_tensors='pt')
+          prompt = 'Hi'
+          if tokenizer.chat_template:
+            prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -167,7 +125,10 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('return 0', return_tensors='pt')
+          prompt = 'return 0'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -183,7 +144,10 @@ jobs:
           with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
+          prompt = '你好！ 你好嗎？'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref.replace('�', ''))
@@ -193,19 +157,21 @@ jobs:
           "
           echo "你好！ 你好嗎？" passed
 
-          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           prompts = [
-            'Alan Turing was a',
+            'Why is the Sun yellow?',
             'return 0',
             '你好！ 你好嗎？'
           ]
           for prompt in prompts:
-            tokenized = tokenizer(prompt, return_tensors='pt')
+            if tokenizer.chat_template:
+                prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+            tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
             for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 idx = predictions.find(ref.replace('�', ''))
@@ -238,6 +204,8 @@ jobs:
           call .\ov\setupvars.bat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
+        env:
+          CMAKE_TLS_VERIFY: 0
       - name: Download and convert model
         run: |
           call .\ov\setupvars.bat
@@ -254,7 +222,10 @@ jobs:
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True) >> ref.py
-          echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
+          echo prompt = '69' >> ref.py
+          echo if tokenizer.chat_template: >> ref.py
+          echo     prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True) >> ref.py
+          echo tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False) >> ref.py
           echo for beam in transformers.AutoModelForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True).generate(**tokenized, max_new_tokens=100, do_sample=False): >> ref.py
           echo     ref = tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
@@ -274,147 +245,8 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\text_generation\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
-  cpp-greedy_causal_lm-Qwen-7B-Chat:
-    runs-on: ubuntu-20.04-16-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 2m ./build/samples/cpp/text_generation/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/text_generation/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
-        env:
-          PYTHONPATH: "./build"
-
-  cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
-    runs-on: ubuntu-20.04-16-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.12
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
-        env:
-          PYTHONPATH: "./build"
-
-  cpp-beam_search_causal_lm-Phi-2:
-    runs-on: ubuntu-20.04-16-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.9
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
-        env:
-          PYTHONPATH: "./build"
-
-  cpp-beam_search_causal_lm-notus-7b-v1:
-    runs-on: ubuntu-20.04-16-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
-        env:
-          PYTHONPATH: "./build"
-
   cpp-speculative_decoding_lm-ubuntu:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -428,7 +260,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Build app
         run: |
@@ -445,9 +277,13 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
+          echo Running speculative_decoding_lm C++ sample...
+          ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
+          echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
-          python ./samples/python/speculative_decoding_lm/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
+          echo Running speculative_decoding_lm Python sample...
+          python ./samples/python/text_generation/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
+          echo All samples executed, checking result correctness...
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -455,6 +291,8 @@ jobs:
               predicted_speculative = f.readline()
           with open('predictions_py.txt', 'r') as f:
               predicted_py = f.readline()
+          print(f'Predicted greedy: {predicted_greedy}')
+          print(f'Predicted speculative: {predicted_speculative}')
           assert predicted_greedy == predicted_speculative
           assert predicted_greedy == predicted_py
           assert predicted_speculative == predicted_py
@@ -463,8 +301,9 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+
   cpp-prompt_lookup_decoding_lm-ubuntu:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -501,10 +340,13 @@ jobs:
           ```
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
-
-          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          echo Running prompt_lookup_decoding_lm C++ sample...
+          ./build/samples/cpp/text_generation/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          echo Running greedy_causal_lm C++ sample...
           ./build/samples/cpp/text_generation/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
-          python ./samples/python/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
+          echo Running prompt_lookup_decoding_lm Python sample...
+          python ./samples/python/text_generation/prompt_lookup_decoding_lm.py ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_py.txt
+          echo All samples executed, checking result correctness...
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -512,6 +354,9 @@ jobs:
               predicted_prompt_lookup = f.readline()
           with open('predictions_py.txt', 'r') as f:
               predicted_prompt_lookup_py = f.readline()
+
+          print(f'Predicted greedy: {predicted_greedy}')
+          print(f'Predicted prompt lookup: {predicted_prompt_lookup}')
           assert predicted_greedy == predicted_prompt_lookup
           assert predicted_greedy == predicted_prompt_lookup_py
           assert predicted_prompt_lookup == predicted_prompt_lookup_py
@@ -520,8 +365,9 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
           LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
+
   cpp-Phi-1_5:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
@@ -559,7 +405,10 @@ jobs:
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          prompt = 'Alan Turing was a'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -576,7 +425,7 @@ jobs:
           PYTHONPATH: "./build"
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
@@ -614,7 +463,10 @@ jobs:
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          prompt = 'Alan Turing was a'
+          if tokenizer.chat_template:
+              prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+          tokenized = tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
           for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True)
               idx = predictions.find(ref)
@@ -664,7 +516,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
-          timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
+          timeout 30s ./build/samples/cpp/text_generation/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
           python -c "
           from transformers import AutoTokenizer, AutoModelForCausalLM
           model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
@@ -693,10 +545,80 @@ jobs:
           "
           diff pred.txt ref.txt
           echo "Chat sample cpp" passed
-          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          timeout 30s ./samples/python/text_generation/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
+  cpp-encrypted_model_causal_lm-ubuntu:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - name: Run
+        env:
+          PYTHONPATH: "./build"
+        run: |
+          source ./ov/setupvars.sh
+          timeout 30s ./build/samples/cpp/text_generation/encrypted_model_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the sun yellow?"
+
+  benchmark_genai-ubuntu:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ./samples/requirements.txt
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - name: Run
+        env:
+          PYTHONPATH: "./build"
+        run: |
+          source ./ov/setupvars.sh
+          timeout 60s ./build/samples/cpp/text_generation/benchmark_genai -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" --nw 2 -n 3 --mt 50 -d CPU
+          timeout 60s  python ./samples/python/text_generation/benchmark_genai.py -m ./TinyLlama-1.1B-Chat-v1.0/ -p "Why is the sun yellow?" -nw 2 -n 3 -mt 50 -d CPU
 
   visual_language_chat_sample-ubuntu-minicpm_v2_6:
     runs-on: ubuntu-22.04-16-cores
@@ -836,8 +758,38 @@ jobs:
           <<< $'Who drew this painting?\nWhen did the painter live?'
         timeout-minutes: 4
 
+  visual_language_chat_sample-ubuntu-qwen2vl:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - uses: ./.github/actions/install_openvino
+        with:
+          ov_link: ${{ env.l_u22_ov_link }}
+      - uses: ./.github/actions/build_app
+        with:
+          build_target: 'visual_language_chat py_openvino_genai'
+      - uses: ./.github/actions/install_python_deps
+      - name: Download and convert Qwen2VL model
+        run: |
+          source ./ov/setupvars.sh
+          optimum-cli export openvino --model Qwen/Qwen2-VL-2B-Instruct ./qwen2_vl_2b_ov/ --trust-remote-code
+      - name: Download images
+        run: |
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
+      - name: Run visual_language_chat C++ sample - Qwen2VL
+        run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./qwen2_vl_2b_ov/ monalisa.jpg
+          <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
+
   cpp-continuous-batching-ubuntu:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-22.04-8-cores
     defaults:
       run:
         shell: bash
@@ -904,6 +856,8 @@ jobs:
           call .\ov\setupvars.bat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
+        env:
+          CMAKE_TLS_VERIFY: 0
       - name: Download and convert and model
         run: |
           call .\ov\setupvars.bat
@@ -971,9 +925,8 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
-    needs: [cpp-multinomial-greedy_causal_lm-ubuntu, cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
-            cpp-greedy_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
-            cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
+    needs: [cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
+            cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
             cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
             visual_language_chat_sample-ubuntu-minicpm_v2_6, visual_language_chat_sample-ubuntu-llava_1_5, visual_language_chat_sample-ubuntu-llava_next, visual_language_chat_sample-ubuntu-internvl2,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]

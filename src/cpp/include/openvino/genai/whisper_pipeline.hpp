@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -25,16 +25,25 @@ using RawSpeechInput = std::vector<float>;
  */
 class OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
 public:
-    /// @brief put is called every time new token chunk is generated,
+    /// @brief put_chunk is called every time new token chunk is generated,
     /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    virtual bool put_chunk(std::vector<int64_t> tokens) = 0;
+    virtual bool put_chunk(std::vector<int64_t> tokens) {
+        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write_chunk() insted.");
+        return true;
+    }
+
+    /// @brief write_chunk is called every time new token chunk is generated
+    /// @return StreamingStatus flag to indicate whether generation should be stopped
+    virtual StreamingStatus write_chunk(std::vector<int64_t> tokens) {
+        return put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
+    }
 };
 
 // Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
 using ChunkStreamerVariant =
-    std::variant<std::function<bool(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
+    std::variant<std::function<bool(std::string)>, std::function<StreamingStatus(std::string)>, std::shared_ptr<ChunkStreamerBase>, std::monostate>;
 
-struct OPENVINO_GENAI_EXPORTS WhisperRawPerfMetrics {
+struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
     std::vector<MicroSeconds> features_extraction_durations;
 };

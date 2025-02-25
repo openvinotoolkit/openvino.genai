@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -62,13 +62,27 @@ py::object call_common_generate(
     // Call suitable generate overload for each type of input.
     std::visit(pyutils::overloaded {
     [&](ov::Tensor ov_tensor) {
-        results = py::cast(pipe.generate(ov_tensor, updated_config, streamer));
+        ov::genai::EncodedResults encoded_results;
+        {
+            py::gil_scoped_release rel;
+            encoded_results = pipe.generate(ov_tensor, updated_config, streamer);
+        }
+        results = py::cast(encoded_results);
     },
     [&](TokenizedInputs tokenized_input) {
-        results = py::cast(pipe.generate(tokenized_input, updated_config, streamer));
+        ov::genai::EncodedResults encoded_results;
+        {
+            py::gil_scoped_release rel;
+            encoded_results = pipe.generate(tokenized_input, updated_config, streamer);
+        }
+        results = py::cast(encoded_results);
     },
     [&](std::string string_input) {
-        DecodedResults res = pipe.generate(string_input, updated_config, streamer);
+        DecodedResults res;
+        {
+            py::gil_scoped_release rel;
+            res = pipe.generate(string_input, updated_config, streamer);
+        }
         // If input was a string return a single string otherwise return DecodedResults.
         if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
             results = py::cast<py::object>(pyutils::handle_utf8(res.texts[0]));
@@ -78,10 +92,14 @@ py::object call_common_generate(
     },
     [&](std::vector<std::string> string_input) {
         // For DecodedResults texts getter already handles utf8 decoding.
-        results = py::cast(pipe.generate(string_input, updated_config, streamer));
+        DecodedResults res;
+        {
+            py::gil_scoped_release rel;
+            res = pipe.generate(string_input, updated_config, streamer);
+        }
+        results = py::cast(res);
     }},
     inputs);
-
     return results;
 }
 

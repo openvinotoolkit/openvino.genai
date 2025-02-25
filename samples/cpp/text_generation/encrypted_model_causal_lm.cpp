@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/llm_pipeline.hpp"
@@ -13,9 +13,17 @@ std::pair<std::string, ov::Tensor> decrypt_model(const std::string& model_path, 
 
     // User can add file decryption of model_file and weights_file in memory here.
 
+
     std::string model_str((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
-    std::vector<char> weights_buffer((std::istreambuf_iterator<char>(weights_file)), std::istreambuf_iterator<char>());
-    auto weights_tensor = ov::Tensor(ov::element::u8, {weights_buffer.size()}, weights_buffer.data());
+
+    weights_file.seekg(0, std::ios::end);
+    auto weight_size = static_cast<unsigned>(weights_file.tellg());
+    weights_file.seekg(0, std::ios::beg);
+    auto weights_tensor = ov::Tensor(ov::element::u8, {weight_size});
+    if (!weights_file.read(static_cast<char*>(weights_tensor.data()), weight_size)) {
+        throw std::runtime_error("Cannot read weights file");
+    }
+
     return {model_str, weights_tensor};
 }
 
@@ -26,7 +34,7 @@ ov::genai::Tokenizer decrypt_tokenizer(const std::string& models_path) {
 
     std::string detok_model_path = models_path + "/openvino_detokenizer.xml";
     std::string detok_weights_path = models_path + "/openvino_detokenizer.bin";
-    auto [detok_model_str, detok_weights_tensor] = decrypt_model(tok_model_path, tok_weights_path);
+    auto [detok_model_str, detok_weights_tensor] = decrypt_model(detok_model_path, detok_weights_path);
 
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
 }

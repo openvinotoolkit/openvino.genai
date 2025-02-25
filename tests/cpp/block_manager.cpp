@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2024 Intel Corporation
+// Copyright (C) 2018-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -10,7 +10,7 @@
 
 TEST(TestBlockManager, general_test) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(6, false, 4);
-    ov::genai::TokenIds prompt_ids;
+    ov::genai::TokenIds prompt_ids = {10, 0};
 
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
         0,
@@ -37,7 +37,8 @@ TEST(TestBlockManager, general_test) {
     bm.fork_sequence(seq_id, 1);
     EXPECT_TRUE(bm.has_block_table(1));
     EXPECT_EQ(bm.get_block_table(1, 0).back()->get_references_count(), 2);
-
+    bm.free_sequence(0);
+    bm.free_sequence(1);
 }
 
 TEST(TestBlockManager, required_blocks_count) {
@@ -82,6 +83,10 @@ TEST(TestBlockManager, required_blocks_count) {
     // require 1 extra block for each sequence in group
     EXPECT_EQ(required_blocks, 5);
     EXPECT_FALSE(bm.can_append_slots(sequence_group));
+
+    for (auto& sequence : sequence_group->get_sequences()) {
+        bm.free_sequence(sequence->get_id());
+    }
 }
 
 
@@ -103,4 +108,8 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     size_t seq_id = sequence_group->get_sequences()[0]->get_id();
     bm.free_blocks_from_sequence(seq_id, { {0}, {1}, {2} });
     EXPECT_EQ(bm.num_free_blocks(), 6);
+
+    for (auto& sequence : sequence_group->get_sequences()) {
+        bm.free_sequence(sequence->get_id());
+    }
 }

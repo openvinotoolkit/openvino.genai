@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -9,17 +9,18 @@
 
 #include "openvino/runtime/intel_gpu/properties.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "device_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
 #include "cache_manager.hpp"
+#include "timer.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 class Scheduler {
     bool m_can_use_partial_preemption;
 
     SchedulerConfig m_config;
-    BlockManager m_block_manager;
+    std::shared_ptr<BlockManager> m_block_manager;
     friend class CacheStateDumper;
 
     bool m_dynamic_memory_allocation = false;
@@ -33,8 +34,6 @@ public:
     struct Output {
         // IDs of scheduled groups
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
-        // map of src -> dst blocks copies, which need to be performed by CacheManager
-        std::map<size_t, std::list<size_t>> m_block_copy_map;
         // block tables for scheduled sequences per each attention layer in the model
         std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
         // total number of scheduled tokens
@@ -45,29 +44,35 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    explicit Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
-            m_cache_manager(cache_manager),
-            m_can_use_partial_preemption(can_use_partial_preemption),
-            m_config(config),
-            m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers) {
-        
+    Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
+        m_cache_manager(cache_manager),
+        m_can_use_partial_preemption(can_use_partial_preemption),
+        m_config(config) {
+        m_block_manager = std::make_shared<BlockManager>(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers);
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
+    }
+
+    void release() {
+        m_cache_manager.reset();
+        m_block_manager.reset();
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
+        // map of src -> dst blocks copies, which need to be performed by CacheManager
+        std::map<size_t, std::list<size_t>> block_copy_map;
 
         // free some blocks taken by non-confirmed condidates in SD / prompt look-up
         clean_empty_blocks(sequence_groups);
 
-        if (m_block_manager.get_total_number_of_kv_blocks() == 0) {
+        if (m_block_manager->get_total_number_of_kv_blocks() == 0) {
             _initialize_cache(sequence_groups);
         }
 
         if (m_config.dynamic_split_fuse) {
             // deepspeed-mii case
             // generation phase is always scheduled first
-            _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+            _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, block_copy_map);
             // some tokens from generation prompt are also scheduled
             _schedule_prompt_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
         } else {
@@ -78,13 +83,19 @@ public:
 
             if (!scheduler_output.is_prompt) {
                 // prompt sequences are not scheduler => scheduler generation phase by dynamic_split_fuse implementation
-                _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+                _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, block_copy_map);
             }
         }
 
-        m_cache_manager->allocate_cache_if_needed(m_block_manager.get_total_number_of_kv_blocks());
+        m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
-        scheduler_output.m_cache_usage = m_block_manager.get_used_percentage();
+        scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
+
+        static ManualTimer copy_blocks_timer("copy block");
+        copy_blocks_timer.start();
+        m_cache_manager->copy_blocks(block_copy_map);
+        copy_blocks_timer.end();
+
         return scheduler_output;
     }
 
@@ -94,31 +105,35 @@ public:
      */
     void clean_empty_blocks(std::vector<SequenceGroup::Ptr>& seq_groups) {
         for (const auto& seq_group : seq_groups)
-            m_block_manager.free_empty_physical_blocks(seq_group);
+            m_block_manager->free_empty_physical_blocks(seq_group);
     }
 
     const std::vector<BlocksPerLayer>& get_block_tables(const Sequence& seq) const {
-        return m_block_manager.get_block_tables(seq.get_id());
+        return m_block_manager->get_block_tables(seq.get_id());
     }
 
     const size_t get_block_size() const {
-        return m_block_manager.get_block_size();
+        return m_block_manager->get_block_size();
+    }
+
+    const std::vector<BlocksPerLayer>& get_block_tables(size_t seq_id) const {
+        return m_block_manager->get_block_tables(seq_id);
     }
 
     const bool has_block_table(uint64_t seq_id) {
-        return m_block_manager.has_block_table(seq_id);
+        return m_block_manager->has_block_table(seq_id);
     }
 
     void free_sequence(uint64_t seq_id) {
-        m_block_manager.free_sequence(seq_id);
+        m_block_manager->free_sequence(seq_id);
     }
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
-        m_block_manager.fork_sequence(parent_id, child_id);
+        m_block_manager->fork_sequence(parent_id, child_id);
     }
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
-        m_block_manager.restore_cached_blocks(sequence_group);
+        m_block_manager->restore_cached_blocks(sequence_group);
     }
 
     const SchedulerConfig& get_config() const {
@@ -126,7 +141,7 @@ public:
     }
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
-        m_block_manager.free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
+        m_block_manager->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
     }
 
 private:
@@ -143,31 +158,31 @@ private:
 
     bool _preempt_by_recompute(SequenceGroup::Ptr sequence_group, size_t blocks_needed) {
         size_t processed_tokens = sequence_group->get_num_processed_tokens();
-        size_t prev_blocks_count = m_block_manager.num_free_blocks();
+        size_t prev_blocks_count = m_block_manager->num_free_blocks();
         size_t preempted_tokens = 0;
-        size_t num_blocks_occupied_by_sequence = m_block_manager.get_number_of_blocks_occupied_by_sequence(sequence_group);
+        size_t num_blocks_occupied_by_sequence = m_block_manager->get_number_of_blocks_occupied_by_sequence(sequence_group);
         bool was_evicted_from = (sequence_group->get_num_evicted_tokens() != 0);
 
         if (num_blocks_occupied_by_sequence <= blocks_needed || !m_can_use_partial_preemption || was_evicted_from) {
             auto sequences = sequence_group->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
-                m_block_manager.free_sequence(seq_id);
+                m_block_manager->free_sequence(seq_id);
             }
             sequence_group->preempt_tokens(processed_tokens);
             if (was_evicted_from) {
                 sequence_group->reset_eviction_token_count();
             }
             sequence_group->set_waiting();
-            return m_block_manager.num_free_blocks() > prev_blocks_count;
+            return m_block_manager->num_free_blocks() > prev_blocks_count;
         }
 
         size_t logical_blocks_released;
         if (sequence_group->get_sampling_parameters().is_beam_search()) {
-            logical_blocks_released = m_block_manager.free_partially_beam_search_group(sequence_group, blocks_needed);
+            logical_blocks_released = m_block_manager->free_partially_beam_search_group(sequence_group, blocks_needed);
         }
         else {
-            logical_blocks_released = m_block_manager.free_group_partially(sequence_group, blocks_needed);
+            logical_blocks_released = m_block_manager->free_group_partially(sequence_group, blocks_needed);
         }
 
         size_t block_size = get_block_size();
@@ -184,14 +199,14 @@ private:
             preempted_tokens = processed_tokens;
             for (auto sequence: sequence_group->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
-                if (m_block_manager.has_block_table(seq_id)) {
-                    m_block_manager.free_sequence(seq_id);
+                if (m_block_manager->has_block_table(seq_id)) {
+                    m_block_manager->free_sequence(seq_id);
                 }
             }
         }
         sequence_group->preempt_tokens(preempted_tokens);
         sequence_group->set_waiting();
-        return m_block_manager.num_free_blocks() > prev_blocks_count;
+        return m_block_manager->num_free_blocks() > prev_blocks_count;
     }
 
     static size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -212,7 +227,7 @@ private:
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
 
         // check whether current sequence requires a new slot / block
-        while (!m_block_manager.can_append_slots(sequence_group)) {
+        while (!m_block_manager->can_append_slots(sequence_group)) {
             // let's run a sequence for eviction
             size_t evicted_sequence_group_id = _get_low_priority_sequence_group_id(sequence_groups);
 
@@ -220,7 +235,7 @@ private:
                 // we have a cycle when current group need to evict itself to be in a running state
                 break;
             }
-            size_t blocks_needed = m_block_manager.required_blocks_count(sequence_group);
+            size_t blocks_needed = m_block_manager->required_blocks_count(sequence_group);
             if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], blocks_needed)){
                 break;
             }
@@ -238,7 +253,7 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -259,12 +274,12 @@ private:
                 size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
                        required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
                 size_t num_required_blocks = (required_slots + block_size - 1) / block_size;
-                while (num_required_blocks > m_block_manager.num_free_blocks()) {
+                while (num_required_blocks > m_block_manager->num_free_blocks()) {
                     if (!_try_increase_cache()) {
                         break;
                     }
                 }
-                size_t num_scheduled_blocks = std::min(num_required_blocks, m_block_manager.num_free_blocks());
+                size_t num_scheduled_blocks = std::min(num_required_blocks, m_block_manager->num_free_blocks());
                 // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
                 // and total "scheduled capacity"
                 num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * block_size);
@@ -272,14 +287,14 @@ private:
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
                     if (num_scheduled_blocks > 0)
-                        m_block_manager.allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_ids());
+                        m_block_manager->allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_ids());
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
                     }
                 }
@@ -291,7 +306,9 @@ private:
         }
     }
 
-    void _schedule_generate_phase_dynamic_split_fuse(const std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+    void _schedule_generate_phase_dynamic_split_fuse(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                                     Output& scheduler_output,
+                                                     std::map<size_t, std::list<size_t>>& block_copy_map) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             // Note, that can_generate_tokens will mix preempted sequence groups
@@ -299,7 +316,7 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
+            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
@@ -316,7 +333,7 @@ private:
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
-                while (!m_block_manager.can_append_slots(sequence_group)){
+                while (!m_block_manager->can_append_slots(sequence_group)){
                     if (!_try_increase_cache()) {
                         break;
                     }
@@ -325,13 +342,13 @@ private:
                 _apply_preemption(sequence_group_id, sequence_groups);
 
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
-                if (!m_block_manager.can_append_slots(sequence_group)) {
+                if (!m_block_manager->can_append_slots(sequence_group)) {
                     sequence_group->clear_scheduled_tokens();
                     continue;
                 }
 
                 // allocate new slots
-                std::map<size_t, std::list<size_t>> copy_blocks_map = m_block_manager.append_slots(sequence_group);
+                std::map<size_t, std::list<size_t>> copy_blocks_map = m_block_manager->append_slots(sequence_group);
 
                 // add information to scheduler_output
                 {
@@ -342,7 +359,7 @@ private:
                     // block tables for each running sequence within a group
                     std::vector<Sequence::Ptr> running_seqs = sequence_group->get_running_sequences();
                     for (const auto & seq : sequence_group->get_running_sequences()) {
-                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager.get_block_tables(seq->get_id());
+                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager->get_block_tables(seq->get_id());
                     }
 
                     // merge copy_blocks
@@ -350,7 +367,7 @@ private:
                         size_t src_index = src_dst.first;
                         const std::list<size_t>& dst_indexes = src_dst.second;
                         for (const auto dst_index : dst_indexes)
-                            scheduler_output.m_block_copy_map[src_index].push_back(dst_index);
+                            block_copy_map[src_index].push_back(dst_index);
                     }
                 }
 
@@ -378,7 +395,7 @@ private:
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             const bool recompute_evicted_sequences = sequence_group->get_num_processed_tokens() == 0 && !m_can_use_partial_preemption;
-            if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting()) {
+            if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -403,12 +420,12 @@ private:
                 // apply KV cache limitations
                 size_t block_size = get_block_size();
                 const size_t num_required_blocks = (sequence_len + block_size - 1) / block_size;
-                while (!m_block_manager.can_allocate_blocks(num_required_blocks)){
+                while (!m_block_manager->can_allocate_blocks(num_required_blocks)){
                     if (!_try_increase_cache()) {
                         break;
                     }
                 }
-                if (!m_block_manager.can_allocate_blocks(num_required_blocks))
+                if (!m_block_manager->can_allocate_blocks(num_required_blocks))
                     break;
 
                 // add scheduling information
@@ -419,13 +436,13 @@ private:
                     sequence_group->schedule_tokens(sequence_len);
 
                     // allocate KV blocks
-                    m_block_manager.append_slots(sequence_group);
+                    m_block_manager->append_slots(sequence_group);
 
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                     }
 
@@ -445,12 +462,12 @@ private:
     }
 
     size_t _get_available_gpu_memory() {
-        auto device_config = m_cache_manager->get_device_config();
-        auto core = m_cache_manager->get_core();
-        auto device = device_config->get_device();
+        auto device = m_cache_manager->get_device();
         OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "_get_available_gpu_memory() is applicable for GPU only.");
-        auto memory_statistics = core->get_property(device, ov::intel_gpu::memory_statistics);
-        auto device_type = core->get_property(device, ov::device::type);
+
+        ov::Core core = utils::singleton_core();
+        auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+        auto device_type = core.get_property(device, ov::device::type);
 
         // sum up all used device memory
         std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
@@ -470,7 +487,7 @@ private:
         used_device_mem *= used_memory_threshold;
 
         // total device memory in bytes
-        auto total_device_memory = core->get_property(device, ov::intel_gpu::device_total_mem_size);
+        auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
 
         return total_device_memory - used_device_mem;
     }
@@ -480,16 +497,16 @@ private:
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             auto gen_config = sequence_groups[idx]->get_sampling_parameters();
-            seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + gen_config.get_max_new_tokens(sequence_groups[idx]->get_prompt_len()));
-            size_t blocks_num = std::ceil((float)seq_length / m_block_manager.get_block_size());
+            seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
+            size_t blocks_num = std::ceil(static_cast<float>(seq_length) / m_block_manager->get_block_size());
             if (gen_config.is_beam_search()) {
                 blocks_num *= gen_config.num_beams;
             } else if (gen_config.is_multinomial()) {
                 blocks_num *= gen_config.num_return_sequences;
             }
-            blocks_sum  += blocks_num;
+            blocks_sum += blocks_num;
         }
-        m_block_manager.increase_kv_blocks_number(blocks_sum);
+        m_block_manager->increase_kv_blocks_number(blocks_sum);
         m_dynamic_memory_allocation = true;
     }
 
@@ -497,32 +514,29 @@ private:
         if (!m_dynamic_memory_allocation) {
             return false;
         }
-        auto device_config = m_cache_manager->get_device_config();
-        auto device = device_config->get_device();
-        size_t current_num_of_kv_blocks = m_block_manager.get_total_number_of_kv_blocks();
+        auto device = m_cache_manager->get_device();
+        size_t current_num_of_kv_blocks = m_block_manager->get_total_number_of_kv_blocks();
         size_t new_blocks_num = current_num_of_kv_blocks * m_cache_growth_factor;
 
         if (device.find("GPU") == std::string::npos) {
-            m_block_manager.increase_kv_blocks_number(new_blocks_num);
-        }
-        else {
-            size_t available_gpu_memory = _get_available_gpu_memory();
-            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * device_config->get_block_size_in_bytes();
+            m_block_manager->increase_kv_blocks_number(new_blocks_num);
+        } else {
+            const size_t available_gpu_memory = _get_available_gpu_memory();
+            const size_t block_size_in_bytes = m_cache_manager->get_block_size_in_bytes();
+            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
-                m_block_manager.increase_kv_blocks_number(new_blocks_num);
+                m_block_manager->increase_kv_blocks_number(new_blocks_num);
             } else {
-                size_t possible_blocks_to_add = available_gpu_memory / device_config->get_block_size_in_bytes();
+                size_t possible_blocks_to_add = available_gpu_memory / block_size_in_bytes;
                 if (possible_blocks_to_add > 0) {
-                    m_block_manager.increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
-                }
-                else {
+                    m_block_manager->increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
+                } else {
                     return false;
                 }
             }
         }
         return true;
     }
-
 };
 
 }

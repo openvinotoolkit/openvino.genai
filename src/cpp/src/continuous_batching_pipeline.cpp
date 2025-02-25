@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
@@ -15,7 +15,6 @@
 #include "timer.hpp"
 #include "utils.hpp"
 #include "debug_utils.hpp"
-#include "cache_state_dumper.hpp"
 
 using namespace ov::genai;
 
@@ -39,11 +38,18 @@ extract_prompt_lookup_from_config(ov::AnyMap& config) {
     return res;
 }
 
+inline float get_load_time(std::chrono::steady_clock::time_point start_time) {
+    auto stop_time = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
                                                         const ov::AnyMap& properties,
                                                         const ov::AnyMap& tokenizer_properties) {
+    auto start_time = std::chrono::steady_clock::now();
+
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -61,6 +67,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     } else {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     }
+
+    m_impl->m_load_time_ms = get_load_time(start_time);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
@@ -69,6 +77,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
+
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -85,6 +95,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     }
+
+    m_impl->m_load_time_ms = get_load_time(start_time);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
@@ -95,6 +107,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config) {
+    auto start_time = std::chrono::steady_clock::now();
+
     auto properties_without_draft_model = properties;
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
@@ -109,6 +123,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     }
+
+    m_impl->m_load_time_ms = get_load_time(start_time);
 }
 
 ov::genai::Tokenizer ContinuousBatchingPipeline::get_tokenizer() {
@@ -140,11 +156,23 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
-    return m_impl->generate(input_ids, sampling_params, streamer);
+    auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer);
+
+    for (auto& encoded_result : encoded_results) {
+        encoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return encoded_results;
 }
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
-    return m_impl->generate(prompts, sampling_params, streamer);
+    auto decoded_results = m_impl->generate(prompts, sampling_params, streamer);
+
+    for (auto& decoded_result : decoded_results) {
+        decoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return decoded_results;
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {

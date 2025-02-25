@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -34,6 +34,12 @@ public:
     using SequenceLen = std::pair<uint64_t, uint64_t>;
     std::map<uint64_t, SequenceLen> get_generated_request_len();
 
+    bool is_requests_empty();
+    std::vector<SequenceGroup::Ptr> get_awaiting_requests();
+
+    size_t get_processed_tokens_per_iteration();
+
+    using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
 };

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -22,7 +22,7 @@ public:
 
     T back() {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this]{return !m_queue.empty();});
+        m_cv.wait(lock, [this]{return !m_queue.empty(); });
         return m_queue.back();
     }
 

@@ -233,6 +233,15 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
           m_block_size(block_size),
           m_generation_stream(GenerationStream::create()) { }
 
+    bool out_of_memory() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->out_of_memory()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
@@ -243,9 +252,12 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        m_prompt_ids.resize(input_ids.get_size());
-        std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
-        m_prompt_log_probs.reserve(m_prompt_ids.size());
+        size_t prompt_len = input_ids.get_size();
+        OPENVINO_ASSERT(prompt_len > 0, "Prompt length cannot be 0");
+
+        m_prompt_ids.resize(prompt_len);
+        std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
+        m_prompt_log_probs.reserve(prompt_len);
 
         // create a single sequence
         add_sequence(Sequence::create(m_next_sequence_id++));
@@ -291,22 +303,18 @@ public:
         return m_sequences.size();
     }
 
-    size_t num_finished_seqs() const {
-        return std::count_if(m_sequences.begin(), m_sequences.end(), [this] (Sequence::CPtr seq) {
-            return seq->has_finished() || seq->out_of_memory() || handle_dropped();
+    size_t num_running_seqs() const {
+        return std::count_if(m_sequences.begin(), m_sequences.end(), [] (Sequence::CPtr seq) {
+            return seq->is_running();
         });
     }
 
-    size_t num_running_seqs() const {
-        return num_total_seqs() - num_finished_seqs();
-    }
-
     bool has_finished() const {
-        return num_running_seqs() == 0;
+        return !is_running();
     }
 
     bool is_running() const {
-        return !has_finished();
+        return num_running_seqs() > 0;
     }
 
     const std::vector<Sequence::Ptr>& get_sequences() const {
@@ -333,13 +341,20 @@ public:
         return *it;
     }
 
+    // must be used only after sequence group generation loop has finished (either by lenght or OOM)
+    // or stopped / cancelled via streamer / generation_stream->stop() / generation_stream->cancel()
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
+        finished_seqs.reserve(num_total_seqs());
+
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_dropped()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_stopped() || handle_cancelled()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
+
+        OPENVINO_ASSERT(finished_seqs.size() == num_total_seqs(), "Internal error: get_finished_sequences() must be called when all sequences are "
+            "either finished / ignored by OOM or dropped via GenerationStream::stop() / GenerationStream::cancel()");
 
         std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
@@ -351,10 +366,11 @@ public:
         return finished_seqs;
     }
 
-    std::vector<Sequence::Ptr> get_running_sequences() {
+    // returns running or waiting sequences
+    std::vector<Sequence::Ptr> get_not_finished_sequences() {
         std::vector<Sequence::Ptr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->is_running()) {
+            if (!m_sequences[seq_id]->has_finished()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
@@ -362,10 +378,10 @@ public:
         return running_seqs;
     }
 
-    std::vector<Sequence::Ptr> get_not_finished_sequences() {
+    std::vector<Sequence::Ptr> get_running_sequences() {
         std::vector<Sequence::Ptr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (!m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->is_running()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
@@ -556,15 +572,6 @@ public:
         }
     }
 
-    bool out_of_memory() const {
-        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->out_of_memory()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     bool is_waiting() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
@@ -582,8 +589,12 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
-    bool handle_dropped() const {
-        return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
+    bool handle_stopped() const {
+        return m_generation_stream->get_status() == GenerationStatus::STOP;
+    }
+
+    bool handle_cancelled() const {
+        return m_generation_stream->get_status() == GenerationStatus::CANCEL;
     }
 
     void push_empty_outputs() {
@@ -631,7 +642,7 @@ public:
         }
         // For beam search streaming is not available, so we notify only upon finishing
         if (m_sampling_params.is_beam_search()) {
-            if (has_finished() || out_of_memory()) {
+            if (has_finished()) {
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
@@ -642,7 +653,11 @@ public:
                 if (has_finished()) {
                     m_stream_window_size = 0;
                 }
+                // push empty output in case we won't stream generation res
                 if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    if (has_finished()) {
+                        push_empty_outputs();
+                    }
                     return;
                 }
                 // speculative decoding draft handling
@@ -653,7 +668,7 @@ public:
                 size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
                 push_partial_outputs(num_output_token_to_push);
                 m_num_streamed_tokens += (num_output_token_to_push);
-            } else if (has_finished() || out_of_memory()) {
+            } else if (has_finished()) {
                 push_outputs();
             }
         }
@@ -682,7 +697,11 @@ public:
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
-    } 
+    }
+
+    size_t get_max_new_tokens() {
+        return m_sampling_params.get_max_new_tokens(get_prompt_len());
+    }
 };
 
 inline std::shared_ptr<SequenceGroup> Sequence::get_sequence_group_ptr() const {

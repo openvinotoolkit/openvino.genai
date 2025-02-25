@@ -27,7 +27,6 @@ Salesforce/codegen-350M-multi
 Salesforce/codegen-350M-nl
 Salesforce/codegen2-1b
 # Salesforce/xgen-7b-8k-base: Transformers issue - Object of type method is not JSON serializable (https://huggingface.co/Salesforce/xgen-7b-8k-base/discussions/32)
-THUDM/chatglm2-6b
 THUDM/chatglm3-6b
 TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ
 TinyLlama/TinyLlama-1.1B-Chat-v0.6

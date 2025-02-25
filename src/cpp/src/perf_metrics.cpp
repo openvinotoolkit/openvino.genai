@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/perf_metrics.hpp"
@@ -93,17 +93,17 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         return;
     }
     // If start_item is specified then recalculate durations according to start times and calculate statistics only after that.
-    if (start_time.has_value()) {
+    if (start_time.has_value() && raw_metrics.m_new_token_times.size() > 0 && raw_metrics.m_batch_sizes.size() > 0) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
         raw_metrics.m_durations.reserve(tok_times.size());
 
         auto ttft = tok_times[0] - start_time_val;
-        raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
+        raw_metrics.m_times_to_first_token.clear();
         raw_metrics.m_times_to_first_token.emplace_back(ttft);
         num_generated_tokens = batch_sizes[0];
-        
+
         // The very first infer request (prefill stage) is slower than subsequent ones since we process a sequence of tokens.
         // To have a clearer TPOT number, the time taken to generate the very first token at the prefill stage 
         // must not be included in the TPOT calculation. The first duration used for TPOT is from the first token 
@@ -114,7 +114,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
             num_generated_tokens += batch_sizes[i];
         }
     }
-    
+
     // calc_mean_and_std will convert microsecond to milliseconds.
     tpot = calc_mean_and_std(raw_metrics.m_durations);
     ipot = calc_mean_and_std(raw_metrics.m_token_infer_durations);
@@ -138,13 +138,19 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
 
     // Concatenate durations, batch_sizes first token times.
     auto& new_durations = res.raw_metrics.m_durations;
+    auto& new_inference_durations = res.raw_metrics.m_inference_durations;
+    auto& new_token_infer_durations = res.raw_metrics.m_token_infer_durations;
     auto& new_batch_sizes = res.raw_metrics.m_batch_sizes;
     auto& new_times_to_first_token = res.raw_metrics.m_times_to_first_token;
+    auto& right_inference_durations = right.raw_metrics.m_inference_durations;
+    auto& right_token_infer_durations = right.raw_metrics.m_token_infer_durations;
     auto& right_durations = right.raw_metrics.m_durations;
     auto& right_batch_sizes = right.raw_metrics.m_batch_sizes;
     auto& right_times_to_first_token = right.raw_metrics.m_times_to_first_token;
-    
+
     new_durations.insert(new_durations.end(), right_durations.begin(), right_durations.end());
+    new_inference_durations.insert(new_inference_durations.end(), right_inference_durations.begin(), right_inference_durations.end());
+    new_token_infer_durations.insert(new_token_infer_durations.end(), right_token_infer_durations.begin(), right_token_infer_durations.end());
     new_times_to_first_token.insert(new_times_to_first_token.end(), right_times_to_first_token.begin(), right_times_to_first_token.end());
     new_batch_sizes.insert(new_batch_sizes.end(), right_batch_sizes.begin(), right_batch_sizes.end());
 

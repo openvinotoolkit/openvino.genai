@@ -4,7 +4,7 @@ import numpy as np
 import logging
 import os
 
-from transformers import AutoTokenizer, AutoProcessor
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
 
 import pandas as pd
@@ -39,6 +39,11 @@ def parse_args():
         "--tokenizer",
         default=None,
         help="Tokenizer for divergency metric. If not provided, it will be load from base_model or target_model.",
+    )
+    parser.add_argument(
+        "--chat-template",
+        action="store_true",
+        help="Whether apply the default chat template.",
     )
     parser.add_argument(
         "--gt-data",
@@ -124,8 +129,8 @@ def parse_args():
         "--language",
         type=str,
         choices=["en", "cn"],
-        default=None,
-        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+        default="en",
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'cn'.",
     )
     parser.add_argument(
         "--hf",
@@ -136,6 +141,18 @@ def parse_args():
         "--genai",
         action="store_true",
         help="Use LLMPipeline from transformers library to instantiate the model.",
+    )
+    parser.add_argument(
+        "--cb-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file that contains SchedulerConfig for Continuous Batching Pipeline"
+        "of OpenVINO GenAI API.",
+    )
+    parser.add_argument(
+        "--llamacpp",
+        action="store_true",
+        help="Use llama-cpp-python to instantiate the model.",
     )
     parser.add_argument(
         "--image-size",
@@ -190,9 +207,13 @@ def load_prompts(args):
 def load_tokenizer(args):
     tokenizer = None
     if args.tokenizer is not None:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer, trust_remote_code=True
-        )
+        if args.llamacpp:
+            from llama_cpp.llama_tokenizer import LlamaHFTokenizer
+            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.tokenizer, trust_remote_code=True
+            )
     elif args.base_model is not None:
         tokenizer = AutoTokenizer.from_pretrained(
             args.base_model, trust_remote_code=True
@@ -206,17 +227,19 @@ def load_tokenizer(args):
 
 
 def load_processor(args):
-    processor = None
-    if args.base_model is not None:
-        processor = AutoProcessor.from_pretrained(
-            args.base_model, trust_remote_code=True
-        )
-    elif args.target_model is not None:
-        processor = AutoProcessor.from_pretrained(
-            args.target_model, trust_remote_code=True
-        )
+    model_id = args.base_model if args.base_model is not None else args.target_model
+    if model_id is None:
+        return None
 
-    return processor
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    if "llava-qwen" in config.model_type:
+        preprocessor_id = config.mm_vision_tower
+    else:
+        preprocessor_id = model_id
+
+    return AutoProcessor.from_pretrained(
+        preprocessor_id, trust_remote_code=True
+    )
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
@@ -246,8 +269,23 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question):
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens)
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template)
+
+
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+    if use_chat_template:
+        output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
+        text = output["choices"][0]["message"]["content"]
+        if skip_question:
+            text = text[len(question):]
+        return text
+    else:
+        output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
+        text = output["choices"][0]["text"]
+        if skip_question:
+            text = text[len(question):]
+        return text
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None):
@@ -270,7 +308,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None):
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
         image=image_data,
@@ -283,8 +321,8 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    mask_data = ov.Tensor(np.array(mask.getdata()).reshape(1, mask.size[1], mask.size[0], 3).astype(np.uint8))
+    image_data = ov.Tensor(np.array(image)[None])
+    mask_data = ov.Tensor(np.array(mask)[None])
     image_tensor = model.generate(
         prompt,
         image=image_data,
@@ -297,17 +335,8 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image.getdata()).reshape(1, image.size[1], image.size[0], 3).astype(np.uint8))
-    config = model.get_generation_config()
-    config.max_new_tokens = max_new_tokens
-    config.do_sample = False
-    model.set_generation_config(config)
-    if tokenizer.chat_template is not None:
-        model.start_chat(tokenizer.chat_template)
-    else:
-        model.start_chat()
-    out = model.generate(prompt, images=[image_data])
-    model.finish_chat()
+    image_data = ov.Tensor(np.array(image)[None])
+    out = model.generate(prompt, image=image_data, do_sample=False, max_new_tokens=max_new_tokens)
     return out.texts[0]
 
 
@@ -322,7 +351,15 @@ def create_evaluator(base_model, args):
         prompts = load_prompts(args)
 
         if task == "text":
-            tokenizer = load_tokenizer(args)
+            tokenizer = load_tokenizer(args) if not args.llamacpp else None
+
+            if args.genai:
+                gen_answer_fn = genai_gen_text
+            elif args.llamacpp:
+                gen_answer_fn = llamacpp_gen_text
+            else:
+                gen_answer_fn = None
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -331,7 +368,8 @@ def create_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=genai_gen_text if args.genai else None,
+                gen_answer_fn=gen_answer_fn,
+                use_chat_template=args.chat_template,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -431,9 +469,28 @@ def print_image_results(evaluator):
         logger.info(e)
 
 
+def read_cb_config(path):
+    import json
+
+    try:
+        with open(path, 'r') as f:
+            config = json.load(f)
+        return config
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found at: {path}")
+        return {}
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON format in configuration file: {path}")
+        return {}
+
+
 def main():
     args = parse_args()
     check_args(args)
+
+    kwargs = {}
+    if args.cb_config:
+        kwargs["cb_config"] = read_cb_config(args.cb_config)
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
@@ -445,6 +502,7 @@ def main():
             args.ov_config,
             args.hf,
             args.genai,
+            **kwargs,
         )
         evaluator = create_evaluator(base_model, args)
 
@@ -467,10 +525,12 @@ def main():
                 args.ov_config,
                 args.hf,
                 args.genai,
+                args.llamacpp,
+                **kwargs
             )
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
-                evaluator.get_generation_fn() if args.genai else None,
+                evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
                 output_dir=args.output
             )
         logger.info("Metrics for model: %s", args.target_model)

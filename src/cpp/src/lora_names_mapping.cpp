@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 // Content of this file is a C++ port of the name mapping for LoRA tensors from HuggingFace diffusers/loaders/lora_conversion_utils.py
@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <regex>
 #include <algorithm>
+#include <optional>
 
 #include "lora_names_mapping.hpp"
 
@@ -55,8 +56,12 @@ std::string _convert_unet_lora_key(const std::string& key) {
 
     diffusers_name = std::regex_replace(diffusers_name, std::regex("lora.unet"), "lora_unet");
 
-    if(key.find("lora_unet") != 0) {
-        return key;
+    if(diffusers_name.find("lora_unet") != 0) {
+        if(diffusers_name.find("lora_te") == std::string::npos) {
+            // converge to lora_unet naming convention because UNet expects this pattern
+            diffusers_name = "lora_unet." + std::regex_replace(diffusers_name, std::regex("\\.processor\\."), ".");
+        }
+        return diffusers_name;
     }
 
     diffusers_name = std::regex_replace(diffusers_name, std::regex("_"), ".");
@@ -111,6 +116,23 @@ std::string _convert_unet_lora_key(const std::string& key) {
 
 namespace ov {
 namespace genai {
+
+namespace utils {
+
+
+std::optional<std::string> RegexParser::operator() (const std::string& name) const {
+    std::smatch match;
+    if(std::regex_match(name, match, pattern)) {
+        for(auto capture_index: capture_indices) {
+            // check if a given capture group exists (really matched) and return the first matched group
+            if(capture_index < match.size() && match[capture_index].matched) {
+                return match[capture_index];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 
 // Function to reimplement _maybe_map_sgm_blocks_to_diffusers
 NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int layers_per_block,
@@ -320,6 +342,14 @@ NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int 
 }
 
 
+void convert_prefix_te(std::string& name) {
+    std::string source = "lora_te1_";
+    if(name.find(source) == 0) {
+        name.replace(0, source.length(), "lora_te_");
+    }
+}
+
+
 NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& keys) {
     NameMap new_keys = maybe_map_sgm_blocks_to_diffusers(keys);
     for(const auto& key: keys) {
@@ -334,6 +364,227 @@ NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& k
     return new_keys;
 }
 
+class FormattedString {
+    std::string part1, part2;
+public:
+    FormattedString (const std::string& _part1, const std::string& _part2) : part1(_part1), part2(_part2) {}
+    std::string format(const std::string& subs) const {
+        return part1 + subs + part2;
+    }
+};
 
+
+class ReplaceRule {
+    RegexParser src_pattern;
+    FormattedString dst_pattern;
+public:
+    ReplaceRule (const std::string& _src_pattern, const FormattedString& _dst_pattern, size_t group = 1) :
+    src_pattern(_src_pattern, group),
+    dst_pattern(_dst_pattern) {}
+
+    std::optional<LoRATensors> operator() (const LoRATensors::value_type& weight) const {
+        if(auto match = src_pattern(weight.first)) {
+            return LoRATensors({{dst_pattern.format(*match), weight.second}});
+        }
+        return std::nullopt;
+    }
+};
+
+template <typename R>
+std::optional<LoRATensors> replace_by_rules (const LoRATensors::value_type& weight, const std::vector<R>& rules) {
+    for(auto rule: rules) {
+        if(auto dst = rule(weight)) {
+            return dst;
+        }
+    }
+    return std::nullopt;
+}
+
+
+class SplitRule {
+    RegexParser src_pattern;
+    std::vector<FormattedString> dst_patterns;
+    std::vector<size_t> dims;
+public:
+    SplitRule (const std::string& _src_pattern, const std::vector<FormattedString>& _dst_patterns, const std::vector<size_t>& _dims = {}, size_t group = 1) :
+        src_pattern(_src_pattern, group),
+        dst_patterns(_dst_patterns),
+        dims(_dims) {
+        OPENVINO_ASSERT(dims.empty() || dims.size() == dst_patterns.size());
+    }
+
+    std::optional<LoRATensors> operator() (const LoRATensors::value_type& weight) const {
+        if(auto match = src_pattern(weight.first)) {
+            std::vector<size_t> cur_dims;
+            const auto B_shape = weight.second.B->get_output_shape(0);
+            if(dims.empty()) {
+                size_t num_splits = dst_patterns.size();
+                cur_dims = std::vector<size_t>(num_splits, B_shape[0] / num_splits);
+            } else {
+                OPENVINO_ASSERT(std::accumulate(dims.begin(), dims.end(), 0u) == B_shape[0]);
+                cur_dims = dims;
+            }
+
+            // Skip checking for zero parts of the tensor for now -- TODO: save compute on zero parts
+
+            LoRATensors result;
+            ov::Coordinate total_size = B_shape;
+            size_t cur_index = 0;
+            for(size_t i = 0; i < dst_patterns.size(); ++i) {
+                ov::Coordinate
+                    begin = {cur_index, 0},
+                    end = total_size;
+                cur_index += cur_dims[i];
+                end[0] = cur_index;
+                auto B = std::make_shared<ov::op::v0::Constant>(ov::Tensor(weight.second.B->get_tensor_view(), begin, end));
+
+                // ov::Tensor ROI constructor doesn't keep the origin reference so we need to keep a pointer to the original constant to avoid its early disposal
+                B->get_rt_info()["__lora_parent_constant_holder"] = weight.second.B;
+
+                result.emplace(
+                    dst_patterns[i].format(*match),
+                    LoRAWeight(
+                        nullptr,
+                        weight.second.A,
+                        B
+                    )
+                );
+            }
+
+            return result;
+        }
+        return std::nullopt;
+    }
+};
+
+
+LoRATensors flux_kohya_lora_preprocessing(const LoRATensors& tensors) {
+    std::vector<ReplaceRule> replace_rules = {
+        {
+            "lora_unet_double_blocks_(\\d+)_img_attn_proj",
+            { "transformer.transformer_blocks.", ".attn.to_out.0" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_img_mlp_0",
+            { "transformer.transformer_blocks.", ".ff.net.0.proj" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_img_mlp_2",
+            { "transformer.transformer_blocks.", ".ff.net.2" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_img_mod_lin",
+            { "transformer.transformer_blocks.", ".norm1.linear" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_attn_proj",
+            { "transformer.transformer_blocks.", ".attn.to_add_out" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_mlp_0",
+            { "transformer.transformer_blocks.", ".ff_context.net.0.proj" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_mlp_2",
+            { "transformer.transformer_blocks.", ".ff_context.net.2" } },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_mod_lin",
+            { "transformer.transformer_blocks.", ".norm1_context.linear" } },
+        {
+            "lora_unet_single_blocks_(\\d+)_linear2",
+            { "transformer.single_transformer_blocks.", ".proj_out" } },
+        {
+            "lora_unet_single_blocks_(\\d+)_modulation_lin",
+            { "transformer.single_transformer_blocks.", ".norm.linear" } },
+
+    };
+
+    std::vector<SplitRule> split_rules = {
+        {
+            "lora_unet_double_blocks_(\\d+)_img_attn_qkv",
+            {
+                { "transformer.transformer_blocks.", ".attn.to_q" },
+                { "transformer.transformer_blocks.", ".attn.to_k" },
+                { "transformer.transformer_blocks.", ".attn.to_v" } } },
+        {
+            "lora_unet_double_blocks_(\\d+)_txt_attn_qkv",
+            {
+                { "transformer.transformer_blocks.", ".attn.add_q_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_k_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_v_proj" } } },
+        {
+            "lora_unet_single_blocks_(\\d+)_linear1",
+            {
+                { "transformer.single_transformer_blocks.", ".attn.to_q" },
+                { "transformer.single_transformer_blocks.", ".attn.to_k" },
+                { "transformer.single_transformer_blocks.", ".attn.to_v" },
+                { "transformer.single_transformer_blocks.", ".proj_mlp" } },
+            { 3072, 3072, 3072, 12288 } }
+    };
+
+    LoRATensors result;
+
+    for(const auto& src_tensor: tensors) {
+        if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        if(auto new_tensors = replace_by_rules(src_tensor, split_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        std::string name = src_tensor.first;
+        convert_prefix_te(name);
+        name = std::regex_replace(name, std::regex("lora.unet"), "transformer");
+        result.emplace(name, src_tensor.second);
+    }
+
+    return result;
+}
+
+LoRATensors flux_xlabs_lora_preprocessing(const LoRATensors& tensors) {
+    std::vector<ReplaceRule> replace_rules = {
+        {
+            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.proj_lora1",
+            { "transformer.transformer_blocks.", ".attn.to_out.0" }, 2 },
+        {
+            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.proj_lora2",
+            { "transformer.transformer_blocks.", ".attn.to_add_out" }, 2 },
+        {
+            "(diffusion_model\\.)?single_blocks\\.(\\d+).*proj_lora",
+            { "transformer.single_transformer_blocks.", ".attn.to_out.0"}, 2 },
+    };
+
+    std::vector<SplitRule> split_rules = {
+        {
+            "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.qkv_lora2",
+            {
+                { "transformer.transformer_blocks.", ".attn.add_q_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_k_proj" },
+                { "transformer.transformer_blocks.", ".attn.add_v_proj" } }, {}, 2 },
+        {    "(diffusion_model\\.)?double_blocks\\.(\\d+).*processor\\.qkv_lora1",
+            {
+                { "transformer.transformer_blocks.", ".attn.to_q" },
+                { "transformer.transformer_blocks.", ".attn.to_k" },
+                { "transformer.transformer_blocks.", ".attn.to_v" } }, {}, 2 },
+        {    "(diffusion_model\\.)?double_blocks\\.(\\d+).*qkv_lora",
+            {
+                { "transformer.single_transformer_blocks.", ".norm.linear" }, }, {}, 2 },
+    };
+
+    LoRATensors result;
+
+    for(const auto& src_tensor: tensors) {
+        if(auto new_tensors = replace_by_rules(src_tensor, replace_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        if(auto new_tensors = replace_by_rules(src_tensor, split_rules)) {
+            result.insert(new_tensors->begin(), new_tensors->end());
+            continue;
+        }
+        std::string name = src_tensor.first;
+        result.insert(src_tensor);
+    }
+
+    return result;
+}
+
+
+}
 }
 }

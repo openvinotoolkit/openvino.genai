@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2024 Intel Corporation
+# Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2025.0.0.0
+        VERSION 2025.1.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -60,6 +60,7 @@ if(NOT OpenVINODeveloperPackage_FOUND)
 endif()
 
 include(cmake/features.cmake)
+include(cmake/version.cmake)
 
 if(ENABLE_PYTHON)
     # the following two calls are required for cross-compilation
@@ -87,7 +88,7 @@ endif()
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples")
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples" AND ENABLE_SAMPLES)
     add_subdirectory(samples)
 endif()
 if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tools/continuous_batching")
@@ -107,6 +108,9 @@ set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
+endif()
+if(ENABLE_JS)
+    list(APPEND CPACK_COMPONENTS_ALL genai_node_addon)
 endif()
 if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
     set(CPACK_GENERATOR "ZIP")

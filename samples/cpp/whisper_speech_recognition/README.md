@@ -6,12 +6,14 @@ This example showcases inference of speech recognition Whisper Models. The appli
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../export-requirements.txt](../../export requirements.txt) for deployment if the model has already been exported.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
+
+If NPU is the inference device, an additional option `--disable-stateful` is required. See [NPU with OpenVINO GenAI](https://docs.openvino.ai/nightly/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) for the detail.
 
 ## Prepare audio file
 
@@ -21,7 +23,7 @@ You can download example audio file: https://storage.openvinotoolkit.org/models_
 
 ## Run
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2024/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `whisper_speech_recognition whisper-base how_are_you_doing_today.wav`
 
@@ -31,7 +33,7 @@ Output:
 timestamps: [0, 2] text:  How are you doing today?
 ```
 
-See [SUPPORTED_MODELS.md](../../../src/docs/SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
+See [SUPPORTED_MODELS.md](../../../SUPPORTED_MODELS.md#whisper-models) for the list of supported models.
 
 # Whisper pipeline usage
 

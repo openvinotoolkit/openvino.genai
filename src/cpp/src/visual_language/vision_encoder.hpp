@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -156,6 +156,14 @@ private:
     );
 
     EncodedImage encode_internvl(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
+
+    EncodedImage encode_phi3_v(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
+
+    EncodedImage encode_qwen2vl(
         const ov::Tensor& image, const ProcessorConfig& config
     );
 };

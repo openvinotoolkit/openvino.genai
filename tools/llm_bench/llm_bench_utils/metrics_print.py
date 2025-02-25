@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2024 Intel Corporation
+# Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import logging as log
 
@@ -83,7 +83,7 @@ def print_generated(iter_num, warm_up=False, generated=None, prompt_idx=-1):
     if generated is not None:
         try:
             log.info(f'{prefix} Generated: {generated}')
-        except UnicodeError:
+        except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
             try:
                 utf8_generated = generated.encode(encoding="utf-8", errors="replace").decode()
                 log.info(f'{prefix} Generated: {utf8_generated}')
@@ -97,17 +97,17 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, 
     iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
     iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
     prefix = f'[{iter_str}][P{prompt_idx}]'
-    log.info(f"{prefix} First step of unet latency: {iter_data['first_token_latency']:.2f} ms/step, "
-             f"other steps of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
+    log.info(f"{prefix} First step of {stable_diffusion.main_model_name} latency: {iter_data['first_token_latency']:.2f} ms/step, "
+             f"other steps of {stable_diffusion.main_model_name} latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
     has_text_encoder_time = stable_diffusion.get_text_encoder_step_count() != -1
     log_str = (
         f"{prefix} Text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f}" if has_text_encoder_time else f"{prefix} Text encoder latency: N/A "
-        f"unet latency: {stable_diffusion.get_unet_latency():.2f} ms/step, "
+        f"{stable_diffusion.main_model_name} latency: {stable_diffusion.get_unet_latency():.2f} ms/step, "
         f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/step, ")
     if has_text_encoder_time:
         log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
     log_str += (
-        f"unet step count: {stable_diffusion.get_unet_step_count()}, "
+        f"{stable_diffusion.main_model_name} step count: {stable_diffusion.get_unet_step_count()}, "
         f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}")
     log.info(log_str)
 
