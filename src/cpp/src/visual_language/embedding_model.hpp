@@ -39,6 +39,9 @@ public:
 
     ov::Tensor infer(const ov::Tensor& input_idx, bool return_remote_tensor=false);
 
+    ov::InferRequest get_request() {
+        return m_request;
+    }
 private:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;
 
