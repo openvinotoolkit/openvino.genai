@@ -8,10 +8,10 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
+#include "openvino/genai/text_streamer.hpp"
 #include "utils.hpp"
 #include "whisper/context_tokens.hpp"
 #include "whisper/models/decoder.hpp"
-#include "whisper/streamer.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
@@ -26,22 +26,6 @@ ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap&
     } else {
         return std::nullopt;
     }
-}
-
-ov::genai::ChunkStreamerVariant get_chunk_streamer_from_map(const ov::AnyMap& config_map) {
-    ov::genai::ChunkStreamerVariant streamer = std::monostate();
-
-    if (config_map.count(ov::genai::utils::STREAMER_ARG_NAME)) {
-        auto any_val = config_map.at(ov::genai::utils::STREAMER_ARG_NAME);
-        if (any_val.is<std::shared_ptr<ov::genai::ChunkStreamerBase>>()) {
-            streamer = any_val.as<std::shared_ptr<ov::genai::ChunkStreamerBase>>();
-        } else if (any_val.is<std::function<bool(std::string)>>()) {
-            streamer = any_val.as<std::function<bool(std::string)>>();
-        } else if (any_val.is<std::function<ov::genai::StreamingStatus(std::string)>>()) {
-            streamer = any_val.as<std::function<ov::genai::StreamingStatus(std::string)>>();
-        }
-    }
-    return streamer;
 }
 
 ov::InferRequest init_model(ov::CompiledModel& compiled) {
@@ -89,7 +73,7 @@ public:
 
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                    OptionalWhisperGenerationConfig generation_config,
-                                   ChunkStreamerVariant streamer) override {
+                                   const std::shared_ptr<StreamerBase> streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
@@ -101,17 +85,6 @@ public:
             config.set_eos_token_id(m_generation_config.eos_token_id);
         config.validate();
 
-        std::shared_ptr<ChunkStreamerBase> streamer_ptr;
-        if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
-            streamer_ptr = nullptr;
-        } else if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&streamer)) {
-            streamer_ptr = *streamer_obj;
-        } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
-            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
-        } else if (auto callback = std::get_if<std::function<StreamingStatus(std::string)>>(&streamer)) {
-            streamer_ptr = std::make_shared<ChunkTextCallbackStreamer>(m_tokenizer, *callback);
-        }
-
         auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 
         auto generate_result = ov::genai::whisper_generate(config,
@@ -121,7 +94,7 @@ public:
                                                            m_encoder,
                                                            m_decoder,
                                                            m_feature_extractor,
-                                                           streamer_ptr,
+                                                           streamer,
                                                            m_sampler);
         auto decode_start_time = std::chrono::steady_clock::now();
         WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
@@ -164,16 +137,11 @@ private:
     Sampler m_sampler;
 };
 
-std::pair<std::string, Any> streamer(ChunkStreamerVariant func) {
-    if (auto streamer_obj = std::get_if<std::shared_ptr<ChunkStreamerBase>>(&func)) {
-        return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(*streamer_obj)};
-    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
-        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
-    } else {
-        auto callback = std::get<std::function<bool(std::string)>>(func);
-        return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
-    }
+OPENVINO_SUPPRESS_DEPRECATED_START
+std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func) {
+    return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(func)};
 }
+OPENVINO_SUPPRESS_DEPRECATED_END
 
 std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
@@ -197,8 +165,10 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
 
 ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
                                                                       OptionalWhisperGenerationConfig generation_config,
-                                                                      ChunkStreamerVariant streamer) {
-    return m_impl->generate(raw_speech_input, generation_config, streamer);
+                                                                      StreamerVariant streamer) {
+    auto base_streamer = utils::create_streamer(streamer, m_impl->m_tokenizer);
+
+    return m_impl->generate(raw_speech_input, generation_config, base_streamer);
 }
 
 ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
@@ -206,8 +176,10 @@ ov::genai::WhisperDecodedResults ov::genai::WhisperPipeline::generate(const RawS
     auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
+    StreamerVariant streamer_variant = utils::get_streamer_from_map(config_map);
+    const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer_variant, m_impl->m_tokenizer);
 
-    return m_impl->generate(raw_speech_input, config, get_chunk_streamer_from_map(config_map));
+    return m_impl->generate(raw_speech_input, config, base_streamer);
 }
 
 ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {
@@ -234,3 +206,5 @@ void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationCo
 }
 
 ov::genai::WhisperPipeline::~WhisperPipeline() = default;
+
+ov::genai::ChunkStreamerBase::~ChunkStreamerBase() = default;
