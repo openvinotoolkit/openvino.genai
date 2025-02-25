@@ -349,5 +349,5 @@ void init_continuous_batching_pipeline(py::module_& m) {
             py::arg("images"),
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
-        )
+        );
 }
