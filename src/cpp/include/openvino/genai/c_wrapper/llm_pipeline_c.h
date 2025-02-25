@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2024 Intel Corporation
+// Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -37,7 +37,7 @@ OPENVINO_EXTERN_C {
      * @param metrics A pointer to the PerfMetricsHandle.
      */
     OPENVINO_GENAI_EXPORTS void DecodedeResultsGetPerfMetrics(DecodedResultsHandle * results,
-                                                              PerfMetricsHandle * metrics);
+                                                              PerfMetricsHandle ** metrics);
 
     /**
      * @brief Get string result from DecodedResultsHandle.

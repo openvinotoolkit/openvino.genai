@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <stdio.h>
@@ -130,13 +130,13 @@ int main(int argc, char* argv[]) {
     DecodeResultsGetString(results, output, MAX_OUTPUT_LENGTH);
     printf("%s\n", output);
 
-    PerfMetricsHandle* metrics = CreatePerfMetrics();
-    DecodedeResultsGetPerfMetrics(results, metrics);
+    PerfMetricsHandle* metrics = NULL;
+    DecodedeResultsGetPerfMetrics(results, &metrics);
 
     for (size_t i = 0; i < options.num_iter - 1; i++) {
         results = LLMPipelineGenerateDecodeResults(pipe, options.prompt, config);
-        PerfMetricsHandle* _metrics = CreatePerfMetrics();
-        DecodedeResultsGetPerfMetrics(results, _metrics);
+        PerfMetricsHandle* _metrics = NULL;
+        DecodedeResultsGetPerfMetrics(results, &_metrics);
         AddPerfMetricsInPlace(metrics, _metrics);
         DestroyPerfMetics(_metrics);
         DestroyDecodedResults(results);

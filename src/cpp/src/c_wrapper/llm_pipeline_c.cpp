@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2024 Intel Corporation
+// Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c_wrapper/llm_pipeline_c.h"
@@ -21,9 +21,10 @@ OPENVINO_EXTERN_C {
             delete results;
         }
     }
-    void DecodedeResultsGetPerfMetrics(DecodedResultsHandle * results, PerfMetricsHandle * metrics) {
-        if (results && metrics && results->object && metrics->object) {
-            metrics->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
+    void DecodedeResultsGetPerfMetrics(DecodedResultsHandle * results, PerfMetricsHandle ** metrics) {
+        if (results && metrics && results->object) {
+            *metrics = new PerfMetricsHandle;
+            (*metrics)->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
         }
     }
     void DecodeResultsGetString(DecodedResultsHandle * results, char* output, int max_size) {
