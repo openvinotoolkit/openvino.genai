@@ -11,6 +11,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
+#include "openvino/genai/generation_handle.hpp"
 #include "visual_language/processor_config.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -35,28 +36,9 @@ enum class GenerationChatInputsType {
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
 };
 
-struct HistoryRemoveManager
-{
-    size_t num_tokens_to_remove_from_kv_cache = 0;
-    size_t trusted_history_length = 0;
-    size_t kv_cache_seq_length_axis = 2;
-    bool reset_kv_cache = false;
-
-    bool does_history_cache_need_to_update() {
-        return (trusted_history_length > 0 && num_tokens_to_remove_from_kv_cache > 0);
-    }
-
-    void reset() {
-        num_tokens_to_remove_from_kv_cache = 0;
-        trusted_history_length = 0;
-        reset_kv_cache = false;
-    }
-};
-
 struct GenerationFinishInfo
 {
     EncodedResults results;
-    std::optional<int64_t> probably_disappeared_token = std::nullopt;
     GenerationStatus streaming_finish_status;
 };
 
@@ -115,7 +97,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core singleton_core();
 
-size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history, std::set<int64_t> stop_tokens);
+size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
 struct KVAxesPosition {
     size_t batch;

@@ -16,7 +16,7 @@ namespace {
 
 ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
     const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
-    ov::element::Type ir_kv_cache_precision = ov::element::undefined;
+    ov::element::Type ir_kv_cache_precision = ov::element::dynamic;
 
     if (model->has_rt_info(kv_cache_precision_path)) {
         ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
@@ -26,7 +26,7 @@ ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model)
 }
 
 void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std::string& device, const ov::AnyMap& plugin_config) {
-    ov::element::Type m_kv_cache_type = ov::element::undefined, ir_kv_cache_precision = get_model_kv_cache_precision(model);
+    ov::element::Type m_kv_cache_type = ov::element::dynamic, ir_kv_cache_precision = get_model_kv_cache_precision(model);
     ov::Core core = ov::genai::utils::singleton_core();
 
     auto inference_precision = core.get_property(device, ov::hint::inference_precision);
@@ -44,7 +44,7 @@ void apply_kv_cache_precision(const std::shared_ptr<ov::Model>& model, const std
         } else if (accuracy_mode) {
             // ACCURACY mode will use f32 KV cache type
             m_kv_cache_type = ov::element::f32;
-        } else if (ir_kv_cache_precision != ov::element::undefined) {
+        } else if (ir_kv_cache_precision != ov::element::dynamic) {
             // check that kv_cache_precision is set in runtime_info section of OpenVINO IR
             // but in case it's set to FP16, we need to patch it to be BF16 for Xeon platforms
             m_kv_cache_type = ir_kv_cache_precision == ov::element::f16 && inference_precision == ov::element::bf16 ?
