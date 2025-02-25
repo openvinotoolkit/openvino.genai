@@ -425,7 +425,7 @@ void init_image_generation_pipelines(py::module_& m) {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
-                    pipe.compile(text_encode_device, denoise_device, vae_decode_device, map);
+                    pipe.compile(text_encode_device, denoise_device, vae_device, map);
                 }
             },
             py::arg("text_encode_device"), "device to run the text encoder(s) on",
