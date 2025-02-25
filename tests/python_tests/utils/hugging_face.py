@@ -1,18 +1,21 @@
 # Copyright (C) 2018-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from os.path import sep
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from transformers import AutoTokenizer
 from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM
+from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
 from utils.constants import get_default_llm_properties
+from utils.network import retry_request
 
 def generation_config_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -154,30 +157,52 @@ def run_hugging_face(
     return generation_results
 
 
-def get_hugging_face_models(model_id: str):
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, compile=False, load_in_8bit=False, trust_remote_code=True, ov_config=get_default_llm_properties())
+# download HF model or read converted model
+def get_hugging_face_models(model_id: str | Path):
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+    opt_model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties()))
     return opt_model, hf_tokenizer
 
 
 def convert_and_save_tokenizer(hf_tokenizer : AutoTokenizer,
-                               models_path: Path):
+                               models_path: Path,
+                               **tokenizer_kwargs):
+    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, **tokenizer_kwargs)
 
-    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
-    save_model(tokenizer, models_path / "openvino_tokenizer.xml")
-    save_model(detokenizer, models_path / "openvino_detokenizer.xml")
+    from utils.constants import OV_DETOKENIZER_FILENAME, OV_TOKENIZER_FILENAME
+    save_model(tokenizer, models_path / OV_TOKENIZER_FILENAME)
+    save_model(detokenizer, models_path / OV_DETOKENIZER_FILENAME)
 
 
 def convert_models(opt_model : OVModelForCausalLM,
                    hf_tokenizer : AutoTokenizer,
-                   models_path: Path):
+                   models_path: Path,
+                   **tokenizer_kwargs):
     opt_model.save_pretrained(models_path)
+    # save generation config
+    opt_model.generation_config.save_pretrained(models_path)
+    opt_model.config.save_pretrained(models_path)
 
     # to store tokenizer config jsons with special tokens
     hf_tokenizer.save_pretrained(models_path)
-
-    # save generation config
-    opt_model.generation_config.save_pretrained(models_path)
-
     # convert tokenizers as well
     convert_and_save_tokenizer(hf_tokenizer, models_path)
+
+
+def download_and_convert_model(model_id: str,
+                               tmp_path: Path | TemporaryDirectory = TemporaryDirectory(),
+                               **tokenizer_kwargs):
+    dir_name = str(model_id).replace(sep, "_")
+    models_path = (TemporaryDirectory() if tmp_path == None else Path(tmp_path.name)) / dir_name
+
+    from utils.constants import OV_MODEL_FILENAME
+    if (models_path / OV_MODEL_FILENAME).exists():
+        opt_model, hf_tokenizer = get_hugging_face_models(models_path)
+    else:
+        opt_model, hf_tokenizer = get_hugging_face_models(model_id)
+        convert_models(opt_model, hf_tokenizer, models_path)
+
+    if "padding_side" in tokenizer_kwargs:
+        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+
+    return opt_model, hf_tokenizer, models_path

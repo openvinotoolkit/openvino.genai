@@ -47,8 +47,8 @@ jobs:
       id: openvino_download
       with:
         platform: 'windows'
-        commit_packages_to_provide: 'wheels'
-        revision: 'latest_available_commit'
+        commit_packages_to_provide: wheels,openvino_js_package.zip
+        revision: '1643337771eec0816aada5a6245a93fbff4b976a'
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build_type }})
@@ -56,13 +56,12 @@ jobs:
       matrix:
         build_type: [Release, Debug]
     needs: [ openvino_download ]
-    timeout-minutes: 60
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
     runs-on: windows-2022
     env:
-      OV_REPO: ${{ github.workspace }}\src\ov
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       GENAI_INSTALL_DIR: ${{ github.workspace }}\install\genai
       SRC_DIR: ${{ github.workspace }}\src\genai
@@ -75,15 +74,6 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-
-      - name: Clone Openvino
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'openvinotoolkit/openvino'
-          path: ${{ env.OV_REPO }}
-          ref: ${{ env.TARGET_BRANCH }}
-          sparse-checkout: |
-            install_build_dependencies.sh
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -130,7 +120,7 @@ jobs:
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
-          toolset: 14.42 # v2022
+          toolset: 14.40 # v2022
 
       - name: CMake Build
         shell: pwsh
@@ -167,13 +157,12 @@ jobs:
   genai_build_wheel:
     name: genai wheel
     needs: [ openvino_download ]
-    timeout-minutes: 25
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
     runs-on: windows-2022
     env:
-      OV_REPO: ${{ github.workspace }}\src\ov
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
       SRC_DIR: ${{ github.workspace }}\src\genai
       BUILD_DIR: ${{ github.workspace }}\build\genai
@@ -187,15 +176,6 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-
-      - name: Clone Openvino
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'openvinotoolkit/openvino'
-          path: ${{ env.OV_REPO }}
-          ref: ${{ env.TARGET_BRANCH }}
-          sparse-checkout: |
-            install_build_dependencies.sh
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -231,7 +211,12 @@ jobs:
       #
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
-
+      
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.40 # v2022  
+        
       - name: Build Tokenizers Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
@@ -286,7 +271,6 @@ jobs:
       run:
         shell: pwsh
     runs-on: windows-2022
-
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -327,6 +311,53 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
+  genai_build_nodejs:
+    name: Build Node.js bindings
+    needs: [ openvino_download ]
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-2022
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
+      BUILD_DIR: ${{ github.workspace }}/build
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          path: ${{ env.SRC_DIR }}
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Build GenAI Node.js bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=Release `
+            -DENABLE_JS=ON -DCPACK_GENERATOR=NPM `
+            -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF `
+            -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
+          cmake --build ${{ env.BUILD_DIR }} --config Release --parallel --verbose
+          cmake --install ${{ env.BUILD_DIR }} --config Release --prefix ${{ env.INSTALL_DIR }}
+
+      - name: Upload Node.js bindings Build Package
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ openvino_download, genai_build_wheel ]
@@ -337,12 +368,14 @@ jobs:
         test:
           - name: 'Whisper'
             cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py'
-          - name: 'LLM && VLM'
-            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py'
+          - name: 'Cacheopt E2E'
+            cmd: 'tests/python_tests/test_kv_cache_eviction.py'
+          - name: 'LLM & VLM'
+            cmd: 'tests/python_tests --ignore tests/python_tests/test_whisper_pipeline.py --ignore tests/python_tests/test_whisper_pipeline_static.py --ignore tests/python_tests/test_kv_cache_eviction.py'
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -392,7 +425,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -458,6 +491,78 @@ jobs:
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           & "${{ env.INSTALL_DIR }}/samples_bin/whisper_speech_recognition.exe" "whisper-tiny" "how_are_you_doing_today.wav"
         working-directory: ${{ env.MODELS_DIR }}
+
+  genai_nodejs_tests:
+    name: Node.js bindings tests
+    needs: [ openvino_download, genai_build_nodejs ]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-latest
+
+    env:
+      SRC_DIR: ${{ github.workspace }}/openvino.genai
+      INSTALL_DIR: ${{ github.workspace }}/install
+      NODE_VERSION: 21
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download GenAI JS Bildings Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: genai_nodejs_bindings
+          path: ${{ env.SRC_DIR }}/src/js/bin
+          merge-multiple: true
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
+      # Here we emulate the installation of the openvino-node package from NPM. The latest
+      # release of the openvino-node package is installed, and we need to update the binaries
+      # in the node_modules/openvino-node/bin directory to work correctly with GenAI
+      - name: Install npm package tests dependencies
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: |
+          npm install --verbose
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Check lint
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: npm run lint
+
+      - name: Run npm package tests
+        working-directory: ${{ env.SRC_DIR }}/src/js
+        run: npm test
+
+      - name: Install openvino-genai-node samples dependencies
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        run: |
+          npm install --verbose
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_js_package node_modules/openvino-node/bin
+
+      - name: Run samples tests
+        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        run: npm test
+        env:
+          MODEL_PATH: ${{ env.SRC_DIR }}/src/js/tests/models/Llama-3.1-8B-Instruct-FastDraft-150M-int8-ov
 
   Overall_Status:
     name: ci/gha_overall_status_windows

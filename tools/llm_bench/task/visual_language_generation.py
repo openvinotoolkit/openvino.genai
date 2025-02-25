@@ -182,7 +182,7 @@ def run_visual_language_generation_optimum(
 
 def load_image_genai(image_path):
     pil_image = load_image(image_path)
-    image_data = np.array(pil_image.getdata()).reshape(1, pil_image.size[1], pil_image.size[0], 3).astype(np.uint8)
+    image_data = np.array(pil_image)[None]
     return ov.Tensor(image_data)
 
 

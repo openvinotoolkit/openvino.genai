@@ -1,7 +1,7 @@
 {
-  "name": "genai-node",
+  "name": "openvino-genai-node",
   "type": "module",
-  "version": "2024.5.0-preview",
+  "version": "2025.1.0-preview",
   "description": "OpenVINO™ GenAI pipelines for using from Node.js environment",
   "license": "Apache-2.0",
   "main": "./lib/module.js",
@@ -19,12 +19,26 @@
     "GenAI"
   ],
   "scripts": {
+    "lint": "eslint .",
     "test_setup": "node ./tests/setup.js",
-    "test": "npm run test_setup && node --test ./tests/*.test.js"
+    "test": "npm run test_setup && node --test ./tests/*.test.js",
+    "postinstall": "node ./scripts/download-runtime.cjs --ignore-if-exists"
+  },
+  "dependencies": {
+    "openvino-node": "^2025.0.0"
   },
   "devDependencies": {
-    "node-fetch": "^3.3.2",
+    "@huggingface/hub": "^0.21.0",
+    "eslint": "^9.20.1",
     "global-agent": "^3.0.0",
-    "@huggingface/hub": "^0.21.0"
+    "globals": "^15.15.0",
+    "node-fetch": "^3.3.2"
+  },
+  "binary": {
+    "version": "2025.1.0.0",
+    "module_path": "./bin/",
+    "remote_path": "./repositories/openvino_genai/nodejs_bindings/{version}/{platform}/",
+    "package_name": "openvino_genai_nodejs_bindings_{platform}_{version}_{arch}.tar.gz",
+    "host": "https://storage.openvinotoolkit.org"
   }
 }

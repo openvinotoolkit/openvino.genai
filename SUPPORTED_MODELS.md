@@ -260,8 +260,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
     <tr>
       <td><code>Stable Diffusion 3</code></td>
       <td>Supported</td>
-      <td>Not supported</td>
-      <td>Not supported</td>
+      <td>Supported</td>
+      <td>Supported</td>
       <td>Not supported</td>
       <td>
         <ul>
