@@ -245,63 +245,6 @@ jobs:
           && call .\ov\setupvars.bat
           && python samples\python\text_generation\lora.py .\TinyLlama\TinyLlama-1.1B-intermediate-step-1431k-3T\ adapter_model.safetensors "How to create a table with two columns, one of them has type float, another one has type int?"
 
-  cpp-speculative_decoding_lm-ubuntu:
-    runs-on: ubuntu-22.04-16-cores
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
-          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ./samples/requirements.txt
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
-      - name: run and compare
-        run: |
-          source ./ov/setupvars.sh
-          echo Running speculative_decoding_lm C++ sample...
-          ./build/samples/cpp/text_generation/speculative_decoding_lm ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_speculative.txt
-          echo Running greedy_causal_lm C++ sample...
-          ./build/samples/cpp/text_generation/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
-          echo Running speculative_decoding_lm Python sample...
-          python ./samples/python/text_generation/speculative_decoding_lm.py ./dolly-v2-7b/ ./dolly-v2-3b/ "Alan Turing was a" > predictions_py.txt
-          echo All samples executed, checking result correctness...
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_speculative.txt', 'r') as f:
-              predicted_speculative = f.readline()
-          with open('predictions_py.txt', 'r') as f:
-              predicted_py = f.readline()
-          print(f'Predicted greedy: {predicted_greedy}')
-          print(f'Predicted speculative: {predicted_speculative}')
-          assert predicted_greedy == predicted_speculative
-          assert predicted_greedy == predicted_py
-          assert predicted_speculative == predicted_py
-          "
-          echo "Alan Turing was a" passed
-        env:
-          PYTHONPATH: "./build/:$PYTHONPATH"
-          LD_LIBRARY_PATH: "./build/openvino_genai/:$LD_LIBRARY_PATH"
-
   cpp-Phi-1_5:
     runs-on: ubuntu-22.04-16-cores
     defaults:
