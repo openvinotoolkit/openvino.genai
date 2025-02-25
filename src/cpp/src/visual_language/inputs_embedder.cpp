@@ -187,7 +187,7 @@ protected:
     ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
         const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
         auto new_input_ids = update_history(new_chat_tokens);
-        m_kv_cache_state.add_inputs(new_input_ids);// !!!!!!!!!!!!!!
+        m_kv_cache_state.add_inputs(new_input_ids);
 
         return new_input_ids;
     }
