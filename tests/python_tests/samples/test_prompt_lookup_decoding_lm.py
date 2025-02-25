@@ -40,10 +40,6 @@ class TestPromptLookupDecodingLM:
         cpp_sample_ref = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
         cpp_command_ref = [cpp_sample_ref, convert_model, sample_args]
         cpp_result_ref = run_sample(cpp_command_ref)
-        
-        # Greedy decoding
-        cpp_command_ref = [cpp_sample, convert_model, sample_args]
-        cpp_result_ref = run_sample(cpp_command_ref)
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
