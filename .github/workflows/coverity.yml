@@ -96,7 +96,7 @@ jobs:
 
       - name: Download coverity tool
         run: |
-          wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
+          wget https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
           tar -I pigz -xf coverity_tool.tgz
           echo "ENV_COV_TOOL_DIR=$(tar -tzf coverity_tool.tgz | head -1 | cut -f1 -d'/')" >> $GITHUB_ENV
           rm coverity_tool.tgz
