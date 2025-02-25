@@ -21,7 +21,7 @@ class TestEncryptedLM:
         py_result = run_sample(py_command)
 
         # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text_generation/encrypted_model_causal_lm')
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'encrypted_model_causal_lm')
         cpp_command =[cpp_sample, convert_model, sample_args]
         cpp_result = run_sample(cpp_command)
 
