@@ -165,12 +165,6 @@ public:
         check_image_size(height, width);
 
         const size_t batch_size_multiplier = m_unet->do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
-        // We use the batch_size_multiplier as the batch-size used to reshape our text encoders here.
-        // At generate() time though, if user doesn't pass a negative prompt and m_force_zeros_for_empty_prompt is true,
-        // then the text encoders will get passed batch-1 sizes tensors... which will cause a tensor shape mismatch.
-        // So, here we force m_force_zeros_for_empty_prompt to false so that text encoders will be invoked with
-        // 'batch_size_multiplier' batch size at infer() time, regardless of whether user passes negative prompt or not.
-        m_force_zeros_for_empty_prompt = false;
         m_clip_text_encoder->reshape(batch_size_multiplier);
         m_clip_text_encoder_with_projection->reshape(batch_size_multiplier);
 
