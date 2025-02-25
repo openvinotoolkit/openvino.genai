@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <openvino/openvino.hpp>
+#include "openvino/runtime/infer_request.hpp"
+
+#include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
-#include "visual_language/vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.
@@ -109,6 +110,7 @@ private:
     protected:
         /// @brief A model for image encoding.
         ov::InferRequest m_vision_encoder;
+        /// @brief A config to follow.
         ProcessorConfig m_processor_config;
     };
 

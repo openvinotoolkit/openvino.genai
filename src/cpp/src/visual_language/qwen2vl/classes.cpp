@@ -262,13 +262,15 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-        m_vision_embeddings_merger = utils::singleton_core().compile_model(
-            get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-            get_model_weights_pair(models_map, "vision_embeddings_merger").second,
-            device,
-            device_config
-        ).create_infer_request();
-    }
+    auto compiled_model = utils::singleton_core().compile_model(
+        get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+        get_model_weights_pair(models_map, "vision_embeddings_merger").second,
+        device,
+        device_config
+    );
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings merger model");
+    m_vision_embeddings_merger = compiled_model.create_infer_request();
+}
 
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& prompt, const std::vector<ov::Tensor>& images, ov::genai::VLMPerfMetrics& metrics) {
     std::string formatted_prompt;
@@ -354,8 +356,7 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     const ov::Tensor& text_embeds,
     const std::vector<ov::Tensor>& image_embeds,
     const std::vector<std::array<size_t, 3>> images_grid_thw,
-    const int64_t image_pad_token_id
-) {
+    const int64_t image_pad_token_id) {
     // Calculate cumulative sequence lengths for attention mask
     std::vector<int32_t> cu_seqlens;
     cu_seqlens.push_back(0);
@@ -425,7 +426,7 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_qwen2vl(
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     float* merged_embeds_data = merged_embeds.data<float>();
     const float* vision_embeds_data = processed_vision_embeds.data<const float>();
-    
+
     size_t vision_embed_idx = 0;
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
@@ -548,8 +549,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
 ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
-    const int64_t vision_start_token_id
-) {
+    const int64_t vision_start_token_id) {
     const size_t spatial_merge_size = m_vision_encoder.get_processor_config().merge_size;
     
     const int64_t* input_ids = input_ids_tensor.data<int64_t>();
