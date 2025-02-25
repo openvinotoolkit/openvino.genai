@@ -11,7 +11,6 @@ from typing import Dict
 
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig,  draft_model
 
-from common import generate_and_compare
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
 from utils.generation_config import get_greedy, get_beam_search, \
@@ -19,8 +18,9 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config
+from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare
 from data.models import get_chat_models_list
+from data.test_dataset import get_test_dataset
 
 #
 # e2e tests on random and real models
@@ -40,19 +40,33 @@ def read_models_list(file_name: str):
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
 def test_e2e_precommit(tmp_path, model_id):
-    generate_and_compare(tmp_path=tmp_path, model=model_id)
+    prompts, generation_configs = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         generation_config=generation_configs,
+                         tmp_path=tmp_path,
+                         model=model_id,
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
 def test_e2e_nightly(tmp_path, model_id):
-    generate_and_compare(tmp_path=tmp_path, model=model_id)
+    prompts, generation_config = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         generation_config=generation_config,
+                         tmp_path=tmp_path,
+                         model=model_id, 
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 
 @pytest.mark.real_models
 @pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
 def test_e2e_real_models(tmp_path, model_id):
-    generate_and_compare(tmp_path=tmp_path, model=model_id)
+    prompts, generation_config = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         generation_config=generation_config,
+                         model=model_id,
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING)
 
 #
 # Comparison with stateful
@@ -212,7 +226,13 @@ def test_preemption(tmp_path, params):
     scheduler_params = params[0]
     generation_config = params[1]
 
-    generate_and_compare(tmp_path=tmp_path, model=model_id, scheduler_config=scheduler_params, generation_config=generation_config)
+    prompts, _ = get_test_dataset()
+    generate_and_compare(prompts=prompts,
+                         pipeline_type=PipelineType.CONTINIOUS_BATCHING,
+                         tmp_path=tmp_path,
+                         model=model_id,
+                         scheduler_config=scheduler_params,
+                         generation_config=generation_config)
 
 multinomial_params = RandomSamplingTestStruct(
     generation_config=[

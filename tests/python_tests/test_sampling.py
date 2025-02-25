@@ -9,8 +9,7 @@ from typing import List, TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from common import generate_and_compare, run_llm_pipeline
-from utils.ov_genai_pipelines import PipelineType
+from utils.ov_genai_pipelines import PipelineType, generate_and_compare, run_ov_pipeline
 from utils.hugging_face import get_hugging_face_models, convert_models
 
 @pytest.mark.precommit
@@ -342,7 +341,9 @@ def test_multinomial_sampling_against_reference(tmp_path, test_struct: RandomSam
     convert_models(model, hf_tokenizer, models_path)
 
     # Run multinomial without comparison with HF reference.
-    _ = run_llm_pipeline(models_path, prompts, generation_configs)
+    _ = run_ov_pipeline(models_path=models_path,
+                        prompt=prompts,
+                        generation_config=generation_config)
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.

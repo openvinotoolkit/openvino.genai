@@ -13,12 +13,10 @@ from typing import Tuple, List, Dict
 import openvino as ov
 import openvino_genai as ov_genai
 
-from common import generate_and_compare
-
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare
 from data.models import get_models_list, get_chat_models_list
 
 #
