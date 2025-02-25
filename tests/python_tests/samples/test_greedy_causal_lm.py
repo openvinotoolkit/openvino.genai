@@ -51,6 +51,9 @@ class TestGreedyCausalLM:
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
         
+        # Compare results
+        assert py_predictions == cpp_predictions, f"Results should match"
+        
         model_name = request.node.callspec.params['convert_model']
         model = MODELS[model_name]
         
@@ -64,11 +67,7 @@ class TestGreedyCausalLM:
             for beam in transformers.AutoModelForCausalLM.from_pretrained(model['name']).generate(**tokenized, max_length=100, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
                 logger.info(f'Checking for "{ref=}"')
-                
-                idx = py_predictions.find(ref)
-                assert -1 != idx, f'Missing "{ref=}" from Python predictions'
-                py_predictions = py_predictions[:idx] + py_predictions[idx + len(ref):]
 
                 idx = cpp_predictions.find(ref)
-                assert -1 != idx, f'Missing "{ref=}" from C++ predictions'
+                assert -1 != idx, f'Missing "{ref=}" from predictions'
                 cpp_predictions = cpp_predictions[:idx] + cpp_predictions[idx + len(ref):]
