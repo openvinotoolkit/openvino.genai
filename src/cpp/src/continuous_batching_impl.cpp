@@ -131,7 +131,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
     m_inputs_embedder = inputs_embedder;
-    m_model_runner->set_inputs_embedder(inputs_embedder);
+    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
     m_model_input_type = ModelInputType::EMBEDDINGS;
 }
 

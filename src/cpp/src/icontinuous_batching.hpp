@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "visual_language/inputs_embedder.hpp"
 
 #include "cache_manager.hpp"
 #include "sampler.hpp"

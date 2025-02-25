@@ -8,7 +8,7 @@
 
 #include <openvino/runtime/infer_request.hpp>
 
-#include "visual_language/inputs_embedder.hpp"
+#include "visual_language/embedding_model.hpp"
 #include "debug_utils.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
@@ -41,8 +41,10 @@ class ModelRunner {
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
     ov::Tensor m_cache_rotation_trig_lut;
 
-    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    bool m_use_embeddings;
+    // A model to compute token embeddings.
+    // Input shape: [N, conversation length].
+    // Output shape: [1, conversation length, hidden_size].
+    EmbeddingsModel m_embedding;
 
 public:
     /**
@@ -79,9 +81,8 @@ public:
         return m_request;
     }
 
-    void set_inputs_embedder(std::shared_ptr<InputsEmbedder> embedder) {
-        m_use_embeddings = true;
-        m_inputs_embedder = embedder;
+    void set_embedding_model(const EmbeddingsModel& embedder) {
+        m_embedding = embedder;
     }
 
     /**
@@ -160,7 +161,7 @@ public:
         int64_t *input_ids_data = nullptr;
         
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
-            OPENVINO_ASSERT(m_use_embeddings, "Got sequence group with embeddings, but inputs embedder wasn't set.");
+            OPENVINO_ASSERT(m_embedding.get_request(), "Got sequence group with embeddings, but embeddings model wasn't set.");
             inputs_embeds_data = inputs_embeds.data<float>();
 
             ov::Tensor generated_ids = ov::Tensor(ov::element::i64, {1, num_generated_ids});
@@ -179,8 +180,7 @@ public:
             }
             if (pos > 0) {
                 // TODO: Compute embeddings only for last generated token, while previously generated embeddings save in SequenceGroup
-                auto embedder = m_inputs_embedder->get_embedding_model();
-                generated_ids_embeds = embedder.infer(generated_ids);
+                generated_ids_embeds = m_embedding.infer(generated_ids);
                 generated_ids_embeds_data = generated_ids_embeds.data<float>();
             }
 

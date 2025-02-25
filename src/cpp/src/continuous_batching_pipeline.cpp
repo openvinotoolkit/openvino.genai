@@ -44,27 +44,6 @@ inline float get_load_time(std::chrono::steady_clock::time_point start_time) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
-inline bool ends_with(std::string str, std::string postfix) {
-    return str.rfind(postfix) == str.size() - postfix.size();
-}
-
-std::string get_directory(const std::string& s) {
-    // Linux-style separator
-    auto pos = s.find_last_of('/');
-    if (pos != std::string::npos) {
-        return s.substr(0, pos ? pos : 1);
-    }
-    // Windows-style separator
-    pos = s.find_last_of('\\');
-    if (pos != std::string::npos) {
-        return s.substr(0, pos);
-    } else if (s.empty()) {
-        return {};
-    } else {
-        return {'.'};
-    }
-}
-
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
@@ -166,8 +145,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    auto directory = std::filesystem::path(get_directory(model_str));
-
+    auto rt_info = model->get_rt_info();
+    std::filesystem::path directory = "";
+    if (rt_info.find("__weights_path") != rt_info.end()) {
+        std::string weights_path = rt_info.at("__weights_path").as<std::string>();
+        directory = std::filesystem::path(weights_path).parent_path();
+    }
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
