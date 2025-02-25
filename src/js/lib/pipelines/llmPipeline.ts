@@ -1,27 +1,29 @@
 import util from 'node:util';
+import addon from '../addon.js';
 
-import addon from './bindings.cjs';
+export type ResolveFunction = (arg: { value: string, done: boolean }) => void;
+export type Options = {[key: string]: string};
 
-class LLMPipeline {
-  modelPath = null;
-  device = null;
-  pipeline = null;
+export class LLMPipeline {
+  modelPath: string | null = null;
+  device: string | null = null;
+  pipeline: any | null = null;
   isInitialized = false;
   isChatStarted = false;
 
-  constructor(modelPath, device) {
+  constructor(modelPath: string, device: string) {
     this.modelPath = modelPath;
     this.device = device;
   }
 
   async init() {
     if (this.isInitialized)
-      throw new Error('Pipeline is already initialized');
+      throw new Error('LLMPipeline is already initialized');
 
     this.pipeline = new addon.LLMPipeline();
 
-    const init = util.promisify(this.pipeline.init.bind(this.pipeline));
-    const result = await init(this.modelPath, this.device);
+    const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
+    const result = await initPromise(this.modelPath, this.device);
 
     this.isInitialized = true;
 
@@ -33,7 +35,7 @@ class LLMPipeline {
       throw new Error('Chat is already started');
 
     const startChatPromise = util.promisify(
-      this.pipeline.startChat.bind(this.pipeline)
+      this.pipeline.startChat.bind(this.pipeline),
     );
     const result = await startChatPromise();
 
@@ -46,7 +48,7 @@ class LLMPipeline {
       throw new Error('Chat is not started');
 
     const finishChatPromise = util.promisify(
-      this.pipeline.finishChat.bind(this.pipeline)
+      this.pipeline.finishChat.bind(this.pipeline),
     );
     const result = await finishChatPromise();
 
@@ -55,8 +57,8 @@ class LLMPipeline {
     return result;
   }
 
-  static castOptionsToString(options) {
-    const castedOptions = {};
+  static castOptionsToString(options: Options) {
+    const castedOptions: Options = {};
 
     for (const key in options)
       castedOptions[key] = String(options[key]);
@@ -64,7 +66,7 @@ class LLMPipeline {
     return castedOptions;
   }
 
-  getAsyncGenerator(prompt, generationOptions = {}) {
+  getAsyncGenerator(prompt: string, generationOptions: Options = {}) {
     if (!this.isInitialized)
       throw new Error('Pipeline is not initialized');
 
@@ -75,16 +77,18 @@ class LLMPipeline {
 
     const castedOptions = LLMPipeline.castOptionsToString(generationOptions);
 
-    const queue = [];
-    let resolvePromise;
+    const queue: { isDone: boolean; subword: string; }[] = [];
+    let resolvePromise: ResolveFunction | null;
 
     // Callback function that C++ will call when a chunk is ready
-    function chunkOutput(isDone, subword) {
+    function chunkOutput(isDone: boolean, subword: string) {
       if (resolvePromise) {
-        resolvePromise({ value: subword, done: isDone }); // Fulfill pending request
-        resolvePromise = null;  // Reset promise resolver
+        // Fulfill pending request
+        resolvePromise({ value: subword, done: isDone });
+        resolvePromise = null; // Reset promise resolver
       } else {
-        queue.push({ isDone, subword }); // Add data to queue if no pending promise
+        // Add data to queue if no pending promise
+        queue.push({ isDone, subword });
       }
     }
 
@@ -94,25 +98,33 @@ class LLMPipeline {
       async next() {
         // If there is data in the queue, return it
         // Otherwise, return a promise that will resolve when data is available
-        if (queue.length > 0) {
-          const { isDone, subword } = queue.shift();
+        const data = queue.shift();
+
+        if (data !== undefined) {
+          const { isDone, subword } = data;
 
           return { value: subword, done: isDone };
         }
 
-        return new Promise((resolve) => (resolvePromise = resolve));
+        return new Promise(
+          (resolve: ResolveFunction) => (resolvePromise = resolve),
+        );
       },
-      [Symbol.asyncIterator]() { return this; }
+      [Symbol.asyncIterator]() { return this; },
     };
   }
 
-  async generate(prompt, generationOptions, generationCallback) {
-    const options = generationOptions || {};
+  async generate(
+    prompt: string,
+    generationOptions: Options,
+    generationCallback: (chunk: string)=>void | undefined,
+  ) {
 
-    if (generationCallback !== undefined && typeof generationCallback !== 'function')
+    if (generationCallback !== undefined
+      && typeof generationCallback !== 'function')
       throw new Error('Generation callback must be a function');
 
-    const g = this.getAsyncGenerator(prompt, options);
+    const g = this.getAsyncGenerator(prompt, generationOptions);
     const result = [];
 
     for await (const chunk of g) {
@@ -124,18 +136,3 @@ class LLMPipeline {
     return result.join('');
   }
 }
-
-class Pipeline {
-  static async LLMPipeline(modelPath, device = 'CPU') {
-    const pipeline = new LLMPipeline(modelPath, device);
-    await pipeline.init();
-
-    return pipeline;
-  }
-}
-
-
-export {
-  addon,
-  Pipeline,
-};
